@@ -1,0 +1,2089 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000147">
+<title confidence="0.995346">
+A Neural Network for Factoid Question Answering over
+Paragraphs
+</title>
+<author confidence="0.9861395">
+Mohit Iyyer&apos;, Jordan Boyd-Graber2, Leonardo Claudino&apos;,
+Richard Socher3, Hal Daum´e III&apos;
+</author>
+<affiliation confidence="0.970721666666667">
+&apos;University of Maryland, Department of Computer Science and UMIACS
+2University of Colorado, Department of Computer Science
+3Stanford University, Department of Computer Science
+</affiliation>
+<email confidence="0.9733485">
+{miyyer,claudino,hal}@umiacs.umd.edu,
+Jordan.Boyd.Graber@colorado.edu,richard@socher.org
+</email>
+<sectionHeader confidence="0.976855" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999401095238095">
+Text classification methods for tasks
+like factoid question answering typi-
+cally use manually defined string match-
+ing rules or bag of words representa-
+tions. These methods are ineffective
+when question text contains very few
+individual words (e.g., named entities)
+that are indicative of the answer. We
+introduce a recursive neural network
+(RNN) model that can reason over such
+input by modeling textual composition-
+ality. We apply our model, QANTA, to
+a dataset of questions from a trivia
+competition called quiz bowl. Unlike
+previous RNN models, QANTA learns
+word and phrase-level representations
+that combine across sentences to reason
+about entities. The model outperforms
+multiple baselines and, when combined
+with information retrieval methods, ri-
+vals the best human players.
+</bodyText>
+<sectionHeader confidence="0.997332" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999440875">
+Deep neural networks have seen widespread
+use in natural language processing tasks such
+as parsing, language modeling, and sentiment
+analysis (Bengio et al., 2003; Socher et al.,
+2013a; Socher et al., 2013c). The vector spaces
+learned by these models cluster words and
+phrases together based on similarity. For exam-
+ple, a neural network trained for a sentiment
+analysis task such as restaurant review classifi-
+cation might learn that “tasty” and “delicious”
+should have similar representations since they
+are synonymous adjectives.
+These models have so far only seen success in
+a limited range of text-based prediction tasks,
+Later in its existence, this polity’s leader was chosen
+by a group that included three bishops and six laymen,
+up from the seven who traditionally made the decision.
+Free imperial cities in this polity included Basel and
+Speyer. Dissolved in 1806, its key events included the
+Investiture Controversy and the Golden Bull of 1356.
+Led by Charles V, Frederick Barbarossa, and Otto I,
+for 10 points, name this polity, which ruled most of
+what is now Germany through the Middle Ages and
+rarely ruled its titular city.
+</bodyText>
+<figureCaption confidence="0.903817333333333">
+Figure 1: An example quiz bowl question about
+the Holy Roman Empire. The first sentence
+contains no words or named entities that by
+themselves are indicative of the answer, while
+subsequent sentences contain more and more
+obvious clues.
+</figureCaption>
+<bodyText confidence="0.999961500000001">
+where inputs are typically a single sentence and
+outputs are either continuous or a limited dis-
+crete set. Neural networks have not yet shown
+to be useful for tasks that require mapping
+paragraph-length inputs to rich output spaces.
+Consider factoid question answering: given
+a description of an entity, identify the per-
+son, place, or thing discussed. We describe a
+task with high-quality mappings from natural
+language text to entities in Section 2. This
+task—quiz bowl—is a challenging natural lan-
+guage problem with large amounts of diverse
+and compositional data.
+To answer quiz bowl questions, we develop
+a dependency tree recursive neural network
+in Section 3 and extend it to combine predic-
+tions across sentences to produce a question
+answering neural network with trans-sentential
+averaging (QANTA). We evaluate our model
+against strong computer and human baselines
+in Section 4 and conclude by examining the
+latent space and model mistakes.
+</bodyText>
+<page confidence="0.993514">
+633
+</page>
+<note confidence="0.920252">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 633–644,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.992368705882353">
+2 Matching Text to Entities: Quiz
+Bowl
+Every weekend, hundreds of high school and
+college students play a game where they map
+raw text to well-known entities. This is a trivia
+competition called quiz bowl. Quiz bowl ques-
+tions consist of four to six sentences and are
+associated with factoid answers (e.g., history
+questions ask players to identify specific battles,
+presidents, or events). Every sentence in a quiz
+bowl question is guaranteed to contain clues
+that uniquely identify its answer, even without
+the context of previous sentences. Players an-
+swer at any time—ideally more quickly than
+the opponent—and are rewarded for correct
+answers.
+Automatic approaches to quiz bowl based on
+existing NLP techniques are doomed to failure.
+Quiz bowl questions have a property called
+pyramidality, which means that sentences early
+in a question contain harder, more obscure
+clues, while later sentences are “giveaways”.
+This design rewards players with deep knowl-
+edge of a particular subject and thwarts bag
+of words methods. Sometimes the first sen-
+tence contains no named entities—answering
+the question correctly requires an actual un-
+derstanding of the sentence (Figure 1). Later
+sentences, however, progressively reveal more
+well-known and uniquely identifying terms.
+Previous work answers quiz bowl ques-
+tions using a bag of words (naive Bayes) ap-
+proach (Boyd-Graber et al., 2012). These mod-
+els fail on sentences like the first one in Figure 1,
+a typical hard, initial clue. Recursive neural
+networks (RNNs), in contrast to simpler models,
+can capture the compositional aspect of such
+sentences (Hermann et al., 2013).
+RNNs require many redundant training exam-
+ples to learn meaningful representations, which
+in the quiz bowl setting means we need multiple
+questions about the same answer. Fortunately,
+hundreds of questions are produced during the
+school year for quiz bowl competitions, yield-
+ing many different examples of questions ask-
+ing about any entity of note (see Section 4.1
+for more details). Thus, we have built-in re-
+dundancy (the number of “askable” entities is
+limited), but also built-in diversity, as difficult
+clues cannot appear in every question without
+becoming well-known.
+</bodyText>
+<sectionHeader confidence="0.9530175" genericHeader="introduction">
+3 Dependency-Tree Recursive
+Neural Networks
+</sectionHeader>
+<bodyText confidence="0.999967166666667">
+To compute distributed representations for the
+individual sentences within quiz bowl ques-
+tions, we use a dependency-tree RNN (DT-RNN).
+These representations are then aggregated and
+fed into a multinomial logistic regression clas-
+sifier, where class labels are the answers asso-
+ciated with each question instance.
+In previous work, Socher et al. (2014) use
+DT-RNNs to map text descriptions to images.
+DT-RNNs are robust to similar sentences with
+slightly different syntax, which is ideal for our
+problem since answers are often described by
+many sentences that are similar in meaning
+but different in structure. Our model improves
+upon the existing DT-RNN model by jointly
+learning answer and question representations
+in the same vector space rather than learning
+them separately.
+</bodyText>
+<subsectionHeader confidence="0.995135">
+3.1 Model Description
+</subsectionHeader>
+<bodyText confidence="0.994337241379311">
+As in other RNN models, we begin by associ-
+ating each word w in our vocabulary with a
+vector representation x,,, E Rd. These vectors
+are stored as the columns of a d x V dimen-
+sional word embedding matrix We, where V is
+the size of the vocabulary. Our model takes
+dependency parse trees of question sentences
+(De Marneffe et al., 2006) and their correspond-
+ing answers as input.
+Each node n in the parse tree for a partic-
+ular sentence is associated with a word w, a
+word vector x,,,, and a hidden vector hn E Rd
+of the same dimension as the word vectors. For
+internal nodes, this vector is a phrase-level rep-
+resentation, while at leaf nodes it is the word
+vector x,,, mapped into the hidden space. Un-
+like in constituency trees where all words reside
+at the leaf level, internal nodes of dependency
+trees are associated with words. Thus, the DT-
+RNN has to combine the current node’s word
+vector with its children’s hidden vectors to form
+hn. This process continues recursively up to
+the root, which represents the entire sentence.
+We associate a separate dxd matrix Wr with
+each dependency relation r in our dataset and
+learn these matrices during training.&apos; Syntac-
+tically untying these matrices improves com-
+&apos;We had 46 unique dependency relations in our quiz
+bowl dataset.
+</bodyText>
+<page confidence="0.994356">
+634
+</page>
+<figure confidence="0.998981428571429">
+ROOT
+POSS NSUBJ
+DET POSSESSIVE
+PREP
+VMOD DOBJ
+POBJ
+AMOD
+</figure>
+<figureCaption confidence="0.972006">
+This city ’s economy depended on subjugated peasants called helots
+Figure 2: Dependency parse of a sentence from a question about Sparta.
+</figureCaption>
+<bodyText confidence="0.9993355">
+positionality over the standard RNN model by
+taking into account relation identity along with
+tree structure. We include an additional d x d
+matrix, Wv, to incorporate the word vector xw
+at a node into the node vector hn.
+Given a parse tree (Figure 2), we first com-
+pute leaf representations. For example, the
+hidden representation hhelots is
+</bodyText>
+<equation confidence="0.896916">
+hhelots = f(Wv &apos; xhelots + b), (1)
+</equation>
+<bodyText confidence="0.9998916">
+where f is a non-linear activation function such
+as tanh and b is a bias term. Once all leaves
+are finished, we move to interior nodes with
+already processed children. Continuing from
+“helots” to its parent, “called”, we compute
+</bodyText>
+<equation confidence="0.7001665">
+hcalled =f(WDOBJ &apos; hhelots + Wv &apos; xcalled
++ b). (2)
+</equation>
+<bodyText confidence="0.9366058">
+We repeat this process up to the root, which is
+hdepended =f(WNSUBJ &apos; heconomy + WPREP &apos; hon
++ Wv &apos; xdepended + b). (3)
+The composition equation for any node n with
+children K(n) and word vector xw is hn =
+</bodyText>
+<equation confidence="0.9981115">
+f(Wv &apos; xw + b + � WR(n,k) &apos; hk), (4)
+k∈K(n)
+</equation>
+<bodyText confidence="0.9997605">
+where R(n, k) is the dependency relation be-
+tween node n and child node k.
+</bodyText>
+<subsectionHeader confidence="0.997704">
+3.2 Training
+</subsectionHeader>
+<bodyText confidence="0.999970782608696">
+Our goal is to map questions to their corre-
+sponding answer entities. Because there are
+a limited number of possible answers, we can
+view this as a multi-class classification task.
+While a softmax layer over every node in the
+tree could predict answers (Socher et al., 2011;
+Iyyer et al., 2014), this method overlooks that
+most answers are themselves words (features)
+in other questions (e.g., a question on World
+War II might mention the Battle of the Bulge
+and vice versa). Thus, word vectors associated
+with such answers can be trained in the same
+vector space as question text,2 enabling us to
+model relationships between answers instead
+of assuming incorrectly that all answers are
+independent.
+To take advantage of this observation, we
+depart from Socher et al. (2014) by training
+both the answers and questions jointly in a
+single model, rather than training each sep-
+arately and holding embeddings fixed during
+DT-RNN training. This method cannot be ap-
+plied to the multimodal text-to-image mapping
+problem because text captions by definition are
+made up of words and thus cannot include im-
+ages; in our case, however, question text can
+and frequently does include answer text.
+Intuitively, we want to encourage the vectors
+of question sentences to be near their correct
+answers and far away from incorrect answers.
+We accomplish this goal by using a contrastive
+max-margin objective function described be-
+low. While we are not interested in obtaining a
+ranked list of answers,3 we observe better per-
+formance by adding the weighted approximate-
+rank pairwise (WARP) loss proposed in Weston
+et al. (2011) to our objective function.
+Given a sentence paired with its correct an-
+swer c, we randomly select j incorrect answers
+from the set of all incorrect answers and denote
+this subset as Z. Since c is part of the vocab-
+ulary, it has a vector xc E We. An incorrect
+answer z E Z is also associated with a vector
+xz E We. We define 5 to be the set of all nodes
+in the sentence’s dependency tree, where an
+individual node s E 5 is associated with the
+</bodyText>
+<footnote confidence="0.9978578">
+2Of course, questions never contain their own answer
+as part of the text.
+3In quiz bowl, all wrong guesses are equally detri-
+mental to a team’s score, no matter how “close” a guess
+is to the correct answer.
+</footnote>
+<page confidence="0.997208">
+635
+</page>
+<bodyText confidence="0.914943">
+hidden vector hs. The error for the sentence is
+</bodyText>
+<equation confidence="0.998514666666667">
+C(S, 0) = � � L(rank(c, s, Z))max(0,
+sES zEZ
+1 − xc · hs + xz · hs), (5)
+</equation>
+<bodyText confidence="0.9992764">
+where the function rank(c, s, Z) provides the
+rank of correct answer c with respect to the
+incorrect answers Z. We transform this rank
+into a loss function4 shown by Usunier et al.
+(2009) to optimize the top of the ranked list,
+</bodyText>
+<equation confidence="0.979223">
+L(r) =
+</equation>
+<bodyText confidence="0.993701888888889">
+Since rank(c, s, Z) is expensive to compute,
+we approximate it by randomly sampling K
+incorrect answers until a violation is observed
+(xc · hs &lt; 1 + xz · hs) and set rank(c, s, Z) =
+(|Z|−1)/K, as in previous work (Weston et al.,
+2011; Hermann et al., 2014). The model mini-
+mizes the sum of the error over all sentences T
+normalized by the number of nodes N in the
+training set,
+</bodyText>
+<equation confidence="0.860961166666667">
+1 � C(t, 0). (6)
+J(0) =
+N
+tET
+The parameters 0 = (WrER, Wv, We, b), where
+R represents all dependency relations in the
+</equation>
+<bodyText confidence="0.997168222222222">
+data, are optimized using AdaGrad(Duchi et
+al., 2011).5 In Section 4 we compare perfor-
+mance to an identical model (FIXED-QANTA)
+that excludes answer vectors from We and show
+that training them as part of 0 produces signif-
+icantly better results.
+The gradient of the objective function,
+is computed using backpropagation through
+structure (Goller and Kuchler, 1996).
+</bodyText>
+<subsectionHeader confidence="0.998078">
+3.3 From Sentences to Questions
+</subsectionHeader>
+<bodyText confidence="0.9998428">
+The model we have just described considers
+each sentence in a quiz bowl question indepen-
+dently. However, previously-heard sentences
+within the same question contain useful infor-
+mation that we do not want our model to ignore.
+</bodyText>
+<footnote confidence="0.9955332">
+4Our experiments show that adding this loss term to
+the objective function not only increases performance
+but also speeds up convergence
+5We set the initial learning rate η = 0.05 and reset
+the squared gradient sum to zero every five epochs.
+</footnote>
+<bodyText confidence="0.999460615384615">
+While past work on RNN models have been re-
+stricted to the sentential and sub-sentential
+levels, we show that sentence-level representa-
+tions can be easily combined to generate useful
+representations at the larger paragraph level.
+The simplest and best6 aggregation method
+is just to average the representations of each
+sentence seen so far in a particular question.
+As we show in Section 4, this method is very
+powerful and performs better than most of our
+baselines. We call this averaged DT-RNN model
+QANTA: a question answering neural network
+with trans-sentential averaging.
+</bodyText>
+<sectionHeader confidence="0.998256" genericHeader="method">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.999958071428572">
+We compare the performance of QANTA against
+multiple strong baselines on two datasets.
+QANTA outperforms all baselines trained only
+on question text and improves an information
+retrieval model trained on all of Wikipedia.
+QANTA requires that an input sentence de-
+scribes an entity without mentioning that
+entity, a constraint that is not followed by
+Wikipedia sentences.7 While IR methods can
+operate over Wikipedia text with no issues,
+we show that the representations learned by
+QANTA over just a dataset of question-answer
+pairs can significantly improve the performance
+of IR systems.
+</bodyText>
+<subsectionHeader confidence="0.940209">
+4.1 Datasets
+</subsectionHeader>
+<bodyText confidence="0.99793047826087">
+We evaluate our algorithms on a corpus of over
+100,000 question/answer pairs from two differ-
+ent sources. First, we expand the dataset used
+in Boyd-Graber et al. (2012) with publically-
+available questions from quiz bowl tournaments
+held after that work was published. This gives
+us 46,842 questions in fourteen different cate-
+gories. To this dataset we add 65,212 questions
+from NAQT, an organization that runs quiz
+bowl tournaments and generously shared with
+us all of their questions from 1998–2013.
+6We experimented with weighting earlier sentences
+less than later ones in the average as well as learning an
+additional RNN on top of the sentence-level representa-
+tions. In the former case, we observed no improvements
+over a uniform average, while in the latter case the
+model overfit even with strong regularization.
+7We tried transforming Wikipedia sentences into
+quiz bowl sentences by replacing answer mentions with
+appropriate descriptors (e.g., “Joseph Heller” with “this
+author”), but the resulting sentences suffered from a
+variety of grammatical issues and did not help the final
+result.
+</bodyText>
+<equation confidence="0.999195888888889">
+r
+i=1
+1/i.
+∂C
+∂0 =
+1 N
+tET
+∂0 , (7)
+∂J(t)
+</equation>
+<page confidence="0.985751">
+636
+</page>
+<bodyText confidence="0.999892285714286">
+Because some categories contain substan-
+tially fewer questions than others (e.g., astron-
+omy has only 331 questions), we consider only
+literature and history questions, as these two
+categories account for more than 40% of the
+corpus. This leaves us with 21,041 history ques-
+tions and 22,956 literature questions.
+</bodyText>
+<subsubsectionHeader confidence="0.9579">
+4.1.1 Data Preparation
+</subsubsectionHeader>
+<bodyText confidence="0.99766615">
+To make this problem feasible, we only consider
+a limited set of the most popular quiz bowl an-
+swers. Before we filter out uncommon answers,
+we first need to map all raw answer strings to
+a canonical set to get around formatting and
+redundancy issues. Most quiz bowl answers are
+written to provide as much information about
+the entity as possible. For example, the follow-
+ing is the raw answer text of a question on the
+Chinese leader Sun Yat-sen: Sun Yat-sen; or
+Sun Yixian; or Sun Wen; or Sun Deming; or
+Nakayama Sho; or Nagao Takano. Quiz bowl
+writers vary in how many alternate acceptable
+answers they provide, which makes it tricky to
+strip superfluous information from the answers
+using rule-based approaches.
+Instead, we use Whoosh,8 an information re-
+trieval library, to generate features in an active
+learning classifier that matches existing answer
+strings to Wikipedia titles. If we are unable
+to find a match with a high enough confidence
+score, we throw the question out of our dataset.
+After this standardization process and manual
+vetting of the resulting output, we can use the
+Wikipedia page titles as training labels for the
+DT-RNN and baseline models.9
+65.6% of answers only occur once or twice
+in the corpus. We filter out all answers that
+do not occur at least six times, which leaves
+us with 451 history answers and 595 literature
+answers that occur on average twelve times
+in the corpus. These pruning steps result in
+4,460 usable history questions and 5,685 liter-
+ature questions. While ideally we would have
+used all answers, our model benefits from many
+training examples per answer to learn mean-
+ingful representations; this issue can possibly
+be addressed with techniques from zero shot
+learning (Palatucci et al., 2009; Pasupat and
+Liang, 2014), which we leave to future work.
+</bodyText>
+<footnote confidence="0.950974">
+8https://pypi.python.org/pypi/Whoosh/
+9Code and non-NAQT data available at http://cs.
+umd.edu/~miyyer/qblearn.
+</footnote>
+<bodyText confidence="0.9999835">
+We apply basic named entity recogni-
+tion (NER) by replacing all occurrences of
+answers in the question text with single
+entities (e.g., Ernest Hemingway becomes
+Ernest Hemingway). While we experimented
+with more advanced NER systems to detect
+non-answer entities, they could not handle
+multi-word named entities like the book Love
+in the Time of Cholera (title case) or battle
+names (e.g., Battle of Midway). A simple
+search/replace on all answers in our corpus
+works better for multi-word entities.
+The preprocessed data are split into folds
+by tournament. We choose the past two na-
+tional tournaments10 as our test set as well
+as questions previously answered by players in
+Boyd-Graber et al. (2012) and assign all other
+questions to train and dev sets. History results
+are reported on a training set of 3,761 ques-
+tions with 14,217 sentences and a test set of
+699 questions with 2,768 sentences. Literature
+results are reported on a training set of 4,777
+questions with 17,972 sentences and a test set
+of 908 questions with 3,577 sentences.
+Finally, we initialize the word embedding
+matrix We with word2vec (Mikolov et al., 2013)
+trained on the preprocessed question text in
+our training set.11 We use the hierarchical skip-
+gram model setting with a window size of five
+words.
+</bodyText>
+<subsectionHeader confidence="0.986038">
+4.2 Baselines
+</subsectionHeader>
+<bodyText confidence="0.905749">
+We pit QANTA against two types of baselines:
+bag of words models, which enable comparison
+to a standard NLP baseline, and information
+retrieval models, which allow us to compare
+against traditional question answering tech-
+niques.
+BOW The sow baseline is a logistic regres-
+sion classifier trained on binary unigram indi-
+cators.12 This simple discriminative model is
+an improvement over the generative quiz bowl
+answering model of Boyd-Graber et al. (2012).
+10The tournaments were selected because NAQT does
+not reuse any questions or clues within these tourna-
+ments.
+11Out-of-vocabulary words from the test set are ini-
+tialized randomly.
+12Raw word counts, frequencies, and TF-IDF
+weighted features did not increase performance, nor
+did adding bigrams to the feature set (possibly because
+multi-word named entities are already collapsed into
+single words).
+</bodyText>
+<page confidence="0.992551">
+637
+</page>
+<bodyText confidence="0.999074103448276">
+BOW-DT The Bow-DT baseline is identical
+to Bow except we augment the feature set with
+dependency relation indicators. We include
+this baseline to isolate the effects of the depen-
+dency tree structure from our compositional
+model.
+IR-QB The IR-QB baseline maps questions to
+answers using the state-of-the-art Whoosh IR
+engine. The knowledge base for IR-QB consists
+of “pages” associated with each answer, where
+each page is the union of training question text
+for that answer. Given a partial question, the
+text is first preprocessed using a query lan-
+guage similar to that of Apache Lucene. This
+processed query is then matched to pages uses
+Bm-25 term weighting, and the top-ranked page
+is considered to be the model’s guess. We also
+incorporate fuzzy queries to catch misspellings
+and plurals and use Whoosh’s built-in query ex-
+pansion functionality to add related keywords
+to our queries. IR-WIKI The IR-wIKI model
+is identical to the IR-QB model except that each
+“page” in its knowledge base also includes all
+text from the associated answer’s Wikipedia
+article. Since all other baselines and DT-RNN
+models operate only on the question text, this
+is not a valid comparison, but we offer it to
+show that we can improve even this strong
+model using QANTA.
+</bodyText>
+<subsectionHeader confidence="0.79774">
+4.3 DT-RNN Configurations
+</subsectionHeader>
+<bodyText confidence="0.9999408">
+For all DT-RNN models the vector dimension d
+and the number of wrong answers per node j
+is set to 100. All model parameters other than
+We are randomly initialized. The non-linearity
+f is the normalized tanh function,13
+</bodyText>
+<equation confidence="0.9958475">
+tanh(v)
+f(v) = �itanh(v)ll. (8)
+</equation>
+<bodyText confidence="0.976979428571428">
+QANTA is our DT-RNN model with feature
+averaging across previously-seen sentences in a
+question. To obtain the final answer prediction
+given a partial question, we first generate a
+feature representation for each sentence within
+that partial question. This representation is
+computed by concatenating together the word
+embeddings and hidden representations aver-
+aged over all nodes in the tree as well as the
+13The standard tanh function produced heavy sat-
+uration at higher levels of the trees, and corrective
+weighting as in Socher et al. (2014) hurt our model
+because named entities that occur as leaves are often
+more important than non-terminal phrases.
+root node’s hidden vector. Finally, we send
+the average of all of the individual sentence fea-
+tures14 as input to a logistic regression classifier
+for answer prediction.
+FIXED-QANTA uses the same DT-RNN configu-
+ration as QANTA except the answer vectors are
+kept constant as in the text-to-image model.
+</bodyText>
+<subsectionHeader confidence="0.989516">
+4.4 Human Comparison
+</subsectionHeader>
+<bodyText confidence="0.99995548275862">
+Previous work provides human answers (Boyd-
+Graber et al., 2012) for quiz bowl questions.
+We use human records for 1,201 history guesses
+and 1,715 literature guesses from twenty-two of
+the quiz bowl players who answered the most
+questions.15
+The standard scoring system for quiz bowl is
+10 points for a correct guess and -5 points for
+an incorrect guess. We use this metric to com-
+pute a total score for each human. To obtain
+the corresponding score for our model, we force
+it to imitate each human’s guessing policy. For
+example, Figure 3 shows a human answering
+in the middle of the second sentence. Since our
+model only considers sentence-level increments,
+we compare the model’s prediction after the
+first sentence to the human prediction, which
+means our model is privy to less information
+than humans.
+The resulting distributions are shown in Fig-
+ure 4—our model does better than the average
+player on history questions, tying or defeat-
+ing sixteen of the twenty-two players, but it
+does worse on literature questions, where it
+only ties or defeats eight players. The figure
+indicates that literature questions are harder
+than history questions for our model, which is
+corroborated by the experimental results dis-
+cussed in the next section.
+</bodyText>
+<sectionHeader confidence="0.999413" genericHeader="method">
+5 Discussion
+</sectionHeader>
+<bodyText confidence="0.999843571428571">
+In this section, we examine why QANTA im-
+proves over our baselines by giving examples
+of questions that are incorrectly classified by
+all baselines but correctly classified by QANTA.
+We also take a close look at some sentences that
+all models fail to answer correctly. Finally, we
+visualize the answer space learned by QANTA.
+</bodyText>
+<footnote confidence="0.980282">
+14Initial experiments with L2 regularization hurt per-
+formance on a validation set.
+15Participants were skilled quiz bowl players and are
+not representative of the general population.
+</footnote>
+<page confidence="0.973671">
+638
+</page>
+<table confidence="0.999662">
+Model History Literature
+Pos 1 Pos 2 Full Pos 1 Pos 2 Full
+BOW 27.5 51.3 53.1 19.3 43.4 46.7
+BOW-DT 35.4 57.7 60.2 24.4 51.8 55.7
+IR-QB 37.5 65.9 71.4 27.4 54.0 61.9
+FIXED-QANTA 38.3 64.4 66.2 28.9 57.7 62.3
+QANTA 47.1 72.1 73.7 36.4 68.2 69.1
+IR-WIKI 53.7 76.6 77.5 41.8 74.0 73.3
+QANTA+IR-WIKI 59.8 81.8 82.3 44.7 78.7 76.6
+</table>
+<tableCaption confidence="0.6120278">
+Table 1: Accuracy for history and literature at the first two sentence positions of each question
+and the full question. The top half of the table compares models trained on questions only, while
+the IR models in the bottom half have access to Wikipedia. QANTA outperforms all baselines
+that are restricted to just the question data, and it substantially improves an IR model with
+access to Wikipedia despite being trained on much less data.
+</tableCaption>
+<figure confidence="0.999279958333333">
+Score Difference
+History: Model vs. Human
+200
+200
+150
+100
+100
+150
+50
+50
+0
+Score Difference
+Literature: Model vs. Human
+200
+200
+300
+400
+100
+100
+0
+Model loses
+Model wins
+Model loses
+Model wins
+</figure>
+<figureCaption confidence="0.99939">
+Figure 4: Comparisons of QANTA+IR-WIKI to human quiz bowl players. Each bar represents an
+</figureCaption>
+<bodyText confidence="0.951432846153846">
+individual human, and the bar height corresponds to the difference between the model score and
+the human score. Bars are ordered by human skill. Red bars indicate that the human is winning,
+while blue bars indicate that the model is winning. QANTA+IR-WIKI outperforms most humans
+on history questions but fails to defeat the “average” human on literature questions.
+A minor character in this play can be summoned
+by a bell that does not always work; that character
+also doesn’t have eyelids. Near the end, a woman
+who drowned her illegitimate child attempts to stab
+another woman in the Second Empire-style ✸ room
+in which the entire play takes place. For 10 points,
+Estelle and Ines are characters in which existentialist
+play in which Garcin claims “Hell is other people”,
+written by Jean-Paul Sartre?
+</bodyText>
+<figureCaption confidence="0.950919">
+Figure 3: A question on the play “No Exit”
+</figureCaption>
+<bodyText confidence="0.91188175">
+with human buzz position marked as ✸. Since
+the buzz occurs in the middle of the second
+sentence, our model is only allowed to see the
+first sentence.
+</bodyText>
+<subsectionHeader confidence="0.9401">
+5.1 Experimental Results
+</subsectionHeader>
+<bodyText confidence="0.99796647826087">
+Table 1 shows that when bag of words and
+information retrieval methods are restricted to
+question data, they perform significantly worse
+than QANTA on early sentence positions. The
+performance of BOW-DT indicates that while
+the dependency tree structure helps by itself,
+the compositional distributed representations
+learned by QANTA are more useful. The signif-
+icant improvement when we train answers as
+part of our vocabulary (see Section 3.2) indi-
+cates that our model uses answer occurrences
+within question text to learn a more informa-
+tive vector space.
+The disparity between IR-QB and IR-WIKI
+indicates that the information retrieval models
+need lots of external data to work well at all
+sentence positions. IR-WIKI performs better
+than other models because Wikipedia contains
+many more sentences that partially match spe-
+cific words or phrases found in early clues than
+the question training set. In particular, it is
+impossible for all other models to answer clues
+in the test set that have no semantically similar
+</bodyText>
+<page confidence="0.998314">
+639
+</page>
+<bodyText confidence="0.999882727272727">
+or equivalent analogues in the training ques-
+tion data. With that said, IR methods can
+also operate over data that does not follow the
+special constraints of quiz bowl questions (e.g.,
+every sentence uniquely identifies the answer,
+answers don’t appear in their corresponding
+questions), which QANTA cannot handle. By
+combining QANTA and IR-WIKI, we are able to
+leverage access to huge knowledge bases along
+with deep compositional representations, giv-
+ing us the best of both worlds.
+</bodyText>
+<subsectionHeader confidence="0.9982215">
+5.2 Where the Attribute Space Helps
+Answer Questions
+</subsectionHeader>
+<bodyText confidence="0.999979064516129">
+We look closely at the first sentence from a
+literature question about the author Thomas
+Mann: “He left unfinished a novel whose title
+character forges his father’s signature to get
+out of school and avoids the draft by feigning
+desire to join”.
+All baselines, including IR-WIKI, are unable
+to predict the correct answer given only this
+sentence. However, QANTA makes the correct
+prediction. The sentence contains no named
+entities, which makes it almost impossible for
+bag of words or string matching algorithms to
+predict correctly. Figure 6 shows that the plot
+description associated with the “novel” node
+is strongly indicative of the answer. The five
+highest-scored answers are all male authors,16
+which shows that our model is able to learn the
+answer type without any hand-crafted rules.
+Our next example, the first sentence in Ta-
+ble 2, is from the first position of a question
+on John Quincy Adams, which is correctly an-
+swered by only QANTA. The bag of words
+model guesses Henry Clay, who was also a Sec-
+retary of State in the nineteenth century and
+helped John Quincy Adams get elected to the
+presidency in a “corrupt bargain”. However,
+the model can reason that while Henry Clay
+was active at the same time and involved in
+the same political problems of the era, he did
+not represent the Amistad slaves, nor did he
+negotiate the Treaty of Ghent.
+</bodyText>
+<subsectionHeader confidence="0.986456">
+5.3 Where all Models Struggle
+</subsectionHeader>
+<bodyText confidence="0.9928061">
+Quiz bowl questions are intentionally written to
+make players work to get the answer, especially
+at early sentence positions. Our model fails to
+16three of whom who also have well-known unfinished
+novels
+answer correctly more than half the time after
+hearing only the first sentence. We examine
+some examples to see if there are any patterns
+to what makes a question “hard” for machine
+learning models.
+Consider this question about the Italian ex-
+plorer John Cabot: “As a young man, this
+native of Genoa disguised himself as a Muslim
+to make a pilgrimage to Mecca”.
+While it is obvious to human readers that
+the man described in this sentence is not actu-
+ally a Muslim, QANTA has to accurately model
+the verb disguised to make that inference. We
+show the score plot of this sentence in Figure 7.
+The model, after presumably seeing many in-
+stances of muslim and mecca associated with
+Mughal emperors, is unable to prevent this
+information from propagating up to the root
+node. On the bright side, our model is able to
+learn that the question is expecting a human
+answer rather than non-human entities like the
+Umayyad Caliphate.
+More examples of impressive answers by
+QANTA as well as incorrect guesses by all sys-
+tems are shown in Table 2.
+</bodyText>
+<subsectionHeader confidence="0.992563">
+5.4 Examining the Attribute Space
+</subsectionHeader>
+<bodyText confidence="0.9999824">
+Figure 5 shows a t-SNE visualization (Van der
+Maaten and Hinton, 2008) of the 451 answers
+in our history dataset. The vector space is
+divided into six general clusters, and we focus
+in particular on the us presidents. Zooming
+in on this section reveals temporal clustering:
+presidents who were in office during the same
+timeframe occur closer together. This observa-
+tion shows that QANTA is capable of learning
+attributes of entities during training.
+</bodyText>
+<sectionHeader confidence="0.99982" genericHeader="method">
+6 Related Work
+</sectionHeader>
+<bodyText confidence="0.999990714285714">
+There are two threads of related work relevant
+to this paper. First, we discuss previous ap-
+plications of compositional vector models to
+related NLP tasks. Then, we examine existing
+work on factoid question-answering and review
+the similarities and differences between these
+tasks and the game of quiz bowl.
+</bodyText>
+<sectionHeader confidence="0.4719825" genericHeader="method">
+6.1 Recursive Neural Networks for
+NLP
+</sectionHeader>
+<bodyText confidence="0.963979">
+The principle of semantic composition states
+that the meaning of a phrase can be derived
+</bodyText>
+<page confidence="0.975937">
+640
+</page>
+<figure confidence="0.999639733333333">
+george_washington
+john_adams
+thomas_jeffers
+jams%ow_adams
+john_tyler andrew_jackson
+frandn p! me chanan
+on
+lor
+mdrd &amp;quot;
+_henry_harrison
+grover clegland
+benjamin_hartison
+ronald reagan
+jimmy_carter
+woodrow_wilson
+</figure>
+<figureCaption confidence="0.752473833333333">
+Figure 5: t-SNE 2-D projections of 451 answer
+vectors divided into six major clusters. The
+blue cluster is predominantly populated by U.S.
+presidents. The zoomed plot reveals temporal
+clustering among the presidents based on the
+years they spent in office.
+</figureCaption>
+<bodyText confidence="0.972789357142857">
+from the meaning of the words that it con-
+tains as well as the syntax that glues those
+words together. Many computational models
+of compositionality focus on learning vector
+spaces (Zanzotto et al., 2010; Erk, 2012; Grefen-
+stette et al., 2013; Yessenalina and Cardie,
+2011). Recent approaches towards modeling
+compositional vector spaces with neural net-
+works have been successful, although simpler
+functions have been proposed for short phrases
+(Mitchell and Lapata, 2008).
+Recursive neural networks have achieved
+state-of-the-art performance in sentiment anal-
+ysis and parsing (Socher et al., 2013c; Hermann
+and Blunsom, 2013; Socher et al., 2013a). RNNs
+have not been previously used for learning at-
+tribute spaces as we do here, although recursive
+tensor networks were unsuccessfully applied to
+a knowledge base completion task (Socher et
+al., 2013b). More relevant to this work are the
+dialogue analysis model proposed by Kalchbren-
+ner &amp; Blunsom (2013) and the paragraph vec-
+tor model described in Le and Mikolov (2014),
+both of which are able to generate distributed
+representations of paragraphs. Here we present
+a simpler approach where a single model is able
+to learn complex sentence representations and
+average them across paragraphs.
+</bodyText>
+<subsectionHeader confidence="0.993569">
+6.2 Factoid Question-Answering
+</subsectionHeader>
+<bodyText confidence="0.999613666666667">
+Factoid question answering is often functionally
+equivalent to information retrieval. Given a
+knowledge base and a query, the goal is to
+</bodyText>
+<figure confidence="0.61691">
+Joseph Conrad Franz Kafka
+</figure>
+<figureCaption confidence="0.978212">
+Figure 6: A question on the German novelist
+</figureCaption>
+<bodyText confidence="0.95589352631579">
+Thomas Mann that contains no named entities,
+along with the five top answers as scored by
+QANTA. Each cell in the heatmap corresponds
+to the score (inner product) between a node
+in the parse tree and the given answer, and
+the dependency parse of the sentence is shown
+on the left. All of our baselines, including IR-
+WIKI, are wrong, while QANTA uses the plot
+description to make a correct guess.
+return the answer. Many approaches to this
+problem rely on hand-crafted pattern matching
+and answer-type classification to narrow down
+the search space (Shen, 2007; Bilotti et al.,
+2010; Wang, 2006). More recent factoid QA
+systems incorporate the web and social media
+into their retrieval systems (Bian et al., 2008).
+In contrast to these approaches, we place the
+burden of learning answer types and patterns
+on the model.
+</bodyText>
+<sectionHeader confidence="0.996222" genericHeader="method">
+7 Future Work
+</sectionHeader>
+<bodyText confidence="0.999849363636364">
+While we have shown that DT-RNNs are effec-
+tive models for quiz bowl question answering,
+other factoid QA tasks are more challenging.
+Questions like what does the AARP stand for?
+from TREC QA data require additional infras-
+tructure. A more apt comparison would be to
+IBM’s proprietary Watson system (Lally et al.,
+2012) for Jeopardy, which is limited to single
+sentences, or to models trained on Yago (Hof-
+fart et al., 2013).
+We would also like to fairly compare QANTA
+</bodyText>
+<figure confidence="0.999755801587301">
+martin van buren william_mckinley
+calvin coolidge
+ethiopia claudis
+caligula
+margart_thatcher haile_selassie
+jawharlalnehru
+adof_hitler nero
+toyotomi_hideyshi
+mrco_plo
+solon
+vyacheslav_molotov hadrian
+nikita_khrushcev
+winston_churchill
+od_nobunaga
+shaka
+portugal
+tokugawa_ieyasu
+suleiman_the_magnificent
+cleisthenes muhammad
+akbar
+sha_jahan
+charlemagne
+pericles
+mkhal_gobachev
+leonid_brezhnev charles_martel
+benito_mussolini
+nevie_chamberlain
+napoleon_ii ivan_the_terrible
+chandagupta maurya babur
+avid_lloyd_george gaius_marius
+mao_zedong
+fidel_castro
+pierre_trudeau
+charles_de_gaulle alfred_th_great
+pepin_the_shrt
+attila
+edward_the_confessor
+cyrus_the_great
+atahualpa kublai_khan
+salvador_allende hugh_capet
+eleanor_of_aquitaine
+spara
+justinian_i
+georges_clemenceau
+cardinal_mazarin henry_i_of_england
+canossa genghis_khan
+brian_uroney paul_von_hindenburg
+mrcus_licinius_crassus maria_heresa
+darius_i diocletian
+hyksos
+gamal_abdel_naser
+indira_gandhi giuseppe_garibaldi willimthe_conqueror
+mark_antony
+nelson_mandela
+cecil_rhodes pancho_vill
+robert_walpole carthage
+konrad_adenaur
+william_ewart_gladstone
+benjamin_dsraeli
+emilio_aguinaldo
+william_tecumseh_sherman
+black_panther_prty
+kwame_nkrumah francisco_pizarro
+hannibal
+leon_trotsky john_wycliffe
+alfred_dreyfus
+phlip_ii_of_macedon oliver_cromwll
+batle_of_hastings
+peter_the_great
+samuel_gompers
+anti-masonic_party
+hideki_tojo daniel_boone
+thomas_paine
+adolf_eichmann thomas_nast douglas_macarthur
+jacqus_marquette john_wilkes_both
+ambrse_burnide
+emiliano_zapata sam_houston
+horatio_gates
+muhammad_ali_jinnh
+mobutu_seseek
+girolamo_savonarola george_meade
+henry_he_nigator
+mapp_v._ohio benedict_rnold
+roald_amundsen
+vasco_da_gama
+charles_lindbegh
+huey_long pasts&apos;_revt francis_drake
+georg_armstrong_custer
+charles_stewart_parnell ethan_allen
+julius_nyerere hernando_de_soto
+samul_de_champlain tecumseh
+victoria_woodhul maximilien_d_obespierre
+henry_viofengland
+chester_a._arthur
+chiang_kai-shek fort_ticonderoga
+alexnder_kerensky
+george_h._pendleton
+easter_rising henry_morto_stanley
+getulio_vargas mustafa_kemal_ataturk
+william_walker_(flibustr)
+zebulon_pike
+wilam_penn
+thbes,_greece
+bernardo_o&apos;hggins george_b._mcclellan
+henry_._stimson battle_of_getysburg
+huldrych_zwingli
+roger_wiliams_(thelogan)
+rutherford_._hayes
+adlai_stevenson_i
+albert_b._fall
+labour_party_(uk)
+david_livingstone
+kellogg-briand_pact battle_of_bosworth_field
+battle_of_antietam
+john_paul_jones harry_s._truman green_muntain_boys
+battle_of_the_thames
+porfirio_daz golden_horde
+alexaner_ii_of_russa
+mary,_queen_of_scots battle_of_the_litlebighorn
+rough_riders
+wars_of_the_roses
+pontiac(person)
+mary_baker_eddy
+hitites
+byzantine_empire
+ghana
+batte_of_the_coral_sea
+lollardy amelia_earhart
+joh_a._macdonald
+henry_hudson vandals
+clara_barton bartolomeu_dias
+battle_of_trenton
+battle_of_chancelorsville
+batle_of_shiloh first_crusade
+treaty_of_brest-ltovk
+hudson&apos;s_bay_company
+st._bartholomew&apos;s_da_msce
+wiliamh._seward
+john_t._scopes
+john_cabot
+jacques_ctier
+jamaica first_battle_of_bull_run
+mguel_hidalgo_y_costila
+first_triumvirate lester_b._pearson
+ulysses_s._grnt mali_epr
+parthin_empire
+mughl_empire
+yuan_ynasty
+ferdinand_magelan battle_of_agincourt
+roger_b._taney
+a._philip_randolph
+platt_amendment christopher_coumbus
+battle_of_bunker_hil
+battle_of_zama
+vitus_bering batt_of_coden
+battl_of_lpanto peloponnesian_wr
+tang_dynasty
+han_dynasty
+amrigo_vespucci atle_of_salmis fourth_crusde
+mng_dynasty
+whskey_ring
+john_brown_(abolitonist) battle_ofblenhem
+battle_of_the_bulge
+pedo_alvares_cabra battle_of_king_muntain
+whig_party_(united_stats) bttle_of_actium
+spartacus
+umayyad_caliphate
+warren_g._hdng
+john_peter_zenger
+third_crusade
+black_hol_of_calcutta
+aethered_th_unready
+schenck_v._united_stats
+james_a._garield
+coxey&apos;s_army
+francisco_i._madero
+booker_t._washingon
+shays&apos;_rebellion
+battle_of_plassey
+battle_of_trafalgar
+battle_of_marathon
+opium_wars
+james_g._blaine battle_of_ayacucho second_boer_war
+verdun
+guadalcanal
+nagasaki
+dawes_pan plessy_v._ferguson teutonic_knights
+salmon_p._chase albany_congress camillo_benso,_count_of_cavour
+credit_mobir_of_aric_scandal henry_cabot_lodge,_jr.
+salem_wtch_trias
+fashoda_incident
+albigensian_crusade battle_of_midway
+arthur_wellesley,_1t_duke_of_wellington
+knights_of_labor great_nrthrn_war
+teapot_ome_scandal
+luddite war_of_the_spanish_succession
+wounded_knee_massacre
+maginot_lin
+battle_of_yte_gulf edict_of_nantes
+stephen_a._douglas
+carone_affar
+kitchen_cabinet
+homestead_strike battle_of_austerlitz peace_of_westphalia
+francisc_vasquez_d_coronado
+trangle_shirtwast_factory_fire treaty_of_utrecht
+antonio_lopez_de_santa_anna
+john_c._calhoun
+free_soil_party bento_juarez battle_of_tannenberg war_of_te_austian_succession
+spanish_civil_war
+martin_luther_(1953_film) ancient_corinth wa_of_devolution
+treaty_of_tordesillas crimean_war
+antonio_de_olveira_salazar
+louis_riel bastille boxer_rebellion
+samul_j._tilden
+alexander_h._stephens
+provisions_of_oxfrd tokugawa_shgunate
+thomas_hart_benton_(politcian)
+thirty_years&apos;_war
+eugene_v._debs batle_of_bannockburn
+battle_of_caporetto ong_march meiji_restoration
+treaty_of_portsmouth july_revolution congress_of_vienna
+susan_b._anthony
+james_k._polk
+state_of_franklin guelphs_ad_ghibellins
+songhai_mpre
+taiping_rebellion
+inca_empire
+night_of_the_long_knvs
+khmer_empire
+kamakura_shogunate
+marcus_garvey lateran_teaty
+jacquerie
+haymarket_affair
+council_of_trent
+safavid_dynasty
+hanseatic_league
+molly_maguires council_of_chalcedon
+brook_farm october_manifesto
+second_vatican_council cultural_revolution
+TSN E-1
+herbejirom veoward_taft
+TSNE-2
+a
+Wars, rebellions, and battles
+U.S. presidents
+Prime ministers
+Explorers &amp; emperors
+Policies
+Other
+Thomas Mann
+Henrik Ibsen
+Henry James
+</figure>
+<page confidence="0.757976">
+641
+</page>
+<figureCaption confidence="0.960715">
+Figure 7: An extremely misleading question
+</figureCaption>
+<bodyText confidence="0.982078736842105">
+about John Cabot, at least to computer models.
+The words muslim and mecca lead to three
+Mughal emperors in the top five guesses from
+QANTA; other models are similarly led awry.
+with IR-WIKI. A promising avenue for future
+work would be to incorporate Wikipedia data
+into QANTA by transforming sentences to look
+like quiz bowl questions (Wang et al., 2007) and
+to select relevant sentences, as not every sen-
+tence in a Wikipedia article directly describes
+its subject. Syntax-specific annotation (Sayeed
+et al., 2012) may help in this regard.
+Finally, we could adapt the attribute space
+learned by the DT-RNN to use information from
+knowledge bases and to aid in knowledge base
+completion. Having learned many facts about
+entities that occur in question text, a DT-RNN
+could add new facts to a knowledge base or
+check existing relationships.
+</bodyText>
+<sectionHeader confidence="0.998258" genericHeader="conclusions">
+8 Conclusion
+</sectionHeader>
+<bodyText confidence="0.997652090909091">
+We present QANTA, a dependency-tree recursive
+neural network for factoid question answering
+that outperforms bag of words and informa-
+tion retrieval baselines. Our model improves
+upon a contrastive max-margin objective func-
+tion from previous work to dynamically update
+answer vectors during training with a single
+model. Finally, we show that sentence-level
+representations can be easily and effectively
+combined to generate paragraph-level represen-
+Q he also successfully represented the amistad
+A slaves and negotiated the treaty of ghent and
+the annexation of florida from spain during his
+stint as secretary of state under james monroe
+john quincy adams, henry clay, andrew jack-
+son
+Q this work refers to people who fell on their
+A knees in hopeless cathedrals and who jumped
+off the brooklyn bridge
+howl, the tempest, paradise lost
+Q despite the fact that twenty six martyrs were
+A crucified here in the late sixteenth century it
+remained the center of christianity in its coun-
+try
+nagasaki, guadalcanal, ethiopia
+Q this novel parodies freudianism in a chapter
+A about the protagonist ’s dream of holding a
+live fish in his hands
+billy budd, the ambassadors, all my sons
+Q a contemporary of elizabeth i he came to power
+A two years before her and died two years later
+grover cleveland, benjamin harrison, henry
+cabot lodge
+Table 2: Five example sentences occuring at
+the first sentence position along with their top
+three answers as scored by QANTA; correct an-
+swers are marked with blue and wrong answers
+are marked with red. QANTA gets the first
+three correct, unlike all other baselines. The
+last two questions are too difficult for all of
+our models, requiring external knowledge (e.g.,
+Freudianism) and temporal reasoning.
+tations with more predictive power than those
+of the individual sentences.
+</bodyText>
+<sectionHeader confidence="0.998859" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999340545454545">
+We thank the anonymous reviewers, Stephanie
+Hwa, Bert Huang, and He He for their insight-
+ful comments. We thank Sharad Vikram, R.
+Hentzel, and the members of NAQT for pro-
+viding our data. This work was supported by
+NSF Grant IIS-1320538. Boyd-Graber is also
+supported by NSF Grant CCF-1018625. Any
+opinions, findings, conclusions, or recommen-
+dations expressed here are those of the authors
+and do not necessarily reflect the view of the
+sponsor.
+</bodyText>
+<figure confidence="0.965423">
+Shah Jahan Babur
+Akbar
+Muhammad Ghana
+</figure>
+<page confidence="0.987165">
+642
+</page>
+<bodyText confidence="0.9960198">
+Nal Kalchbrenner and Phil Blunsom. 2013. Recurrent
+convolutional neural networks for discourse compo-
+sitionality. Proceedings of the 2013 Workshop on
+Continuous Vector Space Models and their Composi-
+tionality.
+</bodyText>
+<sectionHeader confidence="0.940373" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.998978432692308">
+Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and
+Christian Jauvin. 2003. A neural probabilistic lan-
+guage model. JMLR.
+Jiang Bian, Yandong Liu, Eugene Agichtein, and
+Hongyuan Zha. 2008. Finding the right facts in
+the crowd: factoid question answering over social
+media. In WWW.
+Matthew W. Bilotti, Jonathan Elsas, Jaime Carbonell,
+and Eric Nyberg. 2010. Rank learning for factoid
+question answering with linguistic and semantic con-
+straints. In CIKM.
+Jordan Boyd-Graber, Brianna Satinoff, He He, and
+Hal Daume III. 2012. Besting the quiz master:
+Crowdsourcing incremental classification games. In
+EMNLP.
+Marie-Catherine De Marneffe, Bill MacCartney, Christo-
+pher D Manning, et al. 2006. Generating typed
+dependency parses from phrase structure parses. In
+LREC.
+John Duchi, Elad Hazan, and Yoram Singer. 2011.
+Adaptive subgradient methods for online learning
+and stochastic optimization. JMLR, 999999:2121–
+2159.
+Katrin Erk. 2012. Vector space models of word mean-
+ing and phrase meaning: A survey. Language and
+Linguistics Compass.
+Christoph Goller and Andreas Kuchler. 1996. Learning
+task-dependent distributed representations by back-
+propagation through structure. In Neural Networks,
+1996., IEEE International Conference on, volume 1.
+Edward Grefenstette, Georgiana Dinu, Yao-Zhong
+Zhang, Mehrnoosh Sadrzadeh, and Marco Baroni.
+2013. Multi-step regression learning for composi-
+tional distributional semantics. CoRR.
+Karl Moritz Hermann and Phil Blunsom. 2013. The
+Role of Syntax in Vector Space Models of Composi-
+tional Semantics. In ACL.
+Karl Moritz Hermann, Edward Grefenstette, and Phil
+Blunsom. 2013. ”not not bad” is not ”bad”: A
+distributional account of negation. Proceedings of the
+ACL Workshop on Continuous Vector Space Models
+and their Compositionality.
+Karl Moritz Hermann, Dipanjan Das, Jason Weston,
+and Kuzman Ganchev. 2014. Semantic frame iden-
+tification with distributed word representations. In
+ACL.
+Johannes Hoffart, Fabian M Suchanek, Klaus Berberich,
+and Gerhard Weikum. 2013. Yago2: A spatially and
+temporally enhanced knowledge base from wikipedia.
+Artificial Intelligence, 194:28–61.
+Mohit Iyyer, Peter Enns, Jordan Boyd-Graber, and
+Philip Resnik. 2014. Political ideology detection
+using recursive neural networks.
+Adam Lally, John M Prager, Michael C McCord,
+BK Boguraev, Siddharth Patwardhan, James Fan,
+Paul Fodor, and Jennifer Chu-Carroll. 2012. Ques-
+tion analysis: How watson reads a clue. IBM Journal
+of Research and Development.
+Quoc V Le and Tomas Mikolov. 2014. Distributed
+representations of sentences and documents.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jef-
+frey Dean. 2013. Efficient estimation of word
+representations in vector space. arXiv preprint
+arXiv:1301.3781.
+Jeff Mitchell and Mirella Lapata. 2008. Vector-based
+models of semantic composition. In ACL.
+Mark Palatucci, Dean Pomerleau, Geoffrey E. Hinton,
+and Tom M. Mitchell. 2009. Zero-shot learning with
+semantic output codes. In NIPS.
+P. Pasupat and P. Liang. 2014. Zero-shot entity extrac-
+tion from web pages. In ACL.
+Asad B Sayeed, Jordan Boyd-Graber, Bryan Rusk, and
+Amy Weinberg. 2012. Grammatical structures for
+word-level sentiment detection. In NAACL.
+Dan Shen. 2007. Using semantic role to improve ques-
+tion answering. In EMNLP.
+Richard Socher, Jeffrey Pennington, Eric H. Huang,
+Andrew Y. Ng, and Christopher D. Manning. 2011.
+Semi-Supervised Recursive Autoencoders for Predict-
+ing Sentiment Distributions. In EMNLP.
+Richard Socher, John Bauer, Christopher D. Manning,
+and Andrew Y. Ng. 2013a. Parsing With Composi-
+tional Vector Grammars. In ACL.
+Richard Socher, Danqi Chen, Christopher D. Manning,
+and Andrew Y. Ng. 2013b. Reasoning With Neural
+Tensor Networks For Knowledge Base Completion.
+In NIPS.
+Richard Socher, Alex Perelygin, Jean Y Wu, Jason
+Chuang, Christopher D Manning, Andrew Y Ng, and
+Christopher Potts. 2013c. Recursive deep models for
+semantic compositionality over a sentiment treebank.
+In EMNLP.
+Richard Socher, Quoc V Le, Christopher D Manning,
+and Andrew Y Ng. 2014. Grounded compositional
+semantics for finding and describing images with
+sentences. TACL.
+Nicolas Usunier, David Buffoni, and Patrick Gallinari.
+2009. Ranking with ordered weighted pairwise clas-
+sification. In ICML.
+Laurens Van der Maaten and Geoffrey Hinton. 2008.
+Visualizing data using t-sne. JMLR.
+Mengqiu Wang, Noah A. Smith, and Teruko Mita-
+mura. 2007. What is the Jeopardy model? a quasi-
+synchronous grammar for QA. In EMNLP.
+</reference>
+<page confidence="0.989318">
+643
+</page>
+<reference confidence="0.999867076923077">
+Mengqiu Wang. 2006. A survey of answer extraction
+techniques in factoid question answering. Computa-
+tional Linguistics, 1(1).
+Jason Weston, Samy Bengio, and Nicolas Usunier. 2011.
+Wsabie: Scaling up to large vocabulary image anno-
+tation. In IJCAI.
+Ainur Yessenalina and Claire Cardie. 2011. Compo-
+sitional matrix-space models for sentiment analysis.
+In EMNLP.
+Fabio Massimo Zanzotto, Ioannis Korkontzelos,
+Francesca Fallucchi, and Suresh Manandhar. 2010.
+Estimating linear models for compositional distribu-
+tional semantics. In COLT.
+</reference>
+<page confidence="0.998664">
+644
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.942793">
+<title confidence="0.9992215">A Neural Network for Factoid Question Answering over Paragraphs</title>
+<author confidence="0.9951315">Jordan Leonardo Hal Daum´e</author>
+<affiliation confidence="0.980781">of Maryland, Department of Computer Science and of Colorado, Department of Computer University, Department of Computer</affiliation>
+<abstract confidence="0.999673619047619">Text classification methods for tasks like factoid question answering typically use manually defined string matching rules or bag of words representations. These methods are ineffective when question text contains very few individual words (e.g., named entities) that are indicative of the answer. We introduce a recursive neural network model that can reason over such input by modeling textual composition- We apply our model, to a dataset of questions from a trivia competition called quiz bowl. Unlike word and phrase-level representations that combine across sentences to reason about entities. The model outperforms multiple baselines and, when combined with information retrieval methods, rivals the best human players.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yoshua Bengio</author>
+<author>R´ejean Ducharme</author>
+<author>Pascal Vincent</author>
+<author>Christian Jauvin</author>
+</authors>
+<title>A neural probabilistic language model.</title>
+<date>2003</date>
+<publisher>JMLR.</publisher>
+<contexts>
+<context position="1382" citStr="Bengio et al., 2003" startWordPosition="184" endWordPosition="187"> (RNN) model that can reason over such input by modeling textual compositionality. We apply our model, QANTA, to a dataset of questions from a trivia competition called quiz bowl. Unlike previous RNN models, QANTA learns word and phrase-level representations that combine across sentences to reason about entities. The model outperforms multiple baselines and, when combined with information retrieval methods, rivals the best human players. 1 Introduction Deep neural networks have seen widespread use in natural language processing tasks such as parsing, language modeling, and sentiment analysis (Bengio et al., 2003; Socher et al., 2013a; Socher et al., 2013c). The vector spaces learned by these models cluster words and phrases together based on similarity. For example, a neural network trained for a sentiment analysis task such as restaurant review classification might learn that “tasty” and “delicious” should have similar representations since they are synonymous adjectives. These models have so far only seen success in a limited range of text-based prediction tasks, Later in its existence, this polity’s leader was chosen by a group that included three bishops and six laymen, up from the seven who trad</context>
+</contexts>
+<marker>Bengio, Ducharme, Vincent, Jauvin, 2003</marker>
+<rawString>Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and Christian Jauvin. 2003. A neural probabilistic language model. JMLR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jiang Bian</author>
+<author>Yandong Liu</author>
+<author>Eugene Agichtein</author>
+<author>Hongyuan Zha</author>
+</authors>
+<title>Finding the right facts in the crowd: factoid question answering over social media. In WWW.</title>
+<date>2008</date>
+<contexts>
+<context position="34055" citStr="Bian et al., 2008" startWordPosition="5548" endWordPosition="5551">TA. Each cell in the heatmap corresponds to the score (inner product) between a node in the parse tree and the given answer, and the dependency parse of the sentence is shown on the left. All of our baselines, including IRWIKI, are wrong, while QANTA uses the plot description to make a correct guess. return the answer. Many approaches to this problem rely on hand-crafted pattern matching and answer-type classification to narrow down the search space (Shen, 2007; Bilotti et al., 2010; Wang, 2006). More recent factoid QA systems incorporate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeopardy, which is limited to single sentences, or to models trained on Yago (Hoffart et al., 2013). We would also like to fairly compare QANTA martin van bu</context>
+</contexts>
+<marker>Bian, Liu, Agichtein, Zha, 2008</marker>
+<rawString>Jiang Bian, Yandong Liu, Eugene Agichtein, and Hongyuan Zha. 2008. Finding the right facts in the crowd: factoid question answering over social media. In WWW.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew W Bilotti</author>
+<author>Jonathan Elsas</author>
+<author>Jaime Carbonell</author>
+<author>Eric Nyberg</author>
+</authors>
+<title>Rank learning for factoid question answering with linguistic and semantic constraints.</title>
+<date>2010</date>
+<booktitle>In CIKM.</booktitle>
+<contexts>
+<context position="33924" citStr="Bilotti et al., 2010" startWordPosition="5527" endWordPosition="5530">re 6: A question on the German novelist Thomas Mann that contains no named entities, along with the five top answers as scored by QANTA. Each cell in the heatmap corresponds to the score (inner product) between a node in the parse tree and the given answer, and the dependency parse of the sentence is shown on the left. All of our baselines, including IRWIKI, are wrong, while QANTA uses the plot description to make a correct guess. return the answer. Many approaches to this problem rely on hand-crafted pattern matching and answer-type classification to narrow down the search space (Shen, 2007; Bilotti et al., 2010; Wang, 2006). More recent factoid QA systems incorporate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeopardy, which is limited</context>
+</contexts>
+<marker>Bilotti, Elsas, Carbonell, Nyberg, 2010</marker>
+<rawString>Matthew W. Bilotti, Jonathan Elsas, Jaime Carbonell, and Eric Nyberg. 2010. Rank learning for factoid question answering with linguistic and semantic constraints. In CIKM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jordan Boyd-Graber</author>
+<author>Brianna Satinoff</author>
+<author>He He</author>
+<author>Hal Daume</author>
+</authors>
+<title>Besting the quiz master: Crowdsourcing incremental classification games.</title>
+<date>2012</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="5120" citStr="Boyd-Graber et al., 2012" startWordPosition="769" endWordPosition="772">ns have a property called pyramidality, which means that sentences early in a question contain harder, more obscure clues, while later sentences are “giveaways”. This design rewards players with deep knowledge of a particular subject and thwarts bag of words methods. Sometimes the first sentence contains no named entities—answering the question correctly requires an actual understanding of the sentence (Figure 1). Later sentences, however, progressively reveal more well-known and uniquely identifying terms. Previous work answers quiz bowl questions using a bag of words (naive Bayes) approach (Boyd-Graber et al., 2012). These models fail on sentences like the first one in Figure 1, a typical hard, initial clue. Recursive neural networks (RNNs), in contrast to simpler models, can capture the compositional aspect of such sentences (Hermann et al., 2013). RNNs require many redundant training examples to learn meaningful representations, which in the quiz bowl setting means we need multiple questions about the same answer. Fortunately, hundreds of questions are produced during the school year for quiz bowl competitions, yielding many different examples of questions asking about any entity of note (see Section 4</context>
+<context position="14568" citStr="Boyd-Graber et al. (2012)" startWordPosition="2381" endWordPosition="2384"> text and improves an information retrieval model trained on all of Wikipedia. QANTA requires that an input sentence describes an entity without mentioning that entity, a constraint that is not followed by Wikipedia sentences.7 While IR methods can operate over Wikipedia text with no issues, we show that the representations learned by QANTA over just a dataset of question-answer pairs can significantly improve the performance of IR systems. 4.1 Datasets We evaluate our algorithms on a corpus of over 100,000 question/answer pairs from two different sources. First, we expand the dataset used in Boyd-Graber et al. (2012) with publicallyavailable questions from quiz bowl tournaments held after that work was published. This gives us 46,842 questions in fourteen different categories. To this dataset we add 65,212 questions from NAQT, an organization that runs quiz bowl tournaments and generously shared with us all of their questions from 1998–2013. 6We experimented with weighting earlier sentences less than later ones in the average as well as learning an additional RNN on top of the sentence-level representations. In the former case, we observed no improvements over a uniform average, while in the latter case t</context>
+<context position="18487" citStr="Boyd-Graber et al. (2012)" startWordPosition="3012" endWordPosition="3015"> of answers in the question text with single entities (e.g., Ernest Hemingway becomes Ernest Hemingway). While we experimented with more advanced NER systems to detect non-answer entities, they could not handle multi-word named entities like the book Love in the Time of Cholera (title case) or battle names (e.g., Battle of Midway). A simple search/replace on all answers in our corpus works better for multi-word entities. The preprocessed data are split into folds by tournament. We choose the past two national tournaments10 as our test set as well as questions previously answered by players in Boyd-Graber et al. (2012) and assign all other questions to train and dev sets. History results are reported on a training set of 3,761 questions with 14,217 sentences and a test set of 699 questions with 2,768 sentences. Literature results are reported on a training set of 4,777 questions with 17,972 sentences and a test set of 908 questions with 3,577 sentences. Finally, we initialize the word embedding matrix We with word2vec (Mikolov et al., 2013) trained on the preprocessed question text in our training set.11 We use the hierarchical skipgram model setting with a window size of five words. 4.2 Baselines We pit QA</context>
+</contexts>
+<marker>Boyd-Graber, Satinoff, He, Daume, 2012</marker>
+<rawString>Jordan Boyd-Graber, Brianna Satinoff, He He, and Hal Daume III. 2012. Besting the quiz master: Crowdsourcing incremental classification games. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marie-Catherine De Marneffe</author>
+<author>Bill MacCartney</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Generating typed dependency parses from phrase structure parses.</title>
+<date>2006</date>
+<booktitle>In LREC.</booktitle>
+<marker>De Marneffe, MacCartney, Manning, 2006</marker>
+<rawString>Marie-Catherine De Marneffe, Bill MacCartney, Christopher D Manning, et al. 2006. Generating typed dependency parses from phrase structure parses. In LREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2011</date>
+<journal>JMLR,</journal>
+<volume>999999</volume>
+<pages>2159</pages>
+<contexts>
+<context position="12397" citStr="Duchi et al., 2011" startWordPosition="2038" endWordPosition="2041"> Usunier et al. (2009) to optimize the top of the ranked list, L(r) = Since rank(c, s, Z) is expensive to compute, we approximate it by randomly sampling K incorrect answers until a violation is observed (xc · hs &lt; 1 + xz · hs) and set rank(c, s, Z) = (|Z|−1)/K, as in previous work (Weston et al., 2011; Hermann et al., 2014). The model minimizes the sum of the error over all sentences T normalized by the number of nodes N in the training set, 1 � C(t, 0). (6) J(0) = N tET The parameters 0 = (WrER, Wv, We, b), where R represents all dependency relations in the data, are optimized using AdaGrad(Duchi et al., 2011).5 In Section 4 we compare performance to an identical model (FIXED-QANTA) that excludes answer vectors from We and show that training them as part of 0 produces significantly better results. The gradient of the objective function, is computed using backpropagation through structure (Goller and Kuchler, 1996). 3.3 From Sentences to Questions The model we have just described considers each sentence in a quiz bowl question independently. However, previously-heard sentences within the same question contain useful information that we do not want our model to ignore. 4Our experiments show that addi</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2011</marker>
+<rawString>John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. JMLR, 999999:2121– 2159.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katrin Erk</author>
+</authors>
+<title>Vector space models of word meaning and phrase meaning: A survey. Language and Linguistics Compass.</title>
+<date>2012</date>
+<contexts>
+<context position="32080" citStr="Erk, 2012" startWordPosition="5239" endWordPosition="5240">drew_jackson frandn p! me chanan on lor mdrd &amp;quot; _henry_harrison grover clegland benjamin_hartison ronald reagan jimmy_carter woodrow_wilson Figure 5: t-SNE 2-D projections of 451 answer vectors divided into six major clusters. The blue cluster is predominantly populated by U.S. presidents. The zoomed plot reveals temporal clustering among the presidents based on the years they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base co</context>
+</contexts>
+<marker>Erk, 2012</marker>
+<rawString>Katrin Erk. 2012. Vector space models of word meaning and phrase meaning: A survey. Language and Linguistics Compass.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christoph Goller</author>
+<author>Andreas Kuchler</author>
+</authors>
+<title>Learning task-dependent distributed representations by backpropagation through structure.</title>
+<date>1996</date>
+<booktitle>In Neural Networks, 1996., IEEE International Conference on,</booktitle>
+<volume>1</volume>
+<contexts>
+<context position="12707" citStr="Goller and Kuchler, 1996" startWordPosition="2086" endWordPosition="2089"> Hermann et al., 2014). The model minimizes the sum of the error over all sentences T normalized by the number of nodes N in the training set, 1 � C(t, 0). (6) J(0) = N tET The parameters 0 = (WrER, Wv, We, b), where R represents all dependency relations in the data, are optimized using AdaGrad(Duchi et al., 2011).5 In Section 4 we compare performance to an identical model (FIXED-QANTA) that excludes answer vectors from We and show that training them as part of 0 produces significantly better results. The gradient of the objective function, is computed using backpropagation through structure (Goller and Kuchler, 1996). 3.3 From Sentences to Questions The model we have just described considers each sentence in a quiz bowl question independently. However, previously-heard sentences within the same question contain useful information that we do not want our model to ignore. 4Our experiments show that adding this loss term to the objective function not only increases performance but also speeds up convergence 5We set the initial learning rate η = 0.05 and reset the squared gradient sum to zero every five epochs. While past work on RNN models have been restricted to the sentential and sub-sentential levels, we </context>
+</contexts>
+<marker>Goller, Kuchler, 1996</marker>
+<rawString>Christoph Goller and Andreas Kuchler. 1996. Learning task-dependent distributed representations by backpropagation through structure. In Neural Networks, 1996., IEEE International Conference on, volume 1.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Edward Grefenstette</author>
+<author>Georgiana Dinu</author>
+<author>Yao-Zhong Zhang</author>
+<author>Mehrnoosh Sadrzadeh</author>
+<author>Marco Baroni</author>
+</authors>
+<title>Multi-step regression learning for compositional distributional semantics.</title>
+<date>2013</date>
+<publisher>CoRR.</publisher>
+<contexts>
+<context position="32107" citStr="Grefenstette et al., 2013" startWordPosition="5241" endWordPosition="5245">n frandn p! me chanan on lor mdrd &amp;quot; _henry_harrison grover clegland benjamin_hartison ronald reagan jimmy_carter woodrow_wilson Figure 5: t-SNE 2-D projections of 451 answer vectors divided into six major clusters. The blue cluster is predominantly populated by U.S. presidents. The zoomed plot reveals temporal clustering among the presidents based on the years they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al</context>
+</contexts>
+<marker>Grefenstette, Dinu, Zhang, Sadrzadeh, Baroni, 2013</marker>
+<rawString>Edward Grefenstette, Georgiana Dinu, Yao-Zhong Zhang, Mehrnoosh Sadrzadeh, and Marco Baroni. 2013. Multi-step regression learning for compositional distributional semantics. CoRR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karl Moritz Hermann</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>The Role of Syntax in Vector Space Models of Compositional Semantics.</title>
+<date>2013</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="32490" citStr="Hermann and Blunsom, 2013" startWordPosition="5294" endWordPosition="5297">. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed representations of paragraphs. Here we present a simpler approach where a single model is able to learn complex sentence representations and average them acr</context>
+</contexts>
+<marker>Hermann, Blunsom, 2013</marker>
+<rawString>Karl Moritz Hermann and Phil Blunsom. 2013. The Role of Syntax in Vector Space Models of Compositional Semantics. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karl Moritz Hermann</author>
+<author>Edward Grefenstette</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>not not bad” is not ”bad”: A distributional account of negation.</title>
+<date>2013</date>
+<booktitle>Proceedings of the ACL Workshop on Continuous Vector Space Models and their Compositionality.</booktitle>
+<contexts>
+<context position="5357" citStr="Hermann et al., 2013" startWordPosition="808" endWordPosition="811">arts bag of words methods. Sometimes the first sentence contains no named entities—answering the question correctly requires an actual understanding of the sentence (Figure 1). Later sentences, however, progressively reveal more well-known and uniquely identifying terms. Previous work answers quiz bowl questions using a bag of words (naive Bayes) approach (Boyd-Graber et al., 2012). These models fail on sentences like the first one in Figure 1, a typical hard, initial clue. Recursive neural networks (RNNs), in contrast to simpler models, can capture the compositional aspect of such sentences (Hermann et al., 2013). RNNs require many redundant training examples to learn meaningful representations, which in the quiz bowl setting means we need multiple questions about the same answer. Fortunately, hundreds of questions are produced during the school year for quiz bowl competitions, yielding many different examples of questions asking about any entity of note (see Section 4.1 for more details). Thus, we have built-in redundancy (the number of “askable” entities is limited), but also built-in diversity, as difficult clues cannot appear in every question without becoming well-known. 3 Dependency-Tree Recursi</context>
+</contexts>
+<marker>Hermann, Grefenstette, Blunsom, 2013</marker>
+<rawString>Karl Moritz Hermann, Edward Grefenstette, and Phil Blunsom. 2013. ”not not bad” is not ”bad”: A distributional account of negation. Proceedings of the ACL Workshop on Continuous Vector Space Models and their Compositionality.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karl Moritz Hermann</author>
+<author>Dipanjan Das</author>
+<author>Jason Weston</author>
+<author>Kuzman Ganchev</author>
+</authors>
+<title>Semantic frame identification with distributed word representations.</title>
+<date>2014</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="12104" citStr="Hermann et al., 2014" startWordPosition="1981" endWordPosition="1984">wer. 635 hidden vector hs. The error for the sentence is C(S, 0) = � � L(rank(c, s, Z))max(0, sES zEZ 1 − xc · hs + xz · hs), (5) where the function rank(c, s, Z) provides the rank of correct answer c with respect to the incorrect answers Z. We transform this rank into a loss function4 shown by Usunier et al. (2009) to optimize the top of the ranked list, L(r) = Since rank(c, s, Z) is expensive to compute, we approximate it by randomly sampling K incorrect answers until a violation is observed (xc · hs &lt; 1 + xz · hs) and set rank(c, s, Z) = (|Z|−1)/K, as in previous work (Weston et al., 2011; Hermann et al., 2014). The model minimizes the sum of the error over all sentences T normalized by the number of nodes N in the training set, 1 � C(t, 0). (6) J(0) = N tET The parameters 0 = (WrER, Wv, We, b), where R represents all dependency relations in the data, are optimized using AdaGrad(Duchi et al., 2011).5 In Section 4 we compare performance to an identical model (FIXED-QANTA) that excludes answer vectors from We and show that training them as part of 0 produces significantly better results. The gradient of the objective function, is computed using backpropagation through structure (Goller and Kuchler, 19</context>
+</contexts>
+<marker>Hermann, Das, Weston, Ganchev, 2014</marker>
+<rawString>Karl Moritz Hermann, Dipanjan Das, Jason Weston, and Kuzman Ganchev. 2014. Semantic frame identification with distributed word representations. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Johannes Hoffart</author>
+<author>Fabian M Suchanek</author>
+<author>Klaus Berberich</author>
+<author>Gerhard Weikum</author>
+</authors>
+<title>Yago2: A spatially and temporally enhanced knowledge base from wikipedia.</title>
+<date>2013</date>
+<journal>Artificial Intelligence,</journal>
+<pages>194--28</pages>
+<contexts>
+<context position="34597" citStr="Hoffart et al., 2013" startWordPosition="5640" endWordPosition="5644">orate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeopardy, which is limited to single sentences, or to models trained on Yago (Hoffart et al., 2013). We would also like to fairly compare QANTA martin van buren william_mckinley calvin coolidge ethiopia claudis caligula margart_thatcher haile_selassie jawharlalnehru adof_hitler nero toyotomi_hideyshi mrco_plo solon vyacheslav_molotov hadrian nikita_khrushcev winston_churchill od_nobunaga shaka portugal tokugawa_ieyasu suleiman_the_magnificent cleisthenes muhammad akbar sha_jahan charlemagne pericles mkhal_gobachev leonid_brezhnev charles_martel benito_mussolini nevie_chamberlain napoleon_ii ivan_the_terrible chandagupta maurya babur avid_lloyd_george gaius_marius mao_zedong fidel_castro pie</context>
+</contexts>
+<marker>Hoffart, Suchanek, Berberich, Weikum, 2013</marker>
+<rawString>Johannes Hoffart, Fabian M Suchanek, Klaus Berberich, and Gerhard Weikum. 2013. Yago2: A spatially and temporally enhanced knowledge base from wikipedia. Artificial Intelligence, 194:28–61.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mohit Iyyer</author>
+<author>Peter Enns</author>
+<author>Jordan Boyd-Graber</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Political ideology detection using recursive neural networks.</title>
+<date>2014</date>
+<contexts>
+<context position="9530" citStr="Iyyer et al., 2014" startWordPosition="1519" endWordPosition="1522">his process up to the root, which is hdepended =f(WNSUBJ &apos; heconomy + WPREP &apos; hon + Wv &apos; xdepended + b). (3) The composition equation for any node n with children K(n) and word vector xw is hn = f(Wv &apos; xw + b + � WR(n,k) &apos; hk), (4) k∈K(n) where R(n, k) is the dependency relation between node n and child node k. 3.2 Training Our goal is to map questions to their corresponding answer entities. Because there are a limited number of possible answers, we can view this as a multi-class classification task. While a softmax layer over every node in the tree could predict answers (Socher et al., 2011; Iyyer et al., 2014), this method overlooks that most answers are themselves words (features) in other questions (e.g., a question on World War II might mention the Battle of the Bulge and vice versa). Thus, word vectors associated with such answers can be trained in the same vector space as question text,2 enabling us to model relationships between answers instead of assuming incorrectly that all answers are independent. To take advantage of this observation, we depart from Socher et al. (2014) by training both the answers and questions jointly in a single model, rather than training each separately and holding </context>
+</contexts>
+<marker>Iyyer, Enns, Boyd-Graber, Resnik, 2014</marker>
+<rawString>Mohit Iyyer, Peter Enns, Jordan Boyd-Graber, and Philip Resnik. 2014. Political ideology detection using recursive neural networks.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adam Lally</author>
+<author>John M Prager</author>
+<author>Michael C McCord</author>
+<author>BK Boguraev</author>
+<author>Siddharth Patwardhan</author>
+<author>James Fan</author>
+<author>Paul Fodor</author>
+<author>Jennifer Chu-Carroll</author>
+</authors>
+<title>Question analysis: How watson reads a clue.</title>
+<date>2012</date>
+<journal>IBM Journal of Research and Development.</journal>
+<contexts>
+<context position="34493" citStr="Lally et al., 2012" startWordPosition="5622" endWordPosition="5625">the search space (Shen, 2007; Bilotti et al., 2010; Wang, 2006). More recent factoid QA systems incorporate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeopardy, which is limited to single sentences, or to models trained on Yago (Hoffart et al., 2013). We would also like to fairly compare QANTA martin van buren william_mckinley calvin coolidge ethiopia claudis caligula margart_thatcher haile_selassie jawharlalnehru adof_hitler nero toyotomi_hideyshi mrco_plo solon vyacheslav_molotov hadrian nikita_khrushcev winston_churchill od_nobunaga shaka portugal tokugawa_ieyasu suleiman_the_magnificent cleisthenes muhammad akbar sha_jahan charlemagne pericles mkhal_gobachev leonid_brezhnev charles_martel benito_mussolini nevie_chamberlain napoleon_</context>
+</contexts>
+<marker>Lally, Prager, McCord, Boguraev, Patwardhan, Fan, Fodor, Chu-Carroll, 2012</marker>
+<rawString>Adam Lally, John M Prager, Michael C McCord, BK Boguraev, Siddharth Patwardhan, James Fan, Paul Fodor, and Jennifer Chu-Carroll. 2012. Question analysis: How watson reads a clue. IBM Journal of Research and Development.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Quoc V Le and Tomas Mikolov</author>
+</authors>
+<title>Distributed representations of sentences and documents.</title>
+<date>2014</date>
+<contexts>
+<context position="32884" citStr="Mikolov (2014)" startWordPosition="5361" endWordPosition="5362">ns have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed representations of paragraphs. Here we present a simpler approach where a single model is able to learn complex sentence representations and average them across paragraphs. 6.2 Factoid Question-Answering Factoid question answering is often functionally equivalent to information retrieval. Given a knowledge base and a query, the goal is to Joseph Conrad Franz Kafka Figure 6: A question on the German novelist Thomas Mann that contains no named entities, along with the five top answers as scored by QANTA. Each cell in the heatmap corresponds to the</context>
+</contexts>
+<marker>Mikolov, 2014</marker>
+<rawString>Quoc V Le and Tomas Mikolov. 2014. Distributed representations of sentences and documents.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Kai Chen</author>
+<author>Greg Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Efficient estimation of word representations in vector space. arXiv preprint arXiv:1301.3781.</title>
+<date>2013</date>
+<contexts>
+<context position="18917" citStr="Mikolov et al., 2013" startWordPosition="3085" endWordPosition="3088">ocessed data are split into folds by tournament. We choose the past two national tournaments10 as our test set as well as questions previously answered by players in Boyd-Graber et al. (2012) and assign all other questions to train and dev sets. History results are reported on a training set of 3,761 questions with 14,217 sentences and a test set of 699 questions with 2,768 sentences. Literature results are reported on a training set of 4,777 questions with 17,972 sentences and a test set of 908 questions with 3,577 sentences. Finally, we initialize the word embedding matrix We with word2vec (Mikolov et al., 2013) trained on the preprocessed question text in our training set.11 We use the hierarchical skipgram model setting with a window size of five words. 4.2 Baselines We pit QANTA against two types of baselines: bag of words models, which enable comparison to a standard NLP baseline, and information retrieval models, which allow us to compare against traditional question answering techniques. BOW The sow baseline is a logistic regression classifier trained on binary unigram indicators.12 This simple discriminative model is an improvement over the generative quiz bowl answering model of Boyd-Graber e</context>
+</contexts>
+<marker>Mikolov, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Efficient estimation of word representations in vector space. arXiv preprint arXiv:1301.3781.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeff Mitchell</author>
+<author>Mirella Lapata</author>
+</authors>
+<title>Vector-based models of semantic composition.</title>
+<date>2008</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="32337" citStr="Mitchell and Lapata, 2008" startWordPosition="5273" endWordPosition="5276">er is predominantly populated by U.S. presidents. The zoomed plot reveals temporal clustering among the presidents based on the years they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed repr</context>
+</contexts>
+<marker>Mitchell, Lapata, 2008</marker>
+<rawString>Jeff Mitchell and Mirella Lapata. 2008. Vector-based models of semantic composition. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Palatucci</author>
+<author>Dean Pomerleau</author>
+<author>Geoffrey E Hinton</author>
+<author>Tom M Mitchell</author>
+</authors>
+<title>Zero-shot learning with semantic output codes.</title>
+<date>2009</date>
+<booktitle>In NIPS.</booktitle>
+<contexts>
+<context position="17618" citStr="Palatucci et al., 2009" startWordPosition="2881" endWordPosition="2884">ning labels for the DT-RNN and baseline models.9 65.6% of answers only occur once or twice in the corpus. We filter out all answers that do not occur at least six times, which leaves us with 451 history answers and 595 literature answers that occur on average twelve times in the corpus. These pruning steps result in 4,460 usable history questions and 5,685 literature questions. While ideally we would have used all answers, our model benefits from many training examples per answer to learn meaningful representations; this issue can possibly be addressed with techniques from zero shot learning (Palatucci et al., 2009; Pasupat and Liang, 2014), which we leave to future work. 8https://pypi.python.org/pypi/Whoosh/ 9Code and non-NAQT data available at http://cs. umd.edu/~miyyer/qblearn. We apply basic named entity recognition (NER) by replacing all occurrences of answers in the question text with single entities (e.g., Ernest Hemingway becomes Ernest Hemingway). While we experimented with more advanced NER systems to detect non-answer entities, they could not handle multi-word named entities like the book Love in the Time of Cholera (title case) or battle names (e.g., Battle of Midway). A simple search/replac</context>
+</contexts>
+<marker>Palatucci, Pomerleau, Hinton, Mitchell, 2009</marker>
+<rawString>Mark Palatucci, Dean Pomerleau, Geoffrey E. Hinton, and Tom M. Mitchell. 2009. Zero-shot learning with semantic output codes. In NIPS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Pasupat</author>
+<author>P Liang</author>
+</authors>
+<title>Zero-shot entity extraction from web pages.</title>
+<date>2014</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="17644" citStr="Pasupat and Liang, 2014" startWordPosition="2885" endWordPosition="2888">NN and baseline models.9 65.6% of answers only occur once or twice in the corpus. We filter out all answers that do not occur at least six times, which leaves us with 451 history answers and 595 literature answers that occur on average twelve times in the corpus. These pruning steps result in 4,460 usable history questions and 5,685 literature questions. While ideally we would have used all answers, our model benefits from many training examples per answer to learn meaningful representations; this issue can possibly be addressed with techniques from zero shot learning (Palatucci et al., 2009; Pasupat and Liang, 2014), which we leave to future work. 8https://pypi.python.org/pypi/Whoosh/ 9Code and non-NAQT data available at http://cs. umd.edu/~miyyer/qblearn. We apply basic named entity recognition (NER) by replacing all occurrences of answers in the question text with single entities (e.g., Ernest Hemingway becomes Ernest Hemingway). While we experimented with more advanced NER systems to detect non-answer entities, they could not handle multi-word named entities like the book Love in the Time of Cholera (title case) or battle names (e.g., Battle of Midway). A simple search/replace on all answers in our co</context>
+</contexts>
+<marker>Pasupat, Liang, 2014</marker>
+<rawString>P. Pasupat and P. Liang. 2014. Zero-shot entity extraction from web pages. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Asad B Sayeed</author>
+<author>Jordan Boyd-Graber</author>
+<author>Bryan Rusk</author>
+<author>Amy Weinberg</author>
+</authors>
+<title>Grammatical structures for word-level sentiment detection.</title>
+<date>2012</date>
+<booktitle>In NAACL.</booktitle>
+<contexts>
+<context position="40897" citStr="Sayeed et al., 2012" startWordPosition="6105" endWordPosition="6108">perors Policies Other Thomas Mann Henrik Ibsen Henry James 641 Figure 7: An extremely misleading question about John Cabot, at least to computer models. The words muslim and mecca lead to three Mughal emperors in the top five guesses from QANTA; other models are similarly led awry. with IR-WIKI. A promising avenue for future work would be to incorporate Wikipedia data into QANTA by transforming sentences to look like quiz bowl questions (Wang et al., 2007) and to select relevant sentences, as not every sentence in a Wikipedia article directly describes its subject. Syntax-specific annotation (Sayeed et al., 2012) may help in this regard. Finally, we could adapt the attribute space learned by the DT-RNN to use information from knowledge bases and to aid in knowledge base completion. Having learned many facts about entities that occur in question text, a DT-RNN could add new facts to a knowledge base or check existing relationships. 8 Conclusion We present QANTA, a dependency-tree recursive neural network for factoid question answering that outperforms bag of words and information retrieval baselines. Our model improves upon a contrastive max-margin objective function from previous work to dynamically u</context>
+</contexts>
+<marker>Sayeed, Boyd-Graber, Rusk, Weinberg, 2012</marker>
+<rawString>Asad B Sayeed, Jordan Boyd-Graber, Bryan Rusk, and Amy Weinberg. 2012. Grammatical structures for word-level sentiment detection. In NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Shen</author>
+</authors>
+<title>Using semantic role to improve question answering.</title>
+<date>2007</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="33902" citStr="Shen, 2007" startWordPosition="5525" endWordPosition="5526">z Kafka Figure 6: A question on the German novelist Thomas Mann that contains no named entities, along with the five top answers as scored by QANTA. Each cell in the heatmap corresponds to the score (inner product) between a node in the parse tree and the given answer, and the dependency parse of the sentence is shown on the left. All of our baselines, including IRWIKI, are wrong, while QANTA uses the plot description to make a correct guess. return the answer. Many approaches to this problem rely on hand-crafted pattern matching and answer-type classification to narrow down the search space (Shen, 2007; Bilotti et al., 2010; Wang, 2006). More recent factoid QA systems incorporate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeop</context>
+</contexts>
+<marker>Shen, 2007</marker>
+<rawString>Dan Shen. 2007. Using semantic role to improve question answering. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Jeffrey Pennington</author>
+<author>Eric H Huang</author>
+<author>Andrew Y Ng</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Semi-Supervised Recursive Autoencoders for Predicting Sentiment Distributions.</title>
+<date>2011</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="9509" citStr="Socher et al., 2011" startWordPosition="1515" endWordPosition="1518">+ b). (2) We repeat this process up to the root, which is hdepended =f(WNSUBJ &apos; heconomy + WPREP &apos; hon + Wv &apos; xdepended + b). (3) The composition equation for any node n with children K(n) and word vector xw is hn = f(Wv &apos; xw + b + � WR(n,k) &apos; hk), (4) k∈K(n) where R(n, k) is the dependency relation between node n and child node k. 3.2 Training Our goal is to map questions to their corresponding answer entities. Because there are a limited number of possible answers, we can view this as a multi-class classification task. While a softmax layer over every node in the tree could predict answers (Socher et al., 2011; Iyyer et al., 2014), this method overlooks that most answers are themselves words (features) in other questions (e.g., a question on World War II might mention the Battle of the Bulge and vice versa). Thus, word vectors associated with such answers can be trained in the same vector space as question text,2 enabling us to model relationships between answers instead of assuming incorrectly that all answers are independent. To take advantage of this observation, we depart from Socher et al. (2014) by training both the answers and questions jointly in a single model, rather than training each se</context>
+</contexts>
+<marker>Socher, Pennington, Huang, Ng, Manning, 2011</marker>
+<rawString>Richard Socher, Jeffrey Pennington, Eric H. Huang, Andrew Y. Ng, and Christopher D. Manning. 2011. Semi-Supervised Recursive Autoencoders for Predicting Sentiment Distributions. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>John Bauer</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Parsing With Compositional Vector Grammars.</title>
+<date>2013</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="1403" citStr="Socher et al., 2013" startWordPosition="188" endWordPosition="191"> reason over such input by modeling textual compositionality. We apply our model, QANTA, to a dataset of questions from a trivia competition called quiz bowl. Unlike previous RNN models, QANTA learns word and phrase-level representations that combine across sentences to reason about entities. The model outperforms multiple baselines and, when combined with information retrieval methods, rivals the best human players. 1 Introduction Deep neural networks have seen widespread use in natural language processing tasks such as parsing, language modeling, and sentiment analysis (Bengio et al., 2003; Socher et al., 2013a; Socher et al., 2013c). The vector spaces learned by these models cluster words and phrases together based on similarity. For example, a neural network trained for a sentiment analysis task such as restaurant review classification might learn that “tasty” and “delicious” should have similar representations since they are synonymous adjectives. These models have so far only seen success in a limited range of text-based prediction tasks, Later in its existence, this polity’s leader was chosen by a group that included three bishops and six laymen, up from the seven who traditionally made the de</context>
+<context position="32462" citStr="Socher et al., 2013" startWordPosition="5290" endWordPosition="5293">s they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed representations of paragraphs. Here we present a simpler approach where a single model is able to learn complex sentence represen</context>
+</contexts>
+<marker>Socher, Bauer, Manning, Ng, 2013</marker>
+<rawString>Richard Socher, John Bauer, Christopher D. Manning, and Andrew Y. Ng. 2013a. Parsing With Compositional Vector Grammars. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Danqi Chen</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Reasoning With Neural Tensor Networks For Knowledge Base Completion.</title>
+<date>2013</date>
+<booktitle>In NIPS.</booktitle>
+<contexts>
+<context position="1403" citStr="Socher et al., 2013" startWordPosition="188" endWordPosition="191"> reason over such input by modeling textual compositionality. We apply our model, QANTA, to a dataset of questions from a trivia competition called quiz bowl. Unlike previous RNN models, QANTA learns word and phrase-level representations that combine across sentences to reason about entities. The model outperforms multiple baselines and, when combined with information retrieval methods, rivals the best human players. 1 Introduction Deep neural networks have seen widespread use in natural language processing tasks such as parsing, language modeling, and sentiment analysis (Bengio et al., 2003; Socher et al., 2013a; Socher et al., 2013c). The vector spaces learned by these models cluster words and phrases together based on similarity. For example, a neural network trained for a sentiment analysis task such as restaurant review classification might learn that “tasty” and “delicious” should have similar representations since they are synonymous adjectives. These models have so far only seen success in a limited range of text-based prediction tasks, Later in its existence, this polity’s leader was chosen by a group that included three bishops and six laymen, up from the seven who traditionally made the de</context>
+<context position="32462" citStr="Socher et al., 2013" startWordPosition="5290" endWordPosition="5293">s they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed representations of paragraphs. Here we present a simpler approach where a single model is able to learn complex sentence represen</context>
+</contexts>
+<marker>Socher, Chen, Manning, Ng, 2013</marker>
+<rawString>Richard Socher, Danqi Chen, Christopher D. Manning, and Andrew Y. Ng. 2013b. Reasoning With Neural Tensor Networks For Knowledge Base Completion. In NIPS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Alex Perelygin</author>
+<author>Jean Y Wu</author>
+<author>Jason Chuang</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+<author>Christopher Potts</author>
+</authors>
+<title>Recursive deep models for semantic compositionality over a sentiment treebank.</title>
+<date>2013</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="1403" citStr="Socher et al., 2013" startWordPosition="188" endWordPosition="191"> reason over such input by modeling textual compositionality. We apply our model, QANTA, to a dataset of questions from a trivia competition called quiz bowl. Unlike previous RNN models, QANTA learns word and phrase-level representations that combine across sentences to reason about entities. The model outperforms multiple baselines and, when combined with information retrieval methods, rivals the best human players. 1 Introduction Deep neural networks have seen widespread use in natural language processing tasks such as parsing, language modeling, and sentiment analysis (Bengio et al., 2003; Socher et al., 2013a; Socher et al., 2013c). The vector spaces learned by these models cluster words and phrases together based on similarity. For example, a neural network trained for a sentiment analysis task such as restaurant review classification might learn that “tasty” and “delicious” should have similar representations since they are synonymous adjectives. These models have so far only seen success in a limited range of text-based prediction tasks, Later in its existence, this polity’s leader was chosen by a group that included three bishops and six laymen, up from the seven who traditionally made the de</context>
+<context position="32462" citStr="Socher et al., 2013" startWordPosition="5290" endWordPosition="5293">s they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to this work are the dialogue analysis model proposed by Kalchbrenner &amp; Blunsom (2013) and the paragraph vector model described in Le and Mikolov (2014), both of which are able to generate distributed representations of paragraphs. Here we present a simpler approach where a single model is able to learn complex sentence represen</context>
+</contexts>
+<marker>Socher, Perelygin, Wu, Chuang, Manning, Ng, Potts, 2013</marker>
+<rawString>Richard Socher, Alex Perelygin, Jean Y Wu, Jason Chuang, Christopher D Manning, Andrew Y Ng, and Christopher Potts. 2013c. Recursive deep models for semantic compositionality over a sentiment treebank. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Quoc V Le</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Grounded compositional semantics for finding and describing images with sentences.</title>
+<date>2014</date>
+<publisher>TACL.</publisher>
+<contexts>
+<context position="6325" citStr="Socher et al. (2014)" startWordPosition="953" endWordPosition="956"> (see Section 4.1 for more details). Thus, we have built-in redundancy (the number of “askable” entities is limited), but also built-in diversity, as difficult clues cannot appear in every question without becoming well-known. 3 Dependency-Tree Recursive Neural Networks To compute distributed representations for the individual sentences within quiz bowl questions, we use a dependency-tree RNN (DT-RNN). These representations are then aggregated and fed into a multinomial logistic regression classifier, where class labels are the answers associated with each question instance. In previous work, Socher et al. (2014) use DT-RNNs to map text descriptions to images. DT-RNNs are robust to similar sentences with slightly different syntax, which is ideal for our problem since answers are often described by many sentences that are similar in meaning but different in structure. Our model improves upon the existing DT-RNN model by jointly learning answer and question representations in the same vector space rather than learning them separately. 3.1 Model Description As in other RNN models, we begin by associating each word w in our vocabulary with a vector representation x,,, E Rd. These vectors are stored as the</context>
+<context position="10010" citStr="Socher et al. (2014)" startWordPosition="1596" endWordPosition="1599">class classification task. While a softmax layer over every node in the tree could predict answers (Socher et al., 2011; Iyyer et al., 2014), this method overlooks that most answers are themselves words (features) in other questions (e.g., a question on World War II might mention the Battle of the Bulge and vice versa). Thus, word vectors associated with such answers can be trained in the same vector space as question text,2 enabling us to model relationships between answers instead of assuming incorrectly that all answers are independent. To take advantage of this observation, we depart from Socher et al. (2014) by training both the answers and questions jointly in a single model, rather than training each separately and holding embeddings fixed during DT-RNN training. This method cannot be applied to the multimodal text-to-image mapping problem because text captions by definition are made up of words and thus cannot include images; in our case, however, question text can and frequently does include answer text. Intuitively, we want to encourage the vectors of question sentences to be near their correct answers and far away from incorrect answers. We accomplish this goal by using a contrastive max-ma</context>
+<context position="22010" citStr="Socher et al. (2014)" startWordPosition="3578" endWordPosition="3581">arity f is the normalized tanh function,13 tanh(v) f(v) = �itanh(v)ll. (8) QANTA is our DT-RNN model with feature averaging across previously-seen sentences in a question. To obtain the final answer prediction given a partial question, we first generate a feature representation for each sentence within that partial question. This representation is computed by concatenating together the word embeddings and hidden representations averaged over all nodes in the tree as well as the 13The standard tanh function produced heavy saturation at higher levels of the trees, and corrective weighting as in Socher et al. (2014) hurt our model because named entities that occur as leaves are often more important than non-terminal phrases. root node’s hidden vector. Finally, we send the average of all of the individual sentence features14 as input to a logistic regression classifier for answer prediction. FIXED-QANTA uses the same DT-RNN configuration as QANTA except the answer vectors are kept constant as in the text-to-image model. 4.4 Human Comparison Previous work provides human answers (BoydGraber et al., 2012) for quiz bowl questions. We use human records for 1,201 history guesses and 1,715 literature guesses fro</context>
+</contexts>
+<marker>Socher, Le, Manning, Ng, 2014</marker>
+<rawString>Richard Socher, Quoc V Le, Christopher D Manning, and Andrew Y Ng. 2014. Grounded compositional semantics for finding and describing images with sentences. TACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nicolas Usunier</author>
+<author>David Buffoni</author>
+<author>Patrick Gallinari</author>
+</authors>
+<title>Ranking with ordered weighted pairwise classification.</title>
+<date>2009</date>
+<booktitle>In ICML.</booktitle>
+<contexts>
+<context position="11800" citStr="Usunier et al. (2009)" startWordPosition="1921" endWordPosition="1924"> of all nodes in the sentence’s dependency tree, where an individual node s E 5 is associated with the 2Of course, questions never contain their own answer as part of the text. 3In quiz bowl, all wrong guesses are equally detrimental to a team’s score, no matter how “close” a guess is to the correct answer. 635 hidden vector hs. The error for the sentence is C(S, 0) = � � L(rank(c, s, Z))max(0, sES zEZ 1 − xc · hs + xz · hs), (5) where the function rank(c, s, Z) provides the rank of correct answer c with respect to the incorrect answers Z. We transform this rank into a loss function4 shown by Usunier et al. (2009) to optimize the top of the ranked list, L(r) = Since rank(c, s, Z) is expensive to compute, we approximate it by randomly sampling K incorrect answers until a violation is observed (xc · hs &lt; 1 + xz · hs) and set rank(c, s, Z) = (|Z|−1)/K, as in previous work (Weston et al., 2011; Hermann et al., 2014). The model minimizes the sum of the error over all sentences T normalized by the number of nodes N in the training set, 1 � C(t, 0). (6) J(0) = N tET The parameters 0 = (WrER, Wv, We, b), where R represents all dependency relations in the data, are optimized using AdaGrad(Duchi et al., 2011).5 </context>
+</contexts>
+<marker>Usunier, Buffoni, Gallinari, 2009</marker>
+<rawString>Nicolas Usunier, David Buffoni, and Patrick Gallinari. 2009. Ranking with ordered weighted pairwise classification. In ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Laurens Van der Maaten</author>
+<author>Geoffrey Hinton</author>
+</authors>
+<title>Visualizing data using t-sne.</title>
+<date>2008</date>
+<publisher>JMLR.</publisher>
+<marker>Van der Maaten, Hinton, 2008</marker>
+<rawString>Laurens Van der Maaten and Geoffrey Hinton. 2008. Visualizing data using t-sne. JMLR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mengqiu Wang</author>
+<author>Noah A Smith</author>
+<author>Teruko Mitamura</author>
+</authors>
+<title>What is the Jeopardy model? a quasisynchronous grammar for QA.</title>
+<date>2007</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="40737" citStr="Wang et al., 2007" startWordPosition="6081" endWordPosition="6084">cond_vatican_council cultural_revolution TSN E-1 herbejirom veoward_taft TSNE-2 a Wars, rebellions, and battles U.S. presidents Prime ministers Explorers &amp; emperors Policies Other Thomas Mann Henrik Ibsen Henry James 641 Figure 7: An extremely misleading question about John Cabot, at least to computer models. The words muslim and mecca lead to three Mughal emperors in the top five guesses from QANTA; other models are similarly led awry. with IR-WIKI. A promising avenue for future work would be to incorporate Wikipedia data into QANTA by transforming sentences to look like quiz bowl questions (Wang et al., 2007) and to select relevant sentences, as not every sentence in a Wikipedia article directly describes its subject. Syntax-specific annotation (Sayeed et al., 2012) may help in this regard. Finally, we could adapt the attribute space learned by the DT-RNN to use information from knowledge bases and to aid in knowledge base completion. Having learned many facts about entities that occur in question text, a DT-RNN could add new facts to a knowledge base or check existing relationships. 8 Conclusion We present QANTA, a dependency-tree recursive neural network for factoid question answering that outpe</context>
+</contexts>
+<marker>Wang, Smith, Mitamura, 2007</marker>
+<rawString>Mengqiu Wang, Noah A. Smith, and Teruko Mitamura. 2007. What is the Jeopardy model? a quasisynchronous grammar for QA. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mengqiu Wang</author>
+</authors>
+<title>A survey of answer extraction techniques in factoid question answering.</title>
+<date>2006</date>
+<journal>Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<contexts>
+<context position="33937" citStr="Wang, 2006" startWordPosition="5531" endWordPosition="5532">e German novelist Thomas Mann that contains no named entities, along with the five top answers as scored by QANTA. Each cell in the heatmap corresponds to the score (inner product) between a node in the parse tree and the given answer, and the dependency parse of the sentence is shown on the left. All of our baselines, including IRWIKI, are wrong, while QANTA uses the plot description to make a correct guess. return the answer. Many approaches to this problem rely on hand-crafted pattern matching and answer-type classification to narrow down the search space (Shen, 2007; Bilotti et al., 2010; Wang, 2006). More recent factoid QA systems incorporate the web and social media into their retrieval systems (Bian et al., 2008). In contrast to these approaches, we place the burden of learning answer types and patterns on the model. 7 Future Work While we have shown that DT-RNNs are effective models for quiz bowl question answering, other factoid QA tasks are more challenging. Questions like what does the AARP stand for? from TREC QA data require additional infrastructure. A more apt comparison would be to IBM’s proprietary Watson system (Lally et al., 2012) for Jeopardy, which is limited to single se</context>
+</contexts>
+<marker>Wang, 2006</marker>
+<rawString>Mengqiu Wang. 2006. A survey of answer extraction techniques in factoid question answering. Computational Linguistics, 1(1).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Weston</author>
+<author>Samy Bengio</author>
+<author>Nicolas Usunier</author>
+</authors>
+<title>Wsabie: Scaling up to large vocabulary image annotation.</title>
+<date>2011</date>
+<booktitle>In IJCAI.</booktitle>
+<contexts>
+<context position="10841" citStr="Weston et al. (2011)" startWordPosition="1730" endWordPosition="1733">xt-to-image mapping problem because text captions by definition are made up of words and thus cannot include images; in our case, however, question text can and frequently does include answer text. Intuitively, we want to encourage the vectors of question sentences to be near their correct answers and far away from incorrect answers. We accomplish this goal by using a contrastive max-margin objective function described below. While we are not interested in obtaining a ranked list of answers,3 we observe better performance by adding the weighted approximaterank pairwise (WARP) loss proposed in Weston et al. (2011) to our objective function. Given a sentence paired with its correct answer c, we randomly select j incorrect answers from the set of all incorrect answers and denote this subset as Z. Since c is part of the vocabulary, it has a vector xc E We. An incorrect answer z E Z is also associated with a vector xz E We. We define 5 to be the set of all nodes in the sentence’s dependency tree, where an individual node s E 5 is associated with the 2Of course, questions never contain their own answer as part of the text. 3In quiz bowl, all wrong guesses are equally detrimental to a team’s score, no matter</context>
+<context position="12081" citStr="Weston et al., 2011" startWordPosition="1977" endWordPosition="1980">is to the correct answer. 635 hidden vector hs. The error for the sentence is C(S, 0) = � � L(rank(c, s, Z))max(0, sES zEZ 1 − xc · hs + xz · hs), (5) where the function rank(c, s, Z) provides the rank of correct answer c with respect to the incorrect answers Z. We transform this rank into a loss function4 shown by Usunier et al. (2009) to optimize the top of the ranked list, L(r) = Since rank(c, s, Z) is expensive to compute, we approximate it by randomly sampling K incorrect answers until a violation is observed (xc · hs &lt; 1 + xz · hs) and set rank(c, s, Z) = (|Z|−1)/K, as in previous work (Weston et al., 2011; Hermann et al., 2014). The model minimizes the sum of the error over all sentences T normalized by the number of nodes N in the training set, 1 � C(t, 0). (6) J(0) = N tET The parameters 0 = (WrER, Wv, We, b), where R represents all dependency relations in the data, are optimized using AdaGrad(Duchi et al., 2011).5 In Section 4 we compare performance to an identical model (FIXED-QANTA) that excludes answer vectors from We and show that training them as part of 0 produces significantly better results. The gradient of the objective function, is computed using backpropagation through structure </context>
+</contexts>
+<marker>Weston, Bengio, Usunier, 2011</marker>
+<rawString>Jason Weston, Samy Bengio, and Nicolas Usunier. 2011. Wsabie: Scaling up to large vocabulary image annotation. In IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ainur Yessenalina</author>
+<author>Claire Cardie</author>
+</authors>
+<title>Compositional matrix-space models for sentiment analysis.</title>
+<date>2011</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="32138" citStr="Yessenalina and Cardie, 2011" startWordPosition="5246" endWordPosition="5249">r mdrd &amp;quot; _henry_harrison grover clegland benjamin_hartison ronald reagan jimmy_carter woodrow_wilson Figure 5: t-SNE 2-D projections of 451 answer vectors divided into six major clusters. The blue cluster is predominantly populated by U.S. presidents. The zoomed plot reveals temporal clustering among the presidents based on the years they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowledge base completion task (Socher et al., 2013b). More relevant to thi</context>
+</contexts>
+<marker>Yessenalina, Cardie, 2011</marker>
+<rawString>Ainur Yessenalina and Claire Cardie. 2011. Compositional matrix-space models for sentiment analysis. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fabio Massimo Zanzotto</author>
+<author>Ioannis Korkontzelos</author>
+<author>Francesca Fallucchi</author>
+<author>Suresh Manandhar</author>
+</authors>
+<title>Estimating linear models for compositional distributional semantics.</title>
+<date>2010</date>
+<booktitle>In COLT.</booktitle>
+<contexts>
+<context position="32069" citStr="Zanzotto et al., 2010" startWordPosition="5235" endWordPosition="5238">%ow_adams john_tyler andrew_jackson frandn p! me chanan on lor mdrd &amp;quot; _henry_harrison grover clegland benjamin_hartison ronald reagan jimmy_carter woodrow_wilson Figure 5: t-SNE 2-D projections of 451 answer vectors divided into six major clusters. The blue cluster is predominantly populated by U.S. presidents. The zoomed plot reveals temporal clustering among the presidents based on the years they spent in office. from the meaning of the words that it contains as well as the syntax that glues those words together. Many computational models of compositionality focus on learning vector spaces (Zanzotto et al., 2010; Erk, 2012; Grefenstette et al., 2013; Yessenalina and Cardie, 2011). Recent approaches towards modeling compositional vector spaces with neural networks have been successful, although simpler functions have been proposed for short phrases (Mitchell and Lapata, 2008). Recursive neural networks have achieved state-of-the-art performance in sentiment analysis and parsing (Socher et al., 2013c; Hermann and Blunsom, 2013; Socher et al., 2013a). RNNs have not been previously used for learning attribute spaces as we do here, although recursive tensor networks were unsuccessfully applied to a knowle</context>
+</contexts>
+<marker>Zanzotto, Korkontzelos, Fallucchi, Manandhar, 2010</marker>
+<rawString>Fabio Massimo Zanzotto, Ioannis Korkontzelos, Francesca Fallucchi, and Suresh Manandhar. 2010. Estimating linear models for compositional distributional semantics. In COLT.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

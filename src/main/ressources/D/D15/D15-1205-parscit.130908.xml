@@ -1,0 +1,2068 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.9663515">
+Improved Relation Extraction with
+Feature-Rich Compositional Embedding Models
+</title>
+<author confidence="0.936598">
+Matthew R. Gormley&apos;⇤ and Mo Yu2⇤ and Mark Dredze&apos;
+</author>
+<affiliation confidence="0.9914514">
+&apos;Human Language Technology Center of Excellence
+Center for Language and Speech Processing
+Johns Hopkins University, Baltimore, MD, 21218
+2Machine Intelligence and Translation Lab
+Harbin Institute of Technology, Harbin, China
+</affiliation>
+<email confidence="0.993135">
+gflfof@gmail.com, {mrg, mdredze}@cs.jhu.edu
+</email>
+<sectionHeader confidence="0.994744" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999864846153846">
+Compositional embedding models build
+a representation (or embedding) for a
+linguistic structure based on its compo-
+nent word embeddings. We propose
+a Feature-rich Compositional Embedding
+Model (FCM) for relation extraction that
+is expressive, generalizes to new domains,
+and is easy-to-implement. The key idea
+is to combine both (unlexicalized) hand-
+crafted features with learned word em-
+beddings. The model is able to directly
+tackle the difficulties met by traditional
+compositional embeddings models, such
+as handling arbitrary types of sentence an-
+notations and utilizing global information
+for composition. We test the proposed
+model on two relation extraction tasks,
+and demonstrate that our model outper-
+forms both previous compositional models
+and traditional feature rich models on the
+ACE 2005 relation extraction task, and the
+SemEval 2010 relation classification task.
+The combination of our model and a log-
+linear classifier with hand-crafted features
+gives state-of-the-art results. We made our
+implementation available for general use1.
+</bodyText>
+<sectionHeader confidence="0.999163" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999870833333333">
+Two common NLP feature types are lexical
+properties of words and unlexicalized linguis-
+tic/structural interactions between words. Prior
+work on relation extraction has extensively stud-
+ied how to design such features by combining dis-
+crete lexical properties (e.g. the identity of a word,
+</bodyText>
+<footnote confidence="0.809043">
+⇤Gormley and Yu contributed equally.
+1https://github.com/mgormley/pacaya
+</footnote>
+<bodyText confidence="0.999807625">
+its lemma, its morphological features) with as-
+pects of a word’s linguistic context (e.g. whether it
+lies between two entities or on a dependency path
+between them). While these help learning, they
+make generalization to unseen words difficult. An
+alternative approach to capturing lexical informa-
+tion relies on continuous word embeddings2 as
+representative of words but generalizable to new
+words. Embedding features have improved many
+tasks, including NER, chunking, dependency pars-
+ing, semantic role labeling, and relation extrac-
+tion (Miller et al., 2004; Turian et al., 2010; Koo
+et al., 2008; Roth and Woodsend, 2014; Sun et
+al., 2011; Plank and Moschitti, 2013; Nguyen and
+Grishman, 2014). Embeddings can capture lexi-
+cal information, but alone they are insufficient: in
+state-of-the-art systems, they are used alongside
+features of the broader linguistic context.
+In this paper, we introduce a compositional
+model that combines unlexicalized linguistic con-
+text and word embeddings for relation extraction,
+a task in which contextual feature construction
+plays a major role in generalizing to unseen data.
+Our model allows for the composition of embed-
+dings with arbitrary linguistic structure, as ex-
+pressed by hand crafted features. In the follow-
+ing sections, we begin with a precise construction
+of compositional embeddings using word embed-
+dings in conjunction with unlexicalized features.
+Various feature sets used in prior work (Turian et
+al., 2010; Nguyen and Grishman, 2014; Hermann
+et al., 2014; Roth and Woodsend, 2014) are cap-
+</bodyText>
+<footnote confidence="0.591932142857143">
+2Such embeddings have a long history in NLP, in-
+cluding term-document frequency matrices and their low-
+dimensional counterparts obtained by linear algebra tools
+(LSA, PCA, CCA, NNMF), Brown clusters, random projec-
+tions and vector space models. Recently, neural networks /
+deep learning have provided several popular methods for ob-
+taining such embeddings.
+</footnote>
+<page confidence="0.89827">
+1774
+</page>
+<note confidence="0.996143">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1774–1784,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+Class M1 M2 Sentence Snippet
+(1) ART(M1,M2) a man a taxicab A man driving what appeared to be a taxicab
+(2) PART-WHOLE(M1,M2) the southern suburbs Baghdad direction of the southern suburbs of Baghdad
+(3) PHYSICAL(M2,M1) the united states 284 people in the united states, 284 people died
+</note>
+<tableCaption confidence="0.994666">
+Table 1: Examples from ACE 2005. In (1) the word “driving” is a strong indicator of the relation ART3 between M1 and M2.
+</tableCaption>
+<bodyText confidence="0.9758511875">
+A feature that depends on the embedding for this context word could generalize to other lexical indicators of the same relation
+(e.g. “operating”) that don’t appear with ART during training. But lexical information alone is insufficient; relation extraction
+requires the identification of lexical roles: where a word appears structurally in the sentence. In (2), the word “of” between
+“suburbs” and “Baghdad” suggests that the first entity is part of the second, yet the earlier occurrence after “direction” is of no
+significance to the relation. Even finer information can be expressed by a word’s role on the dependency path between entities.
+In (3) we can distinguish the word “died” from other irrelevant words that don’t appear between the entities.
+tured as special cases of this construction. Adding
+these compositional embeddings directly to a stan-
+dard log-linear model yields a special case of our
+full model. We then treat the word embeddings
+as parameters giving rise to our powerful, efficient,
+and easy-to-implement log-bilinear model. The
+model capitalizes on arbitrary types of linguistic
+annotations by better utilizing features associated
+with substructures of those annotations, including
+global information. We choose features to pro-
+mote different properties and to distinguish differ-
+ent functions of the input words.
+The full model involves three stages. First, it
+decomposes the annotated sentence into substruc-
+tures (i.e. a word and associated annotations).
+Second, it extracts features for each substructure
+(word), and combines them with the word’s em-
+bedding to form a substructure embedding. Third,
+we sum over substructure embeddings to form a
+composed annotated sentence embedding, which
+is used by a final softmax layer to predict the out-
+put label (relation).
+The result is a state-of-the-art relation extractor
+for unseen domains from ACE 2005 (Walker et al.,
+2006) and the relation classification dataset from
+SemEval-2010 Task 8 (Hendrickx et al., 2010).
+</bodyText>
+<listItem confidence="0.937256">
+Contributions This paper makes several contri-
+butions, including:
+1. We introduce the FCM, a new compositional
+embedding model for relation extraction.
+2. We obtain the best reported results on ACE-
+2005 for coarse-grained relation extraction in
+the cross-domain setting, by combining FCM
+with a log-linear model.
+3. We obtain results on on SemEval-2010 Task
+8 competitive with the best reported results.
+Note that other work has already been published
+that builds on the FCM, such as Hashimoto et al.
+(2015), Nguyen and Grishman (2015), dos Santos
+</listItem>
+<footnote confidence="0.993793333333333">
+3In ACE 2005, ART refers to a relation between a person
+and an artifact; such as a user, owner, inventor, or manufac-
+turer relationship
+</footnote>
+<bodyText confidence="0.999697285714286">
+et al. (2015), Yu and Dredze (2015) and Yu et al.
+(2015). Additionally, we have extended FCM to
+incorporate a low-rank embedding of the features
+(Yu et al., 2015), which focuses on fine-grained
+relation extraction for ACE and ERE. This paper
+obtains better results than the low-rank extension
+on ACE coarse-grained relation extraction.
+</bodyText>
+<sectionHeader confidence="0.981498" genericHeader="introduction">
+2 Relation Extraction
+</sectionHeader>
+<bodyText confidence="0.99976240625">
+In relation extraction we are given a sentence as in-
+put with the goal of identifying, for all pairs of en-
+tity mentions, what relation exists between them,
+if any. For each pair of entity mentions in a sen-
+tence S, we construct an instance (y, x), where
+x = (M1, M2, S, A). S = {w1, w2, ..., w,I is
+a sentence of length n that expresses a relation
+of type y between two entity mentions M1 and
+M2, where M1 and M2 are sequences of words in
+S. A is the associated annotations of sentence S,
+such as part-of-speech tags, a dependency parse,
+and named entities. We consider directed rela-
+tions: for a relation type Rel, y=Rel(M1,M2)
+and y0=Rel(M2, M1) are different relations. Ta-
+ble 1 shows ACE 2005 relations, and has a strong
+label bias towards negative examples. We also
+consider the task of relation classification (Se-
+mEval), where the number of negative examples
+is artificially reduced.
+Embedding Models Word embeddings and
+compositional embedding models have been suc-
+cessfully applied to a range of NLP tasks, however
+the applications of these embedding models to re-
+lation extraction are still limited. Prior work on
+relation classification (e.g. SemEval 2010 Task 8)
+has focused on short sentences with at most one
+relation per sentence (Socher et al., 2012; Zeng
+et al., 2014). For relation extraction, where neg-
+ative examples abound, prior work has assumed
+that only the named entity boundaries and not
+their types were available (Plank and Moschitti,
+2013; Nguyen et al., 2015). Other work has as-
+</bodyText>
+<page confidence="0.980414">
+1775
+</page>
+<bodyText confidence="0.999941766666667">
+sumed that the order of two entities in a relation
+are given while the relation type itself is unknown
+(Nguyen and Grishman, 2014; Nguyen and Grish-
+man, 2015). The standard relation extraction task,
+as adopted by ACE 2005 (Walker et al., 2006),
+uses long sentences containing multiple named en-
+tities with known types4 and unknown relation di-
+rections. We are the first to apply neural language
+model embeddings to this task.
+Motivation and Examples Whether a word is
+indicative of a relation depends on multiple prop-
+erties, which may relate to its context within the
+sentence. For example, whether the word is in-
+between the entities, on the dependency path be-
+tween them, or to their left or right may provide
+additional complementary information. Illustra-
+tive examples are given in Table 1 and provide
+the motivation for our model. In the next section,
+we will show how we develop informative repre-
+sentations capturing both the semantic information
+in word embeddings and the contextual informa-
+tion expressing a word’s role relative to the entity
+mentions. We are the first to incorporate all of
+this information at once. The closest work is that
+of Nguyen and Grishman (2014), who use a log-
+linear model for relation extraction with embed-
+dings as features for only the entity heads. Such
+embedding features are insensitive to the broader
+contextual information and, as we show, are not
+sufficient to elicit the word’s role in a relation.
+</bodyText>
+<sectionHeader confidence="0.934828" genericHeader="method">
+3 A Feature-rich Compositional
+Embedding Model for Relations
+</sectionHeader>
+<bodyText confidence="0.999992">
+We propose a general framework to construct an
+embedding of a sentence with annotations on its
+component words. While we focus on the rela-
+tion extraction task, the framework applies to any
+task that benefits from both embeddings and typi-
+cal hand-engineered lexical features.
+</bodyText>
+<subsectionHeader confidence="0.999402">
+3.1 Combining Features with Embeddings
+</subsectionHeader>
+<bodyText confidence="0.999803666666667">
+We begin by describing a precise method for con-
+structing substructure embeddings and annotated
+sentence embeddings from existing (usually un-
+lexicalized) features and embeddings. Note that
+these embeddings can be included directly in a
+log-linear model as features—doing so results in
+</bodyText>
+<footnote confidence="0.979903333333333">
+4Since the focus of this paper is relation extraction, we
+adopt the evaluation setting of prior work which uses gold
+named entities to better facilitate comparison.
+</footnote>
+<bodyText confidence="0.999241125">
+a special case of our full model presented in the
+next subsection.
+An annotated sentence is first decomposed into
+substructures. The type of substructures can vary
+by task; for relation extraction we consider one
+substructure per word5. For each substructure in
+the sentence we have a hand-crafted feature vec-
+tor f,,,i and a dense embedding vector e,,,i. We
+represent each substructure as the outer product
+® between these two vectors to produce a matrix,
+herein called a substructure embedding: h,,,i =
+f,,,i ® e,,,i. The features f,,,i are based on the local
+context in 5 and annotations in A, which can in-
+clude global information about the annotated sen-
+tence. These features allow the model to pro-
+mote different properties and to distinguish differ-
+ent functions of the words. Feature engineering
+can be task specific, as relevant annotations can
+change with regards to each task. In this work
+we utilize unlexicalized binary features common
+in relation extraction. Figure 1 depicts the con-
+struction of a sentence’s substructure embeddings.
+We further sum over the substructure embed-
+dings to form an annotated sentence embedding:
+</bodyText>
+<equation confidence="0.996227666666667">
+n
+ex = f,,,i ® e,,,i (1)
+Z=1
+</equation>
+<bodyText confidence="0.999960333333333">
+When both the hand-crafted features and word em-
+beddings are treated as inputs, as has previously
+been the case in relation extraction, this anno-
+tated sentence embedding can be used directly as
+the features of a log-linear model. In fact, we
+find that the feature sets used in prior work for
+many other NLP tasks are special cases of this
+simple construction (Turian et al., 2010; Nguyen
+and Grishman, 2014; Hermann et al., 2014; Roth
+and Woodsend, 2014). This highlights an im-
+portant connection: when the word embeddings
+are constant, our constructions of substructure and
+annotated sentence embeddings are just specific
+forms of polynomial (specifically quadratic) fea-
+ture combination—hence their commonality in the
+literature. Our experimental results suggest that
+such a construction is more powerful than directly
+including embeddings into the model.
+</bodyText>
+<subsectionHeader confidence="0.999488">
+3.2 The Log-Bilinear Model
+</subsectionHeader>
+<bodyText confidence="0.9965285">
+Our full log-bilinear model first forms the sub-
+structure and annotated sentence embeddings from
+</bodyText>
+<footnote confidence="0.6752545">
+5We use words as substructures for relation extraction, but
+use the general terminology to maintain model generality.
+</footnote>
+<page confidence="0.989106">
+1776
+</page>
+<figure confidence="0.999767">
+W1=
+[A man1M1 driving what appeared to be [a taxicablM2
+A
+Y f�Lfwi ewi
+label ere L is
+M1�man M�=taxicab fwi
+,E refers
+(wi is on path?)
+S�}
+“A”
+act as the ou
+wi=“driving”
+fwi Li �
+�
+ew
+fw e,,,i (w,.= “driving”) 2
+S���
+hav �
+n0
+e0
+0
+1
+1
+1
+-.5
+-.5 .3
+�
+-.5
+-.5
+00
+c.
+0 0
+0
+.3
+.3
+.3a
+0
+.8
+(b0
+.8 .7
+ur
+.8
+.8
+0�
+0
+.7
+.7
+.7
+0
+0
+0
+</figure>
+<figureCaption confidence="0.8428724">
+Figure 1: Example construction of substructure embeddings. Each substructure is a word wi in S, augmented by the target
+entity information and related information from annotation A (e.g. a dependency tree). We show the factorization of the
+annotated sentence into substructures (left), the concatenation of the substructure embeddings for the sentence (middle), and a
+single substructure embedding fromgthat concatenation (right). The annotated sentenceeembedding (not shown) would be the
+sum of the substructure embeddings, as opposed to their concatenation.
+</figureCaption>
+<bodyText confidence="0.8123766875">
+the previousesubsection. The model uses its pa- dependency path between M1
+rameters to score the annotated sentence embed- the third feature in fwi indica
+din d ft ax to produce an output la- feature. Our model can now
+e entire model the Feature-rich which give the third row a hi
+eddingtModel (FCM). ART label.dOther wordsewith
+etermine the label,y (relation) to “driving&amp;quot; that appear on the
+g and a somtes this on
+given the instance xf= (M1, M2, S,tA).aWe for-
+mulate this as a probability.
+embedding is similar but is not
+and M2. Suppose
+-
+bel. We call th
+Compositional Emb
+Our task is to d
+exp (En
+</bodyText>
+<equation confidence="0.86339">
+1 Ty 0 (.fwi (g ewi))
+P(ylx; T, e) = P
+w
+</equation>
+<bodyText confidence="0.90055725">
+ath, it will have 0 weight. Thus, our model gen-
+milar embeddings only when they share similar
+nctions in the sentence.
+Z(x) eralizes its model
+</bodyText>
+<listItem confidence="0.380563">
+(2) si
+</listItem>
+<bodyText confidence="0.961628555555556">
+here O is the `matrix dot(product&apos; or Frobe- fu
+parameters acros
+itt
+mbeddings)ewith similar func-
+nious inner product of the two matrices. The
+n be written as:
+iven an instance S and paramer t
+no
+norm
+e for each word type and a list of weight matrix
+T[T] which used to hl
+= y yEL is use o score each el
+y. The model is log-bilinear 6 (i.e. log-quadratic)
+since we recover a log-linear model by fixing ei-
+ther e ortT. We study o e og b th th full log-bilinear and
+the log-linear y g
+model obtained b fixing the word
+embeddings.
+</bodyText>
+<subsectionHeader confidence="0.999937">
+3.3 Discussion of the Model
+</subsectionHeader>
+<bodyText confidence="0.894563833333333">
+Substructure Embeddings Similar words (i.e.
+those with similar e
+the
+in
+bons
+indicate the ART relation if it appears on the
+</bodyText>
+<footnote confidence="0.713563">
+6Other popular log-bilinear models are the log-bilinear Mi
+language models (Mnih and Hinton, 2007; kolov et al.,
+2013).
+</footnote>
+<bodyText confidence="0.969033586206897">
+ther intuition
+t is that it is
+traditional lexical
+features used in classical NLP systems. Consider
+��� 1
+a lexical feature f = u A w, which is a conjunc-
+tion (logic-and) between non-lexical property u
+andolexicalkpart (word)mw. Iflwe represent w as
+a one-hot vector, then the outer product exactly re-
+covers the original feature f. Then if we replace
+one-hot representation with its word embed-
+ding, we get the current form of our FCM. There-
+fore, our model can be viewed as a smoothed ver-
+sion of lexical features, which keeps the expres-
+sive strength, and uses embeddings to generalize
+to low frequency features.
+CM is much
+al., 2011) and
+et al., 2012).
+average with
+sparse features, where s is the average number of
+per-word non-zero feature values, n is the length
+of the sentence, and d is the dimension of word
+embedding. In contrast, CNNs and RNNs usually
+blenoutput labels y&apos; E L is given by Z(x)
+E IEL exp, (E 1 Ty0 O (fwi
+rameters of the model are the word embeddings
+i� i�
+constant which sums over all possi Smoothed Lexical Features
+</bodyText>
+<figure confidence="0.725575555555556">
+_ Ano
+about the selection of outer produc
+® ewi)) . The pa-
+actually a smoothed version of
+f (4)
+�
+rt
+tures) will have simila
+et
+</figure>
+<bodyText confidence="0.8912511875">
+sider the example in Fig. 1. The word “driving&amp;quot; FCM requires O(snd) products on
+can
+e (i.e. those with similar fea- TimedComplexityiInference
+r matrix representations. To faster than both)CNNs (Collobe
+tion of the outer product,con- RNNs Socher et al. 2013b; B
+e sentenc in F
+understand ourtselec ( ordes
+path
+learn parameters
+gh weight for the
+embeddings similar
+dependency path
+between the mentions will similarly receive high
+weight for the ART label. On the other hand, if the
+on the dependency
+s words with
+</bodyText>
+<page confidence="0.763276">
+1777
+</page>
+<bodyText confidence="0.942316">
+have complexity O(C · nd2), where C is a model
+dependent constant.
+</bodyText>
+<sectionHeader confidence="0.995743" genericHeader="method">
+4 Hybrid Model
+</sectionHeader>
+<bodyText confidence="0.999985666666667">
+We present a hybrid model which combines the
+FCM with an existing log-linear model. We do so
+by defining a new model:
+</bodyText>
+<equation confidence="0.9981205">
+1
+pFCM+loglin(y|x) = Z pFCM(y|x)ploglin(y|x) (3)
+</equation>
+<bodyText confidence="0.999859166666667">
+The log-linear model has the usual form:
+ploglin(y|x) a exp(0 · f(x, y)), where 0 are the
+model parameters and f(x, y) is a vector of fea-
+tures. The integration treats each model as a pro-
+viding a score which we multiply together. The
+constant Z ensures a normalized distribution.
+</bodyText>
+<sectionHeader confidence="0.973705" genericHeader="method">
+5 Training
+</sectionHeader>
+<equation confidence="0.901689666666667">
+FCM training optimizes a cross-entropy objective:
+`(D; T, e) = � log P(y|x; T, e)
+(x,y)ED
+</equation>
+<bodyText confidence="0.996485666666667">
+where D is the set of all training data and e
+is the set of word embeddings. To optimize
+the objective, for each instance (y, x) we per-
+form stochastic training on the loss function ` =
+`(y, x; T, e) = log P(y|x; T, e). The gradi-
+ents of the model parameters are obtained by
+backpropagation (i.e. repeated application of
+the chain rule). We define the vector s =
+[Ei Ty O (fwi (9 ewi)]1&lt;y&lt;L, which yields
+</bodyText>
+<equation confidence="0.993197333333333">
+T
+[(I[y = y] — P(y|x; T, e)),
+1&lt;y&lt;L]
+</equation>
+<bodyText confidence="0.9999815">
+where the indicator function I[x] equals 1 if x is
+true and 0 otherwise. We have the following gradi-
+</bodyText>
+<equation confidence="0.990531714285714">
+ents: ��
+�T = ��
+�� 0 Eni=1 fwi ® ewi, which is equiv-
+alent to:
+n
+= (I[y = y�] — P(y�|x; T, e)) · fwi ® ewi.
+i=1
+</equation>
+<bodyText confidence="0.997661666666667">
+When we treat the word embeddings as parameters
+(i.e. the log-bilinear model), we also fine-tune the
+word embeddings with the FCM model:
+</bodyText>
+<equation confidence="0.616911">
+� �
+</equation>
+<bodyText confidence="0.935824625">
+@` Ty · fi · I[wi = w].
+@sy
+As is common in deep learning, we initialize
+these embeddings from an neural language model
+and then fine-tune them for our supervised task.
+The training process for the hybrid model (§ 4)
+is also easily done by backpropagation since each
+sub-model has separate parameters.
+</bodyText>
+<table confidence="0.999687">
+Set Template
+HeadEmb JI[i = h1], I[i = h2]1
+(w; is head of M1/M2) XJ0, th1 , th2 , th1 ® th21
+Context I[i = h1 f 1] (left/right token of wh1)
+I[i = h2 f 1] (left/right token of wh2 )
+In-between I[i &gt; h1]&amp;I[i &lt; h2] (in between)
+XJ0, th1, th2 , th1 ® th21
+On-path r lI[w; E P] (on path) 10
+X , th1, th2, th1 ® th21
+</table>
+<tableCaption confidence="0.989323">
+Table 2: Feature sets used in FCM.
+</tableCaption>
+<sectionHeader confidence="0.996067" genericHeader="method">
+6 Experimental Settings
+</sectionHeader>
+<bodyText confidence="0.99974075">
+Features Our FCM features (Table 2) use a fea-
+ture vector fwi over the word wi, the two tar-
+get entities M1, M2, and their dependency path.
+Here h1, h2 are the indices of the two head words
+of M1, M2, x refers to the Cartesian product be-
+tween two sets, tht and the are entity types (named
+entity tags for ACE 2005 or WordNet supertags for
+SemEval 2010) of the head words of two entities,
+and 0 stands for the empty feature. ® refers to the
+conjunction of two elements. The In-between
+features indicate whether a word wi is in between
+two target entities, and the On-path features in-
+dicate whether the word is on the dependency
+path, on which there is a set of words P, between
+the two entities.
+We also use the target entity type as a feature.
+Combining this with the basic features results in
+more powerful compound features, which can help
+us better distinguish the functions of word embed-
+dings for predicting certain relations. For exam-
+ple, if we have a person and a vehicle, we know
+it will be more likely that they have an ART rela-
+tion. For the ART relation, we introduce a corre-
+sponding weight vector, which is closer to lexical
+embeddings similar to the embedding of “drive”.
+All linguistic annotations needed for fea-
+tures (POS, chunks7, parses) are from Stanford
+CoreNLP (Manning et al., 2014). Since SemEval
+does not have gold entity types we obtained Word-
+Net and named entity tags using Ciaramita and
+Altun (2006). For all experiments we use 200-
+d word embeddings trained on the NYT portion
+of the Gigaword 5.0 corpus (Parker et al., 2011),
+with word2vec (Mikolov et al., 2013). We use the
+CBOW model with negative sampling (15 nega-
+tive words). We set a window size c=5, and re-
+move types occurring less than 5 times.
+Models We consider several methods. (1) FCM
+in isolation without fine-tuning. (2) FCM in isola-
+tion with fine-tuning (i.e. trained as a log-bilinear
+</bodyText>
+<footnote confidence="0.839248">
+7Obtained from the constituency parse using the CONLL
+2000 chunking converter (Perl script).
+</footnote>
+<figure confidence="0.988255636363636">
+@`
+@s
+@`
+@Ty0
+@`
+n
+i=1
+=
+@ew
+�
+y
+</figure>
+<page confidence="0.869041">
+1778
+</page>
+<bodyText confidence="0.9878698125">
+model). (3) A log-linear model with a rich binary
+feature set from Sun et al. (2011) (Baseline)—
+this consists of all the baseline features of Zhou et
+al. (2005) plus several additional carefully-chosen
+features that have been highly tuned for ACE-style
+relation extraction over years of research. We ex-
+clude the Country gazetteer and WordNet features
+from Zhou et al. (2005). The two remaining meth-
+ods are hybrid models that integrate FCM as a sub-
+model within the log-linear model (§ 4). We con-
+sider two combinations. (4) The feature set of
+Nguyen and Grishman (2014) obtained by using
+the embeddings of heads of two entity mentions
+(+HeadOnly). (5) Our full FCM model (+FCM).
+All models use L2 regularization tuned on dev
+data.
+</bodyText>
+<subsectionHeader confidence="0.983154">
+6.1 Datasets and Evaluation
+</subsectionHeader>
+<bodyText confidence="0.99995937037037">
+ACE 2005 We evaluate our relation extraction
+system on the English portion of the ACE 2005
+corpus (Walker et al., 2006).8 There are 6 do-
+mains: Newswire (nw), Broadcast Conversation
+(bc), Broadcast News (bn), Telephone Speech
+(cts), Usenet Newsgroups (un), and Weblogs
+(wl). Following prior work we focus on the do-
+main adaptation setting, where we train on one set
+(the union of the news domains (bn+nw), tune
+hyperparameters on a dev domain (half of bc)
+and evaluate on the remainder (cts, wl, and
+the remainder of bc) (Plank and Moschitti, 2013;
+Nguyen and Grishman, 2014). We assume that
+gold entity spans and types are available for train
+and test. We use all pairs of entity mentions to
+yield 43,518 total relations in the training set. We
+report precision, recall, and F1 for relation extrac-
+tion. While it is not our focus, for completeness
+we include results with unknown entity types fol-
+lowing Plank and Moschitti (2013) (Appendix 1).
+SemEval 2010 Task 8 We evaluate on the Se-
+mEval 2010 Task 8 dataset9 (Hendrickx et al.,
+2010) to compare with other compositional mod-
+els and highlight the advantages of FCM. This task
+is to determine the relation type (or no relation)
+between two entities in a sentence. We adopt the
+setting of Socher et al. (2012). We use 10-fold
+</bodyText>
+<footnote confidence="0.993394714285714">
+8Many relation extraction systems evaluate on the ACE
+2004 corpus (Mitchell et al., 2005). Unfortunately, the most
+common convention is to use 5-fold cross validation, treating
+the entirety of the dataset as both train and evaluation data.
+Rather than continuing to overfit this data by perpetuating the
+cross-validation convention, we instead focus on ACE 2005.
+9http://docs.google.com/View?docid=dfvxd49s_36c28v9pmw
+</footnote>
+<bodyText confidence="0.999517166666667">
+cross validation on the training data to select hy-
+perparameters and do regularization by early stop-
+ping. The learning rates for FCM with/without
+fine-tuning are 5e-3 and 5e-2 respectively. We
+report macro-F1 and compare to previously pub-
+lished results.
+</bodyText>
+<sectionHeader confidence="0.99971" genericHeader="evaluation">
+7 Results
+</sectionHeader>
+<bodyText confidence="0.999834395348837">
+ACE 2005 Despite FCM’s (1) simple feature set,
+it is competitive with the log-linear baseline (3)
+on out-of-domain test sets (Table 3). In the typi-
+cal gold entity spans and types setting, both Plank
+and Moschitti (2013) and Nguyen and Grishman
+(2014) found that they were unable to obtain im-
+provements by adding embeddings to baseline fea-
+ture sets. By contrast, we find that on all do-
+mains the combination baseline + FCM (5) obtains
+the highest F1 and significantly outperforms the
+other baselines, yielding the best reported results
+for this task. We found that fine-tuning of em-
+beddings (2) did not yield improvements on our
+out-of-domain development set, in contrast to our
+results below for SemEval. We suspect this is be-
+cause fine-tuning allows the model to overfit the
+training domain, which then hurts performance on
+the unseen ACE test domains. Accordingly, Ta-
+ble 3 shows only the log-linear model.
+Finally, we highlight an important contrast be-
+tween FCM (1) and the log-linear model (3): the
+latter uses over 50 feature templates based on a
+POS tagger, dependency parser, chunker, and con-
+stituency parser. FCM uses only a dependency
+parse but still obtains better results (Avg. F1).
+SemEval 2010 Task 8 Table 4 shows FCM
+compared to the best reported results from the
+SemEval-2010 Task 8 shared task and several
+other compositional models.
+For the FCM we considered two feature sets. We
+found that using NE tags instead of WordNet tags
+helps with fine-tuning but hurts without. This may
+be because the set of WordNet tags is larger mak-
+ing the model more expressive, but also introduces
+more parameters. When the embeddings are fixed,
+they can help to better distinguish different func-
+tions of embeddings. But when fine-tuning, it be-
+comes easier to over-fit. Alleviating over-fitting is
+a subject for future work (§ 9).
+With either WordNet or NER features, FCM
+achieves better performance than the RNN and
+MVRNN. With NER features and fine-tuning, it
+outperforms a CNN (Zeng et al., 2014) and also
+</bodyText>
+<page confidence="0.985506">
+1779
+</page>
+<table confidence="0.844829714285714">
+Model bc cts wl Avg.
+F1
+P R F1 P R F1 P R F1
+(1) FCM only (ST) 66.56 57.86 61.90 65.62 44.35 52.93 57.80 44.62 50.36 55.06
+(3) Baseline (ST) 74.89 48.54 58.90 74.32 40.26 52.23 63.41 43.20 51.39 54.17
+(4) + HeadOnly (ST) 70.87 50.76 59.16 71.16 43.21 53.77 57.71 42.92 49.23 54.05
+(5) + FCM (ST) 74.39 55.35 63.48 74.53 45.01 56.12 65.63 47.59 55.17 58.26
+</table>
+<tableCaption confidence="0.9439065">
+Table 3: Comparison of models on ACE 2005 out-of-domain test sets. Baseline + HeadOnly is our
+reimplementation of the features of Nguyen and Grishman (2014).
+</tableCaption>
+<table confidence="0.999727363636364">
+Classifier Features F1
+SVM (Rink and Harabagiu, 2010) POS, prefixes, morphological, WordNet, dependency parse, 82.2
+(Best in SemEval2010) Levin classed, ProBank, FrameNet, NomLex-Plus,
+Google n-gram, paraphrases, TextRunner
+RNN word embedding, syntactic parse 74.8
+RNN + linear word embedding, syntactic parse, POS, NER, WordNet 77.6
+MVRNN word embedding, syntactic parse 79.1
+MVRNN + linear word embedding, syntactic parse, POS, NER, WordNet 82.4
+CNN (Zeng et al., 2014) word embedding, WordNet 82.7
+CR-CNN (log-loss) word embedding 82.7
+CR-CNN (ranking-loss) word embedding 84.1
+RelEmb (word2vec embedding) word embedding 81.8
+RelEmb (task-spec embedding) word embedding 82.8
+RelEmb (task-spec embedding) + linear word embedding, dependency paths, WordNet, NE 83.5
+DepNN word embedding, dependency paths 82.8
+DepNN + linear word embedding, dependency paths, WordNet, NER 83.6
+word embedding, dependency parse, WordNet 82.0
+(1) FCM (log-linear) word embedding, dependency parse, NER 81.4
+word embedding, dependency parse, WordNet 82.5
+(2) FCM (log-bilinear) word embedding, dependency parse, NER 83.0
+(5) FCM (log-linear) + linear (Hybrid) word embedding, dependency parse, WordNet 83.1
+word embedding, dependency parse, NER 83.4
+</table>
+<tableCaption confidence="0.999878">
+Table 4: Comparison of FCM with previously published results for SemEval 2010 Task 8.
+</tableCaption>
+<bodyText confidence="0.9989234">
+the combination of an embedding model and a tra-
+ditional log-linear model (RNN/MVRNN + lin-
+ear) (Socher et al., 2012). As with ACE, FCM uses
+less linguistic resources than many close competi-
+tors (Rink and Harabagiu, 2010).
+We also compared to concurrent work on en-
+hancing the compositional models with task-
+specific information for relation classification, in-
+cluding Hashimoto et al. (2015) (RelEmb), which
+trained task-specific word embeddings, and dos
+Santos et al. (2015) (CR-CNN), which proposed
+a task-specific ranking-based loss function. Our
+Hybrid methods (FCM + linear) get comparable re-
+sults to theirs. Note that their base compositional
+model results without any task-specific enhance-
+ments, i.e. RelEmb with word2vec embeddings
+and CR-CNN with log-loss, are still lower than the
+best FCM result. We believe that FCM can be also
+improved with these task-specific enhancements,
+e.g. replacing the word embeddings to the task-
+specific ones from (Hashimoto et al., 2015) in-
+creases the result to 83.7% (see §7.2 for details).
+We leave the application of ranking-based loss to
+future work.
+Finally, a concurrent work (Liu et al., 2015)
+proposes DepNN, which builds representations for
+the dependency path (and its attached subtrees)
+between two entities by applying recursive and
+convolutional neural networks successively. Com-
+pared to their model, our FCM achieves compa-
+rable results. Of note, our FCM and the RelEmb
+are also the most efficient models among all above
+compositional models since they have linear time
+complexity with respect to the dimension of em-
+beddings.
+</bodyText>
+<subsectionHeader confidence="0.998907">
+7.1 Effects of the embedding sub-models
+</subsectionHeader>
+<bodyText confidence="0.999981545454545">
+We next investigate the effects of different types of
+features on FCM using ablation tests on ACE 2005
+(Table 5.) We focus on FCM alone with the fea-
+ture templates of Table 2. Additionally, we show
+results of using only the head embedding features
+from Nguyen and Grishman (2014) (HeadOnly).
+Not surprisingly, the HeadOnly model performs
+poorly (F1 score = 14.30%), showing the impor-
+tance of our rich binary feature set. Among all the
+features templates, removing HeadEmb results in
+the largest degradation. The second most im-
+</bodyText>
+<page confidence="0.95848">
+1780
+</page>
+<table confidence="0.99988475">
+Feature Set Prec Rec F1
+HeadOnly 31.67 9.24 14.30
+FCM 69.17 56.73 62.33
+-HeadEmb 66.06 47.00 54.92
+-Context 70.89 55.27 62.11
+-In-between 66.39 51.86 58.23
+-On-path 69.23 53.97 60.66
+FCM-EntityTypes 71.33 34.68 46.67
+</table>
+<tableCaption confidence="0.999951">
+Table 5: Ablation test of FCM on development set.
+</tableCaption>
+<bodyText confidence="0.9985834">
+portant feature template is In-between, while
+Context features have little impact. Remov-
+ing all entity type features (thi) does significantly
+worse than the full model, showing the value of
+our entity type features.
+</bodyText>
+<subsectionHeader confidence="0.995269">
+7.2 Effects of the word embeddings
+</subsectionHeader>
+<bodyText confidence="0.999880181818182">
+Good word embeddings are critical for both FCM
+and other compositional models. In this section,
+we show the results of FCM with embeddings
+used to initialize other recent state-of-the-art mod-
+els. Those embeddings include the 300-d baseline
+embeddings trained on English Wikipedia (w2v-
+enwiki-d300) and the 100-d task-specific embed-
+dings (task-specific-d100)10 from the RelEmb pa-
+per (Hashimoto et al., 2015), the 400-d embed-
+dings from the CR-CNN paper (dos Santos et al.,
+2015). Moreover, we list the best result (DepNN)
+in Liu et al. (2015), which uses the same embed-
+dings as ours. Table 6 shows the effects of word
+embeddings on FCM and provides relative compar-
+isons between FCM and the other state-of-the-art
+models. We use the same hyperparameters and
+number of iterations in Table 4.
+The results show that using different embed-
+dings to initialize FCM can improve F1 beyond
+our previous results. We also find that increas-
+ing the dimension of the word embeddings does
+not necessarily lead to better results due to the
+problem of over-fitting (e.g.w2v-enwiki-d400 vs.
+w2v-enwiki-d300). With the same initial embed-
+dings, FCM usually gets better results without any
+changes to the hyperparameters than the compet-
+ing model, further confirming the advantage of
+FCM at the model-level as discussed under Ta-
+ble 4. The only exception is the DepNN model,
+which gets better result than FCM on the same
+embeddings. The task-specific embeddings from
+(Hashimoto et al., 2015) leads to the best perfor-
+mance (an improvement of 0.7%). This observa-
+</bodyText>
+<footnote confidence="0.85049">
+10In the task-specific setting, FCM will represent entity
+words and context words with separate sets of embeddings.
+</footnote>
+<table confidence="0.9996979">
+Embeddings Model F1
+w2v-enwiki-d300 RelEmb 81.8
+(2) FCM (log-bilinear) 83.4
+RelEmb 82.8
+task-specific-d100 RelEmb+linear 83.5
+(2) FCM (log-bilinear) 83.7
+w2v-enwiki-d400 CR-CNN 82.7
+(2) FCM (log-bilinear) 83.0
+w2v-nyt-d200 DepNN 83.6
+(2) FCM (log-bilinear) 83.0
+</table>
+<tableCaption confidence="0.9914905">
+Table 6: Evaluation of FCMs with different word
+embeddings on SemEval 2010 Task 8.
+</tableCaption>
+<bodyText confidence="0.619025">
+tion suggests that the other compositional models
+may also benefit from the work of Hashimoto et
+al. (2015).
+</bodyText>
+<sectionHeader confidence="0.99938" genericHeader="related work">
+8 Related Work
+</sectionHeader>
+<bodyText confidence="0.999675785714286">
+Compositional Models for Sentences In order
+to build a representation (embedding) for a sen-
+tence based on its component word embeddings
+and structural information, recent work on compo-
+sitional models (stemming from the deep learning
+community) has designed model structures that
+mimic the structure of the input. For example,
+these models could take into account the order of
+the words (as in Convolutional Neural Networks
+(CNNs)) (Collobert et al., 2011) or build off of
+an input tree (as in Recursive Neural Networks
+(RNNs) or the Semantic Matching Energy Func-
+tion) (Socher et al., 2013b; Bordes et al., 2012).
+While these models work well on sentence-level
+representations, the nature of their designs also
+limits them to fixed types of substructures from the
+annotated sentence, such as chains for CNNs and
+trees for RNNs. Such models cannot capture arbi-
+trary combinations of linguistic annotations avail-
+able for a given task, such as word order, depen-
+dency tree, and named entities used for relation
+extraction. Moreover, these approaches ignore the
+differences in functions between words appearing
+in different roles. This does not suit more general
+substructure labeling tasks in NLP, e.g. these mod-
+els cannot be directly applied to relation extraction
+since they will output the same result for any pair
+of entities in a same sentence.
+</bodyText>
+<subsectionHeader confidence="0.802435">
+Compositional Models with Annotation Fea-
+</subsectionHeader>
+<bodyText confidence="0.9995118">
+tures To tackle the problem of traditional com-
+positional models, Socher et al. (2012) made the
+RNN model specific to relation extraction tasks by
+working on the minimal sub-tree which spans the
+two target entities. However, these specializations
+</bodyText>
+<page confidence="0.97798">
+1781
+</page>
+<bodyText confidence="0.941381">
+to relation extraction does not generalize easily to
+other tasks in NLP. There are two ways to achieve
+such specialization in a more general fashion:
+</bodyText>
+<listItem confidence="0.886759">
+1. Enhancing Compositional Models with Fea-
+</listItem>
+<bodyText confidence="0.97702988">
+tures. A recent trend enhances compositional
+models with annotation features. Such an ap-
+proach has been shown to significantly improve
+over pure compositional models. For example,
+Hermann et al. (2014) and Nguyen and Grishman
+(2014) gave different weights to words with dif-
+ferent syntactic context types or to entity head
+words with different argument IDs. Zeng et al.
+(2014) use concatenations of embeddings as fea-
+tures in a CNN model, according to their posi-
+tions relative to the target entity mentions. Be-
+linkov et al. (2014) enrich embeddings with lin-
+guistic features before feeding them forward to a
+RNN model. Socher et al. (2013a) and Hermann
+and Blunsom (2013) enhanced RNN models by
+refining the transformation matrices with phrase
+types and CCG super tags.
+2. Engineering of Embedding Features. A dif-
+ferent approach to combining traditional linguistic
+features and embeddings is hand-engineering fea-
+tures with word embeddings and adding them to
+log-linear models. Such approaches have achieved
+state-of-the-art results in many tasks including
+NER, chunking, dependency parsing, semantic
+role labeling, and relation extraction (Miller et al.,
+2004; Turian et al., 2010; Koo et al., 2008; Roth
+and Woodsend, 2014; Sun et al., 2011; Plank and
+Moschitti, 2013). Roth and Woodsend (2014) con-
+sidered features similar to ours for semantic role
+labeling.
+However, in prior work both of above ap-
+proaches are only able to utilize limited informa-
+tion, usually one property for each word. Yet there
+may be different useful properties of a word which
+can contribute to the performances of the task. By
+contrast, our FCM can easily utilize these features
+without changing the model structures.
+In order to better utilize the dependency anno-
+tations, recently work built their models according
+to the dependency paths (Ma et al., 2015; Liu et
+al., 2015), which share similar motivations to the
+usage of On-path features in our work.
+Task-Specific Enhancements for Relation Clas-
+sification An orthogonal direction of improving
+compositional models for relation classification is
+to enhance the models with task-specific informa-
+tion. For example, Hashimoto et al. (2015) trained
+task-specific word embeddings, and dos Santos et
+al. (2015) proposed a ranking-based loss function
+for relation classification.
+</bodyText>
+<sectionHeader confidence="0.989599" genericHeader="conclusions">
+9 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999980730769231">
+We have presented FCM, a new compositional
+model for deriving sentence-level and substruc-
+ture embeddings from word embeddings. Com-
+pared to existing compositional models, FCM can
+easily handle arbitrary types of input and handle
+global information for composition, while remain-
+ing easy to implement. We have demonstrated
+that FCM alone attains near state-of-the-art perfor-
+mances on several relation extraction tasks, and
+in combination with traditional feature based log-
+linear models it obtains state-of-the-art results.
+Our next steps in improving FCM focus on en-
+hancements based on task-specific embeddings or
+loss functions as in Hashimoto et al. (2015; dos
+Santos et al. (2015). Moreover, as the model pro-
+vides a general idea for representing both sen-
+tences and sub-structures in language, it has the
+potential to contribute useful components to vari-
+ous tasks, such as dependency parsing, SRL and
+paraphrasing. Also as kindly pointed out by one
+anonymous reviewer, our FCM can be applied to
+the TAC-KBP (Ji et al., 2010) tasks, by replac-
+ing the training objective to a multi-instance multi-
+label one (e.g. Surdeanu et al. (2012)). We plan to
+explore the above applications of FCM in the fu-
+ture.
+</bodyText>
+<sectionHeader confidence="0.99756" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999954375">
+We thank the anonymous reviewers for their com-
+ments, and Nicholas Andrews, Francis Ferraro,
+and Benjamin Van Durme for their input. We
+thank Kazuma Hashimoto, Cicero Nogueira dos
+Santos, Bing Xiang and Bowen Zhou for sharing
+their word embeddings and many helpful discus-
+sions. Mo Yu is supported by the China Scholar-
+ship Council and by NSFC 61173073.
+</bodyText>
+<sectionHeader confidence="0.998002" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.983532">
+Yonatan Belinkov, Tao Lei, Regina Barzilay, and Amir
+Globerson. 2014. Exploring compositional archi-
+tectures and word vector representations for prepo-
+sitional phrase attachment. Transactions of the As-
+sociation for Computational Linguistics, 2:561–572.
+Antoine Bordes, Xavier Glorot, Jason Weston, and
+Yoshua Bengio. 2012. A semantic matching en-
+</reference>
+<page confidence="0.944632">
+1782
+</page>
+<reference confidence="0.997481256637168">
+ergy function for learning with multi-relational data.
+Machine Learning, pages 1–27.
+Massimiliano Ciaramita and Yasemin Altun. 2006.
+Broad-coverage sense disambiguation and informa-
+tion extraction with a supersense sequence tagger. In
+EMNLP2006, pages 594–602, July.
+Ronan Collobert, Jason Weston, L´eon Bottou, Michael
+Karlen, Koray Kavukcuoglu, and Pavel Kuksa.
+2011. Natural language processing (almost) from
+scratch. JMLR, 12:2493–2537.
+Cicero dos Santos, Bing Xiang, and Bowen Zhou.
+2015. Classifying relations by ranking with con-
+volutional neural networks. In Proceedings of the
+53rd Annual Meeting of the Association for Compu-
+tational Linguistics and the 7th International Joint
+Conference on Natural Language Processing (Vol-
+ume 1: Long Papers), pages 626–634, Beijing,
+China, July. Association for Computational Linguis-
+tics.
+Kazuma Hashimoto, Pontus Stenetorp, Makoto Miwa,
+and Yoshimasa Tsuruoka. 2015. Task-oriented
+learning of word embeddings for semantic relation
+classification. arXiv preprint arXiv:1503.00095.
+Iris Hendrickx, Su Nam Kim, Zornitsa Kozareva,
+Preslav Nakov, Diarmuid O´ S´eaghdha, Sebastian
+Pad´o, Marco Pennacchiotti, Lorenza Romano, and
+Stan Szpakowicz. 2010. Semeval-2010 task
+8: Multi-way classification of semantic relations
+between pairs of nominals. In Proceedings of
+SemEval-2 Workshop.
+Karl Moritz Hermann and Phil Blunsom. 2013. The
+role of syntax in vector space models of composi-
+tional semantics. In Association for Computational
+Linguistics, pages 894–904.
+Karl Moritz Hermann, Dipanjan Das, Jason Weston,
+and Kuzman Ganchev. 2014. Semantic frame iden-
+tification with distributed word representations. In
+Proceedings of the 52nd Annual Meeting of the As-
+sociation for Computational Linguistics (Volume 1:
+Long Papers), pages 1448–1458, Baltimore, Mary-
+land, June. Association for Computational Linguis-
+tics.
+Heng Ji, Ralph Grishman, Hoa Trang Dang, Kira Grif-
+fitt, and Joe Ellis. 2010. Overview of the tac 2010
+knowledge base population track. In Third Text
+Analysis Conference (TAC 2010).
+Terry Koo, Xavier Carreras, and Michael Collins.
+2008. Simple semi-supervised dependency parsing.
+In Proceedings of ACL-08: HLT, pages 595–603,
+Columbus, Ohio, June. Association for Computa-
+tional Linguistics.
+Qi Li and Heng Ji. 2014. Incremental joint extrac-
+tion of entity mentions and relations. In Proceed-
+ings of the 52nd Annual Meeting of the Association
+for Computational Linguistics (Volume 1: Long Pa-
+pers), pages 402–412, Baltimore, Maryland, June.
+Association for Computational Linguistics.
+Yang Liu, Furu Wei, Sujian Li, Heng Ji, Ming Zhou,
+and Houfeng WANG. 2015. A dependency-based
+neural network for relation classification. In Pro-
+ceedings of the 53rd Annual Meeting of the Associ-
+ation for Computational Linguistics and the 7th In-
+ternational Joint Conference on Natural Language
+Processing (Volume 2: Short Papers), pages 285–
+290, Beijing, China, July. Association for Computa-
+tional Linguistics.
+Mingbo Ma, Liang Huang, Bowen Zhou, and Bing Xi-
+ang. 2015. Dependency-based convolutional neural
+networks for sentence embedding. In Proceedings
+of the 53rd Annual Meeting of the Association for
+Computational Linguistics and the 7th International
+Joint Conference on Natural Language Processing
+(Volume 2: Short Papers), pages 174–179, Beijing,
+China, July. Association for Computational Linguis-
+tics.
+Christopher D. Manning, Mihai Surdeanu, John Bauer,
+Jenny Finkel, Steven J. Bethard, and David Mc-
+Closky. 2014. The Stanford CoreNLP natural lan-
+guage processing toolkit. In Proceedings of 52nd
+Annual Meeting of the Association for Computa-
+tional Linguistics: System Demonstrations, pages
+55–60.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg Cor-
+rado, and Jeffrey Dean. 2013. Distributed represen-
+tations of words and phrases and their composition-
+ality. arXiv preprint arXiv:1310.4546.
+Scott Miller, Jethran Guinness, and Alex Zamanian.
+2004. Name tagging with word clusters and dis-
+criminative training. In Susan Dumais, Daniel
+Marcu, and Salim Roukos, editors, HLT-NAACL
+2004: Main Proceedings. Association for Compu-
+tational Linguistics.
+Alexis Mitchell, Stephanie Strassel, Shudong Huang,
+and Ramez Zakhary. 2005. Ace 2004 multilin-
+gual training corpus. Linguistic Data Consortium,
+Philadelphia.
+Andriy Mnih and Geoffrey Hinton. 2007. Three new
+graphical models for statistical language modelling.
+In Proceedings of the 24th international conference
+on Machine learning, pages 641–648. ACM.
+Thien Huu Nguyen and Ralph Grishman. 2014. Em-
+ploying word representations and regularization for
+domain adaptation of relation extraction. In Pro-
+ceedings of the 52nd Annual Meeting of the Associa-
+tion for Computational Linguistics (Volume 2: Short
+Papers), pages 68–74, Baltimore, Maryland, June.
+Association for Computational Linguistics.
+Thien Huu Nguyen and Ralph Grishman. 2015. Rela-
+tion extraction: Perspective from convolutional neu-
+ral networks. In Proceedings of NAACL Workshop
+on Vector Space Modeling for NLP.
+Thien Huu Nguyen, Barbara Plank, and Ralph Gr-
+ishman. 2015. Semantic representations for do-
+</reference>
+<page confidence="0.570044">
+1783
+</page>
+<reference confidence="0.999805125">
+main adaptation: A case study on the tree kernel-
+based method for relation extraction. In Proceed-
+ings of the 53rd Annual Meeting of the Association
+for Computational Linguistics and the 7th Interna-
+tional Joint Conference on Natural Language Pro-
+cessing (Volume 1: Long Papers), pages 635–644,
+Beijing, China, July. Association for Computational
+Linguistics.
+Robert Parker, David Graff, Junbo Kong, Ke Chen,
+and Kazuaki Maeda. 2011. English gigaword
+fifth edition, june. Linguistic Data Consortium,
+LDC2011T07.
+Barbara Plank and Alessandro Moschitti. 2013. Em-
+bedding semantic similarity in tree kernels for do-
+main adaptation of relation extraction. In Proceed-
+ings of the 51st Annual Meeting of the Association
+for Computational Linguistics (Volume 1: Long Pa-
+pers), pages 1498–1507, Sofia, Bulgaria, August.
+Association for Computational Linguistics.
+Bryan Rink and Sanda Harabagiu. 2010. Utd: Clas-
+sifying semantic relations by combining lexical and
+semantic resources. In Proceedings of the 5th Inter-
+national Workshop on Semantic Evaluation, pages
+256–259, Uppsala, Sweden, July. Association for
+Computational Linguistics.
+Michael Roth and Kristian Woodsend. 2014. Com-
+position of word representations improves semantic
+role labelling. In EMNLP.
+Richard Socher, Brody Huval, Christopher D. Man-
+ning, and Andrew Y. Ng. 2012. Semantic composi-
+tionality through recursive matrix-vector spaces. In
+Proceedings of the 2012 Joint Conference on Empir-
+ical Methods in Natural Language Processing and
+Computational Natural Language Learning, pages
+1201–1211, Jeju Island, Korea, July. Association for
+Computational Linguistics.
+Richard Socher, John Bauer, Christopher D Manning,
+and Andrew Y Ng. 2013a. Parsing with compo-
+sitional vector grammars. In In Proceedings of the
+ACL conference. Citeseer.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D. Manning, Andrew Ng, and
+Christopher Potts. 2013b. Recursive deep models
+for semantic compositionality over a sentiment tree-
+bank. In Empirical Methods in Natural Language
+Processing, pages 1631–1642.
+Ang Sun, Ralph Grishman, and Satoshi Sekine. 2011.
+Semi-supervised relation extraction with large-scale
+word clustering. In Proceedings of the 49th An-
+nual Meeting of the Association for Computational
+Linguistics: Human Language Technologies, pages
+521–529, Portland, Oregon, USA, June. Association
+for Computational Linguistics.
+Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati,
+and Christopher D Manning. 2012. Multi-instance
+multi-label learning for relation extraction. In Pro-
+ceedings of the 2012 Joint Conference on Empirical
+Methods in Natural Language Processing and Com-
+putational Natural Language Learning, pages 455–
+465. Association for Computational Linguistics.
+Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010.
+Word representations: a simple and general method
+for semi-supervised learning. In Association for
+Computational Linguistics, pages 384–394.
+Christopher Walker, Stephanie Strassel, Julie Medero,
+and Kazuaki Maeda. 2006. ACE 2005 multilin-
+gual training corpus. Linguistic Data Consortium,
+Philadelphia.
+Mo Yu and Mark Dredze. 2015. Learning composition
+models for phrase embeddings. Transactions of the
+Association for Computational Linguistics, 3:227–
+242.
+Mo Yu, Matthew R. Gormley, and Mark Dredze. 2015.
+Combining word embeddings and feature embed-
+dings for fine-grained relation extraction. In Pro-
+ceedings of NAACL.
+Daojian Zeng, Kang Liu, Siwei Lai, Guangyou Zhou,
+and Jun Zhao. 2014. Relation classification via con-
+volutional deep neural network. In Proceedings of
+COLING 2014, the 25th International Conference
+on Computational Linguistics: Technical Papers,
+pages 2335–2344, Dublin, Ireland, August. Dublin
+City University and Association for Computational
+Linguistics.
+GuoDong Zhou, Jian Su, Jie Zhang, and Min Zhang.
+2005. Exploring various knowledge in relation ex-
+traction. In Association for Computational Linguis-
+tics, pages 427–434.
+</reference>
+<page confidence="0.993669">
+1784
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.247878">
+<title confidence="0.9974785">Improved Relation Extraction Feature-Rich Compositional Embedding Models</title>
+<author confidence="0.622517">R</author>
+<affiliation confidence="0.802445">Language Technology Center of Center for Language and Speech Johns Hopkins University, Baltimore, MD, Intelligence and Translation Harbin Institute of Technology, Harbin,</affiliation>
+<abstract confidence="0.980891259259259">Compositional embedding models build a representation (or embedding) for a linguistic structure based on its component word embeddings. We propose a Feature-rich Compositional Embedding for relation extraction that is expressive, generalizes to new domains, and is easy-to-implement. The key idea is to combine both (unlexicalized) handcrafted features with learned word embeddings. The model is able to directly tackle the difficulties met by traditional compositional embeddings models, such as handling arbitrary types of sentence annotations and utilizing global information for composition. We test the proposed model on two relation extraction tasks, and demonstrate that our model outperforms both previous compositional models and traditional feature rich models on the ACE 2005 relation extraction task, and the SemEval 2010 relation classification task. The combination of our model and a loglinear classifier with hand-crafted features gives state-of-the-art results. We made our available for general</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yonatan Belinkov</author>
+<author>Tao Lei</author>
+<author>Regina Barzilay</author>
+<author>Amir Globerson</author>
+</authors>
+<title>Exploring compositional architectures and word vector representations for prepositional phrase attachment.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>2--561</pages>
+<contexts>
+<context position="35322" citStr="Belinkov et al. (2014)" startWordPosition="5780" endWordPosition="5784">ieve such specialization in a more general fashion: 1. Enhancing Compositional Models with Features. A recent trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation ext</context>
+</contexts>
+<marker>Belinkov, Lei, Barzilay, Globerson, 2014</marker>
+<rawString>Yonatan Belinkov, Tao Lei, Regina Barzilay, and Amir Globerson. 2014. Exploring compositional architectures and word vector representations for prepositional phrase attachment. Transactions of the Association for Computational Linguistics, 2:561–572.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Xavier Glorot</author>
+<author>Jason Weston</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>A semantic matching energy function for learning with multi-relational data.</title>
+<date>2012</date>
+<booktitle>Machine Learning,</booktitle>
+<pages>1--27</pages>
+<contexts>
+<context position="33578" citStr="Bordes et al., 2012" startWordPosition="5504" endWordPosition="5507">ted Work Compositional Models for Sentences In order to build a representation (embedding) for a sentence based on its component word embeddings and structural information, recent work on compositional models (stemming from the deep learning community) has designed model structures that mimic the structure of the input. For example, these models could take into account the order of the words (as in Convolutional Neural Networks (CNNs)) (Collobert et al., 2011) or build off of an input tree (as in Recursive Neural Networks (RNNs) or the Semantic Matching Energy Function) (Socher et al., 2013b; Bordes et al., 2012). While these models work well on sentence-level representations, the nature of their designs also limits them to fixed types of substructures from the annotated sentence, such as chains for CNNs and trees for RNNs. Such models cannot capture arbitrary combinations of linguistic annotations available for a given task, such as word order, dependency tree, and named entities used for relation extraction. Moreover, these approaches ignore the differences in functions between words appearing in different roles. This does not suit more general substructure labeling tasks in NLP, e.g. these models c</context>
+</contexts>
+<marker>Bordes, Glorot, Weston, Bengio, 2012</marker>
+<rawString>Antoine Bordes, Xavier Glorot, Jason Weston, and Yoshua Bengio. 2012. A semantic matching energy function for learning with multi-relational data. Machine Learning, pages 1–27.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Massimiliano Ciaramita</author>
+<author>Yasemin Altun</author>
+</authors>
+<title>Broad-coverage sense disambiguation and information extraction with a supersense sequence tagger.</title>
+<date>2006</date>
+<booktitle>In EMNLP2006,</booktitle>
+<pages>594--602</pages>
+<contexts>
+<context position="21049" citStr="Ciaramita and Altun (2006)" startWordPosition="3494" endWordPosition="3497">e powerful compound features, which can help us better distinguish the functions of word embeddings for predicting certain relations. For example, if we have a person and a vehicle, we know it will be more likely that they have an ART relation. For the ART relation, we introduce a corresponding weight vector, which is closer to lexical embeddings similar to the embedding of “drive”. All linguistic annotations needed for features (POS, chunks7, parses) are from Stanford CoreNLP (Manning et al., 2014). Since SemEval does not have gold entity types we obtained WordNet and named entity tags using Ciaramita and Altun (2006). For all experiments we use 200- d word embeddings trained on the NYT portion of the Gigaword 5.0 corpus (Parker et al., 2011), with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the constituency parse using the CONLL 2000 chunking converter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A lo</context>
+</contexts>
+<marker>Ciaramita, Altun, 2006</marker>
+<rawString>Massimiliano Ciaramita and Yasemin Altun. 2006. Broad-coverage sense disambiguation and information extraction with a supersense sequence tagger. In EMNLP2006, pages 594–602, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ronan Collobert</author>
+<author>Jason Weston</author>
+<author>L´eon Bottou</author>
+<author>Michael Karlen</author>
+<author>Koray Kavukcuoglu</author>
+<author>Pavel Kuksa</author>
+</authors>
+<title>Natural language processing (almost) from scratch.</title>
+<date>2011</date>
+<pages>12--2493</pages>
+<publisher>JMLR,</publisher>
+<contexts>
+<context position="33422" citStr="Collobert et al., 2011" startWordPosition="5476" endWordPosition="5479">ent word embeddings on SemEval 2010 Task 8. tion suggests that the other compositional models may also benefit from the work of Hashimoto et al. (2015). 8 Related Work Compositional Models for Sentences In order to build a representation (embedding) for a sentence based on its component word embeddings and structural information, recent work on compositional models (stemming from the deep learning community) has designed model structures that mimic the structure of the input. For example, these models could take into account the order of the words (as in Convolutional Neural Networks (CNNs)) (Collobert et al., 2011) or build off of an input tree (as in Recursive Neural Networks (RNNs) or the Semantic Matching Energy Function) (Socher et al., 2013b; Bordes et al., 2012). While these models work well on sentence-level representations, the nature of their designs also limits them to fixed types of substructures from the annotated sentence, such as chains for CNNs and trees for RNNs. Such models cannot capture arbitrary combinations of linguistic annotations available for a given task, such as word order, dependency tree, and named entities used for relation extraction. Moreover, these approaches ignore the </context>
+</contexts>
+<marker>Collobert, Weston, Bottou, Karlen, Kavukcuoglu, Kuksa, 2011</marker>
+<rawString>Ronan Collobert, Jason Weston, L´eon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel Kuksa. 2011. Natural language processing (almost) from scratch. JMLR, 12:2493–2537.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cicero dos Santos</author>
+<author>Bing Xiang</author>
+<author>Bowen Zhou</author>
+</authors>
+<title>Classifying relations by ranking with convolutional neural networks.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers),</booktitle>
+<pages>626--634</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="28658" citStr="Santos et al. (2015)" startWordPosition="4728" endWordPosition="4731">parse, WordNet 83.1 word embedding, dependency parse, NER 83.4 Table 4: Comparison of FCM with previously published results for SemEval 2010 Task 8. the combination of an embedding model and a traditional log-linear model (RNN/MVRNN + linear) (Socher et al., 2012). As with ACE, FCM uses less linguistic resources than many close competitors (Rink and Harabagiu, 2010). We also compared to concurrent work on enhancing the compositional models with taskspecific information for relation classification, including Hashimoto et al. (2015) (RelEmb), which trained task-specific word embeddings, and dos Santos et al. (2015) (CR-CNN), which proposed a task-specific ranking-based loss function. Our Hybrid methods (FCM + linear) get comparable results to theirs. Note that their base compositional model results without any task-specific enhancements, i.e. RelEmb with word2vec embeddings and CR-CNN with log-loss, are still lower than the best FCM result. We believe that FCM can be also improved with these task-specific enhancements, e.g. replacing the word embeddings to the taskspecific ones from (Hashimoto et al., 2015) increases the result to 83.7% (see §7.2 for details). We leave the application of ranking-based l</context>
+<context position="31325" citStr="Santos et al., 2015" startWordPosition="5147" endWordPosition="5150">e features (thi) does significantly worse than the full model, showing the value of our entity type features. 7.2 Effects of the word embeddings Good word embeddings are critical for both FCM and other compositional models. In this section, we show the results of FCM with embeddings used to initialize other recent state-of-the-art models. Those embeddings include the 300-d baseline embeddings trained on English Wikipedia (w2venwiki-d300) and the 100-d task-specific embeddings (task-specific-d100)10 from the RelEmb paper (Hashimoto et al., 2015), the 400-d embeddings from the CR-CNN paper (dos Santos et al., 2015). Moreover, we list the best result (DepNN) in Liu et al. (2015), which uses the same embeddings as ours. Table 6 shows the effects of word embeddings on FCM and provides relative comparisons between FCM and the other state-of-the-art models. We use the same hyperparameters and number of iterations in Table 4. The results show that using different embeddings to initialize FCM can improve F1 beyond our previous results. We also find that increasing the dimension of the word embeddings does not necessarily lead to better results due to the problem of over-fitting (e.g.w2v-enwiki-d400 vs. w2v-enw</context>
+<context position="37023" citStr="Santos et al. (2015)" startWordPosition="6043" endWordPosition="6046">our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et al., 2015), which share similar motivations to the usage of On-path features in our work. Task-Specific Enhancements for Relation Classification An orthogonal direction of improving compositional models for relation classification is to enhance the models with task-specific information. For example, Hashimoto et al. (2015) trained task-specific word embeddings, and dos Santos et al. (2015) proposed a ranking-based loss function for relation classification. 9 Conclusion We have presented FCM, a new compositional model for deriving sentence-level and substructure embeddings from word embeddings. Compared to existing compositional models, FCM can easily handle arbitrary types of input and handle global information for composition, while remaining easy to implement. We have demonstrated that FCM alone attains near state-of-the-art performances on several relation extraction tasks, and in combination with traditional feature based loglinear models it obtains state-of-the-art results</context>
+</contexts>
+<marker>Santos, Xiang, Zhou, 2015</marker>
+<rawString>Cicero dos Santos, Bing Xiang, and Bowen Zhou. 2015. Classifying relations by ranking with convolutional neural networks. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 626–634, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kazuma Hashimoto</author>
+<author>Pontus Stenetorp</author>
+<author>Makoto Miwa</author>
+<author>Yoshimasa Tsuruoka</author>
+</authors>
+<title>Task-oriented learning of word embeddings for semantic relation classification. arXiv preprint arXiv:1503.00095.</title>
+<date>2015</date>
+<contexts>
+<context position="6816" citStr="Hashimoto et al. (2015)" startWordPosition="1011" endWordPosition="1014">2005 (Walker et al., 2006) and the relation classification dataset from SemEval-2010 Task 8 (Hendrickx et al., 2010). Contributions This paper makes several contributions, including: 1. We introduce the FCM, a new compositional embedding model for relation extraction. 2. We obtain the best reported results on ACE2005 for coarse-grained relation extraction in the cross-domain setting, by combining FCM with a log-linear model. 3. We obtain results on on SemEval-2010 Task 8 competitive with the best reported results. Note that other work has already been published that builds on the FCM, such as Hashimoto et al. (2015), Nguyen and Grishman (2015), dos Santos 3In ACE 2005, ART refers to a relation between a person and an artifact; such as a user, owner, inventor, or manufacturer relationship et al. (2015), Yu and Dredze (2015) and Yu et al. (2015). Additionally, we have extended FCM to incorporate a low-rank embedding of the features (Yu et al., 2015), which focuses on fine-grained relation extraction for ACE and ERE. This paper obtains better results than the low-rank extension on ACE coarse-grained relation extraction. 2 Relation Extraction In relation extraction we are given a sentence as input with the g</context>
+<context position="28574" citStr="Hashimoto et al. (2015)" startWordPosition="4716" endWordPosition="4719">ency parse, NER 83.0 (5) FCM (log-linear) + linear (Hybrid) word embedding, dependency parse, WordNet 83.1 word embedding, dependency parse, NER 83.4 Table 4: Comparison of FCM with previously published results for SemEval 2010 Task 8. the combination of an embedding model and a traditional log-linear model (RNN/MVRNN + linear) (Socher et al., 2012). As with ACE, FCM uses less linguistic resources than many close competitors (Rink and Harabagiu, 2010). We also compared to concurrent work on enhancing the compositional models with taskspecific information for relation classification, including Hashimoto et al. (2015) (RelEmb), which trained task-specific word embeddings, and dos Santos et al. (2015) (CR-CNN), which proposed a task-specific ranking-based loss function. Our Hybrid methods (FCM + linear) get comparable results to theirs. Note that their base compositional model results without any task-specific enhancements, i.e. RelEmb with word2vec embeddings and CR-CNN with log-loss, are still lower than the best FCM result. We believe that FCM can be also improved with these task-specific enhancements, e.g. replacing the word embeddings to the taskspecific ones from (Hashimoto et al., 2015) increases the</context>
+<context position="31255" citStr="Hashimoto et al., 2015" startWordPosition="5134" endWordPosition="5137">tween, while Context features have little impact. Removing all entity type features (thi) does significantly worse than the full model, showing the value of our entity type features. 7.2 Effects of the word embeddings Good word embeddings are critical for both FCM and other compositional models. In this section, we show the results of FCM with embeddings used to initialize other recent state-of-the-art models. Those embeddings include the 300-d baseline embeddings trained on English Wikipedia (w2venwiki-d300) and the 100-d task-specific embeddings (task-specific-d100)10 from the RelEmb paper (Hashimoto et al., 2015), the 400-d embeddings from the CR-CNN paper (dos Santos et al., 2015). Moreover, we list the best result (DepNN) in Liu et al. (2015), which uses the same embeddings as ours. Table 6 shows the effects of word embeddings on FCM and provides relative comparisons between FCM and the other state-of-the-art models. We use the same hyperparameters and number of iterations in Table 4. The results show that using different embeddings to initialize FCM can improve F1 beyond our previous results. We also find that increasing the dimension of the word embeddings does not necessarily lead to better resul</context>
+<context position="32950" citStr="Hashimoto et al. (2015)" startWordPosition="5403" endWordPosition="5406">best performance (an improvement of 0.7%). This observa10In the task-specific setting, FCM will represent entity words and context words with separate sets of embeddings. Embeddings Model F1 w2v-enwiki-d300 RelEmb 81.8 (2) FCM (log-bilinear) 83.4 RelEmb 82.8 task-specific-d100 RelEmb+linear 83.5 (2) FCM (log-bilinear) 83.7 w2v-enwiki-d400 CR-CNN 82.7 (2) FCM (log-bilinear) 83.0 w2v-nyt-d200 DepNN 83.6 (2) FCM (log-bilinear) 83.0 Table 6: Evaluation of FCMs with different word embeddings on SemEval 2010 Task 8. tion suggests that the other compositional models may also benefit from the work of Hashimoto et al. (2015). 8 Related Work Compositional Models for Sentences In order to build a representation (embedding) for a sentence based on its component word embeddings and structural information, recent work on compositional models (stemming from the deep learning community) has designed model structures that mimic the structure of the input. For example, these models could take into account the order of the words (as in Convolutional Neural Networks (CNNs)) (Collobert et al., 2011) or build off of an input tree (as in Recursive Neural Networks (RNNs) or the Semantic Matching Energy Function) (Socher et al.,</context>
+<context position="36955" citStr="Hashimoto et al. (2015)" startWordPosition="6033" endWordPosition="6036">ord which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et al., 2015), which share similar motivations to the usage of On-path features in our work. Task-Specific Enhancements for Relation Classification An orthogonal direction of improving compositional models for relation classification is to enhance the models with task-specific information. For example, Hashimoto et al. (2015) trained task-specific word embeddings, and dos Santos et al. (2015) proposed a ranking-based loss function for relation classification. 9 Conclusion We have presented FCM, a new compositional model for deriving sentence-level and substructure embeddings from word embeddings. Compared to existing compositional models, FCM can easily handle arbitrary types of input and handle global information for composition, while remaining easy to implement. We have demonstrated that FCM alone attains near state-of-the-art performances on several relation extraction tasks, and in combination with traditiona</context>
+</contexts>
+<marker>Hashimoto, Stenetorp, Miwa, Tsuruoka, 2015</marker>
+<rawString>Kazuma Hashimoto, Pontus Stenetorp, Makoto Miwa, and Yoshimasa Tsuruoka. 2015. Task-oriented learning of word embeddings for semantic relation classification. arXiv preprint arXiv:1503.00095.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Iris Hendrickx</author>
+<author>Su Nam Kim</author>
+<author>Zornitsa Kozareva</author>
+<author>Preslav Nakov</author>
+<author>Diarmuid O´ S´eaghdha</author>
+<author>Sebastian Pad´o</author>
+<author>Marco Pennacchiotti</author>
+<author>Lorenza Romano</author>
+<author>Stan Szpakowicz</author>
+</authors>
+<title>Semeval-2010 task 8: Multi-way classification of semantic relations between pairs of nominals.</title>
+<date>2010</date>
+<booktitle>In Proceedings of SemEval-2 Workshop.</booktitle>
+<marker>Hendrickx, Kim, Kozareva, Nakov, S´eaghdha, Pad´o, Pennacchiotti, Romano, Szpakowicz, 2010</marker>
+<rawString>Iris Hendrickx, Su Nam Kim, Zornitsa Kozareva, Preslav Nakov, Diarmuid O´ S´eaghdha, Sebastian Pad´o, Marco Pennacchiotti, Lorenza Romano, and Stan Szpakowicz. 2010. Semeval-2010 task 8: Multi-way classification of semantic relations between pairs of nominals. In Proceedings of SemEval-2 Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karl Moritz Hermann</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>The role of syntax in vector space models of compositional semantics.</title>
+<date>2013</date>
+<booktitle>In Association for Computational Linguistics,</booktitle>
+<pages>894--904</pages>
+<contexts>
+<context position="35462" citStr="Hermann and Blunsom (2013)" startWordPosition="5804" endWordPosition="5807">al models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). </context>
+</contexts>
+<marker>Hermann, Blunsom, 2013</marker>
+<rawString>Karl Moritz Hermann and Phil Blunsom. 2013. The role of syntax in vector space models of compositional semantics. In Association for Computational Linguistics, pages 894–904.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karl Moritz Hermann</author>
+<author>Dipanjan Das</author>
+<author>Jason Weston</author>
+<author>Kuzman Ganchev</author>
+</authors>
+<title>Semantic frame identification with distributed word representations.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>1448--1458</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, Maryland,</location>
+<contexts>
+<context position="3330" citStr="Hermann et al., 2014" startWordPosition="476" endWordPosition="479">we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structure, as expressed by hand crafted features. In the following sections, we begin with a precise construction of compositional embeddings using word embeddings in conjunction with unlexicalized features. Various feature sets used in prior work (Turian et al., 2010; Nguyen and Grishman, 2014; Hermann et al., 2014; Roth and Woodsend, 2014) are cap2Such embeddings have a long history in NLP, including term-document frequency matrices and their lowdimensional counterparts obtained by linear algebra tools (LSA, PCA, CCA, NNMF), Brown clusters, random projections and vector space models. Recently, neural networks / deep learning have provided several popular methods for obtaining such embeddings. 1774 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1774–1784, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. Class M1 M2 S</context>
+<context position="12703" citStr="Hermann et al., 2014" startWordPosition="1985" endWordPosition="1988">Figure 1 depicts the construction of a sentence’s substructure embeddings. We further sum over the substructure embeddings to form an annotated sentence embedding: n ex = f,,,i ® e,,,i (1) Z=1 When both the hand-crafted features and word embeddings are treated as inputs, as has previously been the case in relation extraction, this annotated sentence embedding can be used directly as the features of a log-linear model. In fact, we find that the feature sets used in prior work for many other NLP tasks are special cases of this simple construction (Turian et al., 2010; Nguyen and Grishman, 2014; Hermann et al., 2014; Roth and Woodsend, 2014). This highlights an important connection: when the word embeddings are constant, our constructions of substructure and annotated sentence embeddings are just specific forms of polynomial (specifically quadratic) feature combination—hence their commonality in the literature. Our experimental results suggest that such a construction is more powerful than directly including embeddings into the model. 3.2 The Log-Bilinear Model Our full log-bilinear model first forms the substructure and annotated sentence embeddings from 5We use words as substructures for relation extra</context>
+<context position="34995" citStr="Hermann et al. (2014)" startWordPosition="5725" endWordPosition="5728">blem of traditional compositional models, Socher et al. (2012) made the RNN model specific to relation extraction tasks by working on the minimal sub-tree which spans the two target entities. However, these specializations 1781 to relation extraction does not generalize easily to other tasks in NLP. There are two ways to achieve such specialization in a more general fashion: 1. Enhancing Compositional Models with Features. A recent trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Featur</context>
+</contexts>
+<marker>Hermann, Das, Weston, Ganchev, 2014</marker>
+<rawString>Karl Moritz Hermann, Dipanjan Das, Jason Weston, and Kuzman Ganchev. 2014. Semantic frame identification with distributed word representations. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 1448–1458, Baltimore, Maryland, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Heng Ji</author>
+<author>Ralph Grishman</author>
+<author>Hoa Trang Dang</author>
+<author>Kira Griffitt</author>
+<author>Joe Ellis</author>
+</authors>
+<title>Overview of the tac 2010 knowledge base population track.</title>
+<date>2010</date>
+<booktitle>In Third Text Analysis Conference (TAC</booktitle>
+<marker>Ji, Grishman, Dang, Griffitt, Ellis, 2010</marker>
+<rawString>Heng Ji, Ralph Grishman, Hoa Trang Dang, Kira Griffitt, and Joe Ellis. 2010. Overview of the tac 2010 knowledge base population track. In Third Text Analysis Conference (TAC 2010).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Terry Koo</author>
+<author>Xavier Carreras</author>
+<author>Michael Collins</author>
+</authors>
+<title>Simple semi-supervised dependency parsing.</title>
+<date>2008</date>
+<booktitle>In Proceedings of ACL-08: HLT,</booktitle>
+<pages>595--603</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Columbus, Ohio,</location>
+<contexts>
+<context position="2421" citStr="Koo et al., 2008" startWordPosition="338" endWordPosition="341">.com/mgormley/pacaya its lemma, its morphological features) with aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structur</context>
+<context position="35989" citStr="Koo et al., 2008" startWordPosition="5880" endWordPosition="5883">feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the </context>
+</contexts>
+<marker>Koo, Carreras, Collins, 2008</marker>
+<rawString>Terry Koo, Xavier Carreras, and Michael Collins. 2008. Simple semi-supervised dependency parsing. In Proceedings of ACL-08: HLT, pages 595–603, Columbus, Ohio, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Qi Li</author>
+<author>Heng Ji</author>
+</authors>
+<title>Incremental joint extraction of entity mentions and relations.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>402--412</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, Maryland,</location>
+<marker>Li, Ji, 2014</marker>
+<rawString>Qi Li and Heng Ji. 2014. Incremental joint extraction of entity mentions and relations. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 402–412, Baltimore, Maryland, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Yang Liu</author>
+<author>Furu Wei</author>
+<author>Sujian Li</author>
+<author>Heng Ji</author>
+<author>Ming Zhou</author>
+<author>Houfeng WANG</author>
+</authors>
+<title>A dependency-based neural network for relation classification.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 2: Short Papers),</booktitle>
+<pages>285--290</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="29323" citStr="Liu et al., 2015" startWordPosition="4832" endWordPosition="4835">g-based loss function. Our Hybrid methods (FCM + linear) get comparable results to theirs. Note that their base compositional model results without any task-specific enhancements, i.e. RelEmb with word2vec embeddings and CR-CNN with log-loss, are still lower than the best FCM result. We believe that FCM can be also improved with these task-specific enhancements, e.g. replacing the word embeddings to the taskspecific ones from (Hashimoto et al., 2015) increases the result to 83.7% (see §7.2 for details). We leave the application of ranking-based loss to future work. Finally, a concurrent work (Liu et al., 2015) proposes DepNN, which builds representations for the dependency path (and its attached subtrees) between two entities by applying recursive and convolutional neural networks successively. Compared to their model, our FCM achieves comparable results. Of note, our FCM and the RelEmb are also the most efficient models among all above compositional models since they have linear time complexity with respect to the dimension of embeddings. 7.1 Effects of the embedding sub-models We next investigate the effects of different types of features on FCM using ablation tests on ACE 2005 (Table 5.) We focu</context>
+<context position="31389" citStr="Liu et al. (2015)" startWordPosition="5159" endWordPosition="5162">ing the value of our entity type features. 7.2 Effects of the word embeddings Good word embeddings are critical for both FCM and other compositional models. In this section, we show the results of FCM with embeddings used to initialize other recent state-of-the-art models. Those embeddings include the 300-d baseline embeddings trained on English Wikipedia (w2venwiki-d300) and the 100-d task-specific embeddings (task-specific-d100)10 from the RelEmb paper (Hashimoto et al., 2015), the 400-d embeddings from the CR-CNN paper (dos Santos et al., 2015). Moreover, we list the best result (DepNN) in Liu et al. (2015), which uses the same embeddings as ours. Table 6 shows the effects of word embeddings on FCM and provides relative comparisons between FCM and the other state-of-the-art models. We use the same hyperparameters and number of iterations in Table 4. The results show that using different embeddings to initialize FCM can improve F1 beyond our previous results. We also find that increasing the dimension of the word embeddings does not necessarily lead to better results due to the problem of over-fitting (e.g.w2v-enwiki-d400 vs. w2v-enwiki-d300). With the same initial embeddings, FCM usually gets be</context>
+<context position="36641" citStr="Liu et al., 2015" startWordPosition="5989" endWordPosition="5992">l., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et al., 2015), which share similar motivations to the usage of On-path features in our work. Task-Specific Enhancements for Relation Classification An orthogonal direction of improving compositional models for relation classification is to enhance the models with task-specific information. For example, Hashimoto et al. (2015) trained task-specific word embeddings, and dos Santos et al. (2015) proposed a ranking-based loss function for relation classification. 9 Conclusion We have presented FCM, a new compositional model for deriving sentence-level and substructure embeddings from word embeddings. Compared </context>
+</contexts>
+<marker>Liu, Wei, Li, Ji, Zhou, WANG, 2015</marker>
+<rawString>Yang Liu, Furu Wei, Sujian Li, Heng Ji, Ming Zhou, and Houfeng WANG. 2015. A dependency-based neural network for relation classification. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 2: Short Papers), pages 285– 290, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mingbo Ma</author>
+<author>Liang Huang</author>
+<author>Bowen Zhou</author>
+<author>Bing Xiang</author>
+</authors>
+<title>Dependency-based convolutional neural networks for sentence embedding.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 2: Short Papers),</booktitle>
+<pages>174--179</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="36622" citStr="Ma et al., 2015" startWordPosition="5985" endWordPosition="5988">d, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et al., 2015), which share similar motivations to the usage of On-path features in our work. Task-Specific Enhancements for Relation Classification An orthogonal direction of improving compositional models for relation classification is to enhance the models with task-specific information. For example, Hashimoto et al. (2015) trained task-specific word embeddings, and dos Santos et al. (2015) proposed a ranking-based loss function for relation classification. 9 Conclusion We have presented FCM, a new compositional model for deriving sentence-level and substructure embeddings from word em</context>
+</contexts>
+<marker>Ma, Huang, Zhou, Xiang, 2015</marker>
+<rawString>Mingbo Ma, Liang Huang, Bowen Zhou, and Bing Xiang. 2015. Dependency-based convolutional neural networks for sentence embedding. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 2: Short Papers), pages 174–179, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christopher D Manning</author>
+<author>Mihai Surdeanu</author>
+<author>John Bauer</author>
+<author>Jenny Finkel</author>
+<author>Steven J Bethard</author>
+<author>David McClosky</author>
+</authors>
+<title>The Stanford CoreNLP natural language processing toolkit.</title>
+<date>2014</date>
+<booktitle>In Proceedings of 52nd Annual Meeting of the Association for Computational Linguistics: System Demonstrations,</booktitle>
+<pages>55--60</pages>
+<contexts>
+<context position="20927" citStr="Manning et al., 2014" startWordPosition="3473" endWordPosition="3476"> two entities. We also use the target entity type as a feature. Combining this with the basic features results in more powerful compound features, which can help us better distinguish the functions of word embeddings for predicting certain relations. For example, if we have a person and a vehicle, we know it will be more likely that they have an ART relation. For the ART relation, we introduce a corresponding weight vector, which is closer to lexical embeddings similar to the embedding of “drive”. All linguistic annotations needed for features (POS, chunks7, parses) are from Stanford CoreNLP (Manning et al., 2014). Since SemEval does not have gold entity types we obtained WordNet and named entity tags using Ciaramita and Altun (2006). For all experiments we use 200- d word embeddings trained on the NYT portion of the Gigaword 5.0 corpus (Parker et al., 2011), with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the consti</context>
+</contexts>
+<marker>Manning, Surdeanu, Bauer, Finkel, Bethard, McClosky, 2014</marker>
+<rawString>Christopher D. Manning, Mihai Surdeanu, John Bauer, Jenny Finkel, Steven J. Bethard, and David McClosky. 2014. The Stanford CoreNLP natural language processing toolkit. In Proceedings of 52nd Annual Meeting of the Association for Computational Linguistics: System Demonstrations, pages 55–60.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Ilya Sutskever</author>
+<author>Kai Chen</author>
+<author>Greg Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Distributed representations of words and phrases and their compositionality. arXiv preprint arXiv:1310.4546.</title>
+<date>2013</date>
+<contexts>
+<context position="21214" citStr="Mikolov et al., 2013" startWordPosition="3523" endWordPosition="3526"> a vehicle, we know it will be more likely that they have an ART relation. For the ART relation, we introduce a corresponding weight vector, which is closer to lexical embeddings similar to the embedding of “drive”. All linguistic annotations needed for features (POS, chunks7, parses) are from Stanford CoreNLP (Manning et al., 2014). Since SemEval does not have gold entity types we obtained WordNet and named entity tags using Ciaramita and Altun (2006). For all experiments we use 200- d word embeddings trained on the NYT portion of the Gigaword 5.0 corpus (Parker et al., 2011), with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the constituency parse using the CONLL 2000 chunking converter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A log-linear model with a rich binary feature set from Sun et al. (2011) (Baseline)— this consists of all the baseline features of Zhou et al. (2005) plus several additi</context>
+</contexts>
+<marker>Mikolov, Sutskever, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Distributed representations of words and phrases and their compositionality. arXiv preprint arXiv:1310.4546.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Scott Miller</author>
+<author>Jethran Guinness</author>
+<author>Alex Zamanian</author>
+</authors>
+<title>Name tagging with word clusters and discriminative training.</title>
+<date>2004</date>
+<booktitle>HLT-NAACL 2004: Main Proceedings. Association for Computational Linguistics.</booktitle>
+<editor>In Susan Dumais, Daniel Marcu, and Salim Roukos, editors,</editor>
+<contexts>
+<context position="2382" citStr="Miller et al., 2004" startWordPosition="330" endWordPosition="333">nd Yu contributed equally. 1https://github.com/mgormley/pacaya its lemma, its morphological features) with aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embedd</context>
+<context position="35950" citStr="Miller et al., 2004" startWordPosition="5872" endWordPosition="5875">mbeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently wo</context>
+</contexts>
+<marker>Miller, Guinness, Zamanian, 2004</marker>
+<rawString>Scott Miller, Jethran Guinness, and Alex Zamanian. 2004. Name tagging with word clusters and discriminative training. In Susan Dumais, Daniel Marcu, and Salim Roukos, editors, HLT-NAACL 2004: Main Proceedings. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexis Mitchell</author>
+<author>Stephanie Strassel</author>
+<author>Shudong Huang</author>
+<author>Ramez Zakhary</author>
+</authors>
+<title>multilingual training corpus. Linguistic Data Consortium,</title>
+<date>2005</date>
+<journal>Ace</journal>
+<location>Philadelphia.</location>
+<contexts>
+<context position="23753" citStr="Mitchell et al., 2005" startWordPosition="3958" endWordPosition="3961"> We report precision, recall, and F1 for relation extraction. While it is not our focus, for completeness we include results with unknown entity types following Plank and Moschitti (2013) (Appendix 1). SemEval 2010 Task 8 We evaluate on the SemEval 2010 Task 8 dataset9 (Hendrickx et al., 2010) to compare with other compositional models and highlight the advantages of FCM. This task is to determine the relation type (or no relation) between two entities in a sentence. We adopt the setting of Socher et al. (2012). We use 10-fold 8Many relation extraction systems evaluate on the ACE 2004 corpus (Mitchell et al., 2005). Unfortunately, the most common convention is to use 5-fold cross validation, treating the entirety of the dataset as both train and evaluation data. Rather than continuing to overfit this data by perpetuating the cross-validation convention, we instead focus on ACE 2005. 9http://docs.google.com/View?docid=dfvxd49s_36c28v9pmw cross validation on the training data to select hyperparameters and do regularization by early stopping. The learning rates for FCM with/without fine-tuning are 5e-3 and 5e-2 respectively. We report macro-F1 and compare to previously published results. 7 Results ACE 2005</context>
+</contexts>
+<marker>Mitchell, Strassel, Huang, Zakhary, 2005</marker>
+<rawString>Alexis Mitchell, Stephanie Strassel, Shudong Huang, and Ramez Zakhary. 2005. Ace 2004 multilingual training corpus. Linguistic Data Consortium, Philadelphia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andriy Mnih</author>
+<author>Geoffrey Hinton</author>
+</authors>
+<title>Three new graphical models for statistical language modelling.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 24th international conference on Machine learning,</booktitle>
+<pages>641--648</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="15825" citStr="Mnih and Hinton, 2007" startWordPosition="2529" endWordPosition="2532">n as: iven an instance S and paramer t no norm e for each word type and a list of weight matrix T[T] which used to hl = y yEL is use o score each el y. The model is log-bilinear 6 (i.e. log-quadratic) since we recover a log-linear model by fixing either e ortT. We study o e og b th th full log-bilinear and the log-linear y g model obtained b fixing the word embeddings. 3.3 Discussion of the Model Substructure Embeddings Similar words (i.e. those with similar e the in bons indicate the ART relation if it appears on the 6Other popular log-bilinear models are the log-bilinear Mi language models (Mnih and Hinton, 2007; kolov et al., 2013). ther intuition t is that it is traditional lexical features used in classical NLP systems. Consider ��� 1 a lexical feature f = u A w, which is a conjunction (logic-and) between non-lexical property u andolexicalkpart (word)mw. Iflwe represent w as a one-hot vector, then the outer product exactly recovers the original feature f. Then if we replace one-hot representation with its word embedding, we get the current form of our FCM. Therefore, our model can be viewed as a smoothed version of lexical features, which keeps the expressive strength, and uses embeddings to gener</context>
+</contexts>
+<marker>Mnih, Hinton, 2007</marker>
+<rawString>Andriy Mnih and Geoffrey Hinton. 2007. Three new graphical models for statistical language modelling. In Proceedings of the 24th international conference on Machine learning, pages 641–648. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thien Huu Nguyen</author>
+<author>Ralph Grishman</author>
+</authors>
+<title>Employing word representations and regularization for domain adaptation of relation extraction.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers),</booktitle>
+<pages>68--74</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, Maryland,</location>
+<contexts>
+<context position="2519" citStr="Nguyen and Grishman, 2014" startWordPosition="354" endWordPosition="357">guistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structure, as expressed by hand crafted features. In the following sections, we begin with a precise const</context>
+<context position="8984" citStr="Nguyen and Grishman, 2014" startWordPosition="1380" endWordPosition="1383"> however the applications of these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to apply neural language model embeddings to this task. Motivation and Examples Whether a word is indicative of a relation depends on multiple properties, which may relate to its context within the sentence. For example, whether the word is inbetween the entities, on the dependency path between them, or to their left or right may provide additional complementa</context>
+<context position="12681" citStr="Nguyen and Grishman, 2014" startWordPosition="1981" endWordPosition="1984">on in relation extraction. Figure 1 depicts the construction of a sentence’s substructure embeddings. We further sum over the substructure embeddings to form an annotated sentence embedding: n ex = f,,,i ® e,,,i (1) Z=1 When both the hand-crafted features and word embeddings are treated as inputs, as has previously been the case in relation extraction, this annotated sentence embedding can be used directly as the features of a log-linear model. In fact, we find that the feature sets used in prior work for many other NLP tasks are special cases of this simple construction (Turian et al., 2010; Nguyen and Grishman, 2014; Hermann et al., 2014; Roth and Woodsend, 2014). This highlights an important connection: when the word embeddings are constant, our constructions of substructure and annotated sentence embeddings are just specific forms of polynomial (specifically quadratic) feature combination—hence their commonality in the literature. Our experimental results suggest that such a construction is more powerful than directly including embeddings into the model. 3.2 The Log-Bilinear Model Our full log-bilinear model first forms the substructure and annotated sentence embeddings from 5We use words as substructu</context>
+<context position="22201" citStr="Nguyen and Grishman (2014)" startWordPosition="3694" endWordPosition="3697">rter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A log-linear model with a rich binary feature set from Sun et al. (2011) (Baseline)— this consists of all the baseline features of Zhou et al. (2005) plus several additional carefully-chosen features that have been highly tuned for ACE-style relation extraction over years of research. We exclude the Country gazetteer and WordNet features from Zhou et al. (2005). The two remaining methods are hybrid models that integrate FCM as a submodel within the log-linear model (§ 4). We consider two combinations. (4) The feature set of Nguyen and Grishman (2014) obtained by using the embeddings of heads of two entity mentions (+HeadOnly). (5) Our full FCM model (+FCM). All models use L2 regularization tuned on dev data. 6.1 Datasets and Evaluation ACE 2005 We evaluate our relation extraction system on the English portion of the ACE 2005 corpus (Walker et al., 2006).8 There are 6 domains: Newswire (nw), Broadcast Conversation (bc), Broadcast News (bn), Telephone Speech (cts), Usenet Newsgroups (un), and Weblogs (wl). Following prior work we focus on the domain adaptation setting, where we train on one set (the union of the news domains (bn+nw), tune h</context>
+<context position="24595" citStr="Nguyen and Grishman (2014)" startWordPosition="4083" endWordPosition="4086">ross-validation convention, we instead focus on ACE 2005. 9http://docs.google.com/View?docid=dfvxd49s_36c28v9pmw cross validation on the training data to select hyperparameters and do regularization by early stopping. The learning rates for FCM with/without fine-tuning are 5e-3 and 5e-2 respectively. We report macro-F1 and compare to previously published results. 7 Results ACE 2005 Despite FCM’s (1) simple feature set, it is competitive with the log-linear baseline (3) on out-of-domain test sets (Table 3). In the typical gold entity spans and types setting, both Plank and Moschitti (2013) and Nguyen and Grishman (2014) found that they were unable to obtain improvements by adding embeddings to baseline feature sets. By contrast, we find that on all domains the combination baseline + FCM (5) obtains the highest F1 and significantly outperforms the other baselines, yielding the best reported results for this task. We found that fine-tuning of embeddings (2) did not yield improvements on our out-of-domain development set, in contrast to our results below for SemEval. We suspect this is because fine-tuning allows the model to overfit the training domain, which then hurts performance on the unseen ACE test domain</context>
+<context position="26868" citStr="Nguyen and Grishman (2014)" startWordPosition="4472" endWordPosition="4475">than the RNN and MVRNN. With NER features and fine-tuning, it outperforms a CNN (Zeng et al., 2014) and also 1779 Model bc cts wl Avg. F1 P R F1 P R F1 P R F1 (1) FCM only (ST) 66.56 57.86 61.90 65.62 44.35 52.93 57.80 44.62 50.36 55.06 (3) Baseline (ST) 74.89 48.54 58.90 74.32 40.26 52.23 63.41 43.20 51.39 54.17 (4) + HeadOnly (ST) 70.87 50.76 59.16 71.16 43.21 53.77 57.71 42.92 49.23 54.05 (5) + FCM (ST) 74.39 55.35 63.48 74.53 45.01 56.12 65.63 47.59 55.17 58.26 Table 3: Comparison of models on ACE 2005 out-of-domain test sets. Baseline + HeadOnly is our reimplementation of the features of Nguyen and Grishman (2014). Classifier Features F1 SVM (Rink and Harabagiu, 2010) POS, prefixes, morphological, WordNet, dependency parse, 82.2 (Best in SemEval2010) Levin classed, ProBank, FrameNet, NomLex-Plus, Google n-gram, paraphrases, TextRunner RNN word embedding, syntactic parse 74.8 RNN + linear word embedding, syntactic parse, POS, NER, WordNet 77.6 MVRNN word embedding, syntactic parse 79.1 MVRNN + linear word embedding, syntactic parse, POS, NER, WordNet 82.4 CNN (Zeng et al., 2014) word embedding, WordNet 82.7 CR-CNN (log-loss) word embedding 82.7 CR-CNN (ranking-loss) word embedding 84.1 RelEmb (word2vec </context>
+<context position="30080" citStr="Nguyen and Grishman (2014)" startWordPosition="4954" endWordPosition="4957">recursive and convolutional neural networks successively. Compared to their model, our FCM achieves comparable results. Of note, our FCM and the RelEmb are also the most efficient models among all above compositional models since they have linear time complexity with respect to the dimension of embeddings. 7.1 Effects of the embedding sub-models We next investigate the effects of different types of features on FCM using ablation tests on ACE 2005 (Table 5.) We focus on FCM alone with the feature templates of Table 2. Additionally, we show results of using only the head embedding features from Nguyen and Grishman (2014) (HeadOnly). Not surprisingly, the HeadOnly model performs poorly (F1 score = 14.30%), showing the importance of our rich binary feature set. Among all the features templates, removing HeadEmb results in the largest degradation. The second most im1780 Feature Set Prec Rec F1 HeadOnly 31.67 9.24 14.30 FCM 69.17 56.73 62.33 -HeadEmb 66.06 47.00 54.92 -Context 70.89 55.27 62.11 -In-between 66.39 51.86 58.23 -On-path 69.23 53.97 60.66 FCM-EntityTypes 71.33 34.68 46.67 Table 5: Ablation test of FCM on development set. portant feature template is In-between, while Context features have little impact</context>
+<context position="35026" citStr="Nguyen and Grishman (2014)" startWordPosition="5730" endWordPosition="5733">itional models, Socher et al. (2012) made the RNN model specific to relation extraction tasks by working on the minimal sub-tree which spans the two target entities. However, these specializations 1781 to relation extraction does not generalize easily to other tasks in NLP. There are two ways to achieve such specialization in a more general fashion: 1. Enhancing Compositional Models with Features. A recent trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to com</context>
+</contexts>
+<marker>Nguyen, Grishman, 2014</marker>
+<rawString>Thien Huu Nguyen and Ralph Grishman. 2014. Employing word representations and regularization for domain adaptation of relation extraction. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), pages 68–74, Baltimore, Maryland, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thien Huu Nguyen</author>
+<author>Ralph Grishman</author>
+</authors>
+<title>Relation extraction: Perspective from convolutional neural networks.</title>
+<date>2015</date>
+<booktitle>In Proceedings of NAACL Workshop on Vector Space Modeling for NLP.</booktitle>
+<contexts>
+<context position="6844" citStr="Nguyen and Grishman (2015)" startWordPosition="1015" endWordPosition="1018">) and the relation classification dataset from SemEval-2010 Task 8 (Hendrickx et al., 2010). Contributions This paper makes several contributions, including: 1. We introduce the FCM, a new compositional embedding model for relation extraction. 2. We obtain the best reported results on ACE2005 for coarse-grained relation extraction in the cross-domain setting, by combining FCM with a log-linear model. 3. We obtain results on on SemEval-2010 Task 8 competitive with the best reported results. Note that other work has already been published that builds on the FCM, such as Hashimoto et al. (2015), Nguyen and Grishman (2015), dos Santos 3In ACE 2005, ART refers to a relation between a person and an artifact; such as a user, owner, inventor, or manufacturer relationship et al. (2015), Yu and Dredze (2015) and Yu et al. (2015). Additionally, we have extended FCM to incorporate a low-rank embedding of the features (Yu et al., 2015), which focuses on fine-grained relation extraction for ACE and ERE. This paper obtains better results than the low-rank extension on ACE coarse-grained relation extraction. 2 Relation Extraction In relation extraction we are given a sentence as input with the goal of identifying, for all </context>
+<context position="9012" citStr="Nguyen and Grishman, 2015" startWordPosition="1384" endWordPosition="1388">f these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to apply neural language model embeddings to this task. Motivation and Examples Whether a word is indicative of a relation depends on multiple properties, which may relate to its context within the sentence. For example, whether the word is inbetween the entities, on the dependency path between them, or to their left or right may provide additional complementary information. Illustrative</context>
+</contexts>
+<marker>Nguyen, Grishman, 2015</marker>
+<rawString>Thien Huu Nguyen and Ralph Grishman. 2015. Relation extraction: Perspective from convolutional neural networks. In Proceedings of NAACL Workshop on Vector Space Modeling for NLP.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Thien Huu Nguyen</author>
+<author>Barbara Plank</author>
+<author>Ralph Grishman</author>
+</authors>
+<title>Semantic representations for domain adaptation: A case study on the tree kernelbased method for relation extraction.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers),</booktitle>
+<pages>635--644</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="8831" citStr="Nguyen et al., 2015" startWordPosition="1352" endWordPosition="1355">is artificially reduced. Embedding Models Word embeddings and compositional embedding models have been successfully applied to a range of NLP tasks, however the applications of these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to apply neural language model embeddings to this task. Motivation and Examples Whether a word is indicative of a relation depends on multiple properties, which may relate to its context within the sentence. F</context>
+</contexts>
+<marker>Nguyen, Plank, Grishman, 2015</marker>
+<rawString>Thien Huu Nguyen, Barbara Plank, and Ralph Grishman. 2015. Semantic representations for domain adaptation: A case study on the tree kernelbased method for relation extraction. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 635–644, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert Parker</author>
+<author>David Graff</author>
+<author>Junbo Kong</author>
+<author>Ke Chen</author>
+<author>Kazuaki Maeda</author>
+</authors>
+<date>2011</date>
+<booktitle>Linguistic Data Consortium, LDC2011T07.</booktitle>
+<note>English gigaword fifth edition,</note>
+<contexts>
+<context position="21176" citStr="Parker et al., 2011" startWordPosition="3517" endWordPosition="3520"> For example, if we have a person and a vehicle, we know it will be more likely that they have an ART relation. For the ART relation, we introduce a corresponding weight vector, which is closer to lexical embeddings similar to the embedding of “drive”. All linguistic annotations needed for features (POS, chunks7, parses) are from Stanford CoreNLP (Manning et al., 2014). Since SemEval does not have gold entity types we obtained WordNet and named entity tags using Ciaramita and Altun (2006). For all experiments we use 200- d word embeddings trained on the NYT portion of the Gigaword 5.0 corpus (Parker et al., 2011), with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the constituency parse using the CONLL 2000 chunking converter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A log-linear model with a rich binary feature set from Sun et al. (2011) (Baseline)— this consists of all the baseline features of </context>
+</contexts>
+<marker>Parker, Graff, Kong, Chen, Maeda, 2011</marker>
+<rawString>Robert Parker, David Graff, Junbo Kong, Ke Chen, and Kazuaki Maeda. 2011. English gigaword fifth edition, june. Linguistic Data Consortium, LDC2011T07.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Barbara Plank</author>
+<author>Alessandro Moschitti</author>
+</authors>
+<title>Embedding semantic similarity in tree kernels for domain adaptation of relation extraction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>1498--1507</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="2491" citStr="Plank and Moschitti, 2013" startWordPosition="350" endWordPosition="353">ith aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structure, as expressed by hand crafted features. In the following sections, w</context>
+<context position="8809" citStr="Plank and Moschitti, 2013" startWordPosition="1348" endWordPosition="1351">umber of negative examples is artificially reduced. Embedding Models Word embeddings and compositional embedding models have been successfully applied to a range of NLP tasks, however the applications of these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to apply neural language model embeddings to this task. Motivation and Examples Whether a word is indicative of a relation depends on multiple properties, which may relate to its context </context>
+<context position="22936" citStr="Plank and Moschitti, 2013" startWordPosition="3817" endWordPosition="3820">All models use L2 regularization tuned on dev data. 6.1 Datasets and Evaluation ACE 2005 We evaluate our relation extraction system on the English portion of the ACE 2005 corpus (Walker et al., 2006).8 There are 6 domains: Newswire (nw), Broadcast Conversation (bc), Broadcast News (bn), Telephone Speech (cts), Usenet Newsgroups (un), and Weblogs (wl). Following prior work we focus on the domain adaptation setting, where we train on one set (the union of the news domains (bn+nw), tune hyperparameters on a dev domain (half of bc) and evaluate on the remainder (cts, wl, and the remainder of bc) (Plank and Moschitti, 2013; Nguyen and Grishman, 2014). We assume that gold entity spans and types are available for train and test. We use all pairs of entity mentions to yield 43,518 total relations in the training set. We report precision, recall, and F1 for relation extraction. While it is not our focus, for completeness we include results with unknown entity types following Plank and Moschitti (2013) (Appendix 1). SemEval 2010 Task 8 We evaluate on the SemEval 2010 Task 8 dataset9 (Hendrickx et al., 2010) to compare with other compositional models and highlight the advantages of FCM. This task is to determine the </context>
+<context position="24564" citStr="Plank and Moschitti (2013)" startWordPosition="4078" endWordPosition="4081">this data by perpetuating the cross-validation convention, we instead focus on ACE 2005. 9http://docs.google.com/View?docid=dfvxd49s_36c28v9pmw cross validation on the training data to select hyperparameters and do regularization by early stopping. The learning rates for FCM with/without fine-tuning are 5e-3 and 5e-2 respectively. We report macro-F1 and compare to previously published results. 7 Results ACE 2005 Despite FCM’s (1) simple feature set, it is competitive with the log-linear baseline (3) on out-of-domain test sets (Table 3). In the typical gold entity spans and types setting, both Plank and Moschitti (2013) and Nguyen and Grishman (2014) found that they were unable to obtain improvements by adding embeddings to baseline feature sets. By contrast, we find that on all domains the combination baseline + FCM (5) obtains the highest F1 and significantly outperforms the other baselines, yielding the best reported results for this task. We found that fine-tuning of embeddings (2) did not yield improvements on our out-of-domain development set, in contrast to our results below for SemEval. We suspect this is because fine-tuning allows the model to overfit the training domain, which then hurts performanc</context>
+<context position="36060" citStr="Plank and Moschitti, 2013" startWordPosition="5892" endWordPosition="5895">d Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et al., 2015), which share simil</context>
+</contexts>
+<marker>Plank, Moschitti, 2013</marker>
+<rawString>Barbara Plank and Alessandro Moschitti. 2013. Embedding semantic similarity in tree kernels for domain adaptation of relation extraction. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 1498–1507, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bryan Rink</author>
+<author>Sanda Harabagiu</author>
+</authors>
+<title>Utd: Classifying semantic relations by combining lexical and semantic resources.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 5th International Workshop on Semantic Evaluation,</booktitle>
+<pages>256--259</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Uppsala, Sweden,</location>
+<contexts>
+<context position="26923" citStr="Rink and Harabagiu, 2010" startWordPosition="4480" endWordPosition="4483">g, it outperforms a CNN (Zeng et al., 2014) and also 1779 Model bc cts wl Avg. F1 P R F1 P R F1 P R F1 (1) FCM only (ST) 66.56 57.86 61.90 65.62 44.35 52.93 57.80 44.62 50.36 55.06 (3) Baseline (ST) 74.89 48.54 58.90 74.32 40.26 52.23 63.41 43.20 51.39 54.17 (4) + HeadOnly (ST) 70.87 50.76 59.16 71.16 43.21 53.77 57.71 42.92 49.23 54.05 (5) + FCM (ST) 74.39 55.35 63.48 74.53 45.01 56.12 65.63 47.59 55.17 58.26 Table 3: Comparison of models on ACE 2005 out-of-domain test sets. Baseline + HeadOnly is our reimplementation of the features of Nguyen and Grishman (2014). Classifier Features F1 SVM (Rink and Harabagiu, 2010) POS, prefixes, morphological, WordNet, dependency parse, 82.2 (Best in SemEval2010) Levin classed, ProBank, FrameNet, NomLex-Plus, Google n-gram, paraphrases, TextRunner RNN word embedding, syntactic parse 74.8 RNN + linear word embedding, syntactic parse, POS, NER, WordNet 77.6 MVRNN word embedding, syntactic parse 79.1 MVRNN + linear word embedding, syntactic parse, POS, NER, WordNet 82.4 CNN (Zeng et al., 2014) word embedding, WordNet 82.7 CR-CNN (log-loss) word embedding 82.7 CR-CNN (ranking-loss) word embedding 84.1 RelEmb (word2vec embedding) word embedding 81.8 RelEmb (task-spec embedd</context>
+<context position="28406" citStr="Rink and Harabagiu, 2010" startWordPosition="4691" endWordPosition="4694"> WordNet 82.0 (1) FCM (log-linear) word embedding, dependency parse, NER 81.4 word embedding, dependency parse, WordNet 82.5 (2) FCM (log-bilinear) word embedding, dependency parse, NER 83.0 (5) FCM (log-linear) + linear (Hybrid) word embedding, dependency parse, WordNet 83.1 word embedding, dependency parse, NER 83.4 Table 4: Comparison of FCM with previously published results for SemEval 2010 Task 8. the combination of an embedding model and a traditional log-linear model (RNN/MVRNN + linear) (Socher et al., 2012). As with ACE, FCM uses less linguistic resources than many close competitors (Rink and Harabagiu, 2010). We also compared to concurrent work on enhancing the compositional models with taskspecific information for relation classification, including Hashimoto et al. (2015) (RelEmb), which trained task-specific word embeddings, and dos Santos et al. (2015) (CR-CNN), which proposed a task-specific ranking-based loss function. Our Hybrid methods (FCM + linear) get comparable results to theirs. Note that their base compositional model results without any task-specific enhancements, i.e. RelEmb with word2vec embeddings and CR-CNN with log-loss, are still lower than the best FCM result. We believe that</context>
+</contexts>
+<marker>Rink, Harabagiu, 2010</marker>
+<rawString>Bryan Rink and Sanda Harabagiu. 2010. Utd: Classifying semantic relations by combining lexical and semantic resources. In Proceedings of the 5th International Workshop on Semantic Evaluation, pages 256–259, Uppsala, Sweden, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Roth</author>
+<author>Kristian Woodsend</author>
+</authors>
+<title>Composition of word representations improves semantic role labelling.</title>
+<date>2014</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="2446" citStr="Roth and Woodsend, 2014" startWordPosition="342" endWordPosition="345">ya its lemma, its morphological features) with aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structure, as expressed by hand c</context>
+<context position="12729" citStr="Roth and Woodsend, 2014" startWordPosition="1989" endWordPosition="1992">onstruction of a sentence’s substructure embeddings. We further sum over the substructure embeddings to form an annotated sentence embedding: n ex = f,,,i ® e,,,i (1) Z=1 When both the hand-crafted features and word embeddings are treated as inputs, as has previously been the case in relation extraction, this annotated sentence embedding can be used directly as the features of a log-linear model. In fact, we find that the feature sets used in prior work for many other NLP tasks are special cases of this simple construction (Turian et al., 2010; Nguyen and Grishman, 2014; Hermann et al., 2014; Roth and Woodsend, 2014). This highlights an important connection: when the word embeddings are constant, our constructions of substructure and annotated sentence embeddings are just specific forms of polynomial (specifically quadratic) feature combination—hence their commonality in the literature. Our experimental results suggest that such a construction is more powerful than directly including embeddings into the model. 3.2 The Log-Bilinear Model Our full log-bilinear model first forms the substructure and annotated sentence embeddings from 5We use words as substructures for relation extraction, but use the general</context>
+<context position="36014" citStr="Roth and Woodsend, 2014" startWordPosition="5884" endWordPosition="5887">rd to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et a</context>
+</contexts>
+<marker>Roth, Woodsend, 2014</marker>
+<rawString>Michael Roth and Kristian Woodsend. 2014. Composition of word representations improves semantic role labelling. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Brody Huval</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Semantic compositionality through recursive matrix-vector spaces.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>1201--1211</pages>
+<institution>Jeju Island, Korea, July. Association for Computational Linguistics.</institution>
+<contexts>
+<context position="8608" citStr="Socher et al., 2012" startWordPosition="1316" endWordPosition="1319">, M1) are different relations. Table 1 shows ACE 2005 relations, and has a strong label bias towards negative examples. We also consider the task of relation classification (SemEval), where the number of negative examples is artificially reduced. Embedding Models Word embeddings and compositional embedding models have been successfully applied to a range of NLP tasks, however the applications of these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We </context>
+<context position="23647" citStr="Socher et al. (2012)" startWordPosition="3941" endWordPosition="3944">train and test. We use all pairs of entity mentions to yield 43,518 total relations in the training set. We report precision, recall, and F1 for relation extraction. While it is not our focus, for completeness we include results with unknown entity types following Plank and Moschitti (2013) (Appendix 1). SemEval 2010 Task 8 We evaluate on the SemEval 2010 Task 8 dataset9 (Hendrickx et al., 2010) to compare with other compositional models and highlight the advantages of FCM. This task is to determine the relation type (or no relation) between two entities in a sentence. We adopt the setting of Socher et al. (2012). We use 10-fold 8Many relation extraction systems evaluate on the ACE 2004 corpus (Mitchell et al., 2005). Unfortunately, the most common convention is to use 5-fold cross validation, treating the entirety of the dataset as both train and evaluation data. Rather than continuing to overfit this data by perpetuating the cross-validation convention, we instead focus on ACE 2005. 9http://docs.google.com/View?docid=dfvxd49s_36c28v9pmw cross validation on the training data to select hyperparameters and do regularization by early stopping. The learning rates for FCM with/without fine-tuning are 5e-3</context>
+<context position="28302" citStr="Socher et al., 2012" startWordPosition="4674" endWordPosition="4677">epNN + linear word embedding, dependency paths, WordNet, NER 83.6 word embedding, dependency parse, WordNet 82.0 (1) FCM (log-linear) word embedding, dependency parse, NER 81.4 word embedding, dependency parse, WordNet 82.5 (2) FCM (log-bilinear) word embedding, dependency parse, NER 83.0 (5) FCM (log-linear) + linear (Hybrid) word embedding, dependency parse, WordNet 83.1 word embedding, dependency parse, NER 83.4 Table 4: Comparison of FCM with previously published results for SemEval 2010 Task 8. the combination of an embedding model and a traditional log-linear model (RNN/MVRNN + linear) (Socher et al., 2012). As with ACE, FCM uses less linguistic resources than many close competitors (Rink and Harabagiu, 2010). We also compared to concurrent work on enhancing the compositional models with taskspecific information for relation classification, including Hashimoto et al. (2015) (RelEmb), which trained task-specific word embeddings, and dos Santos et al. (2015) (CR-CNN), which proposed a task-specific ranking-based loss function. Our Hybrid methods (FCM + linear) get comparable results to theirs. Note that their base compositional model results without any task-specific enhancements, i.e. RelEmb with</context>
+<context position="34436" citStr="Socher et al. (2012)" startWordPosition="5639" endWordPosition="5642">ture arbitrary combinations of linguistic annotations available for a given task, such as word order, dependency tree, and named entities used for relation extraction. Moreover, these approaches ignore the differences in functions between words appearing in different roles. This does not suit more general substructure labeling tasks in NLP, e.g. these models cannot be directly applied to relation extraction since they will output the same result for any pair of entities in a same sentence. Compositional Models with Annotation Features To tackle the problem of traditional compositional models, Socher et al. (2012) made the RNN model specific to relation extraction tasks by working on the minimal sub-tree which spans the two target entities. However, these specializations 1781 to relation extraction does not generalize easily to other tasks in NLP. There are two ways to achieve such specialization in a more general fashion: 1. Enhancing Compositional Models with Features. A recent trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave diff</context>
+</contexts>
+<marker>Socher, Huval, Manning, Ng, 2012</marker>
+<rawString>Richard Socher, Brody Huval, Christopher D. Manning, and Andrew Y. Ng. 2012. Semantic compositionality through recursive matrix-vector spaces. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 1201–1211, Jeju Island, Korea, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>John Bauer</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Parsing with compositional vector grammars. In</title>
+<date>2013</date>
+<booktitle>In Proceedings of the ACL conference. Citeseer.</booktitle>
+<contexts>
+<context position="17271" citStr="Socher et al. 2013" startWordPosition="2786" endWordPosition="2789">f word embedding. In contrast, CNNs and RNNs usually blenoutput labels y&apos; E L is given by Z(x) E IEL exp, (E 1 Ty0 O (fwi rameters of the model are the word embeddings i� i� constant which sums over all possi Smoothed Lexical Features _ Ano about the selection of outer produc ® ewi)) . The paactually a smoothed version of f (4) � rt tures) will have simila et sider the example in Fig. 1. The word “driving&amp;quot; FCM requires O(snd) products on can e (i.e. those with similar fea- TimedComplexityiInference r matrix representations. To faster than both)CNNs (Collobe tion of the outer product,con- RNNs Socher et al. 2013b; B e sentenc in F understand ourtselec ( ordes path learn parameters gh weight for the embeddings similar dependency path between the mentions will similarly receive high weight for the ART label. On the other hand, if the on the dependency s words with 1777 have complexity O(C · nd2), where C is a model dependent constant. 4 Hybrid Model We present a hybrid model which combines the FCM with an existing log-linear model. We do so by defining a new model: 1 pFCM+loglin(y|x) = Z pFCM(y|x)ploglin(y|x) (3) The log-linear model has the usual form: ploglin(y|x) a exp(0 · f(x, y)), where 0 are the </context>
+<context position="33555" citStr="Socher et al., 2013" startWordPosition="5500" endWordPosition="5503"> et al. (2015). 8 Related Work Compositional Models for Sentences In order to build a representation (embedding) for a sentence based on its component word embeddings and structural information, recent work on compositional models (stemming from the deep learning community) has designed model structures that mimic the structure of the input. For example, these models could take into account the order of the words (as in Convolutional Neural Networks (CNNs)) (Collobert et al., 2011) or build off of an input tree (as in Recursive Neural Networks (RNNs) or the Semantic Matching Energy Function) (Socher et al., 2013b; Bordes et al., 2012). While these models work well on sentence-level representations, the nature of their designs also limits them to fixed types of substructures from the annotated sentence, such as chains for CNNs and trees for RNNs. Such models cannot capture arbitrary combinations of linguistic annotations available for a given task, such as word order, dependency tree, and named entities used for relation extraction. Moreover, these approaches ignore the differences in functions between words appearing in different roles. This does not suit more general substructure labeling tasks in N</context>
+<context position="35429" citStr="Socher et al. (2013" startWordPosition="5799" endWordPosition="5802">trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2</context>
+</contexts>
+<marker>Socher, Bauer, Manning, Ng, 2013</marker>
+<rawString>Richard Socher, John Bauer, Christopher D Manning, and Andrew Y Ng. 2013a. Parsing with compositional vector grammars. In In Proceedings of the ACL conference. Citeseer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Alex Perelygin</author>
+<author>Jean Wu</author>
+<author>Jason Chuang</author>
+<author>Christopher D Manning</author>
+<author>Andrew Ng</author>
+<author>Christopher Potts</author>
+</authors>
+<title>Recursive deep models for semantic compositionality over a sentiment treebank.</title>
+<date>2013</date>
+<booktitle>In Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1631--1642</pages>
+<contexts>
+<context position="17271" citStr="Socher et al. 2013" startWordPosition="2786" endWordPosition="2789">f word embedding. In contrast, CNNs and RNNs usually blenoutput labels y&apos; E L is given by Z(x) E IEL exp, (E 1 Ty0 O (fwi rameters of the model are the word embeddings i� i� constant which sums over all possi Smoothed Lexical Features _ Ano about the selection of outer produc ® ewi)) . The paactually a smoothed version of f (4) � rt tures) will have simila et sider the example in Fig. 1. The word “driving&amp;quot; FCM requires O(snd) products on can e (i.e. those with similar fea- TimedComplexityiInference r matrix representations. To faster than both)CNNs (Collobe tion of the outer product,con- RNNs Socher et al. 2013b; B e sentenc in F understand ourtselec ( ordes path learn parameters gh weight for the embeddings similar dependency path between the mentions will similarly receive high weight for the ART label. On the other hand, if the on the dependency s words with 1777 have complexity O(C · nd2), where C is a model dependent constant. 4 Hybrid Model We present a hybrid model which combines the FCM with an existing log-linear model. We do so by defining a new model: 1 pFCM+loglin(y|x) = Z pFCM(y|x)ploglin(y|x) (3) The log-linear model has the usual form: ploglin(y|x) a exp(0 · f(x, y)), where 0 are the </context>
+<context position="33555" citStr="Socher et al., 2013" startWordPosition="5500" endWordPosition="5503"> et al. (2015). 8 Related Work Compositional Models for Sentences In order to build a representation (embedding) for a sentence based on its component word embeddings and structural information, recent work on compositional models (stemming from the deep learning community) has designed model structures that mimic the structure of the input. For example, these models could take into account the order of the words (as in Convolutional Neural Networks (CNNs)) (Collobert et al., 2011) or build off of an input tree (as in Recursive Neural Networks (RNNs) or the Semantic Matching Energy Function) (Socher et al., 2013b; Bordes et al., 2012). While these models work well on sentence-level representations, the nature of their designs also limits them to fixed types of substructures from the annotated sentence, such as chains for CNNs and trees for RNNs. Such models cannot capture arbitrary combinations of linguistic annotations available for a given task, such as word order, dependency tree, and named entities used for relation extraction. Moreover, these approaches ignore the differences in functions between words appearing in different roles. This does not suit more general substructure labeling tasks in N</context>
+<context position="35429" citStr="Socher et al. (2013" startWordPosition="5799" endWordPosition="5802">trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2</context>
+</contexts>
+<marker>Socher, Perelygin, Wu, Chuang, Manning, Ng, Potts, 2013</marker>
+<rawString>Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D. Manning, Andrew Ng, and Christopher Potts. 2013b. Recursive deep models for semantic compositionality over a sentiment treebank. In Empirical Methods in Natural Language Processing, pages 1631–1642.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ang Sun</author>
+<author>Ralph Grishman</author>
+<author>Satoshi Sekine</author>
+</authors>
+<title>Semi-supervised relation extraction with large-scale word clustering.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>521--529</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Portland, Oregon, USA,</location>
+<contexts>
+<context position="2464" citStr="Sun et al., 2011" startWordPosition="346" endWordPosition="349">ogical features) with aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary linguistic structure, as expressed by hand crafted features. I</context>
+<context position="21717" citStr="Sun et al. (2011)" startWordPosition="3614" endWordPosition="3617"> trained on the NYT portion of the Gigaword 5.0 corpus (Parker et al., 2011), with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the constituency parse using the CONLL 2000 chunking converter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A log-linear model with a rich binary feature set from Sun et al. (2011) (Baseline)— this consists of all the baseline features of Zhou et al. (2005) plus several additional carefully-chosen features that have been highly tuned for ACE-style relation extraction over years of research. We exclude the Country gazetteer and WordNet features from Zhou et al. (2005). The two remaining methods are hybrid models that integrate FCM as a submodel within the log-linear model (§ 4). We consider two combinations. (4) The feature set of Nguyen and Grishman (2014) obtained by using the embeddings of heads of two entity mentions (+HeadOnly). (5) Our full FCM model (+FCM). All mo</context>
+<context position="36032" citStr="Sun et al., 2011" startWordPosition="5888" endWordPosition="5891"> et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models according to the dependency paths (Ma et al., 2015; Liu et a</context>
+</contexts>
+<marker>Sun, Grishman, Sekine, 2011</marker>
+<rawString>Ang Sun, Ralph Grishman, and Satoshi Sekine. 2011. Semi-supervised relation extraction with large-scale word clustering. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies, pages 521–529, Portland, Oregon, USA, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mihai Surdeanu</author>
+<author>Julie Tibshirani</author>
+<author>Ramesh Nallapati</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Multi-instance multi-label learning for relation extraction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>455--465</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Surdeanu, Tibshirani, Nallapati, Manning, 2012</marker>
+<rawString>Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati, and Christopher D Manning. 2012. Multi-instance multi-label learning for relation extraction. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 455– 465. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joseph Turian</author>
+<author>Lev Ratinov</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Word representations: a simple and general method for semi-supervised learning.</title>
+<date>2010</date>
+<booktitle>In Association for Computational Linguistics,</booktitle>
+<pages>384--394</pages>
+<contexts>
+<context position="2403" citStr="Turian et al., 2010" startWordPosition="334" endWordPosition="337">ally. 1https://github.com/mgormley/pacaya its lemma, its morphological features) with aspects of a word’s linguistic context (e.g. whether it lies between two entities or on a dependency path between them). While these help learning, they make generalization to unseen words difficult. An alternative approach to capturing lexical information relies on continuous word embeddings2 as representative of words but generalizable to new words. Embedding features have improved many tasks, including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013; Nguyen and Grishman, 2014). Embeddings can capture lexical information, but alone they are insufficient: in state-of-the-art systems, they are used alongside features of the broader linguistic context. In this paper, we introduce a compositional model that combines unlexicalized linguistic context and word embeddings for relation extraction, a task in which contextual feature construction plays a major role in generalizing to unseen data. Our model allows for the composition of embeddings with arbitrary l</context>
+<context position="12654" citStr="Turian et al., 2010" startWordPosition="1977" endWordPosition="1980"> binary features common in relation extraction. Figure 1 depicts the construction of a sentence’s substructure embeddings. We further sum over the substructure embeddings to form an annotated sentence embedding: n ex = f,,,i ® e,,,i (1) Z=1 When both the hand-crafted features and word embeddings are treated as inputs, as has previously been the case in relation extraction, this annotated sentence embedding can be used directly as the features of a log-linear model. In fact, we find that the feature sets used in prior work for many other NLP tasks are special cases of this simple construction (Turian et al., 2010; Nguyen and Grishman, 2014; Hermann et al., 2014; Roth and Woodsend, 2014). This highlights an important connection: when the word embeddings are constant, our constructions of substructure and annotated sentence embeddings are just specific forms of polynomial (specifically quadratic) feature combination—hence their commonality in the literature. Our experimental results suggest that such a construction is more powerful than directly including embeddings into the model. 3.2 The Log-Bilinear Model Our full log-bilinear model first forms the substructure and annotated sentence embeddings from </context>
+<context position="35971" citStr="Turian et al., 2010" startWordPosition="5876" endWordPosition="5879">stic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. Such approaches have achieved state-of-the-art results in many tasks including NER, chunking, dependency parsing, semantic role labeling, and relation extraction (Miller et al., 2004; Turian et al., 2010; Koo et al., 2008; Roth and Woodsend, 2014; Sun et al., 2011; Plank and Moschitti, 2013). Roth and Woodsend (2014) considered features similar to ours for semantic role labeling. However, in prior work both of above approaches are only able to utilize limited information, usually one property for each word. Yet there may be different useful properties of a word which can contribute to the performances of the task. By contrast, our FCM can easily utilize these features without changing the model structures. In order to better utilize the dependency annotations, recently work built their models</context>
+</contexts>
+<marker>Turian, Ratinov, Bengio, 2010</marker>
+<rawString>Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010. Word representations: a simple and general method for semi-supervised learning. In Association for Computational Linguistics, pages 384–394.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christopher Walker</author>
+<author>Stephanie Strassel</author>
+<author>Julie Medero</author>
+<author>Kazuaki Maeda</author>
+</authors>
+<title>multilingual training corpus. Linguistic Data Consortium,</title>
+<date>2006</date>
+<publisher>ACE</publisher>
+<location>Philadelphia.</location>
+<contexts>
+<context position="6219" citStr="Walker et al., 2006" startWordPosition="918" endWordPosition="921">ies and to distinguish different functions of the input words. The full model involves three stages. First, it decomposes the annotated sentence into substructures (i.e. a word and associated annotations). Second, it extracts features for each substructure (word), and combines them with the word’s embedding to form a substructure embedding. Third, we sum over substructure embeddings to form a composed annotated sentence embedding, which is used by a final softmax layer to predict the output label (relation). The result is a state-of-the-art relation extractor for unseen domains from ACE 2005 (Walker et al., 2006) and the relation classification dataset from SemEval-2010 Task 8 (Hendrickx et al., 2010). Contributions This paper makes several contributions, including: 1. We introduce the FCM, a new compositional embedding model for relation extraction. 2. We obtain the best reported results on ACE2005 for coarse-grained relation extraction in the cross-domain setting, by combining FCM with a log-linear model. 3. We obtain results on on SemEval-2010 Task 8 competitive with the best reported results. Note that other work has already been published that builds on the FCM, such as Hashimoto et al. (2015), N</context>
+<context position="9097" citStr="Walker et al., 2006" startWordPosition="1399" endWordPosition="1402">lassification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to apply neural language model embeddings to this task. Motivation and Examples Whether a word is indicative of a relation depends on multiple properties, which may relate to its context within the sentence. For example, whether the word is inbetween the entities, on the dependency path between them, or to their left or right may provide additional complementary information. Illustrative examples are given in Table 1 and provide the motivation for our model. In the next </context>
+<context position="22510" citStr="Walker et al., 2006" startWordPosition="3746" endWordPosition="3749">ation extraction over years of research. We exclude the Country gazetteer and WordNet features from Zhou et al. (2005). The two remaining methods are hybrid models that integrate FCM as a submodel within the log-linear model (§ 4). We consider two combinations. (4) The feature set of Nguyen and Grishman (2014) obtained by using the embeddings of heads of two entity mentions (+HeadOnly). (5) Our full FCM model (+FCM). All models use L2 regularization tuned on dev data. 6.1 Datasets and Evaluation ACE 2005 We evaluate our relation extraction system on the English portion of the ACE 2005 corpus (Walker et al., 2006).8 There are 6 domains: Newswire (nw), Broadcast Conversation (bc), Broadcast News (bn), Telephone Speech (cts), Usenet Newsgroups (un), and Weblogs (wl). Following prior work we focus on the domain adaptation setting, where we train on one set (the union of the news domains (bn+nw), tune hyperparameters on a dev domain (half of bc) and evaluate on the remainder (cts, wl, and the remainder of bc) (Plank and Moschitti, 2013; Nguyen and Grishman, 2014). We assume that gold entity spans and types are available for train and test. We use all pairs of entity mentions to yield 43,518 total relations</context>
+</contexts>
+<marker>Walker, Strassel, Medero, Maeda, 2006</marker>
+<rawString>Christopher Walker, Stephanie Strassel, Julie Medero, and Kazuaki Maeda. 2006. ACE 2005 multilingual training corpus. Linguistic Data Consortium, Philadelphia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mo Yu</author>
+<author>Mark Dredze</author>
+</authors>
+<title>Learning composition models for phrase embeddings.</title>
+<date>2015</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>3</volume>
+<pages>242</pages>
+<contexts>
+<context position="7027" citStr="Yu and Dredze (2015)" startWordPosition="1048" endWordPosition="1051">compositional embedding model for relation extraction. 2. We obtain the best reported results on ACE2005 for coarse-grained relation extraction in the cross-domain setting, by combining FCM with a log-linear model. 3. We obtain results on on SemEval-2010 Task 8 competitive with the best reported results. Note that other work has already been published that builds on the FCM, such as Hashimoto et al. (2015), Nguyen and Grishman (2015), dos Santos 3In ACE 2005, ART refers to a relation between a person and an artifact; such as a user, owner, inventor, or manufacturer relationship et al. (2015), Yu and Dredze (2015) and Yu et al. (2015). Additionally, we have extended FCM to incorporate a low-rank embedding of the features (Yu et al., 2015), which focuses on fine-grained relation extraction for ACE and ERE. This paper obtains better results than the low-rank extension on ACE coarse-grained relation extraction. 2 Relation Extraction In relation extraction we are given a sentence as input with the goal of identifying, for all pairs of entity mentions, what relation exists between them, if any. For each pair of entity mentions in a sentence S, we construct an instance (y, x), where x = (M1, M2, S, A). S = {</context>
+</contexts>
+<marker>Yu, Dredze, 2015</marker>
+<rawString>Mo Yu and Mark Dredze. 2015. Learning composition models for phrase embeddings. Transactions of the Association for Computational Linguistics, 3:227– 242.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mo Yu</author>
+<author>Matthew R Gormley</author>
+<author>Mark Dredze</author>
+</authors>
+<title>Combining word embeddings and feature embeddings for fine-grained relation extraction.</title>
+<date>2015</date>
+<booktitle>In Proceedings of NAACL.</booktitle>
+<contexts>
+<context position="7048" citStr="Yu et al. (2015)" startWordPosition="1053" endWordPosition="1056">odel for relation extraction. 2. We obtain the best reported results on ACE2005 for coarse-grained relation extraction in the cross-domain setting, by combining FCM with a log-linear model. 3. We obtain results on on SemEval-2010 Task 8 competitive with the best reported results. Note that other work has already been published that builds on the FCM, such as Hashimoto et al. (2015), Nguyen and Grishman (2015), dos Santos 3In ACE 2005, ART refers to a relation between a person and an artifact; such as a user, owner, inventor, or manufacturer relationship et al. (2015), Yu and Dredze (2015) and Yu et al. (2015). Additionally, we have extended FCM to incorporate a low-rank embedding of the features (Yu et al., 2015), which focuses on fine-grained relation extraction for ACE and ERE. This paper obtains better results than the low-rank extension on ACE coarse-grained relation extraction. 2 Relation Extraction In relation extraction we are given a sentence as input with the goal of identifying, for all pairs of entity mentions, what relation exists between them, if any. For each pair of entity mentions in a sentence S, we construct an instance (y, x), where x = (M1, M2, S, A). S = {w1, w2, ..., w,I is a</context>
+</contexts>
+<marker>Yu, Gormley, Dredze, 2015</marker>
+<rawString>Mo Yu, Matthew R. Gormley, and Mark Dredze. 2015. Combining word embeddings and feature embeddings for fine-grained relation extraction. In Proceedings of NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daojian Zeng</author>
+<author>Kang Liu</author>
+<author>Siwei Lai</author>
+<author>Guangyou Zhou</author>
+<author>Jun Zhao</author>
+</authors>
+<title>Relation classification via convolutional deep neural network.</title>
+<date>2014</date>
+<booktitle>In Proceedings of COLING 2014, the 25th International Conference on Computational Linguistics: Technical Papers,</booktitle>
+<pages>2335--2344</pages>
+<institution>Dublin City University and Association for Computational Linguistics.</institution>
+<location>Dublin, Ireland,</location>
+<contexts>
+<context position="8628" citStr="Zeng et al., 2014" startWordPosition="1320" endWordPosition="1323">elations. Table 1 shows ACE 2005 relations, and has a strong label bias towards negative examples. We also consider the task of relation classification (SemEval), where the number of negative examples is artificially reduced. Embedding Models Word embeddings and compositional embedding models have been successfully applied to a range of NLP tasks, however the applications of these embedding models to relation extraction are still limited. Prior work on relation classification (e.g. SemEval 2010 Task 8) has focused on short sentences with at most one relation per sentence (Socher et al., 2012; Zeng et al., 2014). For relation extraction, where negative examples abound, prior work has assumed that only the named entity boundaries and not their types were available (Plank and Moschitti, 2013; Nguyen et al., 2015). Other work has as1775 sumed that the order of two entities in a relation are given while the relation type itself is unknown (Nguyen and Grishman, 2014; Nguyen and Grishman, 2015). The standard relation extraction task, as adopted by ACE 2005 (Walker et al., 2006), uses long sentences containing multiple named entities with known types4 and unknown relation directions. We are the first to app</context>
+<context position="26341" citStr="Zeng et al., 2014" startWordPosition="4374" endWordPosition="4377"> feature sets. We found that using NE tags instead of WordNet tags helps with fine-tuning but hurts without. This may be because the set of WordNet tags is larger making the model more expressive, but also introduces more parameters. When the embeddings are fixed, they can help to better distinguish different functions of embeddings. But when fine-tuning, it becomes easier to over-fit. Alleviating over-fitting is a subject for future work (§ 9). With either WordNet or NER features, FCM achieves better performance than the RNN and MVRNN. With NER features and fine-tuning, it outperforms a CNN (Zeng et al., 2014) and also 1779 Model bc cts wl Avg. F1 P R F1 P R F1 P R F1 (1) FCM only (ST) 66.56 57.86 61.90 65.62 44.35 52.93 57.80 44.62 50.36 55.06 (3) Baseline (ST) 74.89 48.54 58.90 74.32 40.26 52.23 63.41 43.20 51.39 54.17 (4) + HeadOnly (ST) 70.87 50.76 59.16 71.16 43.21 53.77 57.71 42.92 49.23 54.05 (5) + FCM (ST) 74.39 55.35 63.48 74.53 45.01 56.12 65.63 47.59 55.17 58.26 Table 3: Comparison of models on ACE 2005 out-of-domain test sets. Baseline + HeadOnly is our reimplementation of the features of Nguyen and Grishman (2014). Classifier Features F1 SVM (Rink and Harabagiu, 2010) POS, prefixes, mo</context>
+<context position="35169" citStr="Zeng et al. (2014)" startWordPosition="5754" endWordPosition="5757">rget entities. However, these specializations 1781 to relation extraction does not generalize easily to other tasks in NLP. There are two ways to achieve such specialization in a more general fashion: 1. Enhancing Compositional Models with Features. A recent trend enhances compositional models with annotation features. Such an approach has been shown to significantly improve over pure compositional models. For example, Hermann et al. (2014) and Nguyen and Grishman (2014) gave different weights to words with different syntactic context types or to entity head words with different argument IDs. Zeng et al. (2014) use concatenations of embeddings as features in a CNN model, according to their positions relative to the target entity mentions. Belinkov et al. (2014) enrich embeddings with linguistic features before feeding them forward to a RNN model. Socher et al. (2013a) and Hermann and Blunsom (2013) enhanced RNN models by refining the transformation matrices with phrase types and CCG super tags. 2. Engineering of Embedding Features. A different approach to combining traditional linguistic features and embeddings is hand-engineering features with word embeddings and adding them to log-linear models. S</context>
+</contexts>
+<marker>Zeng, Liu, Lai, Zhou, Zhao, 2014</marker>
+<rawString>Daojian Zeng, Kang Liu, Siwei Lai, Guangyou Zhou, and Jun Zhao. 2014. Relation classification via convolutional deep neural network. In Proceedings of COLING 2014, the 25th International Conference on Computational Linguistics: Technical Papers, pages 2335–2344, Dublin, Ireland, August. Dublin City University and Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>GuoDong Zhou</author>
+<author>Jian Su</author>
+<author>Jie Zhang</author>
+<author>Min Zhang</author>
+</authors>
+<title>Exploring various knowledge in relation extraction.</title>
+<date>2005</date>
+<booktitle>In Association for Computational Linguistics,</booktitle>
+<pages>427--434</pages>
+<contexts>
+<context position="21794" citStr="Zhou et al. (2005)" startWordPosition="3627" endWordPosition="3630">, with word2vec (Mikolov et al., 2013). We use the CBOW model with negative sampling (15 negative words). We set a window size c=5, and remove types occurring less than 5 times. Models We consider several methods. (1) FCM in isolation without fine-tuning. (2) FCM in isolation with fine-tuning (i.e. trained as a log-bilinear 7Obtained from the constituency parse using the CONLL 2000 chunking converter (Perl script). @` @s @` @Ty0 @` n i=1 = @ew � y 1778 model). (3) A log-linear model with a rich binary feature set from Sun et al. (2011) (Baseline)— this consists of all the baseline features of Zhou et al. (2005) plus several additional carefully-chosen features that have been highly tuned for ACE-style relation extraction over years of research. We exclude the Country gazetteer and WordNet features from Zhou et al. (2005). The two remaining methods are hybrid models that integrate FCM as a submodel within the log-linear model (§ 4). We consider two combinations. (4) The feature set of Nguyen and Grishman (2014) obtained by using the embeddings of heads of two entity mentions (+HeadOnly). (5) Our full FCM model (+FCM). All models use L2 regularization tuned on dev data. 6.1 Datasets and Evaluation ACE</context>
+</contexts>
+<marker>Zhou, Su, Zhang, Zhang, 2005</marker>
+<rawString>GuoDong Zhou, Jian Su, Jie Zhang, and Min Zhang. 2005. Exploring various knowledge in relation extraction. In Association for Computational Linguistics, pages 427–434.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

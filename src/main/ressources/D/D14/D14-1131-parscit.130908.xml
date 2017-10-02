@@ -1,0 +1,2392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.996757">
+Exact Decoding for Phrase-Based Statistical Machine Translation
+</title>
+<author confidence="0.999573">
+Wilker Aziz† Marc Dymetman$ Lucia Specia†
+</author>
+<affiliation confidence="0.999506">
+†Department of Computer Science, University of Sheffield, UK
+</affiliation>
+<email confidence="0.865337">
+W.Aziz@sheffield.ac.uk
+L.Specia@sheffield.ac.uk
+</email>
+<author confidence="0.415514">
+$Xerox Research Centre Europe, Grenoble, France
+</author>
+<email confidence="0.983071">
+Marc.Dymetman@xrce.xerox.com
+</email>
+<sectionHeader confidence="0.99718" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999956944444445">
+The combinatorial space of translation
+derivations in phrase-based statistical ma-
+chine translation is given by the intersec-
+tion between a translation lattice and a tar-
+get language model. We replace this in-
+tractable intersection by a tractable relax-
+ation which incorporates a low-order up-
+perbound on the language model. Exact
+optimisation is achieved through a coarse-
+to-fine strategy with connections to adap-
+tive rejection sampling. We perform ex-
+act optimisation with unpruned language
+models of order 3 to 5 and show search-
+error curves for beam search and cube
+pruning on standard test sets. This is the
+first work to tractably tackle exact opti-
+misation with language models of orders
+higher than 3.
+</bodyText>
+<sectionHeader confidence="0.99951" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.99922375">
+In Statistical Machine Translation (SMT), the task
+of producing a translation for an input string x =
+(x1, x2, ... , xI) is typically associated with find-
+ing the best derivation d* compatible with the in-
+put under a linear model. In this view, a derivation
+is a structured output that represents a sequence of
+steps that covers the input producing a translation.
+Equation 1 illustrates this decoding process.
+</bodyText>
+<equation confidence="0.989732">
+d* = argmax f(d) (1)
+dED(x)
+</equation>
+<bodyText confidence="0.985052666666667">
+The set D(x) is the space of all derivations com-
+patible with x and supported by a model of trans-
+lational equivalences (Lopez, 2008). The func-
+tion f(d) = A · H(d) is a linear parameteri-
+sation of the model (Och, 2003). It assigns a
+real-valued score (or weight) to every derivation
+d E D(x), where A E Rm assigns a relative
+importance to different aspects of the derivation
+independently captured by m feature functions
+</bodyText>
+<equation confidence="0.766198">
+H(d) = (H1(d), ... , Hm(d)) E Rm.
+</equation>
+<bodyText confidence="0.999913358974359">
+The fully parameterised model can be seen as
+a discrete weighted set such that feature func-
+tions factorise over the steps in a derivation. That
+is, Hk(d) = EeEd hk(e), where hk is a (local)
+feature function that assesses steps independently
+and d = (e1, e2, ... , el) is a sequence of l steps.
+Under this assumption, each step is assigned the
+weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The
+set D is typically finite, however, it contains a very
+large number of structures — exponential (or even
+factorial, see §2) with the size of x — making
+exhaustive enumeration prohibitively slow. Only
+in very restricted cases combinatorial optimisation
+techniques are directly applicable (Tillmann et al.,
+1997; Och et al., 2001), thus it is common to resort
+to heuristic techniques in order to find an approxi-
+mation to d* (Koehn et al., 2003; Chiang, 2007).
+Evaluation exercises indicate that approximate
+search algorithms work well in practice (Bojar
+et al., 2013). The most popular algorithms pro-
+vide solutions with unbounded error, thus pre-
+cisely quantifying their performance requires the
+development of a tractable exact decoder. To
+date, most attempts were limited to short sentences
+and/or somewhat toy models trained with artifi-
+cially small datasets (Germann et al., 2001; Igle-
+sias et al., 2009; Aziz et al., 2013). Other work
+has employed less common approximations to the
+model reducing its search space complexity (Ku-
+mar et al., 2006; Chang and Collins, 2011; Rush
+and Collins, 2011). These do not answer whether
+or not current decoding algorithms perform well at
+real translation tasks with state-of-the-art models.
+We propose an exact decoder for phrase-based
+SMT based on a coarse-to-fine search strategy
+(Dymetman et al., 2012). In a nutshell, we re-
+lax the decoding problem with respect to the Lan-
+guage Model (LM) component. This coarse view
+is incrementally refined based on evidence col-
+</bodyText>
+<page confidence="0.934327">
+1237
+</page>
+<note confidence="0.898709">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1237–1249,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.993107166666666">
+lected via maximisation. A refinement increases
+the complexity of the model only slightly, hence
+dynamic programming remains feasible through-
+out the search until convergence. We test our de-
+coding strategy with realistic models using stan-
+dard data sets. We also contribute with optimum
+derivations which can be used to assess future im-
+provements to approximate decoders. In the re-
+maining sections we present the general model
+(§2), survey contributions to exact optimisation
+(§3), formalise our novel approach (§4), present
+experiments (§5) and conclude (§6).
+</bodyText>
+<sectionHeader confidence="0.998767" genericHeader="introduction">
+2 Phrase-based SMT
+</sectionHeader>
+<bodyText confidence="0.996998833333334">
+In phrase-based SMT (Koehn et al., 2003), the
+building blocks of translation are pairs of phrases
+(or biphrases). A translation derivation d is an
+ordered sequence of non-overlapping biphrases
+which covers the input text in arbitrary order gen-
+erating the output from left to right.1
+</bodyText>
+<equation confidence="0.999906">
+f(d) = ψ(y) + l φ(ei) + �l − 1 6(ei, ei−1) (2)
+i=1 i=1
+</equation>
+<bodyText confidence="0.999798545454546">
+Equation 2 illustrates a standard phrase-based
+model (Koehn et al., 2003): ψ is a weighted tar-
+get n-gram LM component, where y is the yield
+of d; φ is a linear combination of features that
+decompose over phrase pairs directly (e.g. back-
+ward and forward translation probabilities, lexi-
+cal smoothing, and word and phrase penalties);
+and 6 is an unlexicalised penalty on the num-
+ber of skipped input words between two adjacent
+biphrases. The weighted logic program in Figure
+1 specifies the fully parameterised weighted set of
+solutions, which we denote (D(x), f(d)).2
+A weighted logic program starts from its ax-
+ioms and follows exhaustively deducing new items
+by combination of existing ones and no deduction
+happens twice. In Figure 1, a nonteminal item
+summarises partial derivation (or hypotheses). It is
+denoted by [C, r, -y] (also known as carry), where:
+C is a coverage vector, necessary to impose the
+non-overlapping constraint; r is the rightmost po-
+sition most recently covered, necessary for the
+computation of 6; and -y is the last n − 1 words
+</bodyText>
+<footnote confidence="0.980262714285714">
+1Preventing phrases from overlapping requires an expo-
+nential number of constraints (the powerset of x) rendering
+the problem NP-complete (Knight, 1999).
+2Weighted logics have been extensively used to describe
+weighted sets (Lopez, 2009), operations over weighted sets
+(Chiang, 2007; Dyer and Resnik, 2010), and a variety of dy-
+namic programming algorithms (Cohen et al., 2008).
+</footnote>
+<equation confidence="0.7695696">
+ITEM [{0, 1}I, [0, I + 1], An−1]
+GOAL [1I, I + 1, EOS]
+AXIOM
+hBOS → BOSi
+[0I, 0, BOS] : ψ(BOS)
+EXPAND
+ACCEPT
+[1I, r, γ]
+[1I , I r ≤
++ 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I
+</equation>
+<figureCaption confidence="0.997369666666667">
+Figure 1: Specification for the weighted set of
+translation derivations in phrase-based SMT with
+unconstrained reordering.
+</figureCaption>
+<bodyText confidence="0.981194869565218">
+in the yield, necessary for the LM component. The
+program expands partial derivations by concatena-
+tion with a translation rule Dxi0 ±�, yjj0E, that is, an
+instantiated biphrase which covers the span xi0
+i and
+yields yj0
+j with weight φr. The side condition im-
+poses the non-overlapping constraint (ck is the kth
+bit in C). The antecedents are used to compute the
+weight of the deduction, and the carry is updated
+in the consequent (item below the horizontal line).
+Finally, the rule ACCEPT incorporates the end-of-
+sentence boundary to complete items.3
+It is perhaps illustrative to understand the set of
+weighted translation derivations as the intersection
+between two components. One that is only locally
+parameterised and contains all translation deriva-
+tions (a translation lattice or forest), and one that
+re-ranks the first as a function of the interactions
+between translation steps. The model of transla-
+tional equivalences parameterised only with φ is
+an instance of the former. An n-gram LM compo-
+nent is an instance of the latter.
+</bodyText>
+<subsectionHeader confidence="0.979652">
+2.1 Hypergraphs
+</subsectionHeader>
+<bodyText confidence="0.999714285714286">
+A backward-hypergraph, or simply hypergraph,
+is a generalisation of a graph where edges have
+multiple origins and one destination (Gallo et al.,
+1993). They can represent both finite-state and
+context-free weighted sets and they have been
+widely used in SMT (Huang and Chiang, 2007).
+A hypergraph is defined by a set of nodes (or ver-
+</bodyText>
+<footnote confidence="0.6655284">
+3Figure 1 can be seen as a specification for a weighted
+acyclic finite-state automaton whose states are indexed by
+[l, C, r] and transitions are labelled with biphrases. However,
+for generality of representation, we opt for using acyclic hy-
+pergraphs instead of automata (see §2.1).
+</footnote>
+<equation confidence="0.996934666666667">
+rC r ,.j−1 1 Dxi0 φ, ,..j0E →
+i0
+Lk=i ck = 0¯
+hC0 i00 i : w
+yj0−n+2
+where c0k = ck if k &lt; i or k &gt; i0 else ¯1
+w = φr ⊗ δ(r, i) ⊗ ψ(yj0
+j |yj−1
+j−n+1)
+</equation>
+<page confidence="0.858842">
+1238
+</page>
+<bodyText confidence="0.982554363636364">
+tices) V and a weighted set of edges (E, w). An
+edge e connects a sequence of nodes in its tail
+t[e] E V * under a head node h[e] E V and has
+weight w(e). A node v is a terminal node if it
+has no incoming edges, otherwise it is a nontermi-
+nal node. The node that has no outgoing edges,
+is called root, with no loss of generality we can
+assume hypergraphs to have a single root node.
+Hypergraphs can be seen as instantiated logic
+programs. In this view, an item is a template
+for the creation of nodes, and a weighted deduc-
+tion rule is a template for edges. The tail of
+an edge is the sequence of nodes associated with
+the antecedents, and the head is the node associ-
+ated with the consequent. Even though the space
+of weighted derivations in phrase-based SMT is
+finite-state, using a hypergraph as opposed to a
+finite-state automaton makes it natural to encode
+multi-word phrases using tails. We opt for rep-
+resenting the target side of the biphrase as a se-
+quence of terminals nodes, each of which repre-
+sents a target word.
+</bodyText>
+<sectionHeader confidence="0.999991" genericHeader="related work">
+3 Related Work
+</sectionHeader>
+<subsectionHeader confidence="0.999906">
+3.1 Beam filling algorithms
+</subsectionHeader>
+<bodyText confidence="0.999988617647059">
+Beam search (Koehn et al., 2003) and cube prun-
+ing (Chiang, 2007) are examples of state-of-the-art
+approximate search algorithms. They approximate
+the intersection between the translation forest and
+the language model by expanding a limited beam
+of hypotheses from each nonterminal node. Hy-
+potheses are organised in priority queues accord-
+ing to common traits and a fast-to-compute heuris-
+tic view of outside weights (cheapest way to com-
+plete a hypothesis) puts them to compete at a fairer
+level. Beam search exhausts a node’s possible ex-
+pansions, scores them, and discards all but the k
+highest-scoring ones. This process is wasteful in
+that k is typically much smaller than the number of
+possible expansions. Cube pruning employs a pri-
+ority queue at beam filling and computes k high-
+scoring expansions directly in near best-first order.
+The parameter k is known as beam size and it con-
+trols the time-accuracy trade-off of the algorithm.
+Heafield et al. (2013a) move away from us-
+ing the language model as a black-box and build
+a more involved beam filling algorithm. Even
+though they target approximate search, some of
+their ideas have interesting connections to ours
+(see §4). They group hypotheses that share partial
+language model state (Li and Khudanpur, 2008)
+reasoning over multiple hypotheses at once. They
+fill a beam in best-first order by iteratively vis-
+iting groups using a priority queue: if the top
+group contains a single hypothesis, the hypothesis
+is added to the beam, otherwise the group is parti-
+tioned and the parts are pushed back to the queue.
+More recently, Heafield et al. (2014) applied their
+beam filling algorithm to phrase-based decoding.
+</bodyText>
+<subsectionHeader confidence="0.999581">
+3.2 Exact optimisation
+</subsectionHeader>
+<bodyText confidence="0.999951515151515">
+Exact optimisation for monotone translation has
+been done using A* search (Tillmann et al., 1997)
+and finite-state operations (Kumar et al., 2006).
+Och et al. (2001) design near-admissible heuris-
+tics for A* and decode very short sentences (6-
+14 words) for a word-based model (Brown et al.,
+1993) with a maximum distortion strategy (d = 3).
+Zaslavskiy et al. (2009) frame phrase-based de-
+coding as an instance of a generalised Travel-
+ling Salesman Problem (TSP) and rely on ro-
+bust solvers to perform decoding. In this view,
+a salesman graph encodes the translation options,
+with each node representing a biphrase. Non-
+overlapping constraints are imposed by the TSP
+solver, rather than encoded directly in the sales-
+man graph. They decode only short sentences
+(17 words on average) using a 2-gram LM due to
+salesman graphs growing too large.4
+Chang and Collins (2011) relax phrase-based
+models w.r.t. the non-overlapping constraints,
+which are replaced by soft penalties through La-
+grangian multipliers, and intersect the LM com-
+ponent exhaustively. They do employ a maximum
+distortion limit (d = 4), thus the problem they
+tackle is no longer NP-complete. Rush and Collins
+(2011) relax a hierarchical phrase-based model
+(Chiang, 2005)5 w.r.t. the LM component. The
+translation forest and the language model trade
+their weights (through Lagrangian multipliers) so
+as to ensure agreement on what each component
+believes to be the maximum. In both approaches,
+when the dual converges to a compliant solution,
+the solution is guaranteed to be optimal. Other-
+</bodyText>
+<footnote confidence="0.985715272727273">
+4Exact decoding had been similarly addressed with Inte-
+ger Linear Programming (ILP) in the context of word-based
+models for very short sentences using a 2-gram LM (Ger-
+mann et al., 2001). Riedel and Clarke (2009) revisit that for-
+mulation and employ a cutting-plane algorithm (Dantzig et
+al., 1954) reaching 30 words.
+5In hierarchical translation, reordering is governed by a
+synchronous context-free grammar and the underlying prob-
+lem is no longer NP-complete. Exact decoding remains in-
+feasible because the intersection between the translation for-
+est and the target LM is prohibitively slow.
+</footnote>
+<page confidence="0.996651">
+1239
+</page>
+<bodyText confidence="0.999984954545455">
+wise, a subset of the constraints is explicitly added
+and the dual optimisation is repeated. They handle
+sentences above average length, however, resort-
+ing to compact rulesets (10 translation options per
+input segment) and using only 3-gram LMs.
+In the context of hierarchical models, Aziz et
+al. (2013) work with unpruned forests using up-
+perbounds. Their approach is the closest to ours.
+They also employ a coarse-to-fine strategy with
+the OS* framework (Dymetman et al., 2012), and
+investigate unbiased sampling in addition to op-
+timisation. However, they start from a coarser
+upperbound with unigram probabilities, and their
+refinement strategies are based on exhaustive in-
+tersections with small n-gram matching automata.
+These refinements make forests grow unmanage-
+able too quickly. Because of that, they only deal
+with very short sentences (up to 10 words) and
+even then decoding is very slow. We design bet-
+ter upperbounds and a more efficient refinement
+strategy. Moreover, we decode long sentences us-
+ing language models of order 3 to 5.6
+</bodyText>
+<sectionHeader confidence="0.999449" genericHeader="method">
+4 Approach
+</sectionHeader>
+<subsectionHeader confidence="0.997734">
+4.1 Exact optimisation with OS*
+</subsectionHeader>
+<bodyText confidence="0.999015666666667">
+Dymetman et al. (2012) introduced OS*, a unified
+view of optimisation and sampling which can be
+seen as a cross between adaptive rejection sam-
+pling (Robert and Casella, 2004) and A* optimisa-
+tion (Hart et al., 1968). In this framework, a com-
+plex goal distribution is upperbounded by a sim-
+pler proposal distribution for which optimisation
+(and sampling) is feasible. This proposal is incre-
+mentally refined to be closer to the goal until the
+maximum is found (or until the sampling perfor-
+mance exceeds a certain level).
+Figure 2 illustrates exact optimisation with OS*.
+Suppose f is a complex target goal distribution,
+such that we cannot optimise f, but we can as-
+sess f(d) for a given d. Let g(0) be an upper-
+bound to f, i.e., g(0)(d) ≥ f(d) for all d E D(x).
+Moreover, suppose that g(0) is simple enough to
+be optimised efficiently. The algorithm proceeds
+by solving d0 = argmaxd g(0)(d) and comput-
+6The intuition that a full intersection is wasteful is also
+present in (Petrov et al., 2008) in the context of approximate
+search. They start from a coarse distribution based on au-
+tomatic word clustering which is refined in multiple passes.
+At each pass, hypotheses are pruned a posteriori on the basis
+of their marginal probabilities, and word clusters are further
+split. We work with upperbounds, rather than word clusters,
+with unpruned distributions, and perform exact optimisation.
+</bodyText>
+<figureCaption confidence="0.995503">
+Figure 2: Sequence of incrementally refined up-
+perbound proposals.
+</figureCaption>
+<bodyText confidence="0.9998064375">
+ing the quantity r0 = f(d0)/g(0)(d0). If r0 were
+sufficiently close to 1, then g(0)(d0) would be
+sufficiently close to f(d0) and we would have
+found the optimum. However, in the illustration
+g(0)(d0) » f(d0), thus r0 « 1. At this point
+the algorithm has concrete evidence to motivate
+a refinement of g(0) that can lower its maximum,
+bringing it closer to f* = maxd f(d) at the cost
+of some small increase in complexity. The re-
+fined proposal must remain an upperbound to f.
+To continue with the illustration, suppose g(1) is
+obtained. The process is repeated until eventually
+g(t)(dt) = f(dt), where dt = argmaxd g(t)(d),
+for some finite t. At which point dt is the opti-
+mum derivation d* from f and the sequence of
+upperbounds provides a proof of optimality.7
+</bodyText>
+<subsectionHeader confidence="0.989661">
+4.2 Model
+</subsectionHeader>
+<bodyText confidence="0.99880880952381">
+We work with phrase-based models in a standard
+parameterisation (Equation 2). However, to avoid
+having to deal with NP-completeness, we con-
+strain reordering to happen only within a limited
+window given by a notion of distortion limit. We
+require that the last source word covered by any
+biphrase must be within d words from the leftmost
+uncovered source position (Lopez, 2009). This is
+a widely used strategy and it is in use in the Moses
+toolkit (Koehn et al., 2007).8
+Nevertheless, the problem of finding the best
+7If d is a maximum from g and g(d) = f(d), then it is
+easy to show by contradiction that d is the actual maximum
+from f: if there existed d&apos; such that f(d&apos;) &gt; f(d), then it
+follows that g(d&apos;) ≥ f(d&apos;) &gt; f(d) = g(d), and hence d
+would not be a maximum for g.
+8A distortion limit characterises a form of pruning that
+acts directly in the generative capacity of the model leading
+to induction errors (Auli et al., 2009). Limiting reordering
+like that lowers complexity to a polynomial function of I and
+an exponential function of the distortion limit.
+</bodyText>
+<figure confidence="0.758971222222222">
+g(0)
+f*
+f1
+g(1)
+d1d*
+f
+D(x)
+f0
+d0
+</figure>
+<page confidence="0.908417">
+1240
+</page>
+<bodyText confidence="0.999994176470588">
+derivation under the model remains impractica-
+ble due to nonlocal parameterisation (namely,
+the n-gram LM component). The weighted set
+(D(x), f(d)), which represents the objective, is
+a complex hypergraph which we cannot afford
+to construct. We propose to construct instead a
+simpler hypergraph for which optimisation by dy-
+namic programming is feasible. This proxy rep-
+resents the weighted set (D(x), g(0)(d)), where
+g(0)(d) &gt; f(d) for every d E D(x). Note that
+this proposal contains exactly the same translation
+options as in the original decoding problem. The
+simplification happens only with respect to the pa-
+rameterisation. Instead of intersecting the com-
+plete n-gram LM distribution explicitly, we im-
+plicitly intersect a simpler upperbound view of it,
+where by simpler we mean lower-order.
+</bodyText>
+<equation confidence="0.855226">
+δ(ei, ei−1) (3)
+</equation>
+<bodyText confidence="0.999888875">
+Equation 3 shows the model we use as a proxy
+to perform exact optimisation over f. In compar-
+ison to Equation 2, the term Pli=1 ω(y[ei]) replaces
+0(y) = AppLM(y). While 0 weights the yield y
+taking into account all n-grams (including those
+crossing the boundaries of phrases), w weights
+edges in isolation. Particularly, w(y[ei]) =
+ApqLM(y[ei]), where y[ei] returns the sequence of
+target words (a target phrase) associated with the
+edge, and qLM(·) is an upperbound on the true LM
+probability pLM(·) (see §4.3). It is obvious from
+Equation 3 that our proxy model is much simpler
+than the original — the only form of nonlocal pa-
+rameterisation left is the distortion penalty, which
+is simple enough to represent exactly.
+The program in Figure 3 illustrates the con-
+struction of (D(x),g(0)(d)). A nonterminal item
+[l, C, r] stores: the leftmost uncovered position l
+and a truncated coverage vector C (together they
+track d input positions); and the rightmost position
+r most recently translated (necessary for the com-
+putation of the distortion penalty). Observe how
+nonterminal items do not store the LM state.9 The
+rule ADJACENT expands derivations by concate-
+</bodyText>
+<equation confidence="0.445662">
+D E
+</equation>
+<bodyText confidence="0.861244">
+nation with a biphrase xi0
+i → yj0 starting at the
+j
+leftmost uncovered position i = l. That causes
+the coverage window to move ahead to the next
+leftmost uncovered position: l&apos; = l + α1(C) + 1,
+9Drawing a parallel to (Heafield et al., 2013a), a nontermi-
+nal node in our hypergraph groups derivations while exposing
+only an empty LM state.
+</bodyText>
+<equation confidence="0.970837">
+ITEM ~[1, I + 1], {0, 1}d−1, [0, I + 1]~
+GOAL [I, ∅, I + 1]
+AXIOMS
+hBOS → BOSi
+[1, 0d−1, 0] : ω(BOS)
+ADJACENT
+D E
+j0
+[l, C, r] xi yj
+[l0, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0
+j )
+where l0 = l + α1(C) + 1
+C0 « α1(C) + 1
+NON-ADJACENT
+i &gt; l
+Li0−l
+k=i−l ck = 0¯
+|r − i + 1 |≤ d
+|i0 − l + 1 |≤ d
+where c0k = ck if k &lt; i − l or k &gt; i0 − l else¯1
+ACCEPT
+[I + 1, C, r]
+r ≤
+[I + 1, ∅, I + 1] : δ(r, I + 1) ⊗ ω(EOS) I
+</equation>
+<figureCaption confidence="0.947944">
+Figure 3: Specification of the initial proposal hy-
+</figureCaption>
+<bodyText confidence="0.983584058823529">
+pergraph. This program allows the same reorder-
+ings as (Lopez, 2009) (see logic WLd), however,
+it does not store LM state information and it uses
+the upperbound LM distribution w(·).
+where α1(C) returns the number of leading 1s in
+C, and C&apos; « α1(C) + 1 represents a left-shift.
+The rule NON-ADJACENT handles the remaining
+cases i &gt; l provided that the expansion skips at
+most d input words |r − i + 1 |&lt; d. In the conse-
+quent, the window C is simply updated to record
+the translation of the input span i..i&apos;. In the non-
+adjacent case, a gap constraint imposes that the
+resulting item will require skipping no more than
+d positions before the leftmost uncovered word is
+translated |i&apos; − l + 1 |&lt; d.10 Finally, note that
+deductions incorporate the weighted upperbound
+w(·), rather than the true LM component 0(·).11
+</bodyText>
+<subsectionHeader confidence="0.999601">
+4.3 LM upperbound and Max-ABPA
+</subsectionHeader>
+<bodyText confidence="0.968191">
+Following Carter et al. (2012) we compute an
+upperbound on n-gram conditional probabilities
+by precomputing max-backoff weights stored in
+a “Max-ARPA” table, an extension of the ARPA
+format (Jurafsky and Martin, 2000).
+A standard ARPA table T stores entries
+10This constraint prevents items from becoming dead-ends
+where incomplete derivations require a reordering step larger
+than d. This is known to prevent many search errors in beam
+search (Chang and Collins, 2011).
+</bodyText>
+<footnote confidence="0.866893333333333">
+11Unlike Aziz et al. (2013), rather than unigrams only, we
+score all n-grams within a translation rule (including incom-
+plete ones).
+</footnote>
+<equation confidence="0.98418">
+Xl
+i=1
+ω(y[ei]) +
+g(0)(d) =
+φ(ei) +
+Xl − 1
+i=1
+Xl
+i=1
+i = l
+Li0−l
+k=i−l ck = 0¯
+D E
+0
+[l, C, r] xi yjj
+[l, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0
+j )
+</equation>
+<page confidence="0.837902">
+1241
+</page>
+<bodyText confidence="0.999702">
+hZ, Z.p, Z.bi, where Z is an n-gram equal to the
+concatenation Pz of a prefix P with a word z, Z.p
+is the conditional probability p(z|P), and Z.b is
+a so-called “backoff” weight associated with Z.
+The conditional probability of an arbitrary n-gram
+p(z|P), whether listed or not, can then be recov-
+ered from T by the simple recursive procedure
+shown in Equation 4, where tail deletes the first
+word of the string P.
+</bodyText>
+<equation confidence="0.9952085">
+p(z |tail(P)) Pz E�T and P E�T
+p(z |tail(P)) x P.b Pz E� T and P E T
+Pz.p Pz E T
+(4)
+</equation>
+<bodyText confidence="0.999365772727273">
+The optimistic version (or “max-backoff”) q of
+p is defined as q(z|P) ≡ maxH p(z|HP), where
+H varies over all possible contexts extending the
+prefix P to the left. The Max-ARPA table allows to
+compute q(z|P) for arbitrary values of z and P. It
+is constructed on the basis of the ARPA table T by
+adding two columns to T: a column Z.q that stores
+the value q(z|P) and a column Z.m that stores an
+optimistic version of the backoff weight.
+These columns are computed offline in two
+passes by first sorting T in descending order of
+n-gram length.12 In the first pass (Algorithm 1),
+we compute for every entry in the table an opti-
+mistic backoff weight m. In the second pass (Algo-
+rithm 2), we compute for every entry an optimistic
+conditional probability q by maximising over 1-
+word history extensions (whose .q fields are al-
+ready known due to the sorting of T).
+The following Theorem holds (see proof be-
+low): For an arbitrary n-gram Z = Pz, the prob-
+ability q(z|P) can be recovered through the proce-
+dure shown in Equation 5.
+</bodyText>
+<equation confidence="0.987798">
+p(z|P) Pz E�T and P E�T
+p(z|P) x P.m Pz E�T and P E T (5)
+Pz.q Pz E T
+</equation>
+<bodyText confidence="0.915736944444444">
+Note that, if Z is listed in the table, we return its
+upperbound probability q directly. When the n-
+gram is unknown, but its prefix is known, we take
+into account the optimistic backoff weight m of the
+prefix. On the other hand, if both the n-gram and
+its prefix are unknown, then no additional context
+could change the score of the n-gram, in which
+case q(z|P) = p(z|P).
+In the sequel, we will need the following defini-
+tions. Suppose α = yJI is a substring of y = yM1 .
+12If an n-gram is listed in T, then all its substrings must
+also be listed. Certain pruning strategies may corrupt this
+property, in which case we make missing substrings explicit.
+Then pLM(α) ≡ �J k=I p(yk|yk−1
+1 ) is the contribu-
+tion of α to the true LM score of y. We then ob-
+tain an upperbound qLM(α) to this contribution by
+defining qLM(α) ≡ q(yI|E) HJk=I+1 q(yk|yk−1
+</bodyText>
+<equation confidence="0.739394">
+I ).
+</equation>
+<bodyText confidence="0.98927885">
+Proof of Theorem. Let us first suppose that the length
+of P is strictly larger than the order n of the language
+model. Then for any H, p(z|HP) = p(z|P); this is be-
+cause HP E/ T and P E/ T, along with all intermedi-
+ary strings, hence, by (4), p(z|HP) = p(z |tail(HP)) =
+p(z |tail(tail(HP))) = ... = p(z|P). Hence q(z|P) =
+p(z|P), and, because Pz E/ T and P E/ T, the theorem
+is satisfied in this case.
+Having established the theorem for |P |&gt; n, we
+now assume that it is true for |P |&gt; m and prove by
+induction that it is true for |P |= m. We use the
+fact that, by the definition of q, we have q(z|P)
+=
+maxx∈Δ q(z|xP). We have three cases to consider.
+First, suppose that Pz E/ T and P E/ T. Then
+xPz E/ T and xP E/ T, hence by induction q(z|xP) =
+p(z|xP) = p(z|P) for any x, therefore q(z|P) =
+p(z|P). We have thus proven the first case.
+Second, suppose that Pz E/ T and P E T. Then, for
+any x, we have xPz E/ T, and:
+</bodyText>
+<equation confidence="0.944871">
+q(z|P) = max
+x∈Δ q(z|xP)
+max q(z|xP), max q(z|xP)).
+= max( x ∈Δ , xP ∈ T
+x∈Δ, xP/∈T
+</equation>
+<bodyText confidence="0.905580923076923">
+For xP E/ T, by induction, q(z|xP) = p(z|xP) =
+p(z|P), and therefore maxx∈Δ, xP/∈T q(z|xP) =
+p(z|P). For xP E T, we have q(z|xP) = p(z|xP) x
+xP.m = p(z|P) x xP.b x xP.m. Thus, we have:
+x∈Δ, xP∈T x∈Δ, xP∈T
+max q(z|xP) = p(z|P)x max xP.bxxP.m.
+But now, because of lines 3 and 4 of Algorithm
+1, P.m = maxx∈Δ, xP∈T xP.b x xP.m, hence
+maxx∈Δ, xP∈T q(z|xP) = p(z|P) x P.m. Therefore,
+q(z|P) = max(p(z|P), p(z|P)xP.m) = p(z|P)xP.m,
+where we have used the fact that P.m &gt; 1 due to line 1
+of Algorithm 1. We have thus proven the second case.
+Finally, suppose that Pz E T. Then, again,
+</bodyText>
+<equation confidence="0.827270411764706">
+q(z|P) = max
+x∈Δ q(z|xP)
+= max(
+max q(z|xP),
+x∈Δ, xPz/∈T, xP/∈T
+x∈Δ, xPz/∈T, xP∈T
+max q(z|xP),
+q(z|xP) ).
+max
+x∈Δ, xPz∈T
+For xPz E/ T, xP E/ T, we have q(z|xP) =
+p(z|xP) = p(z|P) = Pz.p, where the last equality is
+due to the fact that Pz E T. For xPz E/ T, xP E T, we
+have q(z|xP) = p(z|xP) x xP.m = p(z|P) x xP.b x
+xP.m = Pz.p x xP.b x xP.m. For xPz E T, we have
+q(z|xP) = xPz.q. Overall, we thus have:
+q(z|P) = max( Pz.p,
+</equation>
+<table confidence="0.618011">
+max Pz.p x xP.b x xP.m,
+x∈Δ, xPz/∈T, xP∈T
+max xPz.q ).
+x∈Δ, xPz∈T
+</table>
+<bodyText confidence="0.998526666666667">
+Note that xPz E T =:&gt;. xP E T, and then one can
+check that Algorithm 2 exactly computes Pz.q as this
+maximum over three maxima, hence Pz.q = q(z|P).
+</bodyText>
+<equation confidence="0.997923">
+p(z|P) = I
+q(z|P) = I
+</equation>
+<page confidence="0.920328">
+1242
+</page>
+<figure confidence="0.794877777777778">
+Algorithm 1 Max-ARPA: first pass
+1: for Z ∈ T do
+2: Z.m ← 1
+3: for x ∈ Δ s.t xZ ∈ T do
+4: Z.m ← max(Z.m, xZ.b × xZ.m)
+5: end for
+6: end for
+Algorithm 2 Max-ARPA: second pass
+1: for Z = Pz ∈ T do
+2: Pz.q ← Pz.p
+3: for x ∈ Δ s.t xP ∈ T do
+4: if xPz ∈ T then
+5: Pz.q ← max(Pz.q, xPz.q)
+6: else
+7: Pz.q ← max(Pz.q, Pz.p × xP.b × xP.m)
+8: end if
+9: end for
+10: end for
+</figure>
+<subsectionHeader confidence="0.985237">
+4.4 Search
+</subsectionHeader>
+<bodyText confidence="0.999995333333334">
+The search for the true optimum derivation is il-
+lustrated in Algorithm 3. The algorithm takes as
+input the initial proposal distribution g(0)(d) (see
+§4.2, Figure 3) and a maximum error c (which we
+set to a small constant 0.001 rather than zero, to
+avoid problems with floating point precision). In
+line 3 we find the optimum derivation d in g(0)
+(see §4.5). The variable g* stores the maximum
+score w.r.t. the current proposal, while the vari-
+able f* stores the maximum score observed thus
+far w.r.t. the true model (note that in line 5 we as-
+sess the true score of d). In line 6 we start a loop
+that runs until the error falls below c. This error is
+the difference (in log-domain) between the proxy
+maximum g* and the best true score observed thus
+far f*.13 In line 7, we refine the current proposal
+using evidence from d (see §4.6). In line 9, we
+update the maximum derivation searching through
+the refined proposal. In line 11, we keep track of
+the best score so far according to the true model,
+in order to compute the updated gap in line 6.
+</bodyText>
+<subsectionHeader confidence="0.96696">
+4.5 Dynamic Programming
+</subsectionHeader>
+<bodyText confidence="0.66930575">
+Finding the best derivation in a proposal hyper-
+graph is straightforward with standard dynamic
+programming. We can compute inside weights
+in the max-times semiring in time proportional
+13Because g(t) upperbounds f everywhere, in optimisation
+we have a guarantee that the maximum of f must lie in the
+interval [f*, g*) (see Figure 2) and the quantity g* − f* is
+an upperbound on the error that we incur if we early-stop the
+search at any given time t. This bound provides a principled
+criterion in trading accuracy for performance (a direction that
+we leave for future work). Note that most algorithms for ap-
+proximate search produce solutions with unbounded error.
+</bodyText>
+<figure confidence="0.7483238">
+Algorithm 3 Exact decoding
+1: function OPTIMISE(g(0), E)
+2: t ← 0 &gt; step
+3: d ← argmaxd g(t)(d)
+4: g* ← g(t)(d)
+5: f* ← f(d)
+6: while (q* − f* ≥ E) do &gt; E is the maximum error
+7: g(t+1) ← refine(g(t), d) &gt; update proposal
+8: t ← t + 1
+9: d ← argmaxd g(t)(d) &gt; update argmax
+10: g* ← g(t)(d)
+11: f* ← max(f*, f(d)) &gt; update “best so far”
+12: end while
+13: return g(t), d
+14: end function
+</figure>
+<bodyText confidence="0.977912181818182">
+to O(JVJ + JEJ) (Goodman, 1999). Once inside
+weights have been computed, finding the Viterbi-
+derivation starting from the root is straightforward.
+A simple, though important, optimisation con-
+cerns the computation of inside weights. The in-
+side algorithm (Baker, 1979) requires a bottom-up
+traverse of the nodes in V . To do that, we topolog-
+ically sort the nodes in V at time t = 0 and main-
+tain a sorted list of nodes as we refine g throughout
+the search – thus avoiding having to recompute the
+partial ordering of the nodes at every iteration.
+</bodyText>
+<subsectionHeader confidence="0.956436">
+4.6 Refinement
+</subsectionHeader>
+<bodyText confidence="0.99920175">
+If a derivation d = argmaxd g(t)(d) is such that
+g(t)(d) « f(d), there must be in d at least one n-
+gram whose upperbound LM weight is far above
+its true LM weight. We then lower g(t) locally by
+refining only nonterminal nodes that participate in
+d. Nonterminal nodes are refined by having their
+LM states extended one word at a time.14
+For an illustration, assume we are perform-
+ing optimisation with a bigram LM. Suppose
+that in the first iteration a derivation d0 =
+argmaxd g(0)(d) is obtained. Now consider an
+edge in d0
+</bodyText>
+<equation confidence="0.981577">
+[l, C, r, c] αy1 �� [l0, C0, r0, c]
+w
+</equation>
+<bodyText confidence="0.954867363636363">
+where an empty LM state is made explicit (with an
+empty string c) and αy1 represents a target phrase.
+We refine the edge’s head [l0, C0, r0, c] by creating
+a node based on it, however, with an extended LM
+state, i.e., [l0, C0, r0, y1]. This motivates a split
+of the set of incoming edges to the original node,
+such that, if the target projection of an incoming
+14The refinement operation is a special case of a general
+finite-state intersection. However, keeping its effect local to
+derivations going through a specific node is non-trivial using
+the general mechanism and justifies a tailored operation.
+</bodyText>
+<page confidence="0.966726">
+1243
+</page>
+<bodyText confidence="0.9846045">
+edge ends in y1, that edge is reconnected to the
+new node as below.
+</bodyText>
+<equation confidence="0.987933">
+[l, C, r, c] αy1 �� [l0, C0, r0, y1]
+w
+</equation>
+<bodyText confidence="0.999849666666667">
+The outgoing edges from the new node are
+reweighted copies of those leaving the original
+node. That is, outgoing edges such as
+</bodyText>
+<equation confidence="0.8913286">
+&apos;
+[l0, C0, r0, E] y20 w�* [l&apos;, C&apos; , r&apos; ,-y ]
+motivate edges such as
+[l0, C0, r0, y1] y20 w&apos;w0
+���) [l&apos;, C&apos;, r&apos;, -y&apos;]
+</equation>
+<bodyText confidence="0.9984135">
+where w&apos; = ApqLM(y1y2)/qLM(y2) is a change in LM
+probability due to an extended context.
+Figure 4 is the logic program that constructs the
+refined hypergraph in the general case. In com-
+parison to Figure 3, items are now extended to
+store an LM state. The input is the original hy-
+pergraph G = (V, E) and a node v0 E V to be
+refined by left-extending its LM state -y0 with the
+</bodyText>
+<equation confidence="0.803385">
+D E
+</equation>
+<bodyText confidence="0.9781596875">
+word y. In the program, uσ w −→ v with u, v E V
+and σ E A* represents an edge in E. An item
+[l, C, r, -y]v (annotated with a state v E V ) rep-
+resents a node (in the refined hypergraph) whose
+signature is equivalent to v (in the input hyper-
+graph). We start with AXIOMS by copying the
+nodes in G. In COPY, edges from G are copied
+unless they are headed by v0 and their target pro-
+jections end in y-y0 (the extended context). Such
+edges are processed by REFINE, which instead of
+copying them, creates new ones headed by a re-
+fined version of v0. Finally, REWEIGHT contin-
+ues from the refined node with reweighted copies
+of the edges leaving v0. The weight update repre-
+sents a change in LM probability (w.r.t. the upper-
+bound distribution) due to an extended context.
+</bodyText>
+<sectionHeader confidence="0.999646" genericHeader="evaluation">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.893691666666667">
+We used the dataset made available by the Work-
+shop on Statistical Machine Translation (WMT)
+(Bojar et al., 2013) to train a German-English
+phrase-based system using the Moses toolkit
+(Koehn et al., 2007) in a standard setup. For
+phrase extraction, we used both Europarl (Koehn,
+2005) and News Commentaries (NC) totalling
+about 2.2M sentences.15 For language modelling,
+in addition to the monolingual parts of Europarl
+15Pre-processing: tokenisation, truecasing and automatic
+compound-splitting (German only). Following Durrani et al.
+(2013), we set the maximum phrase length to 5.
+</bodyText>
+<equation confidence="0.996339333333333">
+INPUT
+G = hV, Ei
+v0 = [l0, C0, r0, γ0] ∈ V where γ0 ∈ Δ∗
+y ∈ Δ
+ITEM [l, C, r, γ ∈ Δ∗]
+AXIOMS
+v ∈ V
+[l, C, r, γ]v
+COPY w\
+[l, C, r, α]uDuβ −→vI
+[l0, C0, r0, α0]v : w
+REFINE /�
+[l, C, R, α]uDuQ w−→ v0
+[l0, C0, r0, yγ0] : w
+REWEIGHT D E
+w
+[l0, C0, r0, yγ0] v0σ −→ v
+σ, γ ∈ Δ∗
+</equation>
+<bodyText confidence="0.6690986">
+Figure 4: Local intersection via LM right state re-
+finement. The input is a hypergraph G = (V, E),
+a node v0 E V singly identified by its carry
+[l0, C0, r0, -y0] and a left-extension y for its LM
+context -y0. The program copies most of the edges
+</bodyText>
+<equation confidence="0.972826">
+D E
+w
+</equation>
+<bodyText confidence="0.986004928571428">
+uσ −→ v E E. If a derivation goes through v0
+and the string under v0 ends in y-y0, the program
+refines and reweights it.
+and NC, we added News-2013 totalling about 25M
+sentences. We performed language model interpo-
+lation and batch-mira tuning (Cherry and Foster,
+2012) using newstest2010 (2,849 sentence pairs).
+For tuning we used cube pruning with a large beam
+size (k = 5000) and a distortion limit d = 4. Un-
+pruned language models were trained using lmplz
+(Heafield et al., 2013b) which employs modified
+Kneser-Ney smoothing (Kneser and Ney, 1995).
+We report results on newstest2012.
+Our exact decoder produces optimal translation
+derivations for all the 3,003 sentences in the test
+set. Table 1 summarises the performance of our
+novel decoder for language models of order n = 3
+to n = 5. For 3-gram LMs we also varied the dis-
+tortion limit d (from 4 to 6). We report the average
+time (in seconds) to build the initial proposal, the
+total run time of the algorithm, the number of it-
+erations N before convergence, and the size of the
+hypergraph in the end of the search (in thousands
+of nodes and thousands of edges).16
+16The size of the initial proposal does not depend on LM
+order, but rather on distortion limit (see Figure 3): on aver-
+age (in thousands) |V0 |= 0.6 and |E0 |= 27 with d = 4,
+|V0 |= 1.3 and |E0 |= 70 with d = 5, and |V0 |= 2.5 and
+</bodyText>
+<equation confidence="0.979854714285714">
+v =6v0 ∨ αβ =6σyγ0
+α, α0, β, σ ∈ Δ∗
+αβ = σyγ0
+α, β, σ ∈ Δ∗
+[l, C, r, γ]v : w ⊗ w0
+where w0 = λψ qLM(yγ0)
+qLM(γ0)
+</equation>
+<page confidence="0.970872">
+1244
+</page>
+<table confidence="0.675941">
+n d build (s) total (s) N |V  ||E|
+3 4 1.5 21 190 2.5 159
+3 5 3.5 55 303 4.4 343
+3 6 10 162 484 8 725
+4 4 1.5 50 350 4 288
+5 4 1.5 106 555 6.1 450
+</table>
+<tableCaption confidence="0.946065">
+Table 1: Performance of the exact decoder in
+</tableCaption>
+<bodyText confidence="0.985033454545454">
+terms of: time to build g(0), total decoding time in-
+cluding build, number of iterations (N), and num-
+ber of nodes and edges (in thousands) at the end of
+the search.
+It is insightful to understand how different as-
+pects of the initial proposal impact on perfor-
+mance. Increasing the translation option limit (tol)
+leads to g(0) having more edges (this dependency
+is linear with tol). In this case, the number of
+nodes is only minimally affected — due to the pos-
+sibility of a few new segmentations. The maxi-
+mum phrase length (mpl) introduces in g(0) more
+configurations of reordering constraints ([l, C] in
+Figure 3). However, not many more, due to C
+being limited by the distortion limit d. In prac-
+tice, we observe little impact on time performance.
+Increasing d introduces many more permutations
+of the input leading to exponentially many more
+nodes and edges. Increasing the order n of the LM
+has no impact on g(0) and its impact on the overall
+search is expressed in terms of a higher number of
+nodes being locally intersected.
+An increased hypergraph, be it due to addi-
+tional nodes or additional edges, necessarily leads
+to slower iterations because at each iteration we
+must compute inside weights in time O(|V |+|E|).
+The number of nodes has the larger impact on the
+number of iterations. OS∗ is very efficient in ig-
+noring hypotheses (edges) that cannot compete for
+an optimum. For instance, we observe that run-
+ning time depends linearly on tol only through the
+computation of inside weights, while the number
+of iterations is only minimally affected.17 An in-
+</bodyText>
+<footnote confidence="0.853013272727273">
+|E0 |= 178 with d = 6. Observe the exponential depen-
+dency on distortion limit, which also leads to exponentially
+longer running times.
+17It is possible to reduce the size of the hypergraph
+throughout the search using the upperbound on the search
+error g* − f* to prune hypotheses that surely do not stand
+a chance of competing for the optimum (Graehl, 2005). An-
+other direction is to group edges connecting the same nonter-
+minal nodes into one partial edge (Heafield et al., 2013a) —
+this is particularly convenient due to our method only visiting
+the 1-best derivation from g(d) at each iteration.
+</footnote>
+<table confidence="0.9945624">
+n Nodes at level m LM states at level m
+0 1 2 3 4 1 2 3 4
+3 0.4 1.2 0.5 - - 113 263 - -
+4 0.4 1.6 1.4 0.3 - 132 544 212 -
+5 0.4 2.1 2.4 0.7 0.1 142 790 479 103
+</table>
+<tableCaption confidence="0.990451">
+Table 2: Average number of nodes (in thousands)
+</tableCaption>
+<bodyText confidence="0.987861744186047">
+whose LM state encode an m-gram, and average
+number of unique LM states of order m in the fi-
+nal hypergraph for different n-gram LMs (d = 4
+everywhere).
+creased LM order, for a fixed distortion limit, im-
+pacts much more on the number of iterations than
+on the average running time of a single iteration.
+Fixing d = 4, the average time per iteration is 0.1
+(n = 3), 0.13 (n = 4) and 0.18 (n = 5). Fixing a
+3-gram LM, we observe 0.1 (d = 4), 0.17 (d = 5)
+and 0.31 (d = 6). Note the exponential growth
+of the latter, due to a proposal encoding exponen-
+tially many more permutations.
+Table 2 shows the average degree of refine-
+ment of the nodes in the final proposal. Nodes
+are shown by level of refinement, where m indi-
+cates that they store m words in their carry. The
+table also shows the number of unique m-grams
+ever incorporated to the proposal. This table il-
+lustrates well how our decoding algorithm moves
+from a coarse upperbound where every node stores
+an empty string to a variable-order representation
+which is sufficient to prove an optimum derivation.
+In our approach a complete derivation is opti-
+mised from the proxy model at each iteration. We
+observe that over 99% of these derivations project
+onto distinct strings. In addition, while the opti-
+mum solution may be found early in the search, a
+certificate of optimality requires refining the proxy
+until convergence (see §4.1). It turns out that most
+of the solutions are first encountered as late as in
+the last 6-10% of the iterations.
+We use the optimum derivations obtained with
+our exact decoder to measure the number of search
+errors made by beam search and cube pruning with
+increasing beam sizes (see Table 3). Beam search
+reaches optimum derivations with beam sizes k ≥
+500 for all language models tested. Cube prun-
+ing, on the other hand, still makes mistakes at
+k = 1000. Table 4 shows translation quality
+achieved with different beam sizes for cube prun-
+ing and compares it to exact decoding. Note that
+for k ≥ 104 cube pruning converges to optimum
+</bodyText>
+<page confidence="0.961085">
+1245
+</page>
+<table confidence="0.999442333333333">
+k Beam search Cube pruning
+3 4 5 3 4 5
+10 938 1294 1475 2168 2347 2377
+102 19 60 112 613 999 1126
+103 0 0 0 29 102 167
+104 0 0 0 0 4 7
+</table>
+<tableCaption confidence="0.966979">
+Table 3: Beam search and cube pruning search er-
+rors (out of 3,003 test samples) by beam size using
+LMs of order 3 to 5 (d = 4).
+</tableCaption>
+<table confidence="0.997731428571428">
+order 3 4 5
+k d = 4 d = 5 d = 6 d = 4 d = 4
+10 20.47 20.13 19.97 20.71 20.69
+102 21.14 21.18 21.08 21.73 21.76
+103 21.27 21.34 21.32 21.89 21.91
+104 21.29 21.37 21.37 21.92 21.93
+OS* 21.29 21.37 21.37 21.92 21.93
+</table>
+<tableCaption confidence="0.9392295">
+Table 4: Translation quality in terms of BLEU as
+a function of beam size in cube pruning with lan-
+</tableCaption>
+<bodyText confidence="0.954657666666667">
+guage models of order 3 to 5. The bottom row
+shows BLEU for our exact decoder.
+derivations in the vast majority of the cases (100%
+with a 3-gram LM) and translation quality in terms
+of BLEU is no different from OS*. However, with
+k &lt; 104 both model scores and translation quality
+can be improved. Figure 5 shows a finer view on
+search errors as a function of beam size for LMs
+of order 3 to 5 (fixed d = 4). In Figure 6, we fix
+a 3-gram LM and vary the distortion limit (from 4
+to 6). Dotted lines correspond to beam search and
+dashed lines correspond to cube pruning.
+</bodyText>
+<sectionHeader confidence="0.998906" genericHeader="conclusions">
+6 Conclusions and Future Work
+</sectionHeader>
+<bodyText confidence="0.9999938">
+We have presented an approach to decoding with
+unpruned hypergraphs using upperbounds on the
+language model distribution. The algorithm is an
+instance of a coarse-to-fine strategy with connec-
+tions to A* and adaptive rejection sampling known
+as OS*. We have tested our search algorithm us-
+ing state-of-the-art phrase-based models employ-
+ing robust language models. Our algorithm is able
+to decode all sentences of a standard test set in
+manageable time consuming very little memory.
+We have performed an analysis of search errors
+made by beam search and cube pruning and found
+that both algorithms perform remarkably well for
+phrase-based decoding. In the case of cube prun-
+ing, we show that model score and translation
+</bodyText>
+<figure confidence="0.89802">
+Search errors in newstest2012
+104
+103
+102
+101
+0
+10102 103 104
+[log] Beam size
+</figure>
+<figureCaption confidence="0.936003">
+Figure 5: Search errors made by beam search and
+cube pruning as a function of beam-size.
+</figureCaption>
+<figure confidence="0.976367846153846">
+Search errors in newstest2012 (3-gram LM)
+104
+CP d=4
+CP d=5
+CP d=6
+BS d=4
+BS d=5
+BS d=6
+102
+101
+100
+102 103 104
+[log] Beam size
+</figure>
+<figureCaption confidence="0.900399666666667">
+Figure 6: Search errors made by beam search and
+cube pruning as a function of the distortion limit
+(decoding with a 3-gram LM).
+</figureCaption>
+<bodyText confidence="0.990103666666667">
+quality can be improved for beams k &lt; 10, 000.
+There are a number of directions that we intend
+to investigate to speed up our decoder, such as: (1)
+error-safe pruning based on search error bounds;
+(2) use of reinforcement learning to guide the de-
+coder in choosing which n-gram contexts to ex-
+tend; and (3) grouping edges into partial edges,
+effectively reducing the size of the hypergraph and
+ultimately computing inside weights in less time.
+</bodyText>
+<sectionHeader confidence="0.998864" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9075085">
+The work of Wilker Aziz and Lucia Specia was
+supported by EPSRC (grant EP/K024272/1).
+</bodyText>
+<figure confidence="0.947579">
+[log] Search errors
+CP 3-gram
+CP 4-gram
+CP 5-gram
+BS 3-gram
+BS 4-gram
+BS 5-gram
+[log] Search errors
+103
+</figure>
+<page confidence="0.984623">
+1246
+</page>
+<sectionHeader confidence="0.995414" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999797468468469">
+Michael Auli, Adam Lopez, Hieu Hoang, and Philipp
+Koehn. 2009. A systematic analysis of transla-
+tion model search spaces. In Proceedings of the
+Fourth Workshop on Statistical Machine Transla-
+tion, StatMT ’09, pages 224–232, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+Wilker Aziz, Marc Dymetman, and Sriram Venkatapa-
+thy. 2013. Investigations in exact inference for hi-
+erarchical translation. In Proceedings of the Eighth
+Workshop on Statistical Machine Translation, pages
+472–483, Sofia, Bulgaria, August. Association for
+Computational Linguistics.
+James K. Baker. 1979. Trainable grammars for speech
+recognition. In Proceedings of the Spring Confer-
+ence of the Acoustical Society of America, pages
+547–550, Boston, MA, June.
+Ondˇrej Bojar, Christian Buck, Chris Callison-Burch,
+Christian Federmann, Barry Haddow, Philipp
+Koehn, Christof Monz, Matt Post, Radu Soricut, and
+Lucia Specia. 2013. Findings of the 2013 Work-
+shop on Statistical Machine Translation. In Pro-
+ceedings of the Eighth Workshop on Statistical Ma-
+chine Translation, pages 1–44, Sofia, Bulgaria, Au-
+gust. Association for Computational Linguistics.
+Peter F. Brown, Vincent J. Della Pietra, Stephen
+A. Della Pietra, and Robert L. Mercer. 1993.
+The mathematics of statistical machine translation:
+parameter estimation. Computational Linguistics,
+19(2):263–311, June.
+Simon Carter, Marc Dymetman, and Guillaume
+Bouchard. 2012. Exact sampling and decoding in
+high-order hidden Markov models. In Proceedings
+of the 2012 Joint Conference on Empirical Methods
+in Natural Language Processing and Computational
+Natural Language Learning, pages 1125–1134, Jeju
+Island, Korea, July. Association for Computational
+Linguistics.
+Yin-Wen Chang and Michael Collins. 2011. Exact de-
+coding of phrase-based translation models through
+Lagrangian relaxation. In Proceedings of the Con-
+ference on Empirical Methods in Natural Language
+Processing, EMNLP ’11, pages 26–37, Stroudsburg,
+PA, USA. Association for Computational Linguis-
+tics.
+Colin Cherry and George Foster. 2012. Batch tun-
+ing strategies for statistical machine translation. In
+Proceedings of the 2012 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies,
+NAACL HLT ’12, pages 427–436, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+David Chiang. 2005. A hierarchical phrase-based
+model for statistical machine translation. In Pro-
+ceedings of the 43rd Annual Meeting on Association
+for Computational Linguistics, ACL ’05, pages 263–
+270, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Computational Linguistics, 33:201–228.
+Shay B. Cohen, Robert J. Simmons, and Noah A.
+Smith. 2008. Dynamic programming algorithms as
+products of weighted logic programs. In Maria Gar-
+cia de la Banda and Enrico Pontelli, editors, Logic
+Programming, volume 5366 of Lecture Notes in
+Computer Science, pages 114–129. Springer Berlin
+Heidelberg.
+G Dantzig, R Fulkerson, and S Johnson. 1954. So-
+lution of a large-scale traveling-salesman problem.
+Operations Research, 2:393–410.
+Nadir Durrani, Barry Haddow, Kenneth Heafield, and
+Philipp Koehn. 2013. Edinburgh’s machine trans-
+lation systems for European language pairs. In Pro-
+ceedings of the Eighth Workshop on Statistical Ma-
+chine Translation, pages 114–121, Sofia, Bulgaria,
+August. Association for Computational Linguistics.
+Chris Dyer and Philip Resnik. 2010. Context-free
+reordering, finite-state translation. In Human Lan-
+guage Technologies: The 2010 Annual Conference
+of the North American Chapter of the Association
+for Computational Linguistics, HLT ’10, pages 858–
+866, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+Marc Dymetman, Guillaume Bouchard, and Simon
+Carter. 2012. Optimization and sampling for NLP
+from a unified viewpoint. In Proceedings of the
+First International Workshop on Optimization Tech-
+niques for Human Language Technology, pages 79–
+94, Mumbai, India, December. The COLING 2012
+Organizing Committee.
+Giorgio Gallo, Giustino Longo, Stefano Pallottino, and
+Sang Nguyen. 1993. Directed hypergraphs and
+applications. Discrete Applied Mathematics, 42(2-
+3):177–201, April.
+Ulrich Germann, Michael Jahr, Kevin Knight, Daniel
+Marcu, and Kenji Yamada. 2001. Fast decoding and
+optimal decoding for machine translation. In Pro-
+ceedings of the 39th Annual Meeting on Association
+for Computational Linguistics, ACL ’01, pages 228–
+235, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+Joshua Goodman. 1999. Semiring parsing. Comput.
+Linguist., 25(4):573–605, December.
+Jonathan Graehl. 2005. Relatively useless pruning.
+Technical report, USC Information Sciences Insti-
+tute.
+Peter E. Hart, Nils J. Nilsson, and Bertram Raphael.
+1968. A formal basis for the heuristic determina-
+tion of minimum cost paths. IEEE Transactions On
+Systems Science And Cybernetics, 4(2):100–107.
+Kenneth Heafield, Philipp Koehn, and Alon Lavie.
+2013a. Grouping language model boundary words
+</reference>
+<page confidence="0.805878">
+1247
+</page>
+<reference confidence="0.999592627272727">
+to speed k-best extraction from hypergraphs. In Pro-
+ceedings of the 2013 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics: Human Language Technologies, pages
+958–968, Atlanta, Georgia, USA, June.
+Kenneth Heafield, Ivan Pouzyrevsky, Jonathan H.
+Clark, and Philipp Koehn. 2013b. Scalable modi-
+fied Kneser-Ney language model estimation. In Pro-
+ceedings of the 51st Annual Meeting of the Associa-
+tion for Computational Linguistics (Volume 2: Short
+Papers), pages 690–696, Sofia, Bulgaria, August.
+Association for Computational Linguistics.
+Kenneth Heafield, Michael Kayser, and Christopher D.
+Manning. 2014. Faster Phrase-Based decoding by
+refining feature state. In Proceedings of the Associa-
+tion for Computational Linguistics, Baltimore, MD,
+USA, June.
+Liang Huang and David Chiang. 2007. Forest rescor-
+ing: Faster decoding with integrated language mod-
+els. In Proceedings of the 45th Annual Meeting of
+the Association of Computational Linguistics, pages
+144–151, Prague, Czech Republic, June. Associa-
+tion for Computational Linguistics.
+Gonzalo Iglesias, Adri`a de Gispert, Eduardo R. Banga,
+and William Byrne. 2009. Rule filtering by pattern
+for efficient hierarchical translation. In Proceed-
+ings of the 12th Conference of the European Chapter
+of the ACL (EACL 2009), pages 380–388, Athens,
+Greece, March. Association for Computational Lin-
+guistics.
+Daniel Jurafsky and James H. Martin. 2000. Speech
+and Language Processing: An Introduction to Nat-
+ural Language Processing, Computational Linguis-
+tics and Speech Recognition. Series in Artificial In-
+telligence. Prentice Hall, 1 edition.
+Reinhard Kneser and Hermann Ney. 1995. Improved
+backing-off for m-gram language modeling. Ac-
+coustics, Speech, and Signal Processing, 1:181–184.
+Kevin Knight. 1999. Decoding complexity in word-
+replacement translation models. Comput. Linguist.,
+25(4):607–615, December.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Pro-
+ceedings of the 2003 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics on Human Language Technology - Vol-
+ume 1, NAACL ’03, pages 48–54, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: open
+source toolkit for statistical machine translation. In
+Proceedings of the 45th Annual Meeting of the ACL
+on Interactive Poster and Demonstration Sessions,
+ACL ’07, pages 177–180, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Philipp Koehn. 2005. Europarl: A parallel corpus
+for statistical machine translation. In Proceedings
+of Machine Translation Summit, pages 79–86.
+Shankar Kumar, Yonggang Deng, and William Byrne.
+2006. A weighted finite state transducer transla-
+tion template model for statistical machine transla-
+tion. Natural Language Engineering, 12(1):35–75,
+March.
+Zhifei Li and Sanjeev Khudanpur. 2008. A scal-
+able decoder for parsing-based machine translation
+with equivalent language model state maintenance.
+In Proceedings of the Second Workshop on Syntax
+and Structure in Statistical Translation, SSST ’08,
+pages 10–18, Stroudsburg, PA, USA. Association
+for Computational Linguistics.
+Adam Lopez. 2008. Statistical machine translation.
+ACM Computing Surveys, 40(3):8:1–8:49, August.
+Adam Lopez. 2009. Translation as weighted de-
+duction. In Proceedings of the 12th Conference of
+the European Chapter of the Association for Com-
+putational Linguistics, EACL ’09, pages 532–540,
+Stroudsburg, PA, USA. Association for Computa-
+tional Linguistics.
+Franz Josef Och, Nicola Ueffing, and Hermann Ney.
+2001. An efficient A* search algorithm for statisti-
+cal machine translation. In Proceedings of the work-
+shop on Data-driven methods in machine translation
+- Volume 14, DMMT ’01, pages 1–8, Stroudsburg,
+PA, USA. Association for Computational Linguis-
+tics.
+Franz Josef Och. 2003. Minimum error rate training in
+statistical machine translation. In Proceedings of the
+41st Annual Meeting on Association for Computa-
+tional Linguistics, volume 1 of ACL ’03, pages 160–
+167, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+Slav Petrov, Aria Haghighi, and Dan Klein. 2008.
+Coarse-to-fine syntactic machine translation using
+language projections. In Proceedings of the Con-
+ference on Empirical Methods in Natural Language
+Processing, EMNLP ’08, pages 108–116, Strouds-
+burg, PA, USA. Association for Computational Lin-
+guistics.
+Sebastian Riedel and James Clarke. 2009. Revisit-
+ing optimal decoding for machine translation IBM
+model 4. In Proceedings of Human Language Tech-
+nologies: The 2009 Annual Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics, Companion Volume: Short Pa-
+pers, NAACL-Short ’09, pages 5–8, Stroudsburg,
+PA, USA. Association for Computational Linguis-
+tics.
+</reference>
+<page confidence="0.788325">
+1248
+</page>
+<reference confidence="0.99979625">
+Christian P. Robert and George Casella. 2004. Monte
+Carlo Statistical Methods (Springer Texts in Statis-
+tics). Springer-Verlag New York, Inc., Secaucus,
+NJ, USA.
+Alexander M. Rush and Michael Collins. 2011. Ex-
+act decoding of syntactic translation models through
+Lagrangian relaxation. In Proceedings of the 49th
+Annual Meeting of the Association for Computa-
+tional Linguistics: Human Language Technologies
+- Volume 1, HLT ’11, pages 72–82, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+Christoph Tillmann, Stephan Vogel, Hermann Ney,
+and A. Zubiaga. 1997. A DP based search using
+monotone alignments in statistical translation. In
+Proceedings of the eighth conference on European
+chapter of the Association for Computational Lin-
+guistics, EACL ’97, pages 289–296, Stroudsburg,
+PA, USA. Association for Computational Linguis-
+tics.
+Mikhail Zaslavskiy, Marc Dymetman, and Nicola Can-
+cedda. 2009. Phrase-based statistical machine
+translation as a traveling salesman problem. In Pro-
+ceedings of the Joint Conference of the 47th Annual
+Meeting of the ACL and the 4th International Joint
+Conference on Natural Language Processing of the
+AFNLP: Volume 1 - Volume 1, ACL ’09, pages 333–
+341, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+</reference>
+<page confidence="0.995028">
+1249
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.338457">
+<title confidence="0.672062">Exact Decoding for Phrase-Based Statistical Machine Translation</title>
+<affiliation confidence="0.7546825">of Computer Science, University of Sheffield, Research Centre Europe, Grenoble,</affiliation>
+<email confidence="0.998775">Marc.Dymetman@xrce.xerox.com</email>
+<abstract confidence="0.999002315789474">The combinatorial space of translation derivations in phrase-based statistical machine translation is given by the intersection between a translation lattice and a target language model. We replace this intractable intersection by a tractable relaxation which incorporates a low-order upperbound on the language model. Exact optimisation is achieved through a coarseto-fine strategy with connections to adaptive rejection sampling. We perform exact optimisation with unpruned language models of order 3 to 5 and show searcherror curves for beam search and cube pruning on standard test sets. This is the first work to tractably tackle exact optimisation with language models of orders higher than 3.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Michael Auli</author>
+<author>Adam Lopez</author>
+<author>Hieu Hoang</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>A systematic analysis of translation model search spaces.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Fourth Workshop on Statistical Machine Translation, StatMT ’09,</booktitle>
+<pages>224--232</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="17584" citStr="Auli et al., 2009" startWordPosition="2924" endWordPosition="2927">words from the leftmost uncovered source position (Lopez, 2009). This is a widely used strategy and it is in use in the Moses toolkit (Koehn et al., 2007).8 Nevertheless, the problem of finding the best 7If d is a maximum from g and g(d) = f(d), then it is easy to show by contradiction that d is the actual maximum from f: if there existed d&apos; such that f(d&apos;) &gt; f(d), then it follows that g(d&apos;) ≥ f(d&apos;) &gt; f(d) = g(d), and hence d would not be a maximum for g. 8A distortion limit characterises a form of pruning that acts directly in the generative capacity of the model leading to induction errors (Auli et al., 2009). Limiting reordering like that lowers complexity to a polynomial function of I and an exponential function of the distortion limit. g(0) f* f1 g(1) d1d* f D(x) f0 d0 1240 derivation under the model remains impracticable due to nonlocal parameterisation (namely, the n-gram LM component). The weighted set (D(x), f(d)), which represents the objective, is a complex hypergraph which we cannot afford to construct. We propose to construct instead a simpler hypergraph for which optimisation by dynamic programming is feasible. This proxy represents the weighted set (D(x), g(0)(d)), where g(0)(d) &gt; f(d</context>
+</contexts>
+<marker>Auli, Lopez, Hoang, Koehn, 2009</marker>
+<rawString>Michael Auli, Adam Lopez, Hieu Hoang, and Philipp Koehn. 2009. A systematic analysis of translation model search spaces. In Proceedings of the Fourth Workshop on Statistical Machine Translation, StatMT ’09, pages 224–232, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wilker Aziz</author>
+<author>Marc Dymetman</author>
+<author>Sriram Venkatapathy</author>
+</authors>
+<title>Investigations in exact inference for hierarchical translation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Eighth Workshop on Statistical Machine Translation,</booktitle>
+<pages>472--483</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="3218" citStr="Aziz et al., 2013" startWordPosition="518" endWordPosition="521"> 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refined based on evidence col1237 Proceedings of</context>
+<context position="13651" citStr="Aziz et al. (2013)" startWordPosition="2252" endWordPosition="2255">g et al., 1954) reaching 30 words. 5In hierarchical translation, reordering is governed by a synchronous context-free grammar and the underlying problem is no longer NP-complete. Exact decoding remains infeasible because the intersection between the translation forest and the target LM is prohibitively slow. 1239 wise, a subset of the constraints is explicitly added and the dual optimisation is repeated. They handle sentences above average length, however, resorting to compact rulesets (10 translation options per input segment) and using only 3-gram LMs. In the context of hierarchical models, Aziz et al. (2013) work with unpruned forests using upperbounds. Their approach is the closest to ours. They also employ a coarse-to-fine strategy with the OS* framework (Dymetman et al., 2012), and investigate unbiased sampling in addition to optimisation. However, they start from a coarser upperbound with unigram probabilities, and their refinement strategies are based on exhaustive intersections with small n-gram matching automata. These refinements make forests grow unmanageable too quickly. Because of that, they only deal with very short sentences (up to 10 words) and even then decoding is very slow. We de</context>
+<context position="21858" citStr="Aziz et al. (2013)" startWordPosition="3692" endWordPosition="3695">ions incorporate the weighted upperbound w(·), rather than the true LM component 0(·).11 4.3 LM upperbound and Max-ABPA Following Carter et al. (2012) we compute an upperbound on n-gram conditional probabilities by precomputing max-backoff weights stored in a “Max-ARPA” table, an extension of the ARPA format (Jurafsky and Martin, 2000). A standard ARPA table T stores entries 10This constraint prevents items from becoming dead-ends where incomplete derivations require a reordering step larger than d. This is known to prevent many search errors in beam search (Chang and Collins, 2011). 11Unlike Aziz et al. (2013), rather than unigrams only, we score all n-grams within a translation rule (including incomplete ones). Xl i=1 ω(y[ei]) + g(0)(d) = φ(ei) + Xl − 1 i=1 Xl i=1 i = l Li0−l k=i−l ck = 0¯ D E 0 [l, C, r] xi yjj [l, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) 1241 hZ, Z.p, Z.bi, where Z is an n-gram equal to the concatenation Pz of a prefix P with a word z, Z.p is the conditional probability p(z|P), and Z.b is a so-called “backoff” weight associated with Z. The conditional probability of an arbitrary n-gram p(z|P), whether listed or not, can then be recovered from T by the simple recursive procedure shown</context>
+</contexts>
+<marker>Aziz, Dymetman, Venkatapathy, 2013</marker>
+<rawString>Wilker Aziz, Marc Dymetman, and Sriram Venkatapathy. 2013. Investigations in exact inference for hierarchical translation. In Proceedings of the Eighth Workshop on Statistical Machine Translation, pages 472–483, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James K Baker</author>
+</authors>
+<title>Trainable grammars for speech recognition.</title>
+<date>1979</date>
+<booktitle>In Proceedings of the Spring Conference of the Acoustical Society of America,</booktitle>
+<pages>547--550</pages>
+<location>Boston, MA,</location>
+<contexts>
+<context position="29548" citStr="Baker, 1979" startWordPosition="5220" endWordPosition="5221">PTIMISE(g(0), E) 2: t ← 0 &gt; step 3: d ← argmaxd g(t)(d) 4: g* ← g(t)(d) 5: f* ← f(d) 6: while (q* − f* ≥ E) do &gt; E is the maximum error 7: g(t+1) ← refine(g(t), d) &gt; update proposal 8: t ← t + 1 9: d ← argmaxd g(t)(d) &gt; update argmax 10: g* ← g(t)(d) 11: f* ← max(f*, f(d)) &gt; update “best so far” 12: end while 13: return g(t), d 14: end function to O(JVJ + JEJ) (Goodman, 1999). Once inside weights have been computed, finding the Viterbiderivation starting from the root is straightforward. A simple, though important, optimisation concerns the computation of inside weights. The inside algorithm (Baker, 1979) requires a bottom-up traverse of the nodes in V . To do that, we topologically sort the nodes in V at time t = 0 and maintain a sorted list of nodes as we refine g throughout the search – thus avoiding having to recompute the partial ordering of the nodes at every iteration. 4.6 Refinement If a derivation d = argmaxd g(t)(d) is such that g(t)(d) « f(d), there must be in d at least one ngram whose upperbound LM weight is far above its true LM weight. We then lower g(t) locally by refining only nonterminal nodes that participate in d. Nonterminal nodes are refined by having their LM states exte</context>
+</contexts>
+<marker>Baker, 1979</marker>
+<rawString>James K. Baker. 1979. Trainable grammars for speech recognition. In Proceedings of the Spring Conference of the Acoustical Society of America, pages 547–550, Boston, MA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ondˇrej Bojar</author>
+<author>Christian Buck</author>
+<author>Chris Callison-Burch</author>
+<author>Christian Federmann</author>
+<author>Barry Haddow</author>
+<author>Philipp Koehn</author>
+<author>Christof Monz</author>
+<author>Matt Post</author>
+<author>Radu Soricut</author>
+<author>Lucia Specia</author>
+</authors>
+<date>2013</date>
+<booktitle>Findings of the 2013 Workshop on Statistical Machine Translation. In Proceedings of the Eighth Workshop on Statistical Machine Translation,</booktitle>
+<pages>1--44</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="2861" citStr="Bojar et al., 2013" startWordPosition="462" endWordPosition="465"> the weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The set D is typically finite, however, it contains a very large number of structures — exponential (or even factorial, see §2) with the size of x — making exhaustive enumeration prohibitively slow. Only in very restricted cases combinatorial optimisation techniques are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perfor</context>
+<context position="32625" citStr="Bojar et al., 2013" startWordPosition="5807" endWordPosition="5810"> by copying the nodes in G. In COPY, edges from G are copied unless they are headed by v0 and their target projections end in y-y0 (the extended context). Such edges are processed by REFINE, which instead of copying them, creates new ones headed by a refined version of v0. Finally, REWEIGHT continues from the refined node with reweighted copies of the edges leaving v0. The weight update represents a change in LM probability (w.r.t. the upperbound distribution) due to an extended context. 5 Experiments We used the dataset made available by the Workshop on Statistical Machine Translation (WMT) (Bojar et al., 2013) to train a German-English phrase-based system using the Moses toolkit (Koehn et al., 2007) in a standard setup. For phrase extraction, we used both Europarl (Koehn, 2005) and News Commentaries (NC) totalling about 2.2M sentences.15 For language modelling, in addition to the monolingual parts of Europarl 15Pre-processing: tokenisation, truecasing and automatic compound-splitting (German only). Following Durrani et al. (2013), we set the maximum phrase length to 5. INPUT G = hV, Ei v0 = [l0, C0, r0, γ0] ∈ V where γ0 ∈ Δ∗ y ∈ Δ ITEM [l, C, r, γ ∈ Δ∗] AXIOMS v ∈ V [l, C, r, γ]v COPY w\ [l, C, r, </context>
+</contexts>
+<marker>Bojar, Buck, Callison-Burch, Federmann, Haddow, Koehn, Monz, Post, Soricut, Specia, 2013</marker>
+<rawString>Ondˇrej Bojar, Christian Buck, Chris Callison-Burch, Christian Federmann, Barry Haddow, Philipp Koehn, Christof Monz, Matt Post, Radu Soricut, and Lucia Specia. 2013. Findings of the 2013 Workshop on Statistical Machine Translation. In Proceedings of the Eighth Workshop on Statistical Machine Translation, pages 1–44, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter F Brown</author>
+<author>Vincent J Della Pietra</author>
+<author>Stephen A Della Pietra</author>
+<author>Robert L Mercer</author>
+</authors>
+<title>The mathematics of statistical machine translation: parameter estimation.</title>
+<date>1993</date>
+<journal>Computational Linguistics,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="11503" citStr="Brown et al., 1993" startWordPosition="1914" endWordPosition="1917">ting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words on average) using a 2-gram LM due to salesman graphs growing too large.4 Chang and Collins (2011) relax phrase-based models w.r.t. </context>
+</contexts>
+<marker>Brown, Pietra, Pietra, Mercer, 1993</marker>
+<rawString>Peter F. Brown, Vincent J. Della Pietra, Stephen A. Della Pietra, and Robert L. Mercer. 1993. The mathematics of statistical machine translation: parameter estimation. Computational Linguistics, 19(2):263–311, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Simon Carter</author>
+<author>Marc Dymetman</author>
+<author>Guillaume Bouchard</author>
+</authors>
+<title>Exact sampling and decoding in high-order hidden Markov models.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>1125--1134</pages>
+<institution>Jeju Island, Korea, July. Association for Computational Linguistics.</institution>
+<contexts>
+<context position="21390" citStr="Carter et al. (2012)" startWordPosition="3621" endWordPosition="3624">represents a left-shift. The rule NON-ADJACENT handles the remaining cases i &gt; l provided that the expansion skips at most d input words |r − i + 1 |&lt; d. In the consequent, the window C is simply updated to record the translation of the input span i..i&apos;. In the nonadjacent case, a gap constraint imposes that the resulting item will require skipping no more than d positions before the leftmost uncovered word is translated |i&apos; − l + 1 |&lt; d.10 Finally, note that deductions incorporate the weighted upperbound w(·), rather than the true LM component 0(·).11 4.3 LM upperbound and Max-ABPA Following Carter et al. (2012) we compute an upperbound on n-gram conditional probabilities by precomputing max-backoff weights stored in a “Max-ARPA” table, an extension of the ARPA format (Jurafsky and Martin, 2000). A standard ARPA table T stores entries 10This constraint prevents items from becoming dead-ends where incomplete derivations require a reordering step larger than d. This is known to prevent many search errors in beam search (Chang and Collins, 2011). 11Unlike Aziz et al. (2013), rather than unigrams only, we score all n-grams within a translation rule (including incomplete ones). Xl i=1 ω(y[ei]) + g(0)(d) =</context>
+</contexts>
+<marker>Carter, Dymetman, Bouchard, 2012</marker>
+<rawString>Simon Carter, Marc Dymetman, and Guillaume Bouchard. 2012. Exact sampling and decoding in high-order hidden Markov models. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 1125–1134, Jeju Island, Korea, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yin-Wen Chang</author>
+<author>Michael Collins</author>
+</authors>
+<title>Exact decoding of phrase-based translation models through Lagrangian relaxation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP ’11,</booktitle>
+<pages>26--37</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="3365" citStr="Chang and Collins, 2011" startWordPosition="542" endWordPosition="545">ang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refined based on evidence col1237 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1237–1249, October 25-29, 2014, Doha, Qatar. c�2014 Associa</context>
+<context position="12069" citStr="Chang and Collins (2011)" startWordPosition="2008" endWordPosition="2011"> (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words on average) using a 2-gram LM due to salesman graphs growing too large.4 Chang and Collins (2011) relax phrase-based models w.r.t. the non-overlapping constraints, which are replaced by soft penalties through Lagrangian multipliers, and intersect the LM component exhaustively. They do employ a maximum distortion limit (d = 4), thus the problem they tackle is no longer NP-complete. Rush and Collins (2011) relax a hierarchical phrase-based model (Chiang, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dua</context>
+<context position="21829" citStr="Chang and Collins, 2011" startWordPosition="3687" endWordPosition="3690">1 |&lt; d.10 Finally, note that deductions incorporate the weighted upperbound w(·), rather than the true LM component 0(·).11 4.3 LM upperbound and Max-ABPA Following Carter et al. (2012) we compute an upperbound on n-gram conditional probabilities by precomputing max-backoff weights stored in a “Max-ARPA” table, an extension of the ARPA format (Jurafsky and Martin, 2000). A standard ARPA table T stores entries 10This constraint prevents items from becoming dead-ends where incomplete derivations require a reordering step larger than d. This is known to prevent many search errors in beam search (Chang and Collins, 2011). 11Unlike Aziz et al. (2013), rather than unigrams only, we score all n-grams within a translation rule (including incomplete ones). Xl i=1 ω(y[ei]) + g(0)(d) = φ(ei) + Xl − 1 i=1 Xl i=1 i = l Li0−l k=i−l ck = 0¯ D E 0 [l, C, r] xi yjj [l, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) 1241 hZ, Z.p, Z.bi, where Z is an n-gram equal to the concatenation Pz of a prefix P with a word z, Z.p is the conditional probability p(z|P), and Z.b is a so-called “backoff” weight associated with Z. The conditional probability of an arbitrary n-gram p(z|P), whether listed or not, can then be recovered from T by the sim</context>
+</contexts>
+<marker>Chang, Collins, 2011</marker>
+<rawString>Yin-Wen Chang and Michael Collins. 2011. Exact decoding of phrase-based translation models through Lagrangian relaxation. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP ’11, pages 26–37, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Colin Cherry</author>
+<author>George Foster</author>
+</authors>
+<title>Batch tuning strategies for statistical machine translation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL HLT ’12,</booktitle>
+<pages>427--436</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="33886" citStr="Cherry and Foster, 2012" startWordPosition="6050" endWordPosition="6053">INE /� [l, C, R, α]uDuQ w−→ v0 [l0, C0, r0, yγ0] : w REWEIGHT D E w [l0, C0, r0, yγ0] v0σ −→ v σ, γ ∈ Δ∗ Figure 4: Local intersection via LM right state refinement. The input is a hypergraph G = (V, E), a node v0 E V singly identified by its carry [l0, C0, r0, -y0] and a left-extension y for its LM context -y0. The program copies most of the edges D E w uσ −→ v E E. If a derivation goes through v0 and the string under v0 ends in y-y0, the program refines and reweights it. and NC, we added News-2013 totalling about 25M sentences. We performed language model interpolation and batch-mira tuning (Cherry and Foster, 2012) using newstest2010 (2,849 sentence pairs). For tuning we used cube pruning with a large beam size (k = 5000) and a distortion limit d = 4. Unpruned language models were trained using lmplz (Heafield et al., 2013b) which employs modified Kneser-Ney smoothing (Kneser and Ney, 1995). We report results on newstest2012. Our exact decoder produces optimal translation derivations for all the 3,003 sentences in the test set. Table 1 summarises the performance of our novel decoder for language models of order n = 3 to n = 5. For 3-gram LMs we also varied the distortion limit d (from 4 to 6). We report</context>
+</contexts>
+<marker>Cherry, Foster, 2012</marker>
+<rawString>Colin Cherry and George Foster. 2012. Batch tuning strategies for statistical machine translation. In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL HLT ’12, pages 427–436, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>A hierarchical phrase-based model for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05,</booktitle>
+<pages>263--270</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="12434" citStr="Chiang, 2005" startWordPosition="2064" endWordPosition="2065">noverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words on average) using a 2-gram LM due to salesman graphs growing too large.4 Chang and Collins (2011) relax phrase-based models w.r.t. the non-overlapping constraints, which are replaced by soft penalties through Lagrangian multipliers, and intersect the LM component exhaustively. They do employ a maximum distortion limit (d = 4), thus the problem they tackle is no longer NP-complete. Rush and Collins (2011) relax a hierarchical phrase-based model (Chiang, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dual converges to a compliant solution, the solution is guaranteed to be optimal. Other4Exact decoding had been similarly addressed with Integer Linear Programming (ILP) in the context of word-based models for very short sentences using a 2-gram LM (Germann et al., 2001). Riedel and Clarke (2009) revisit that formulation and employ a cutting-plane algorithm (Dantzig</context>
+</contexts>
+<marker>Chiang, 2005</marker>
+<rawString>David Chiang. 2005. A hierarchical phrase-based model for statistical machine translation. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05, pages 263– 270, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Computational Linguistics,</journal>
+<pages>33--201</pages>
+<contexts>
+<context position="2752" citStr="Chiang, 2007" startWordPosition="449" endWordPosition="450">ently and d = (e1, e2, ... , el) is a sequence of l steps. Under this assumption, each step is assigned the weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The set D is typically finite, however, it contains a very large number of structures — exponential (or even factorial, see §2) with the size of x — making exhaustive enumeration prohibitively slow. Only in very restricted cases combinatorial optimisation techniques are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and </context>
+<context position="6248" citStr="Chiang, 2007" startWordPosition="1001" endWordPosition="1002"> In Figure 1, a nonteminal item summarises partial derivation (or hypotheses). It is denoted by [C, r, -y] (also known as carry), where: C is a coverage vector, necessary to impose the non-overlapping constraint; r is the rightmost position most recently covered, necessary for the computation of 6; and -y is the last n − 1 words 1Preventing phrases from overlapping requires an exponential number of constraints (the powerset of x) rendering the problem NP-complete (Knight, 1999). 2Weighted logics have been extensively used to describe weighted sets (Lopez, 2009), operations over weighted sets (Chiang, 2007; Dyer and Resnik, 2010), and a variety of dynamic programming algorithms (Cohen et al., 2008). ITEM [{0, 1}I, [0, I + 1], An−1] GOAL [1I, I + 1, EOS] AXIOM hBOS → BOSi [0I, 0, BOS] : ψ(BOS) EXPAND ACCEPT [1I, r, γ] [1I , I r ≤ + 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I Figure 1: Specification for the weighted set of translation derivations in phrase-based SMT with unconstrained reordering. in the yield, necessary for the LM component. The program expands partial derivations by concatenation with a translation rule Dxi0 ±�, yjj0E, that is, an instantiated biphrase which covers the span xi0 i and yie</context>
+<context position="7970" citStr="Chiang, 2007" startWordPosition="1292" endWordPosition="1293"> contains all translation derivations (a translation lattice or forest), and one that re-ranks the first as a function of the interactions between translation steps. The model of translational equivalences parameterised only with φ is an instance of the former. An n-gram LM component is an instance of the latter. 2.1 Hypergraphs A backward-hypergraph, or simply hypergraph, is a generalisation of a graph where edges have multiple origins and one destination (Gallo et al., 1993). They can represent both finite-state and context-free weighted sets and they have been widely used in SMT (Huang and Chiang, 2007). A hypergraph is defined by a set of nodes (or ver3Figure 1 can be seen as a specification for a weighted acyclic finite-state automaton whose states are indexed by [l, C, r] and transitions are labelled with biphrases. However, for generality of representation, we opt for using acyclic hypergraphs instead of automata (see §2.1). rC r ,.j−1 1 Dxi0 φ, ,..j0E → i0 Lk=i ck = 0¯ hC0 i00 i : w yj0−n+2 where c0k = ck if k &lt; i or k &gt; i0 else ¯1 w = φr ⊗ δ(r, i) ⊗ ψ(yj0 j |yj−1 j−n+1) 1238 tices) V and a weighted set of edges (E, w). An edge e connects a sequence of nodes in its tail t[e] E V * under</context>
+<context position="9586" citStr="Chiang, 2007" startWordPosition="1606" endWordPosition="1607"> deduction rule is a template for edges. The tail of an edge is the sequence of nodes associated with the antecedents, and the head is the node associated with the consequent. Even though the space of weighted derivations in phrase-based SMT is finite-state, using a hypergraph as opposed to a finite-state automaton makes it natural to encode multi-word phrases using tails. We opt for representing the target side of the biphrase as a sequence of terminals nodes, each of which represents a target word. 3 Related Work 3.1 Beam filling algorithms Beam search (Koehn et al., 2003) and cube pruning (Chiang, 2007) are examples of state-of-the-art approximate search algorithms. They approximate the intersection between the translation forest and the language model by expanding a limited beam of hypotheses from each nonterminal node. Hypotheses are organised in priority queues according to common traits and a fast-to-compute heuristic view of outside weights (cheapest way to complete a hypothesis) puts them to compete at a fairer level. Beam search exhausts a node’s possible expansions, scores them, and discards all but the k highest-scoring ones. This process is wasteful in that k is typically much smal</context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Computational Linguistics, 33:201–228.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shay B Cohen</author>
+<author>Robert J Simmons</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Dynamic programming algorithms as products of weighted logic programs.</title>
+<date>2008</date>
+<booktitle>In Maria Garcia de la Banda and Enrico Pontelli, editors, Logic Programming,</booktitle>
+<volume>5366</volume>
+<pages>114--129</pages>
+<publisher>Springer</publisher>
+<location>Berlin Heidelberg.</location>
+<contexts>
+<context position="6342" citStr="Cohen et al., 2008" startWordPosition="1015" endWordPosition="1018">noted by [C, r, -y] (also known as carry), where: C is a coverage vector, necessary to impose the non-overlapping constraint; r is the rightmost position most recently covered, necessary for the computation of 6; and -y is the last n − 1 words 1Preventing phrases from overlapping requires an exponential number of constraints (the powerset of x) rendering the problem NP-complete (Knight, 1999). 2Weighted logics have been extensively used to describe weighted sets (Lopez, 2009), operations over weighted sets (Chiang, 2007; Dyer and Resnik, 2010), and a variety of dynamic programming algorithms (Cohen et al., 2008). ITEM [{0, 1}I, [0, I + 1], An−1] GOAL [1I, I + 1, EOS] AXIOM hBOS → BOSi [0I, 0, BOS] : ψ(BOS) EXPAND ACCEPT [1I, r, γ] [1I , I r ≤ + 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I Figure 1: Specification for the weighted set of translation derivations in phrase-based SMT with unconstrained reordering. in the yield, necessary for the LM component. The program expands partial derivations by concatenation with a translation rule Dxi0 ±�, yjj0E, that is, an instantiated biphrase which covers the span xi0 i and yields yj0 j with weight φr. The side condition imposes the non-overlapping constraint (ck is the</context>
+</contexts>
+<marker>Cohen, Simmons, Smith, 2008</marker>
+<rawString>Shay B. Cohen, Robert J. Simmons, and Noah A. Smith. 2008. Dynamic programming algorithms as products of weighted logic programs. In Maria Garcia de la Banda and Enrico Pontelli, editors, Logic Programming, volume 5366 of Lecture Notes in Computer Science, pages 114–129. Springer Berlin Heidelberg.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Dantzig</author>
+<author>R Fulkerson</author>
+<author>S Johnson</author>
+</authors>
+<title>Solution of a large-scale traveling-salesman problem.</title>
+<date>1954</date>
+<journal>Operations Research,</journal>
+<pages>2--393</pages>
+<contexts>
+<context position="13048" citStr="Dantzig et al., 1954" startWordPosition="2160" endWordPosition="2163">, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dual converges to a compliant solution, the solution is guaranteed to be optimal. Other4Exact decoding had been similarly addressed with Integer Linear Programming (ILP) in the context of word-based models for very short sentences using a 2-gram LM (Germann et al., 2001). Riedel and Clarke (2009) revisit that formulation and employ a cutting-plane algorithm (Dantzig et al., 1954) reaching 30 words. 5In hierarchical translation, reordering is governed by a synchronous context-free grammar and the underlying problem is no longer NP-complete. Exact decoding remains infeasible because the intersection between the translation forest and the target LM is prohibitively slow. 1239 wise, a subset of the constraints is explicitly added and the dual optimisation is repeated. They handle sentences above average length, however, resorting to compact rulesets (10 translation options per input segment) and using only 3-gram LMs. In the context of hierarchical models, Aziz et al. (20</context>
+</contexts>
+<marker>Dantzig, Fulkerson, Johnson, 1954</marker>
+<rawString>G Dantzig, R Fulkerson, and S Johnson. 1954. Solution of a large-scale traveling-salesman problem. Operations Research, 2:393–410.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nadir Durrani</author>
+<author>Barry Haddow</author>
+<author>Kenneth Heafield</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Edinburgh’s machine translation systems for European language pairs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Eighth Workshop on Statistical Machine Translation,</booktitle>
+<pages>114--121</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="33053" citStr="Durrani et al. (2013)" startWordPosition="5866" endWordPosition="5869">y (w.r.t. the upperbound distribution) due to an extended context. 5 Experiments We used the dataset made available by the Workshop on Statistical Machine Translation (WMT) (Bojar et al., 2013) to train a German-English phrase-based system using the Moses toolkit (Koehn et al., 2007) in a standard setup. For phrase extraction, we used both Europarl (Koehn, 2005) and News Commentaries (NC) totalling about 2.2M sentences.15 For language modelling, in addition to the monolingual parts of Europarl 15Pre-processing: tokenisation, truecasing and automatic compound-splitting (German only). Following Durrani et al. (2013), we set the maximum phrase length to 5. INPUT G = hV, Ei v0 = [l0, C0, r0, γ0] ∈ V where γ0 ∈ Δ∗ y ∈ Δ ITEM [l, C, r, γ ∈ Δ∗] AXIOMS v ∈ V [l, C, r, γ]v COPY w\ [l, C, r, α]uDuβ −→vI [l0, C0, r0, α0]v : w REFINE /� [l, C, R, α]uDuQ w−→ v0 [l0, C0, r0, yγ0] : w REWEIGHT D E w [l0, C0, r0, yγ0] v0σ −→ v σ, γ ∈ Δ∗ Figure 4: Local intersection via LM right state refinement. The input is a hypergraph G = (V, E), a node v0 E V singly identified by its carry [l0, C0, r0, -y0] and a left-extension y for its LM context -y0. The program copies most of the edges D E w uσ −→ v E E. If a derivation goes t</context>
+</contexts>
+<marker>Durrani, Haddow, Heafield, Koehn, 2013</marker>
+<rawString>Nadir Durrani, Barry Haddow, Kenneth Heafield, and Philipp Koehn. 2013. Edinburgh’s machine translation systems for European language pairs. In Proceedings of the Eighth Workshop on Statistical Machine Translation, pages 114–121, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Dyer</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Context-free reordering, finite-state translation. In Human Language Technologies: The</title>
+<date>2010</date>
+<booktitle>Annual Conference of the North American Chapter of the Association for Computational Linguistics, HLT ’10,</booktitle>
+<pages>858--866</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="6272" citStr="Dyer and Resnik, 2010" startWordPosition="1003" endWordPosition="1006">a nonteminal item summarises partial derivation (or hypotheses). It is denoted by [C, r, -y] (also known as carry), where: C is a coverage vector, necessary to impose the non-overlapping constraint; r is the rightmost position most recently covered, necessary for the computation of 6; and -y is the last n − 1 words 1Preventing phrases from overlapping requires an exponential number of constraints (the powerset of x) rendering the problem NP-complete (Knight, 1999). 2Weighted logics have been extensively used to describe weighted sets (Lopez, 2009), operations over weighted sets (Chiang, 2007; Dyer and Resnik, 2010), and a variety of dynamic programming algorithms (Cohen et al., 2008). ITEM [{0, 1}I, [0, I + 1], An−1] GOAL [1I, I + 1, EOS] AXIOM hBOS → BOSi [0I, 0, BOS] : ψ(BOS) EXPAND ACCEPT [1I, r, γ] [1I , I r ≤ + 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I Figure 1: Specification for the weighted set of translation derivations in phrase-based SMT with unconstrained reordering. in the yield, necessary for the LM component. The program expands partial derivations by concatenation with a translation rule Dxi0 ±�, yjj0E, that is, an instantiated biphrase which covers the span xi0 i and yields yj0 j with weight φr</context>
+</contexts>
+<marker>Dyer, Resnik, 2010</marker>
+<rawString>Chris Dyer and Philip Resnik. 2010. Context-free reordering, finite-state translation. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, HLT ’10, pages 858– 866, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marc Dymetman</author>
+<author>Guillaume Bouchard</author>
+<author>Simon Carter</author>
+</authors>
+<title>Optimization and sampling for NLP from a unified viewpoint.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the First International Workshop on Optimization Techniques for Human Language Technology,</booktitle>
+<pages>79--94</pages>
+<location>Mumbai, India,</location>
+<contexts>
+<context position="3638" citStr="Dymetman et al., 2012" startWordPosition="583" endWordPosition="586">exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refined based on evidence col1237 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1237–1249, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics lected via maximisation. A refinement increases the complexity of the model only slightly, hence dynamic programming remains feasible throughout the search until convergence. We test our decoding strategy with realistic models using stand</context>
+<context position="13826" citStr="Dymetman et al., 2012" startWordPosition="2280" endWordPosition="2283">mplete. Exact decoding remains infeasible because the intersection between the translation forest and the target LM is prohibitively slow. 1239 wise, a subset of the constraints is explicitly added and the dual optimisation is repeated. They handle sentences above average length, however, resorting to compact rulesets (10 translation options per input segment) and using only 3-gram LMs. In the context of hierarchical models, Aziz et al. (2013) work with unpruned forests using upperbounds. Their approach is the closest to ours. They also employ a coarse-to-fine strategy with the OS* framework (Dymetman et al., 2012), and investigate unbiased sampling in addition to optimisation. However, they start from a coarser upperbound with unigram probabilities, and their refinement strategies are based on exhaustive intersections with small n-gram matching automata. These refinements make forests grow unmanageable too quickly. Because of that, they only deal with very short sentences (up to 10 words) and even then decoding is very slow. We design better upperbounds and a more efficient refinement strategy. Moreover, we decode long sentences using language models of order 3 to 5.6 4 Approach 4.1 Exact optimisation </context>
+</contexts>
+<marker>Dymetman, Bouchard, Carter, 2012</marker>
+<rawString>Marc Dymetman, Guillaume Bouchard, and Simon Carter. 2012. Optimization and sampling for NLP from a unified viewpoint. In Proceedings of the First International Workshop on Optimization Techniques for Human Language Technology, pages 79– 94, Mumbai, India, December. The COLING 2012 Organizing Committee.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Giorgio Gallo</author>
+<author>Giustino Longo</author>
+<author>Stefano Pallottino</author>
+<author>Sang Nguyen</author>
+</authors>
+<title>Directed hypergraphs and applications.</title>
+<date>1993</date>
+<journal>Discrete Applied Mathematics,</journal>
+<pages>42--2</pages>
+<contexts>
+<context position="7838" citStr="Gallo et al., 1993" startWordPosition="1269" endWordPosition="1272">erstand the set of weighted translation derivations as the intersection between two components. One that is only locally parameterised and contains all translation derivations (a translation lattice or forest), and one that re-ranks the first as a function of the interactions between translation steps. The model of translational equivalences parameterised only with φ is an instance of the former. An n-gram LM component is an instance of the latter. 2.1 Hypergraphs A backward-hypergraph, or simply hypergraph, is a generalisation of a graph where edges have multiple origins and one destination (Gallo et al., 1993). They can represent both finite-state and context-free weighted sets and they have been widely used in SMT (Huang and Chiang, 2007). A hypergraph is defined by a set of nodes (or ver3Figure 1 can be seen as a specification for a weighted acyclic finite-state automaton whose states are indexed by [l, C, r] and transitions are labelled with biphrases. However, for generality of representation, we opt for using acyclic hypergraphs instead of automata (see §2.1). rC r ,.j−1 1 Dxi0 φ, ,..j0E → i0 Lk=i ck = 0¯ hC0 i00 i : w yj0−n+2 where c0k = ck if k &lt; i or k &gt; i0 else ¯1 w = φr ⊗ δ(r, i) ⊗ ψ(yj0 </context>
+</contexts>
+<marker>Gallo, Longo, Pallottino, Nguyen, 1993</marker>
+<rawString>Giorgio Gallo, Giustino Longo, Stefano Pallottino, and Sang Nguyen. 1993. Directed hypergraphs and applications. Discrete Applied Mathematics, 42(2-3):177–201, April.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ulrich Germann</author>
+<author>Michael Jahr</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+<author>Kenji Yamada</author>
+</authors>
+<title>Fast decoding and optimal decoding for machine translation.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics, ACL ’01,</booktitle>
+<pages>228--235</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="3175" citStr="Germann et al., 2001" startWordPosition="509" endWordPosition="512">ues are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refin</context>
+<context position="12937" citStr="Germann et al., 2001" startWordPosition="2142" endWordPosition="2146">m they tackle is no longer NP-complete. Rush and Collins (2011) relax a hierarchical phrase-based model (Chiang, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dual converges to a compliant solution, the solution is guaranteed to be optimal. Other4Exact decoding had been similarly addressed with Integer Linear Programming (ILP) in the context of word-based models for very short sentences using a 2-gram LM (Germann et al., 2001). Riedel and Clarke (2009) revisit that formulation and employ a cutting-plane algorithm (Dantzig et al., 1954) reaching 30 words. 5In hierarchical translation, reordering is governed by a synchronous context-free grammar and the underlying problem is no longer NP-complete. Exact decoding remains infeasible because the intersection between the translation forest and the target LM is prohibitively slow. 1239 wise, a subset of the constraints is explicitly added and the dual optimisation is repeated. They handle sentences above average length, however, resorting to compact rulesets (10 translati</context>
+</contexts>
+<marker>Germann, Jahr, Knight, Marcu, Yamada, 2001</marker>
+<rawString>Ulrich Germann, Michael Jahr, Kevin Knight, Daniel Marcu, and Kenji Yamada. 2001. Fast decoding and optimal decoding for machine translation. In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics, ACL ’01, pages 228– 235, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joshua Goodman</author>
+</authors>
+<title>Semiring parsing.</title>
+<date>1999</date>
+<journal>Comput. Linguist.,</journal>
+<volume>25</volume>
+<issue>4</issue>
+<contexts>
+<context position="29314" citStr="Goodman, 1999" startWordPosition="5186" endWordPosition="5187">es a principled criterion in trading accuracy for performance (a direction that we leave for future work). Note that most algorithms for approximate search produce solutions with unbounded error. Algorithm 3 Exact decoding 1: function OPTIMISE(g(0), E) 2: t ← 0 &gt; step 3: d ← argmaxd g(t)(d) 4: g* ← g(t)(d) 5: f* ← f(d) 6: while (q* − f* ≥ E) do &gt; E is the maximum error 7: g(t+1) ← refine(g(t), d) &gt; update proposal 8: t ← t + 1 9: d ← argmaxd g(t)(d) &gt; update argmax 10: g* ← g(t)(d) 11: f* ← max(f*, f(d)) &gt; update “best so far” 12: end while 13: return g(t), d 14: end function to O(JVJ + JEJ) (Goodman, 1999). Once inside weights have been computed, finding the Viterbiderivation starting from the root is straightforward. A simple, though important, optimisation concerns the computation of inside weights. The inside algorithm (Baker, 1979) requires a bottom-up traverse of the nodes in V . To do that, we topologically sort the nodes in V at time t = 0 and maintain a sorted list of nodes as we refine g throughout the search – thus avoiding having to recompute the partial ordering of the nodes at every iteration. 4.6 Refinement If a derivation d = argmaxd g(t)(d) is such that g(t)(d) « f(d), there mus</context>
+</contexts>
+<marker>Goodman, 1999</marker>
+<rawString>Joshua Goodman. 1999. Semiring parsing. Comput. Linguist., 25(4):573–605, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Graehl</author>
+</authors>
+<title>Relatively useless pruning.</title>
+<date>2005</date>
+<tech>Technical report,</tech>
+<institution>USC Information Sciences Institute.</institution>
+<contexts>
+<context position="37195" citStr="Graehl, 2005" startWordPosition="6673" endWordPosition="6674">ficient in ignoring hypotheses (edges) that cannot compete for an optimum. For instance, we observe that running time depends linearly on tol only through the computation of inside weights, while the number of iterations is only minimally affected.17 An in|E0 |= 178 with d = 6. Observe the exponential dependency on distortion limit, which also leads to exponentially longer running times. 17It is possible to reduce the size of the hypergraph throughout the search using the upperbound on the search error g* − f* to prune hypotheses that surely do not stand a chance of competing for the optimum (Graehl, 2005). Another direction is to group edges connecting the same nonterminal nodes into one partial edge (Heafield et al., 2013a) — this is particularly convenient due to our method only visiting the 1-best derivation from g(d) at each iteration. n Nodes at level m LM states at level m 0 1 2 3 4 1 2 3 4 3 0.4 1.2 0.5 - - 113 263 - - 4 0.4 1.6 1.4 0.3 - 132 544 212 - 5 0.4 2.1 2.4 0.7 0.1 142 790 479 103 Table 2: Average number of nodes (in thousands) whose LM state encode an m-gram, and average number of unique LM states of order m in the final hypergraph for different n-gram LMs (d = 4 everywhere). </context>
+</contexts>
+<marker>Graehl, 2005</marker>
+<rawString>Jonathan Graehl. 2005. Relatively useless pruning. Technical report, USC Information Sciences Institute.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter E Hart</author>
+<author>Nils J Nilsson</author>
+<author>Bertram Raphael</author>
+</authors>
+<title>A formal basis for the heuristic determination of minimum cost paths.</title>
+<date>1968</date>
+<journal>IEEE Transactions On Systems Science And Cybernetics,</journal>
+<volume>4</volume>
+<issue>2</issue>
+<contexts>
+<context position="14649" citStr="Hart et al., 1968" startWordPosition="2413" endWordPosition="2416">ons with small n-gram matching automata. These refinements make forests grow unmanageable too quickly. Because of that, they only deal with very short sentences (up to 10 words) and even then decoding is very slow. We design better upperbounds and a more efficient refinement strategy. Moreover, we decode long sentences using language models of order 3 to 5.6 4 Approach 4.1 Exact optimisation with OS* Dymetman et al. (2012) introduced OS*, a unified view of optimisation and sampling which can be seen as a cross between adaptive rejection sampling (Robert and Casella, 2004) and A* optimisation (Hart et al., 1968). In this framework, a complex goal distribution is upperbounded by a simpler proposal distribution for which optimisation (and sampling) is feasible. This proposal is incrementally refined to be closer to the goal until the maximum is found (or until the sampling performance exceeds a certain level). Figure 2 illustrates exact optimisation with OS*. Suppose f is a complex target goal distribution, such that we cannot optimise f, but we can assess f(d) for a given d. Let g(0) be an upperbound to f, i.e., g(0)(d) ≥ f(d) for all d E D(x). Moreover, suppose that g(0) is simple enough to be optimi</context>
+</contexts>
+<marker>Hart, Nilsson, Raphael, 1968</marker>
+<rawString>Peter E. Hart, Nils J. Nilsson, and Bertram Raphael. 1968. A formal basis for the heuristic determination of minimum cost paths. IEEE Transactions On Systems Science And Cybernetics, 4(2):100–107.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Philipp Koehn</author>
+<author>Alon Lavie</author>
+</authors>
+<title>Grouping language model boundary words to speed k-best extraction from hypergraphs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>958--968</pages>
+<location>Atlanta, Georgia, USA,</location>
+<contexts>
+<context position="10478" citStr="Heafield et al. (2013" startWordPosition="1748" endWordPosition="1751">rding to common traits and a fast-to-compute heuristic view of outside weights (cheapest way to complete a hypothesis) puts them to compete at a fairer level. Beam search exhausts a node’s possible expansions, scores them, and discards all but the k highest-scoring ones. This process is wasteful in that k is typically much smaller than the number of possible expansions. Cube pruning employs a priority queue at beam filling and computes k highscoring expansions directly in near best-first order. The parameter k is known as beam size and it controls the time-accuracy trade-off of the algorithm. Heafield et al. (2013a) move away from using the language model as a black-box and build a more involved beam filling algorithm. Even though they target approximate search, some of their ideas have interesting connections to ours (see §4). They group hypotheses that share partial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the qu</context>
+<context position="19966" citStr="Heafield et al., 2013" startWordPosition="3318" endWordPosition="3321">),g(0)(d)). A nonterminal item [l, C, r] stores: the leftmost uncovered position l and a truncated coverage vector C (together they track d input positions); and the rightmost position r most recently translated (necessary for the computation of the distortion penalty). Observe how nonterminal items do not store the LM state.9 The rule ADJACENT expands derivations by concateD E nation with a biphrase xi0 i → yj0 starting at the j leftmost uncovered position i = l. That causes the coverage window to move ahead to the next leftmost uncovered position: l&apos; = l + α1(C) + 1, 9Drawing a parallel to (Heafield et al., 2013a), a nonterminal node in our hypergraph groups derivations while exposing only an empty LM state. ITEM ~[1, I + 1], {0, 1}d−1, [0, I + 1]~ GOAL [I, ∅, I + 1] AXIOMS hBOS → BOSi [1, 0d−1, 0] : ω(BOS) ADJACENT D E j0 [l, C, r] xi yj [l0, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) where l0 = l + α1(C) + 1 C0 « α1(C) + 1 NON-ADJACENT i &gt; l Li0−l k=i−l ck = 0¯ |r − i + 1 |≤ d |i0 − l + 1 |≤ d where c0k = ck if k &lt; i − l or k &gt; i0 − l else¯1 ACCEPT [I + 1, C, r] r ≤ [I + 1, ∅, I + 1] : δ(r, I + 1) ⊗ ω(EOS) I Figure 3: Specification of the initial proposal hypergraph. This program allows the same reorderin</context>
+<context position="34098" citStr="Heafield et al., 2013" startWordPosition="6088" endWordPosition="6091">V singly identified by its carry [l0, C0, r0, -y0] and a left-extension y for its LM context -y0. The program copies most of the edges D E w uσ −→ v E E. If a derivation goes through v0 and the string under v0 ends in y-y0, the program refines and reweights it. and NC, we added News-2013 totalling about 25M sentences. We performed language model interpolation and batch-mira tuning (Cherry and Foster, 2012) using newstest2010 (2,849 sentence pairs). For tuning we used cube pruning with a large beam size (k = 5000) and a distortion limit d = 4. Unpruned language models were trained using lmplz (Heafield et al., 2013b) which employs modified Kneser-Ney smoothing (Kneser and Ney, 1995). We report results on newstest2012. Our exact decoder produces optimal translation derivations for all the 3,003 sentences in the test set. Table 1 summarises the performance of our novel decoder for language models of order n = 3 to n = 5. For 3-gram LMs we also varied the distortion limit d (from 4 to 6). We report the average time (in seconds) to build the initial proposal, the total run time of the algorithm, the number of iterations N before convergence, and the size of the hypergraph in the end of the search (in thousa</context>
+<context position="37315" citStr="Heafield et al., 2013" startWordPosition="6692" endWordPosition="6695"> time depends linearly on tol only through the computation of inside weights, while the number of iterations is only minimally affected.17 An in|E0 |= 178 with d = 6. Observe the exponential dependency on distortion limit, which also leads to exponentially longer running times. 17It is possible to reduce the size of the hypergraph throughout the search using the upperbound on the search error g* − f* to prune hypotheses that surely do not stand a chance of competing for the optimum (Graehl, 2005). Another direction is to group edges connecting the same nonterminal nodes into one partial edge (Heafield et al., 2013a) — this is particularly convenient due to our method only visiting the 1-best derivation from g(d) at each iteration. n Nodes at level m LM states at level m 0 1 2 3 4 1 2 3 4 3 0.4 1.2 0.5 - - 113 263 - - 4 0.4 1.6 1.4 0.3 - 132 544 212 - 5 0.4 2.1 2.4 0.7 0.1 142 790 479 103 Table 2: Average number of nodes (in thousands) whose LM state encode an m-gram, and average number of unique LM states of order m in the final hypergraph for different n-gram LMs (d = 4 everywhere). creased LM order, for a fixed distortion limit, impacts much more on the number of iterations than on the average runnin</context>
+</contexts>
+<marker>Heafield, Koehn, Lavie, 2013</marker>
+<rawString>Kenneth Heafield, Philipp Koehn, and Alon Lavie. 2013a. Grouping language model boundary words to speed k-best extraction from hypergraphs. In Proceedings of the 2013 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, pages 958–968, Atlanta, Georgia, USA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Ivan Pouzyrevsky</author>
+<author>Jonathan H Clark</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Scalable modified Kneser-Ney language model estimation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers),</booktitle>
+<pages>690--696</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="10478" citStr="Heafield et al. (2013" startWordPosition="1748" endWordPosition="1751">rding to common traits and a fast-to-compute heuristic view of outside weights (cheapest way to complete a hypothesis) puts them to compete at a fairer level. Beam search exhausts a node’s possible expansions, scores them, and discards all but the k highest-scoring ones. This process is wasteful in that k is typically much smaller than the number of possible expansions. Cube pruning employs a priority queue at beam filling and computes k highscoring expansions directly in near best-first order. The parameter k is known as beam size and it controls the time-accuracy trade-off of the algorithm. Heafield et al. (2013a) move away from using the language model as a black-box and build a more involved beam filling algorithm. Even though they target approximate search, some of their ideas have interesting connections to ours (see §4). They group hypotheses that share partial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the qu</context>
+<context position="19966" citStr="Heafield et al., 2013" startWordPosition="3318" endWordPosition="3321">),g(0)(d)). A nonterminal item [l, C, r] stores: the leftmost uncovered position l and a truncated coverage vector C (together they track d input positions); and the rightmost position r most recently translated (necessary for the computation of the distortion penalty). Observe how nonterminal items do not store the LM state.9 The rule ADJACENT expands derivations by concateD E nation with a biphrase xi0 i → yj0 starting at the j leftmost uncovered position i = l. That causes the coverage window to move ahead to the next leftmost uncovered position: l&apos; = l + α1(C) + 1, 9Drawing a parallel to (Heafield et al., 2013a), a nonterminal node in our hypergraph groups derivations while exposing only an empty LM state. ITEM ~[1, I + 1], {0, 1}d−1, [0, I + 1]~ GOAL [I, ∅, I + 1] AXIOMS hBOS → BOSi [1, 0d−1, 0] : ω(BOS) ADJACENT D E j0 [l, C, r] xi yj [l0, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) where l0 = l + α1(C) + 1 C0 « α1(C) + 1 NON-ADJACENT i &gt; l Li0−l k=i−l ck = 0¯ |r − i + 1 |≤ d |i0 − l + 1 |≤ d where c0k = ck if k &lt; i − l or k &gt; i0 − l else¯1 ACCEPT [I + 1, C, r] r ≤ [I + 1, ∅, I + 1] : δ(r, I + 1) ⊗ ω(EOS) I Figure 3: Specification of the initial proposal hypergraph. This program allows the same reorderin</context>
+<context position="34098" citStr="Heafield et al., 2013" startWordPosition="6088" endWordPosition="6091">V singly identified by its carry [l0, C0, r0, -y0] and a left-extension y for its LM context -y0. The program copies most of the edges D E w uσ −→ v E E. If a derivation goes through v0 and the string under v0 ends in y-y0, the program refines and reweights it. and NC, we added News-2013 totalling about 25M sentences. We performed language model interpolation and batch-mira tuning (Cherry and Foster, 2012) using newstest2010 (2,849 sentence pairs). For tuning we used cube pruning with a large beam size (k = 5000) and a distortion limit d = 4. Unpruned language models were trained using lmplz (Heafield et al., 2013b) which employs modified Kneser-Ney smoothing (Kneser and Ney, 1995). We report results on newstest2012. Our exact decoder produces optimal translation derivations for all the 3,003 sentences in the test set. Table 1 summarises the performance of our novel decoder for language models of order n = 3 to n = 5. For 3-gram LMs we also varied the distortion limit d (from 4 to 6). We report the average time (in seconds) to build the initial proposal, the total run time of the algorithm, the number of iterations N before convergence, and the size of the hypergraph in the end of the search (in thousa</context>
+<context position="37315" citStr="Heafield et al., 2013" startWordPosition="6692" endWordPosition="6695"> time depends linearly on tol only through the computation of inside weights, while the number of iterations is only minimally affected.17 An in|E0 |= 178 with d = 6. Observe the exponential dependency on distortion limit, which also leads to exponentially longer running times. 17It is possible to reduce the size of the hypergraph throughout the search using the upperbound on the search error g* − f* to prune hypotheses that surely do not stand a chance of competing for the optimum (Graehl, 2005). Another direction is to group edges connecting the same nonterminal nodes into one partial edge (Heafield et al., 2013a) — this is particularly convenient due to our method only visiting the 1-best derivation from g(d) at each iteration. n Nodes at level m LM states at level m 0 1 2 3 4 1 2 3 4 3 0.4 1.2 0.5 - - 113 263 - - 4 0.4 1.6 1.4 0.3 - 132 544 212 - 5 0.4 2.1 2.4 0.7 0.1 142 790 479 103 Table 2: Average number of nodes (in thousands) whose LM state encode an m-gram, and average number of unique LM states of order m in the final hypergraph for different n-gram LMs (d = 4 everywhere). creased LM order, for a fixed distortion limit, impacts much more on the number of iterations than on the average runnin</context>
+</contexts>
+<marker>Heafield, Pouzyrevsky, Clark, Koehn, 2013</marker>
+<rawString>Kenneth Heafield, Ivan Pouzyrevsky, Jonathan H. Clark, and Philipp Koehn. 2013b. Scalable modified Kneser-Ney language model estimation. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), pages 690–696, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Michael Kayser</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Faster Phrase-Based decoding by refining feature state.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics,</booktitle>
+<location>Baltimore, MD, USA,</location>
+<contexts>
+<context position="11120" citStr="Heafield et al. (2014)" startWordPosition="1855" endWordPosition="1858">ing the language model as a black-box and build a more involved beam filling algorithm. Even though they target approximate search, some of their ideas have interesting connections to ours (see §4). They group hypotheses that share partial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In th</context>
+</contexts>
+<marker>Heafield, Kayser, Manning, 2014</marker>
+<rawString>Kenneth Heafield, Michael Kayser, and Christopher D. Manning. 2014. Faster Phrase-Based decoding by refining feature state. In Proceedings of the Association for Computational Linguistics, Baltimore, MD, USA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Forest rescoring: Faster decoding with integrated language models.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the Association of Computational Linguistics,</booktitle>
+<pages>144--151</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Prague, Czech Republic,</location>
+<contexts>
+<context position="7970" citStr="Huang and Chiang, 2007" startWordPosition="1290" endWordPosition="1293">erised and contains all translation derivations (a translation lattice or forest), and one that re-ranks the first as a function of the interactions between translation steps. The model of translational equivalences parameterised only with φ is an instance of the former. An n-gram LM component is an instance of the latter. 2.1 Hypergraphs A backward-hypergraph, or simply hypergraph, is a generalisation of a graph where edges have multiple origins and one destination (Gallo et al., 1993). They can represent both finite-state and context-free weighted sets and they have been widely used in SMT (Huang and Chiang, 2007). A hypergraph is defined by a set of nodes (or ver3Figure 1 can be seen as a specification for a weighted acyclic finite-state automaton whose states are indexed by [l, C, r] and transitions are labelled with biphrases. However, for generality of representation, we opt for using acyclic hypergraphs instead of automata (see §2.1). rC r ,.j−1 1 Dxi0 φ, ,..j0E → i0 Lk=i ck = 0¯ hC0 i00 i : w yj0−n+2 where c0k = ck if k &lt; i or k &gt; i0 else ¯1 w = φr ⊗ δ(r, i) ⊗ ψ(yj0 j |yj−1 j−n+1) 1238 tices) V and a weighted set of edges (E, w). An edge e connects a sequence of nodes in its tail t[e] E V * under</context>
+</contexts>
+<marker>Huang, Chiang, 2007</marker>
+<rawString>Liang Huang and David Chiang. 2007. Forest rescoring: Faster decoding with integrated language models. In Proceedings of the 45th Annual Meeting of the Association of Computational Linguistics, pages 144–151, Prague, Czech Republic, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gonzalo Iglesias</author>
+<author>Adri`a de Gispert</author>
+<author>Eduardo R Banga</author>
+<author>William Byrne</author>
+</authors>
+<title>Rule filtering by pattern for efficient hierarchical translation.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 12th Conference of the European Chapter of the ACL (EACL</booktitle>
+<pages>380--388</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Athens, Greece,</location>
+<marker>Iglesias, de Gispert, Banga, Byrne, 2009</marker>
+<rawString>Gonzalo Iglesias, Adri`a de Gispert, Eduardo R. Banga, and William Byrne. 2009. Rule filtering by pattern for efficient hierarchical translation. In Proceedings of the 12th Conference of the European Chapter of the ACL (EACL 2009), pages 380–388, Athens, Greece, March. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Jurafsky</author>
+<author>James H Martin</author>
+</authors>
+<title>Speech and Language Processing: An Introduction to Natural Language Processing, Computational Linguistics and Speech Recognition.</title>
+<date>2000</date>
+<booktitle>Series in Artificial Intelligence.</booktitle>
+<volume>1</volume>
+<pages>edition.</pages>
+<publisher>Prentice Hall,</publisher>
+<contexts>
+<context position="21577" citStr="Jurafsky and Martin, 2000" startWordPosition="3648" endWordPosition="3651">ow C is simply updated to record the translation of the input span i..i&apos;. In the nonadjacent case, a gap constraint imposes that the resulting item will require skipping no more than d positions before the leftmost uncovered word is translated |i&apos; − l + 1 |&lt; d.10 Finally, note that deductions incorporate the weighted upperbound w(·), rather than the true LM component 0(·).11 4.3 LM upperbound and Max-ABPA Following Carter et al. (2012) we compute an upperbound on n-gram conditional probabilities by precomputing max-backoff weights stored in a “Max-ARPA” table, an extension of the ARPA format (Jurafsky and Martin, 2000). A standard ARPA table T stores entries 10This constraint prevents items from becoming dead-ends where incomplete derivations require a reordering step larger than d. This is known to prevent many search errors in beam search (Chang and Collins, 2011). 11Unlike Aziz et al. (2013), rather than unigrams only, we score all n-grams within a translation rule (including incomplete ones). Xl i=1 ω(y[ei]) + g(0)(d) = φ(ei) + Xl − 1 i=1 Xl i=1 i = l Li0−l k=i−l ck = 0¯ D E 0 [l, C, r] xi yjj [l, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) 1241 hZ, Z.p, Z.bi, where Z is an n-gram equal to the concatenation Pz </context>
+</contexts>
+<marker>Jurafsky, Martin, 2000</marker>
+<rawString>Daniel Jurafsky and James H. Martin. 2000. Speech and Language Processing: An Introduction to Natural Language Processing, Computational Linguistics and Speech Recognition. Series in Artificial Intelligence. Prentice Hall, 1 edition.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Reinhard Kneser</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Improved backing-off for m-gram language modeling.</title>
+<date>1995</date>
+<booktitle>Accoustics, Speech, and Signal Processing,</booktitle>
+<pages>1--181</pages>
+<contexts>
+<context position="34167" citStr="Kneser and Ney, 1995" startWordPosition="6097" endWordPosition="6100">on y for its LM context -y0. The program copies most of the edges D E w uσ −→ v E E. If a derivation goes through v0 and the string under v0 ends in y-y0, the program refines and reweights it. and NC, we added News-2013 totalling about 25M sentences. We performed language model interpolation and batch-mira tuning (Cherry and Foster, 2012) using newstest2010 (2,849 sentence pairs). For tuning we used cube pruning with a large beam size (k = 5000) and a distortion limit d = 4. Unpruned language models were trained using lmplz (Heafield et al., 2013b) which employs modified Kneser-Ney smoothing (Kneser and Ney, 1995). We report results on newstest2012. Our exact decoder produces optimal translation derivations for all the 3,003 sentences in the test set. Table 1 summarises the performance of our novel decoder for language models of order n = 3 to n = 5. For 3-gram LMs we also varied the distortion limit d (from 4 to 6). We report the average time (in seconds) to build the initial proposal, the total run time of the algorithm, the number of iterations N before convergence, and the size of the hypergraph in the end of the search (in thousands of nodes and thousands of edges).16 16The size of the initial pro</context>
+</contexts>
+<marker>Kneser, Ney, 1995</marker>
+<rawString>Reinhard Kneser and Hermann Ney. 1995. Improved backing-off for m-gram language modeling. Accoustics, Speech, and Signal Processing, 1:181–184.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Knight</author>
+</authors>
+<title>Decoding complexity in wordreplacement translation models.</title>
+<date>1999</date>
+<journal>Comput. Linguist.,</journal>
+<volume>25</volume>
+<issue>4</issue>
+<contexts>
+<context position="6118" citStr="Knight, 1999" startWordPosition="983" endWordPosition="984"> starts from its axioms and follows exhaustively deducing new items by combination of existing ones and no deduction happens twice. In Figure 1, a nonteminal item summarises partial derivation (or hypotheses). It is denoted by [C, r, -y] (also known as carry), where: C is a coverage vector, necessary to impose the non-overlapping constraint; r is the rightmost position most recently covered, necessary for the computation of 6; and -y is the last n − 1 words 1Preventing phrases from overlapping requires an exponential number of constraints (the powerset of x) rendering the problem NP-complete (Knight, 1999). 2Weighted logics have been extensively used to describe weighted sets (Lopez, 2009), operations over weighted sets (Chiang, 2007; Dyer and Resnik, 2010), and a variety of dynamic programming algorithms (Cohen et al., 2008). ITEM [{0, 1}I, [0, I + 1], An−1] GOAL [1I, I + 1, EOS] AXIOM hBOS → BOSi [0I, 0, BOS] : ψ(BOS) EXPAND ACCEPT [1I, r, γ] [1I , I r ≤ + 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I Figure 1: Specification for the weighted set of translation derivations in phrase-based SMT with unconstrained reordering. in the yield, necessary for the LM component. The program expands partial derivati</context>
+</contexts>
+<marker>Knight, 1999</marker>
+<rawString>Kevin Knight. 1999. Decoding complexity in wordreplacement translation models. Comput. Linguist., 25(4):607–615, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, NAACL ’03,</booktitle>
+<pages>48--54</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="2737" citStr="Koehn et al., 2003" startWordPosition="445" endWordPosition="448">esses steps independently and d = (e1, e2, ... , el) is a sequence of l steps. Under this assumption, each step is assigned the weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The set D is typically finite, however, it contains a very large number of structures — exponential (or even factorial, see §2) with the size of x — making exhaustive enumeration prohibitively slow. Only in very restricted cases combinatorial optimisation techniques are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2</context>
+<context position="4618" citStr="Koehn et al., 2003" startWordPosition="731" endWordPosition="734"> lected via maximisation. A refinement increases the complexity of the model only slightly, hence dynamic programming remains feasible throughout the search until convergence. We test our decoding strategy with realistic models using standard data sets. We also contribute with optimum derivations which can be used to assess future improvements to approximate decoders. In the remaining sections we present the general model (§2), survey contributions to exact optimisation (§3), formalise our novel approach (§4), present experiments (§5) and conclude (§6). 2 Phrase-based SMT In phrase-based SMT (Koehn et al., 2003), the building blocks of translation are pairs of phrases (or biphrases). A translation derivation d is an ordered sequence of non-overlapping biphrases which covers the input text in arbitrary order generating the output from left to right.1 f(d) = ψ(y) + l φ(ei) + �l − 1 6(ei, ei−1) (2) i=1 i=1 Equation 2 illustrates a standard phrase-based model (Koehn et al., 2003): ψ is a weighted target n-gram LM component, where y is the yield of d; φ is a linear combination of features that decompose over phrase pairs directly (e.g. backward and forward translation probabilities, lexical smoothing, and</context>
+<context position="9554" citStr="Koehn et al., 2003" startWordPosition="1598" endWordPosition="1601"> the creation of nodes, and a weighted deduction rule is a template for edges. The tail of an edge is the sequence of nodes associated with the antecedents, and the head is the node associated with the consequent. Even though the space of weighted derivations in phrase-based SMT is finite-state, using a hypergraph as opposed to a finite-state automaton makes it natural to encode multi-word phrases using tails. We opt for representing the target side of the biphrase as a sequence of terminals nodes, each of which represents a target word. 3 Related Work 3.1 Beam filling algorithms Beam search (Koehn et al., 2003) and cube pruning (Chiang, 2007) are examples of state-of-the-art approximate search algorithms. They approximate the intersection between the translation forest and the language model by expanding a limited beam of hypotheses from each nonterminal node. Hypotheses are organised in priority queues according to common traits and a fast-to-compute heuristic view of outside weights (cheapest way to complete a hypothesis) puts them to compete at a fairer level. Beam search exhausts a node’s possible expansions, scores them, and discards all but the k highest-scoring ones. This process is wasteful </context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, NAACL ’03, pages 48–54, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+<author>Chris Dyer</author>
+<author>Ondˇrej Bojar</author>
+<author>Alexandra Constantin</author>
+<author>Evan Herbst</author>
+</authors>
+<title>Moses: open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07,</booktitle>
+<pages>177--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="17120" citStr="Koehn et al., 2007" startWordPosition="2834" endWordPosition="2837">d), for some finite t. At which point dt is the optimum derivation d* from f and the sequence of upperbounds provides a proof of optimality.7 4.2 Model We work with phrase-based models in a standard parameterisation (Equation 2). However, to avoid having to deal with NP-completeness, we constrain reordering to happen only within a limited window given by a notion of distortion limit. We require that the last source word covered by any biphrase must be within d words from the leftmost uncovered source position (Lopez, 2009). This is a widely used strategy and it is in use in the Moses toolkit (Koehn et al., 2007).8 Nevertheless, the problem of finding the best 7If d is a maximum from g and g(d) = f(d), then it is easy to show by contradiction that d is the actual maximum from f: if there existed d&apos; such that f(d&apos;) &gt; f(d), then it follows that g(d&apos;) ≥ f(d&apos;) &gt; f(d) = g(d), and hence d would not be a maximum for g. 8A distortion limit characterises a form of pruning that acts directly in the generative capacity of the model leading to induction errors (Auli et al., 2009). Limiting reordering like that lowers complexity to a polynomial function of I and an exponential function of the distortion limit. g(0</context>
+<context position="32716" citStr="Koehn et al., 2007" startWordPosition="5821" endWordPosition="5824">nd their target projections end in y-y0 (the extended context). Such edges are processed by REFINE, which instead of copying them, creates new ones headed by a refined version of v0. Finally, REWEIGHT continues from the refined node with reweighted copies of the edges leaving v0. The weight update represents a change in LM probability (w.r.t. the upperbound distribution) due to an extended context. 5 Experiments We used the dataset made available by the Workshop on Statistical Machine Translation (WMT) (Bojar et al., 2013) to train a German-English phrase-based system using the Moses toolkit (Koehn et al., 2007) in a standard setup. For phrase extraction, we used both Europarl (Koehn, 2005) and News Commentaries (NC) totalling about 2.2M sentences.15 For language modelling, in addition to the monolingual parts of Europarl 15Pre-processing: tokenisation, truecasing and automatic compound-splitting (German only). Following Durrani et al. (2013), we set the maximum phrase length to 5. INPUT G = hV, Ei v0 = [l0, C0, r0, γ0] ∈ V where γ0 ∈ Δ∗ y ∈ Δ ITEM [l, C, r, γ ∈ Δ∗] AXIOMS v ∈ V [l, C, r, γ]v COPY w\ [l, C, r, α]uDuβ −→vI [l0, C0, r0, α0]v : w REFINE /� [l, C, R, α]uDuQ w−→ v0 [l0, C0, r0, yγ0] : w R</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, Dyer, Bojar, Constantin, Herbst, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: open source toolkit for statistical machine translation. In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07, pages 177–180, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Europarl: A parallel corpus for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of Machine Translation Summit,</booktitle>
+<pages>79--86</pages>
+<contexts>
+<context position="32796" citStr="Koehn, 2005" startWordPosition="5836" endWordPosition="5837">d by REFINE, which instead of copying them, creates new ones headed by a refined version of v0. Finally, REWEIGHT continues from the refined node with reweighted copies of the edges leaving v0. The weight update represents a change in LM probability (w.r.t. the upperbound distribution) due to an extended context. 5 Experiments We used the dataset made available by the Workshop on Statistical Machine Translation (WMT) (Bojar et al., 2013) to train a German-English phrase-based system using the Moses toolkit (Koehn et al., 2007) in a standard setup. For phrase extraction, we used both Europarl (Koehn, 2005) and News Commentaries (NC) totalling about 2.2M sentences.15 For language modelling, in addition to the monolingual parts of Europarl 15Pre-processing: tokenisation, truecasing and automatic compound-splitting (German only). Following Durrani et al. (2013), we set the maximum phrase length to 5. INPUT G = hV, Ei v0 = [l0, C0, r0, γ0] ∈ V where γ0 ∈ Δ∗ y ∈ Δ ITEM [l, C, r, γ ∈ Δ∗] AXIOMS v ∈ V [l, C, r, γ]v COPY w\ [l, C, r, α]uDuβ −→vI [l0, C0, r0, α0]v : w REFINE /� [l, C, R, α]uDuQ w−→ v0 [l0, C0, r0, yγ0] : w REWEIGHT D E w [l0, C0, r0, yγ0] v0σ −→ v σ, γ ∈ Δ∗ Figure 4: Local intersection </context>
+</contexts>
+<marker>Koehn, 2005</marker>
+<rawString>Philipp Koehn. 2005. Europarl: A parallel corpus for statistical machine translation. In Proceedings of Machine Translation Summit, pages 79–86.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shankar Kumar</author>
+<author>Yonggang Deng</author>
+<author>William Byrne</author>
+</authors>
+<title>A weighted finite state transducer translation template model for statistical machine translation.</title>
+<date>2006</date>
+<journal>Natural Language Engineering,</journal>
+<volume>12</volume>
+<issue>1</issue>
+<contexts>
+<context position="3340" citStr="Kumar et al., 2006" startWordPosition="537" endWordPosition="541">hn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refined based on evidence col1237 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1237–1249, October 25-29, 2014, Do</context>
+<context position="11353" citStr="Kumar et al., 2006" startWordPosition="1888" endWordPosition="1891">ial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short s</context>
+</contexts>
+<marker>Kumar, Deng, Byrne, 2006</marker>
+<rawString>Shankar Kumar, Yonggang Deng, and William Byrne. 2006. A weighted finite state transducer translation template model for statistical machine translation. Natural Language Engineering, 12(1):35–75, March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhifei Li</author>
+<author>Sanjeev Khudanpur</author>
+</authors>
+<title>A scalable decoder for parsing-based machine translation with equivalent language model state maintenance.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Second Workshop on Syntax and Structure in Statistical Translation, SSST ’08,</booktitle>
+<pages>10--18</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="10783" citStr="Li and Khudanpur, 2008" startWordPosition="1797" endWordPosition="1800">t k is typically much smaller than the number of possible expansions. Cube pruning employs a priority queue at beam filling and computes k highscoring expansions directly in near best-first order. The parameter k is known as beam size and it controls the time-accuracy trade-off of the algorithm. Heafield et al. (2013a) move away from using the language model as a black-box and build a more involved beam filling algorithm. Even though they target approximate search, some of their ideas have interesting connections to ours (see §4). They group hypotheses that share partial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design nea</context>
+</contexts>
+<marker>Li, Khudanpur, 2008</marker>
+<rawString>Zhifei Li and Sanjeev Khudanpur. 2008. A scalable decoder for parsing-based machine translation with equivalent language model state maintenance. In Proceedings of the Second Workshop on Syntax and Structure in Statistical Translation, SSST ’08, pages 10–18, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adam Lopez</author>
+</authors>
+<title>Statistical machine translation.</title>
+<date>2008</date>
+<journal>ACM Computing Surveys,</journal>
+<volume>40</volume>
+<issue>3</issue>
+<contexts>
+<context position="1583" citStr="Lopez, 2008" startWordPosition="243" endWordPosition="244">dels of orders higher than 3. 1 Introduction In Statistical Machine Translation (SMT), the task of producing a translation for an input string x = (x1, x2, ... , xI) is typically associated with finding the best derivation d* compatible with the input under a linear model. In this view, a derivation is a structured output that represents a sequence of steps that covers the input producing a translation. Equation 1 illustrates this decoding process. d* = argmax f(d) (1) dED(x) The set D(x) is the space of all derivations compatible with x and supported by a model of translational equivalences (Lopez, 2008). The function f(d) = A · H(d) is a linear parameterisation of the model (Och, 2003). It assigns a real-valued score (or weight) to every derivation d E D(x), where A E Rm assigns a relative importance to different aspects of the derivation independently captured by m feature functions H(d) = (H1(d), ... , Hm(d)) E Rm. The fully parameterised model can be seen as a discrete weighted set such that feature functions factorise over the steps in a derivation. That is, Hk(d) = EeEd hk(e), where hk is a (local) feature function that assesses steps independently and d = (e1, e2, ... , el) is a sequen</context>
+</contexts>
+<marker>Lopez, 2008</marker>
+<rawString>Adam Lopez. 2008. Statistical machine translation. ACM Computing Surveys, 40(3):8:1–8:49, August.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adam Lopez</author>
+</authors>
+<title>Translation as weighted deduction.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 12th Conference of the European Chapter of the Association for Computational Linguistics, EACL ’09,</booktitle>
+<pages>532--540</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="6203" citStr="Lopez, 2009" startWordPosition="995" endWordPosition="996">existing ones and no deduction happens twice. In Figure 1, a nonteminal item summarises partial derivation (or hypotheses). It is denoted by [C, r, -y] (also known as carry), where: C is a coverage vector, necessary to impose the non-overlapping constraint; r is the rightmost position most recently covered, necessary for the computation of 6; and -y is the last n − 1 words 1Preventing phrases from overlapping requires an exponential number of constraints (the powerset of x) rendering the problem NP-complete (Knight, 1999). 2Weighted logics have been extensively used to describe weighted sets (Lopez, 2009), operations over weighted sets (Chiang, 2007; Dyer and Resnik, 2010), and a variety of dynamic programming algorithms (Cohen et al., 2008). ITEM [{0, 1}I, [0, I + 1], An−1] GOAL [1I, I + 1, EOS] AXIOM hBOS → BOSi [0I, 0, BOS] : ψ(BOS) EXPAND ACCEPT [1I, r, γ] [1I , I r ≤ + 1, EOS] : δ(r, I + 1) ⊗ ψ(EOS|γ) I Figure 1: Specification for the weighted set of translation derivations in phrase-based SMT with unconstrained reordering. in the yield, necessary for the LM component. The program expands partial derivations by concatenation with a translation rule Dxi0 ±�, yjj0E, that is, an instantiated</context>
+<context position="17029" citStr="Lopez, 2009" startWordPosition="2817" endWordPosition="2818"> The process is repeated until eventually g(t)(dt) = f(dt), where dt = argmaxd g(t)(d), for some finite t. At which point dt is the optimum derivation d* from f and the sequence of upperbounds provides a proof of optimality.7 4.2 Model We work with phrase-based models in a standard parameterisation (Equation 2). However, to avoid having to deal with NP-completeness, we constrain reordering to happen only within a limited window given by a notion of distortion limit. We require that the last source word covered by any biphrase must be within d words from the leftmost uncovered source position (Lopez, 2009). This is a widely used strategy and it is in use in the Moses toolkit (Koehn et al., 2007).8 Nevertheless, the problem of finding the best 7If d is a maximum from g and g(d) = f(d), then it is easy to show by contradiction that d is the actual maximum from f: if there existed d&apos; such that f(d&apos;) &gt; f(d), then it follows that g(d&apos;) ≥ f(d&apos;) &gt; f(d) = g(d), and hence d would not be a maximum for g. 8A distortion limit characterises a form of pruning that acts directly in the generative capacity of the model leading to induction errors (Auli et al., 2009). Limiting reordering like that lowers comple</context>
+<context position="20585" citStr="Lopez, 2009" startWordPosition="3478" endWordPosition="3479">onterminal node in our hypergraph groups derivations while exposing only an empty LM state. ITEM ~[1, I + 1], {0, 1}d−1, [0, I + 1]~ GOAL [I, ∅, I + 1] AXIOMS hBOS → BOSi [1, 0d−1, 0] : ω(BOS) ADJACENT D E j0 [l, C, r] xi yj [l0, C0, i0] : φr ⊗ δ(r, i0) ⊗ ω(yj0 j ) where l0 = l + α1(C) + 1 C0 « α1(C) + 1 NON-ADJACENT i &gt; l Li0−l k=i−l ck = 0¯ |r − i + 1 |≤ d |i0 − l + 1 |≤ d where c0k = ck if k &lt; i − l or k &gt; i0 − l else¯1 ACCEPT [I + 1, C, r] r ≤ [I + 1, ∅, I + 1] : δ(r, I + 1) ⊗ ω(EOS) I Figure 3: Specification of the initial proposal hypergraph. This program allows the same reorderings as (Lopez, 2009) (see logic WLd), however, it does not store LM state information and it uses the upperbound LM distribution w(·). where α1(C) returns the number of leading 1s in C, and C&apos; « α1(C) + 1 represents a left-shift. The rule NON-ADJACENT handles the remaining cases i &gt; l provided that the expansion skips at most d input words |r − i + 1 |&lt; d. In the consequent, the window C is simply updated to record the translation of the input span i..i&apos;. In the nonadjacent case, a gap constraint imposes that the resulting item will require skipping no more than d positions before the leftmost uncovered word is t</context>
+</contexts>
+<marker>Lopez, 2009</marker>
+<rawString>Adam Lopez. 2009. Translation as weighted deduction. In Proceedings of the 12th Conference of the European Chapter of the Association for Computational Linguistics, EACL ’09, pages 532–540, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Nicola Ueffing</author>
+<author>Hermann Ney</author>
+</authors>
+<title>An efficient A* search algorithm for statistical machine translation.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the workshop on Data-driven methods in machine translation - Volume 14, DMMT ’01,</booktitle>
+<pages>1--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="2624" citStr="Och et al., 2001" startWordPosition="423" endWordPosition="426">ise over the steps in a derivation. That is, Hk(d) = EeEd hk(e), where hk is a (local) feature function that assesses steps independently and d = (e1, e2, ... , el) is a sequence of l steps. Under this assumption, each step is assigned the weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The set D is typically finite, however, it contains a very large number of structures — exponential (or even factorial, see §2) with the size of x — making exhaustive enumeration prohibitively slow. Only in very restricted cases combinatorial optimisation techniques are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Othe</context>
+<context position="11372" citStr="Och et al. (2001)" startWordPosition="1892" endWordPosition="1895">ate (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words </context>
+</contexts>
+<marker>Och, Ueffing, Ney, 2001</marker>
+<rawString>Franz Josef Och, Nicola Ueffing, and Hermann Ney. 2001. An efficient A* search algorithm for statistical machine translation. In Proceedings of the workshop on Data-driven methods in machine translation - Volume 14, DMMT ’01, pages 1–8, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+</authors>
+<title>Minimum error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics,</booktitle>
+<volume>1</volume>
+<pages>160--167</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="1667" citStr="Och, 2003" startWordPosition="261" endWordPosition="262"> the task of producing a translation for an input string x = (x1, x2, ... , xI) is typically associated with finding the best derivation d* compatible with the input under a linear model. In this view, a derivation is a structured output that represents a sequence of steps that covers the input producing a translation. Equation 1 illustrates this decoding process. d* = argmax f(d) (1) dED(x) The set D(x) is the space of all derivations compatible with x and supported by a model of translational equivalences (Lopez, 2008). The function f(d) = A · H(d) is a linear parameterisation of the model (Och, 2003). It assigns a real-valued score (or weight) to every derivation d E D(x), where A E Rm assigns a relative importance to different aspects of the derivation independently captured by m feature functions H(d) = (H1(d), ... , Hm(d)) E Rm. The fully parameterised model can be seen as a discrete weighted set such that feature functions factorise over the steps in a derivation. That is, Hk(d) = EeEd hk(e), where hk is a (local) feature function that assesses steps independently and d = (e1, e2, ... , el) is a sequence of l steps. Under this assumption, each step is assigned the weight w(e) = A·(h1(</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Josef Och. 2003. Minimum error rate training in statistical machine translation. In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics, volume 1 of ACL ’03, pages 160– 167, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Aria Haghighi</author>
+<author>Dan Klein</author>
+</authors>
+<title>Coarse-to-fine syntactic machine translation using language projections.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP ’08,</booktitle>
+<pages>108--116</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="15423" citStr="Petrov et al., 2008" startWordPosition="2549" endWordPosition="2552">s proposal is incrementally refined to be closer to the goal until the maximum is found (or until the sampling performance exceeds a certain level). Figure 2 illustrates exact optimisation with OS*. Suppose f is a complex target goal distribution, such that we cannot optimise f, but we can assess f(d) for a given d. Let g(0) be an upperbound to f, i.e., g(0)(d) ≥ f(d) for all d E D(x). Moreover, suppose that g(0) is simple enough to be optimised efficiently. The algorithm proceeds by solving d0 = argmaxd g(0)(d) and comput6The intuition that a full intersection is wasteful is also present in (Petrov et al., 2008) in the context of approximate search. They start from a coarse distribution based on automatic word clustering which is refined in multiple passes. At each pass, hypotheses are pruned a posteriori on the basis of their marginal probabilities, and word clusters are further split. We work with upperbounds, rather than word clusters, with unpruned distributions, and perform exact optimisation. Figure 2: Sequence of incrementally refined upperbound proposals. ing the quantity r0 = f(d0)/g(0)(d0). If r0 were sufficiently close to 1, then g(0)(d0) would be sufficiently close to f(d0) and we would h</context>
+</contexts>
+<marker>Petrov, Haghighi, Klein, 2008</marker>
+<rawString>Slav Petrov, Aria Haghighi, and Dan Klein. 2008. Coarse-to-fine syntactic machine translation using language projections. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP ’08, pages 108–116, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sebastian Riedel</author>
+<author>James Clarke</author>
+</authors>
+<title>Revisiting optimal decoding for machine translation IBM model 4. In</title>
+<date>2009</date>
+<booktitle>Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers, NAACL-Short ’09,</booktitle>
+<pages>5--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="12963" citStr="Riedel and Clarke (2009)" startWordPosition="2147" endWordPosition="2150">ger NP-complete. Rush and Collins (2011) relax a hierarchical phrase-based model (Chiang, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dual converges to a compliant solution, the solution is guaranteed to be optimal. Other4Exact decoding had been similarly addressed with Integer Linear Programming (ILP) in the context of word-based models for very short sentences using a 2-gram LM (Germann et al., 2001). Riedel and Clarke (2009) revisit that formulation and employ a cutting-plane algorithm (Dantzig et al., 1954) reaching 30 words. 5In hierarchical translation, reordering is governed by a synchronous context-free grammar and the underlying problem is no longer NP-complete. Exact decoding remains infeasible because the intersection between the translation forest and the target LM is prohibitively slow. 1239 wise, a subset of the constraints is explicitly added and the dual optimisation is repeated. They handle sentences above average length, however, resorting to compact rulesets (10 translation options per input segme</context>
+</contexts>
+<marker>Riedel, Clarke, 2009</marker>
+<rawString>Sebastian Riedel and James Clarke. 2009. Revisiting optimal decoding for machine translation IBM model 4. In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers, NAACL-Short ’09, pages 5–8, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christian P Robert</author>
+<author>George Casella</author>
+</authors>
+<title>Monte Carlo Statistical Methods (Springer Texts in Statistics).</title>
+<date>2004</date>
+<publisher>Springer-Verlag</publisher>
+<location>New York, Inc., Secaucus, NJ, USA.</location>
+<contexts>
+<context position="14609" citStr="Robert and Casella, 2004" startWordPosition="2405" endWordPosition="2408">t strategies are based on exhaustive intersections with small n-gram matching automata. These refinements make forests grow unmanageable too quickly. Because of that, they only deal with very short sentences (up to 10 words) and even then decoding is very slow. We design better upperbounds and a more efficient refinement strategy. Moreover, we decode long sentences using language models of order 3 to 5.6 4 Approach 4.1 Exact optimisation with OS* Dymetman et al. (2012) introduced OS*, a unified view of optimisation and sampling which can be seen as a cross between adaptive rejection sampling (Robert and Casella, 2004) and A* optimisation (Hart et al., 1968). In this framework, a complex goal distribution is upperbounded by a simpler proposal distribution for which optimisation (and sampling) is feasible. This proposal is incrementally refined to be closer to the goal until the maximum is found (or until the sampling performance exceeds a certain level). Figure 2 illustrates exact optimisation with OS*. Suppose f is a complex target goal distribution, such that we cannot optimise f, but we can assess f(d) for a given d. Let g(0) be an upperbound to f, i.e., g(0)(d) ≥ f(d) for all d E D(x). Moreover, suppose</context>
+</contexts>
+<marker>Robert, Casella, 2004</marker>
+<rawString>Christian P. Robert and George Casella. 2004. Monte Carlo Statistical Methods (Springer Texts in Statistics). Springer-Verlag New York, Inc., Secaucus, NJ, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander M Rush</author>
+<author>Michael Collins</author>
+</authors>
+<title>Exact decoding of syntactic translation models through Lagrangian relaxation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11,</booktitle>
+<pages>72--82</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="3390" citStr="Rush and Collins, 2011" startWordPosition="546" endWordPosition="549">ercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz et al., 2013). Other work has employed less common approximations to the model reducing its search space complexity (Kumar et al., 2006; Chang and Collins, 2011; Rush and Collins, 2011). These do not answer whether or not current decoding algorithms perform well at real translation tasks with state-of-the-art models. We propose an exact decoder for phrase-based SMT based on a coarse-to-fine search strategy (Dymetman et al., 2012). In a nutshell, we relax the decoding problem with respect to the Language Model (LM) component. This coarse view is incrementally refined based on evidence col1237 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1237–1249, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Li</context>
+<context position="12379" citStr="Rush and Collins (2011)" startWordPosition="2055" endWordPosition="2058">e translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words on average) using a 2-gram LM due to salesman graphs growing too large.4 Chang and Collins (2011) relax phrase-based models w.r.t. the non-overlapping constraints, which are replaced by soft penalties through Lagrangian multipliers, and intersect the LM component exhaustively. They do employ a maximum distortion limit (d = 4), thus the problem they tackle is no longer NP-complete. Rush and Collins (2011) relax a hierarchical phrase-based model (Chiang, 2005)5 w.r.t. the LM component. The translation forest and the language model trade their weights (through Lagrangian multipliers) so as to ensure agreement on what each component believes to be the maximum. In both approaches, when the dual converges to a compliant solution, the solution is guaranteed to be optimal. Other4Exact decoding had been similarly addressed with Integer Linear Programming (ILP) in the context of word-based models for very short sentences using a 2-gram LM (Germann et al., 2001). Riedel and Clarke (2009) revisit that fo</context>
+</contexts>
+<marker>Rush, Collins, 2011</marker>
+<rawString>Alexander M. Rush and Michael Collins. 2011. Exact decoding of syntactic translation models through Lagrangian relaxation. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11, pages 72–82, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christoph Tillmann</author>
+<author>Stephan Vogel</author>
+<author>Hermann Ney</author>
+<author>A Zubiaga</author>
+</authors>
+<title>A DP based search using monotone alignments in statistical translation.</title>
+<date>1997</date>
+<booktitle>In Proceedings of the eighth conference on European chapter of the Association for Computational Linguistics, EACL ’97,</booktitle>
+<pages>289--296</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="2605" citStr="Tillmann et al., 1997" startWordPosition="419" endWordPosition="422">eature functions factorise over the steps in a derivation. That is, Hk(d) = EeEd hk(e), where hk is a (local) feature function that assesses steps independently and d = (e1, e2, ... , el) is a sequence of l steps. Under this assumption, each step is assigned the weight w(e) = A·(h1(e), h2(e), ... , hm(e)). The set D is typically finite, however, it contains a very large number of structures — exponential (or even factorial, see §2) with the size of x — making exhaustive enumeration prohibitively slow. Only in very restricted cases combinatorial optimisation techniques are directly applicable (Tillmann et al., 1997; Och et al., 2001), thus it is common to resort to heuristic techniques in order to find an approximation to d* (Koehn et al., 2003; Chiang, 2007). Evaluation exercises indicate that approximate search algorithms work well in practice (Bojar et al., 2013). The most popular algorithms provide solutions with unbounded error, thus precisely quantifying their performance requires the development of a tractable exact decoder. To date, most attempts were limited to short sentences and/or somewhat toy models trained with artificially small datasets (Germann et al., 2001; Iglesias et al., 2009; Aziz </context>
+<context position="11304" citStr="Tillmann et al., 1997" startWordPosition="1881" endWordPosition="1884">ours (see §4). They group hypotheses that share partial language model state (Li and Khudanpur, 2008) reasoning over multiple hypotheses at once. They fill a beam in best-first order by iteratively visiting groups using a priority queue: if the top group contains a single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directl</context>
+</contexts>
+<marker>Tillmann, Vogel, Ney, Zubiaga, 1997</marker>
+<rawString>Christoph Tillmann, Stephan Vogel, Hermann Ney, and A. Zubiaga. 1997. A DP based search using monotone alignments in statistical translation. In Proceedings of the eighth conference on European chapter of the Association for Computational Linguistics, EACL ’97, pages 289–296, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Mikhail Zaslavskiy</author>
+<author>Marc Dymetman</author>
+<author>Nicola Cancedda</author>
+</authors>
+<title>Phrase-based statistical machine translation as a traveling salesman problem.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP: Volume 1 - Volume 1, ACL ’09,</booktitle>
+<pages>333--341</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="11572" citStr="Zaslavskiy et al. (2009)" startWordPosition="1926" endWordPosition="1929">single hypothesis, the hypothesis is added to the beam, otherwise the group is partitioned and the parts are pushed back to the queue. More recently, Heafield et al. (2014) applied their beam filling algorithm to phrase-based decoding. 3.2 Exact optimisation Exact optimisation for monotone translation has been done using A* search (Tillmann et al., 1997) and finite-state operations (Kumar et al., 2006). Och et al. (2001) design near-admissible heuristics for A* and decode very short sentences (6- 14 words) for a word-based model (Brown et al., 1993) with a maximum distortion strategy (d = 3). Zaslavskiy et al. (2009) frame phrase-based decoding as an instance of a generalised Travelling Salesman Problem (TSP) and rely on robust solvers to perform decoding. In this view, a salesman graph encodes the translation options, with each node representing a biphrase. Nonoverlapping constraints are imposed by the TSP solver, rather than encoded directly in the salesman graph. They decode only short sentences (17 words on average) using a 2-gram LM due to salesman graphs growing too large.4 Chang and Collins (2011) relax phrase-based models w.r.t. the non-overlapping constraints, which are replaced by soft penalties</context>
+</contexts>
+<marker>Zaslavskiy, Dymetman, Cancedda, 2009</marker>
+<rawString>Mikhail Zaslavskiy, Marc Dymetman, and Nicola Cancedda. 2009. Phrase-based statistical machine translation as a traveling salesman problem. In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP: Volume 1 - Volume 1, ACL ’09, pages 333– 341, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

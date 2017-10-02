@@ -1,0 +1,1864 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.001319">
+<title confidence="0.998904">
+Type-Aware Distantly Supervised Relation Extraction
+with Linked Arguments
+</title>
+<author confidence="0.995583">
+Mitchell Koch John Gilmer Stephen Soderland Daniel S. Weld
+</author>
+<affiliation confidence="0.998698">
+Department of Computer Science &amp; Engineering
+University of Washington
+</affiliation>
+<address confidence="0.62121">
+Seattle, WA 98195, USA
+</address>
+<email confidence="0.998925">
+{mkoch,jgilme1,soderlan,weld}@cs.washington.edu
+</email>
+<sectionHeader confidence="0.993892" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999983">
+Distant supervision has become the lead-
+ing method for training large-scale rela-
+tion extractors, with nearly universal adop-
+tion in recent TAC knowledge-base pop-
+ulation competitions. However, there are
+still many questions about the best way
+to learn such extractors. In this paper we
+investigate four orthogonal improvements:
+integrating named entity linking (NEL)
+and coreference resolution into argument
+identification for training and extraction,
+enforcing type constraints of linked argu-
+ments, and partitioning the model by rela-
+tion type signature.
+We evaluate sentential extraction perfor-
+mance on two datasets: the popular set of
+NY Times articles partially annotated by
+Hoffmann et al. (2011) and a new dataset,
+called GORECO, that is comprehensively
+annotated for 48 common relations. We
+find that using NEL for argument identi-
+fication boosts performance over the tra-
+ditional approach (named entity recogni-
+tion with string match), and there is further
+improvement from using argument types.
+Our best system boosts precision by 44%
+and recall by 70%.
+</bodyText>
+<sectionHeader confidence="0.999336" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9980595">
+Relation extractors are commonly trained by dis-
+tant supervision (also known as knowledge-based
+weak supervision (Hoffmann et al., 2011)), an au-
+tonomous technique that creates a labeled train-
+ing set by heuristically matching the contents of a
+knowledge base (KB) to mentions (substrings) in
+a textual corpus. For example, if a KB contained
+the ground tuple BornIn(Albert Einstein, Ulm) then
+</bodyText>
+<figureCaption confidence="0.986454">
+Figure 1: Distantly supervised extraction pipeline.
+</figureCaption>
+<bodyText confidence="0.998685068965517">
+a distant supervision system might label the sen-
+tence “While [Einstein], was born in [Ulm]2, he
+moved to Munich at an early age.” as a positive
+training instance of the BornIn relation. Although
+distant supervision is a simple idea and often cre-
+ates data with false positives, it has become ubiq-
+uitous; for example, all top-performing systems in
+recent TAC-KBP slot filling competitions used the
+method.
+Surprisingly, however, many aspects of distant
+supervision are poorly studied. In response we
+perform an extensive search of ways to improve
+distant supervision and the extraction process, in-
+cluding using named entity linking (NEL) and
+coreference to identify arguments for distant su-
+pervision and extraction, as well as using type con-
+straints and partitioning the trained model by rela-
+tion type signatures.
+The first step in the distant supervision process
+is argument identification (Figure 1) — finding
+textual mentions referring to entities that might be
+in some relation. Next comes matching, where KB
+facts, e.g. tuples such as R(e,, e2), are associated
+with sentences mentioning entities e, and e2 in
+the assumption that many of these sentences de-
+scribe the relation R. Most previous systems per-
+form these steps by first using named entity recog-
+nition (NER) to identify possible arguments and
+then using a simple string match, but this crude
+</bodyText>
+<figure confidence="0.9967512">
+Training
+KB
+Train Extractor
+Argument
+Identification
+Matching
+Extraction
+Argument
+Identification
+Extractor
+</figure>
+<page confidence="0.951251">
+1891
+</page>
+<note confidence="0.9030295">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1891–1901,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999335441176471">
+approach misses many possible instances. Since
+the separately-studied task of named entity linking
+(NEL) is precisely what is needed to perform dis-
+tant supervision, it is interesting to see if today’s
+optimized linkers lead to improved performance
+when used to train extractors.
+Coreference, the task of clustering mentions
+that describe the same entity, may also be use-
+ful for increasing the number of candidate argu-
+ments. Consider the following variant of our pre-
+vious example: “While [he]1 was born in [Ulm]2,
+[Einstein]3 moved to Munich at an early age.”
+Since mentions 1 and 3 corefer, one could con-
+sider using either the pair (1, 2) or (3, 2) (or both)
+for training. Intuitively, it seems that (1, 2) is more
+representative of BornIn and might generalize bet-
+ter, so we consider the use of coreference at both
+training and extraction time.
+Semantic relations often have selectional prefer-
+ences (also known as type signatures); for exam-
+ple, BornIn holds between people and locations.
+Therefore, it seems promising to include entity
+types, whether coarse or fine grained in the dis-
+tantly supervised relation extraction process. We
+consider two ways of adding this information. By
+using NEL to get linked entities, we can impose
+type constraints on the relation extraction system
+to only allow relations over appropriately typed
+mentions. We also investigate using coarse types
+from NER to learn separate models for different
+relation type signatures in order to make the mod-
+els more effective.
+In summary, this paper represents the following
+contributions:
+</bodyText>
+<listItem confidence="0.872724419354839">
+• We explore several dimensions for improv-
+ing distantly supervised relation extraction,
+including better argument identification dur-
+ing training and extraction using both NEL
+and coreference, partitioning the model by
+relation type signatures, and enforcing type
+constraints of linked arguments as a post-
+processing step. While some of these ideas
+may seem straightforward, to our knowledge
+they have not been systematically studied.
+And, as we show, they lead to dramatic im-
+provements.
+• Since previous datasets are incapable of mea-
+suring an extractor’s true recall, we intro-
+duce GORECO, a new exhaustively-labeled
+dataset with gold annotations for sentential
+instances of 48 relations across 128 newswire
+documents from the ACE 2004 corpus (Dod-
+dington et al., 2004).
+• We demonstrate that NEL argument identifi-
+cation boosts both precision and recall, and
+using type constraints with linked arguments
+further boosts precision, yielding a 43% in-
+crease in precision and 27% boost to re-
+call. Using coreference during training ar-
+gument identification gives an additional 7%
+improvement to precision and further boosts
+recall by 9%. Partitioning the model by rela-
+tion type signature offers further benefits, so
+our best system yields a total boost of 44% to
+precision and 70% to recall.
+</listItem>
+<sectionHeader confidence="0.919582" genericHeader="introduction">
+2 Distantly Supervised Extraction
+</sectionHeader>
+<bodyText confidence="0.999884">
+At a sentence-level, the goal for relation extrac-
+tion is to determine for each sentence, what facts
+are expressed. We describe these as relation an-
+notations of the form s→R(m1, m2), where s is
+a sentence, R E R is a relation name, R is our
+finite set of target relations, and m1 and m2 are
+grounded entity mentions of the form (s, t1, t2, e),
+where t1 and t2 delimit a text span in the sentence,
+and e is a grounded entity.
+</bodyText>
+<subsectionHeader confidence="0.978633">
+2.1 Training
+</subsectionHeader>
+<bodyText confidence="0.999968043478261">
+During training, the contents of the KB are heuris-
+tically matched to the training corpus according
+to the distant supervision hypothesis: if a relation
+holds between two entities, any sentence contain-
+ing those two entities is likely to express that rela-
+tion.
+The training KB A contains fact tuples of form
+R(e1, e2), where R E R is a relation name, R is
+our finite set of target relations, and e1 and e2 are
+ground entities. The training text corpus E con-
+tains documents, which contain sentences. Argu-
+ment identification is performed over the text cor-
+pus to get grounded mentions m. Then during sen-
+tential instance generation, sentential instances of
+the form (s, m1, m2) are generated representing
+a sentence with two grounded mentions. At this
+point, these sentential instances can be matched
+to the seed KB, yielding candidate relation anno-
+tations of the form s→R(m1, m2) by finding all
+relations that hold over the entities in a sentential
+instance. These candidate relation annotations are
+all positive instances to use for training. Negative
+instance generation is also performed, generating
+</bodyText>
+<page confidence="0.991566">
+1892
+</page>
+<bodyText confidence="0.99742905">
+negative examples of the form s→NA(m1, m2) in-
+dicating that no relation holds between m1 and
+m2. There are several heuristics for generating
+negative instances, and the number of negative ex-
+amples and how they are treated can greatly affect
+performance (Min et al., 2013).
+Because the distant supervision hypothesis of-
+ten does not hold, this training data is noisy. That
+a fact is in the KB does not imply that the sen-
+tence in question is expressing the relation. There
+has been much work in combating noise in dis-
+tant supervision training data, but one of the most
+successful ideas is to train a multi-instance classi-
+fier which assumes at-least-one relation holds for
+positive bags. We use Hoffmann et al. (2011)’s
+MULTIR system, which uses a probabilistic graph-
+ical model to jointly reason at the corpus-level
+and sentence-level, handles overlapping relations
+in the KB so that multiple relations can hold over
+an entity pair, and scales to large datasets.
+</bodyText>
+<subsectionHeader confidence="0.996583">
+2.2 Extraction
+</subsectionHeader>
+<bodyText confidence="0.999993">
+The trained relation extractor can assign a most
+likely relation and a confidence score to a senten-
+tial instance (s, m1, m2). To get these sentential
+instances, argument identification and sentential
+instance generation are applied to new documents.
+Then the relation extractor potentially yields a re-
+lation annotation of the form s→R(m1, m2), or
+potentially no relation. At extraction time a men-
+tion m might have a NIL link if a correspond-
+ing ground entity was not found during argument
+identification (meaning the entity is not in the KB).
+The relation annotations have associated confi-
+dence scores, so a threshold can be chosen to only
+use high-confidence relation annotations.
+</bodyText>
+<sectionHeader confidence="0.984429" genericHeader="method">
+3 Argument Identification
+</sectionHeader>
+<bodyText confidence="0.999938">
+An important piece of relation extraction is deter-
+mining what can be an argument, and how to form
+a semantic representation of it. We define an argu-
+ment identification function ArgIdento(D), which
+takes a document D, finds potential arguments,
+and links them to entities in A if possible, yield-
+ing m, a set of grounded mentions in D. Pre-
+vious relation extraction systems have based this
+on NER. We evaluate NER-based argument iden-
+tification against argument identification based on
+NEL, as well as NEL with coreference.
+</bodyText>
+<subsectionHeader confidence="0.998795">
+3.1 Named Entity Recognition
+</subsectionHeader>
+<bodyText confidence="0.9999258125">
+Named entity recognition (NER) tags spans of to-
+kens with basic types such as PERSON, ORGANI-
+ZATION, LOCATION, and MISC. This is a high
+accuracy tagging task often performed using a
+sequence classifier (Finkel et al., 2005). Rela-
+tion extraction systems can base their argument
+identification on NER, by using NER to identify
+text spans indicating entities and then find corre-
+sponding entities in the KB through exact string
+match (Riedel et al., 2010). Some downsides of
+using NER with exact string match for relation ex-
+traction is that it does not allow for overlapping
+mentions, it can only capture arguments with full
+names, and it can only capture arguments with
+types of the NER system, e.g., “politician” might
+not be captured.
+</bodyText>
+<subsectionHeader confidence="0.999195">
+3.2 Named Entity Linking
+</subsectionHeader>
+<bodyText confidence="0.999924">
+Named entity linking (NEL) is the task of ground-
+ing textual mentions to entities in a KB, such as
+Wikipedia. Thus “named entity” here, has a some-
+what broader definition than in NER — these are
+any entities in the KB, not just those expressed
+with proper names. Hachey et al. (2013) define
+three stages that NEL systems take to perform
+this task: extraction (mention detection), search
+(generating candidate KB entities for a mention),
+and disambiguation (selecting the best entity for a
+mention). There has been much work on the task
+of NEL in recent years (Milne and Witten, 2008;
+Kulkarni et al., 2009; Ratinov et al., 2011; Cheng
+and Roth, 2013).
+Our definition of a function ArgIdent(D) is
+completely served by an NEL system. It can
+find any entity in the KB, and those entities are
+grounded. Additionally, NEL can have overlap-
+ping mentions as well as support for abbreviated
+mentions like “Obama”, or acronyms like “US”.
+NEL does not seek to capture anaphoric mentions,
+however.
+</bodyText>
+<subsectionHeader confidence="0.999406">
+3.3 Coreference Resolution
+</subsectionHeader>
+<bodyText confidence="0.999911625">
+Coreference resolution is the task of clustering
+mentions of entities together, typically within a
+single document. Using coreference, we can find
+even more mentions than NEL, since it can find
+pronouns and anaphoric mentions. We seek to use
+coreference to add additional arguments to those
+found by NEL, and we refer to this combined ar-
+gument identification method as NEL+Coref. Tak-
+</bodyText>
+<page confidence="0.932325">
+1893
+</page>
+<bodyText confidence="0.999970833333333">
+ing in arguments from NEL argument identifica-
+tion and coreference clusters, we ground the clus-
+ters by picking the most common grounded entity
+from NEL mentions that occur in a coreference
+cluster. A difficulty is that mentions from NEL
+and coreference can have small differences in text
+spans, such as whether determiners are included.
+We try to assign each NEL argument to a corefer-
+ence cluster, first looking for an exact span match,
+then by looking for the shortest coreference men-
+tion that contains it. If the coreference cluster al-
+ready has matched an NEL argument through ex-
+act span match that is different from the one found
+by looking for the shortest containing coreference
+mention, the new NEL argument is not added.
+This gives for each coreference cluster a possible
+grounding to an entity in the KB. What is provided
+as final arguments for NEL+Coref argument iden-
+tification are, in order, grounded NEL arguments,
+grounded coreference arguments that do not over-
+lap with previous arguments, NIL arguments from
+NEL that do not overlap with previous arguments,
+and NIL arguments from coreference that do not
+overlap with previous arguments.
+</bodyText>
+<sectionHeader confidence="0.950051" genericHeader="method">
+4 Type-Awareness
+</sectionHeader>
+<bodyText confidence="0.998004774193548">
+Relations have expected types for each argument.
+Entity types, whether coarse-grained, such as from
+NER, or fine-grained, such as from Freebase enti-
+ties, are an important source of information that
+can be useful for making decisions in relation ex-
+traction. We bring type-awareness into the system
+through partitioning the model, as well as by en-
+forcing type constraints on output relation annota-
+tions.
+Model Partitioning Instead of building a single
+relation extractor that can generate sentential in-
+stances and then relation annotations with argu-
+ments of any type, we can instead build separate
+relation extractors for each possible coarse type
+signature, e.g., (PERSON, PERSON), (PERSON, LO-
+CATION), etc., and combine the extractions from
+the extractor for each type signature. This modi-
+fication allows each trained model to only handle
+instances of specific types, and thus relations of
+that type signature, allowing each to do a better job
+of choosing relations within the type signature.
+Type Constraints We can additionally reject re-
+lation annotations where the types of the argu-
+ments do not agree with the expected types of the
+relation. That is, we only accept a relation annota-
+tion s—*R(m1, m2) when EntityTypes(e1) n T1 =�
+0 and EntityTypes(e2)nT2 =� 0, where m1 is linked
+to e1, m2 is linked to e2, EntityTypes provides the
+set of valid types for an entity, T1 is the set of al-
+lowed types for the first argument of target relation
+r, and T2 for the second argument.
+</bodyText>
+<sectionHeader confidence="0.986055" genericHeader="method">
+5 Evaluation Setups
+</sectionHeader>
+<bodyText confidence="0.999874304347826">
+Relation extraction is often evaluated from a
+macro-reading perspective (Mitchell et al., 2009),
+in which the extracted facts, R(e1, e2), are judged
+true or false independent of any supporting sen-
+tence. For these experiments, however, we take a
+micro-reading approach in order to strictly eval-
+uate whether a relation extractor is able to extract
+every fact expressed by a sentence s—*R(m1, m2).
+Micro-reading is more difficult, but it provides
+fully semantic information at the sentence and
+document level allowing detailed justifications,
+and, for our purposes, allows us to better under-
+stand the effects of our modifications. In order
+to fairly evaluate different systems, even those us-
+ing different methods of argument identification,
+we want to use gold evaluation data allowing for
+varying mention types. We additionally use Hoff-
+mann et al. (2011)’s sentential evaluation as-is in
+order to better compare with prior work. For our
+training corpus, we use the TAC-KBP 2009 (Mc-
+Namee and Dang, 2009) English newswire corpus
+containing one million documents with 27 million
+sentences.
+</bodyText>
+<subsectionHeader confidence="0.943051">
+5.1 Hoffmann et al. Sentential Evaluation
+</subsectionHeader>
+<bodyText confidence="0.999976882352941">
+Hoffmann et al. (2011) generated their gold data
+by taking the union of sentential instances where
+some system being evaluated extracted a relation
+as well as the sentential instances matching ar-
+guments in the KB. They took a random sample
+of these sentential instances and manually labeled
+them with either a single relation or NA. Although
+this process provides good coverage, since is is
+sampled from extractions over a large corpus, it
+does not allow one to measure true recall. Indeed,
+Hoffmann’s method significantly overestimates re-
+call, since the random sample is only over senten-
+tial instances where a program detected an extrac-
+tion or a KB match was found. Furthermore, this
+test set only contains sentential instances in which
+arguments are marked using NER, which makes
+it impossible to determine if the use of NEL or
+</bodyText>
+<page confidence="0.974084">
+1894
+</page>
+<bodyText confidence="0.997947357142857">
+coreference confers any benefit.
+Finally, it does not allow for the possibility that
+there may be multiple relations that should be ex-
+tracted for a pair of arguments. For example, a
+CeoOf relation, and an EmployedBy relation might
+both be present for (Larry Page, Google). To ad-
+dress these issues, we manually annotate a full set
+of documents with relation annotations. Because
+we are evaluating changing various aspects of the
+distant supervision process, we cannot use Riedel
+et al. (2010)’s distant supervision data as-is as oth-
+ers did on the Hoffmann et al. (2011) sentential
+evaluation. Instead, we use the TAC-KBP data de-
+scribed above.
+</bodyText>
+<subsectionHeader confidence="0.988523">
+5.2 GoReCo Evaluation
+</subsectionHeader>
+<bodyText confidence="0.999517767857143">
+In order to allow for variations on mentions (NER,
+NEL, and coreference each has its own definition
+of what a mention boundary should be), we want
+gold relation annotations over coreference clus-
+ters broadly defined to allow mentions obtained
+from NER and NEL, as well as gold coreference
+mentions. So as long as a relation extraction sys-
+tem extracts a relation annotation s→R(m1, m2)
+where m1 and m2 are allowed options (based on
+text spans), it will get credit for extracting the
+relation annotation. We introduce the GORECO
+(gold relations and coreference) evaluation to sat-
+isfy these constraints.
+We start with an existing gold coreference
+dataset, ACE 2004 (Doddington et al., 2004)
+newswire, consisting of 128 documents. To get
+relation annotations over coreference clusters, we
+define two human annotation tasks and use the
+BRAT (Stenetorp et al., 2012) tool for visualization
+and relation and coreference annotations.
+Relation Annotation The annotator is pre-
+sented with a document with gold mentions indi-
+cated and asked to determine for each sentence,
+what facts involving target relations are expressed
+by the sentence. They draw an arrow for each fact
+and label it with the relation. They also have the
+ability to add mentions not present (ReAnn men-
+tions).
+Supplemental Coreference Mentions from
+NER and NEL are displayed along with ACE and
+ReAnn mentions from the previous task. The
+annotator draws coreference links from NER or
+NEL mentions to an ACE or ReAnn mention if
+they are coreferent.
+We randomly shuffle the 128 ACE 2004
+newswire documents and use 64 as a development
+set and 64 as a test set. To complete annotations
+of these documents, we only used one original hu-
+man annotator (hired using the oDesk crowdsourc-
+ing platform) and found mistakes by having others
+check the work, as well as checking false positives
+of relation extractors on the development set to
+find patterns of annotation mistakes. On average,
+there are 7 relation annotations per document.
+For the GORECO evaluation, we define our
+train/test split (with the separate TAC-KBP corpus
+used for training) such that each has a different set
+of documents and entities, in order to evaluate how
+well the system performs on unseen entities. To do
+this, we remove entities found in the gold evalua-
+tion set from the training KB. (We do not remove
+entities for the Hoffmann et al. (2011) evaluation,
+since they do not.) We choose the threshold con-
+fidence score for each system using the develop-
+ment set to optimize for F1 and report results on
+the test set.
+</bodyText>
+<subsectionHeader confidence="0.529188">
+5.2.1 Target Relations
+</subsectionHeader>
+<bodyText confidence="0.999968714285714">
+Since we use a different evaluation, we also seek to
+choose a more comprehensive and interesting set
+of relations than prior work. Riedel et al. (2010),
+whose train and test data is also used by Hoff-
+mann et al. (2011) and Surdeanu et al. (2012), use
+Freebase properties under domains /people, /busi-
+ness, and /location. Since /location relations such
+as /location/location/contains dominate the results
+(and are relatively uninteresting in that they rarely
+change), we do not use any /location relations, and
+instead use the domains /people, /business, and
+/organization (Google, 2012).
+Since many Freebase properties are between
+an entity and a table instead of another
+entity, we also use joined relations, such
+as /people/person/employment_history m /busi-
+ness/employment_tenure/company , in this case
+representing employment. We bring in an addi-
+tional 20 relations of this form, also under /person,
+/business, and /organization. Additionally we use
+NELL (Carlson et al., 2010a) relations mapped to
+Freebase by Zhang et al. (2012).
+We only include a relation in our set of target
+relations if both of its entity arguments are con-
+tained in the set of entities found via NER with
+exact string match or NEL over the training cor-
+pus. We also remove inverse relations, since they
+represent needless duplication. This gives us a set
+</bodyText>
+<page confidence="0.950034">
+1895
+</page>
+<listItem confidence="0.780839333333333">
+R of 105 target relations based on joins and unions
+of Freebase properties. Of the 105 target relations,
+48 were used at least once in the GORECO data.
+</listItem>
+<sectionHeader confidence="0.978231" genericHeader="method">
+6 Experiments and Results
+</sectionHeader>
+<bodyText confidence="0.999999333333333">
+We conduct experiments to determine how chang-
+ing distantly supervised relation extraction along
+various dimensions affects performance. We ex-
+amine the choice of argument identification dur-
+ing training and extraction, as well as the effects
+of model type partitioning, and type constraints.
+We consider the space of all combinations of these
+dimensions, but focus on specific combinations
+where we find improvements.
+</bodyText>
+<subsectionHeader confidence="0.986365">
+6.1 Relation Extraction Setup
+</subsectionHeader>
+<bodyText confidence="0.999989085714286">
+We use and modify Hoffmann et al. (2011)’s sys-
+tem MULTIR to control our experiments and as
+a baseline. For NER argument identification as
+well as for the use of NER in the features, we use
+use Stanford NER (Finkel et al., 2005). For NEL
+argument identification we use Wikipedia Miner
+with the default threshold 0.5, and allowing re-
+peated mentions (Milne and Witten, 2008). Since
+Wikipedia Miner does not support NIL links, we
+use non-overlapping NER mentions as NIL links.
+For coreference, we use Stanford’s sieve-based de-
+terministic coreference system (Lee et al., 2013).
+For sentential instance generation, we take all
+pairs of non-overlapping arguments in a sentence
+(in either order). If the arguments have KB links,
+we do not allow sentential instances where both
+arguments represent the same entity. We use the
+same lexical and syntactic features as MULTIR,
+based on the features of Mintz et al. (2009). As
+required for features, we use Stanford CoreNLP’s
+tokenizer, part of speech tagger (Toutanova et al.,
+2003), and dependency parser (de Marneffe and
+Manning, 2008), and use the Charniak Johnson
+constiuent parser (Charniak and Johnson, 2005).
+For negative training generation, we take a simi-
+lar approach to Riedel et al. (2010) and define a
+percentage parameter n of the number of nega-
+tive instances divided by the number of total in-
+stances. Experimenting with n E {0, 20%,80%},
+we find that n = 20% works best for our evalua-
+tions, optimizing for F1, although using 80% neg-
+ative training gives high precision at lower recall.
+We use frequency-based feature selection to elimi-
+nate features that appear less than 10 times, which
+is helpful both for reducing overfitting as well as
+</bodyText>
+<figure confidence="0.972157">
+0 0.1 0.2 0.3 0.4 0.5 0.6
+Relative Recall
+</figure>
+<figureCaption confidence="0.637872">
+Figure 2: Methods evaluated in the context of
+Hoffmann et al. (2011)’s sentential extraction
+evaluation. NER: our NER baseline used for
+training and extraction, LT: use NEL for train-
+ing only, CT: use coreference for training only.
+(NER+LT+CT means we use NER for extraction,
+and NEL+Coref for training.)
+</figureCaption>
+<bodyText confidence="0.999821466666667">
+constraining memory usage. Since the perceptron
+learning of MULTIR is sensitive to instance order-
+ing, we perform 10 random shuffles and average
+the models.
+For model type partitioning, when training with
+NER, we ensure that the NER types match the
+coarse relation type signatures. For NEL, we at-
+tempt to use NER for coarse types of arguments,
+but if an NER type is not present, we map the Free-
+base type to its FIGER type (Ling and Weld, 2012)
+to its coarse type. For type constraints, we use
+Freebase’s expected input and output types for re-
+lations. For NIL links, we use the NER type of
+PERSON, ORGANIZATION, or LOCATION, if avail-
+able, mapping it to appropriate Freebase types.
+</bodyText>
+<subsectionHeader confidence="0.997138">
+6.2 NER Baseline
+</subsectionHeader>
+<bodyText confidence="0.999670166666667">
+As a result of a larger training set, as well as model
+averaging, our baseline, which is otherwise equiv-
+alent to the methods of Hoffmann et al. (2011)
+and uses their MULTIR system, has slightly higher
+precision as shown in Figure 2, curve NER. It is
+also higher than that of Xu et al. (2013), who
+achieved higher performance than Hoffmann et
+al. (2011); our baseline gets 89.9% precision and
+59.6% relative recall, while Xu et al. (2013)’s sys-
+tem gets 84.6% precision and 56.1% relative re-
+call. See Figure 3 and Table 1 for results on
+GORECO.
+</bodyText>
+<subsectionHeader confidence="0.980779">
+6.3 NEL and Type Constraints
+</subsectionHeader>
+<bodyText confidence="0.999413">
+On GORECO, using NEL argument identification
+increases recall and gives higher precision over the
+entire curve. We further find that filtering results
+using type constraints gives a large boost in pre-
+</bodyText>
+<figure confidence="0.991753625">
+NER
+NER+LT
+NER+LT+CT
+Hoffmann et al. (2011)
+Precision 1
+0.9
+0.8
+0.7
+</figure>
+<page confidence="0.987362">
+1896
+</page>
+<bodyText confidence="0.998351857142857">
+cision at a small cost to recall. Note the increase
+in performance from NER to NEL to NEL+TC in
+Figure 3a, as well as in Table 1. Using NEL gives
+more recall, since it is able to capture arguments
+that NER cannot, such as professions like “pa-
+leontologist”. The decrease in recall from type
+constraints comes from false positives in the type
+constraints process including from non-ideal links,
+e.g., “paleontologist” might get linked to the entity
+Paleontology, so will not have the type required for
+the Profession relation.
+On the Hoffmann et al. (2011) sentential evalu-
+ation, we were not able to use NEL argument iden-
+tification at extraction time, because the instances
+in the test set are from NER argument identifica-
+tion. We tried using NEL only at training time
+and found that it got similar performance to using
+NER (Figure 2, curve NER+LT). Doing the same
+on GORECO yielded slightly lower recall, because
+of the mismatch of features learned from NEL ar-
+guments (Figure 3b, curve NER+LT).
+</bodyText>
+<table confidence="0.6110025">
+Precision
+Precision
+</table>
+<subsectionHeader confidence="0.943925">
+6.4 NEL+Coref Argument Identification
+</subsectionHeader>
+<bodyText confidence="0.999660357142857">
+Using NEL+Coref for both training and extrac-
+tion (see Table 1) introduces noise from arguments
+not encountered during training time, but using
+NEL+Coref just for training results in a decrease
+in recall but similar precision (Figures 2 and 3b).
+We found using NEL+Coref at test time unhelp-
+ful for this dataset, because there were no exam-
+ples we could find where coreference could re-
+cover arguments that NEL could not. There were
+three true positives from NEL+Coref involving
+pronouns in the GORECO development set, but
+there were also proper name versions of the ar-
+guments nearby in the same sentences, making
+coreference unnecessary. Additionally, corefer-
+ence brings in many mentions such as times like
+“Friday” or “1954” that do not have corresponding
+KB matches during training time. These sentential
+instances have similar features to others involv-
+ing coreference mentions, and there are not neg-
+ative instances to weigh against these, since these
+types do not appear in the training data. Better fea-
+tures more suited to coreference mentions could be
+helpful here.
+At both training and extraction time, corefer-
+ence can cluster together mentions that can be con-
+sidered to be separate, such as in “Brian Kain, a
+33-year-old accountant”, “Brian Kain” and “ac-
+countant” are coreferent in the gold ACE 2004
+</bodyText>
+<figure confidence="0.998968944444444">
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 10 20 30 40 50 60 70 77
+True Positives Count
+(a)
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 10 20 30 40 50 60 70 77
+True Positives Count
+(b)
+</figure>
+<figureCaption confidence="0.999395">
+Figure 3: Precision versus true positives count
+</figureCaption>
+<bodyText confidence="0.990585916666667">
+curves for different versions of the system evalu-
+ated on the GORECO test set, containing 470 gold
+instances. NER/NEL: argument identification used
+in training and extraction, LT: use NEL for train-
+ing only, CT: use coreference for training only, TC:
+type constraints, TP: model type partitioning.
+dataset. This means that type constraints will
+disregard a Profession annotation between these
+when it should not, because “Brian Kain” (which
+would have been a NIL link) gets the link of “ac-
+countant”. This effect contributes to the decrease
+in recall.
+</bodyText>
+<subsectionHeader confidence="0.998988">
+6.5 Model Type Partitioning
+</subsectionHeader>
+<bodyText confidence="0.999955">
+Using type partitioning helps both NER and NEL
+based models as shown with the +TP curves in
+Figure 3). Partitioning by type signature results in
+each model being able to better choose relations
+for sentential instances of that type signature. In
+the Partitioned columns of Table 1, removing type
+partitioning from the best system (NEL training
+</bodyText>
+<table confidence="0.914889722222222">
+NER+LT+CT
+NER
+1897
+Single Partitioned
+R P F1 R P F1
+NER training
+NER extraction 7.9 21.8 11.6 11.3 21.0 14.7
+NEL extraction 8.5 21.4 12.2 9.8 19.7 13.1
+NEL training
+NER extraction 9.6 21.1 13.2 8.9 25.1 13.2
+NEL extraction 10.0 30.5 15.1 15.3 16.7 16.0
+NEL w/TC extraction 11.7 31.1 17.0 13.4 31.3 18.8
+NEL+Coref training
+NER extraction 9.4 19.2 12.6 6.8 28.3 11.0
+NEL extraction 12.1 27.5 16.8 11.1 21.6 14.6
+NEL w/TC extraction 12.8 33.3 18.5 12.1 34.1 17.9
+NEL+Coref extraction 10.6 20.4 14.0 10.0 12.9 11.3
+NEL+Coref w/TC extraction 9.4 22.7 13.3 7.9 19.1 11.1
+</table>
+<tableCaption confidence="0.99941">
+Table 1: Evaluation of different versions of the relation extraction system on the GORECO test set. For
+</tableCaption>
+<bodyText confidence="0.926715857142857">
+nearly all systems, partitioning the model by argument types boosts F1, as does using NEL at either
+training or extraction time, and using coreference at training time with type constraints (w/TC) raises F1
+except with coreference at extraction time and when combined with type partitioning.
+and extraction, with type constraints, Partitioned)
+results in a decrease in F1 from 18.8% to 17.0%.
+Table 2 shows by-relation performance results for
+the best system (curve NEL+TC+TP in Figure 3a).
+</bodyText>
+<subsectionHeader confidence="0.985454">
+6.6 Other Dimensions Explored
+</subsectionHeader>
+<bodyText confidence="0.999980794117647">
+We also experimented with adding generalized
+features that replaced lexemes with WordNet
+classes (Fellbaum, 1998), which had uneven re-
+sults. We observed a small but consistent improve-
+ment on the NER baseline (11.6% F1 to 12.7%
+F1 on GORECO), but after introducing NEL argu-
+ment identification and partitioning, we no longer
+observed the improvement. For some relations,
+there was a small gain in recall that was offset by
+a loss in precision, but for others, the gain in recall
+outweighed the loss of precision.
+We experimented with a negative instance feed-
+back loop that ran a trained extractor over the
+training corpus and tested whether each extrac-
+tion made was in fact a negative example. Even
+though the training corpus contains one million
+documents, this method only yielded a few thou-
+sand new negative instances due to the difficulty
+of being certain an extraction should be negative.
+A naïve approach would simply ensure that both
+entities participate in a relation in the KB; this is
+troublesome, because of KB incompleteness and
+because of type errors. For example Freebase con-
+tains BornIn(Barack Obama, Honolulu), but our ex-
+tractor extracted BornIn(Barack Obama, Hawaii).
+To avoid labeling this true extraction as a nega-
+tive instance we have to be robust about location
+semantics. We selected new negative instances
+NA(e1, e2) from our initial extractor that had e1
+in the knowledge base, with e1 participating as the
+first argument in the extracted relation but with-
+out e2 as the second argument. The results were
+promising for some relations but overall inconclu-
+sive as identifying true negatives is quite difficult.
+</bodyText>
+<table confidence="0.999712222222222">
+Relation #Extractions #TP #FP
+Nationality 50 11 38
+Profession 43 23 20
+EmployedBy 27 17 10
+Spouse 22 2 20
+LivedIn 6 4 2
+OrgInCitytown 4 3 1
+AthletePlaysForTeam 2 2 0
+OrgType 1 1 0
+</table>
+<tableCaption confidence="0.984991">
+Table 2: By-relation evaluation of the best system
+</tableCaption>
+<bodyText confidence="0.9311606">
+(NEL with type constraints and type partitioning)
+on the GORECO test set. The true positives (TP)
+are the number of gold relations over coreference
+clusters that matched, so multiple extractions can
+match a single true positive.
+</bodyText>
+<sectionHeader confidence="0.999833" genericHeader="method">
+7 Related Work
+</sectionHeader>
+<bodyText confidence="0.999732714285714">
+There has been much recent work on distantly su-
+pervised relation extraction. Mintz et al. (2009)
+use Freebase to train relation extractors over
+Wikipedia without labeled data using multi-class
+logistic regression and lexical and syntactic fea-
+tures. Hoffmann et al. (2011) use a probabilis-
+tic graphical model for multi-instance, multi-label
+</bodyText>
+<page confidence="0.986167">
+1898
+</page>
+<bodyText confidence="0.999963542857143">
+learning and extract over newswire text using
+Freebase relations. Surdeanu et al. (2012) take a
+similar approach and use soft constraints and lo-
+gistic regression. Riedel et al. (2013) integrate
+open information extraction with schema-based,
+proposing a universal schema approach, including
+using features based on latent types. There has
+also been recent work on reducing noise in dis-
+tantly supervised relation extraction (Nguyen and
+Moschitti, 2011; Takamatsu et al., 2012; Roth et
+al., 2013; Ritter et al., 2013). Xu et al. (2013) and
+Min et al. (2013) improve the quality of distant su-
+pervision training data by reducing false negative
+examples.
+Distant supervision is related to semi-
+supervised bootstrap learning work such as
+Carlson et al. (2010b) and many others. Note that
+distant supervision can be viewed as a subroutine
+of bootstrap learning; bootstrap learning can
+continue the process of distant supervision by
+taking the new tuples found and then training on
+those again, and repeating the process.
+There has also been work on performing NEL
+and coreference jointly (Cucerzan, 2007; Ha-
+jishirzi et al., 2013), however these systems do not
+perform relation extraction. Singh et al. (2013)
+performs joint relation extraction, NER, and coref-
+erence in a fully-supervised manner. They get
+slight improvement by adding coreference, but do
+not use NEL. Ling and Weld (2013) extend MUL-
+TIR to find meronym relations in a biology text-
+book. They get slight improvement over NER by
+using coreference to pick the best mention of an
+entity in the sentence for the meronym relation at
+training and extraction time.
+</bodyText>
+<sectionHeader confidence="0.996217" genericHeader="conclusions">
+8 Conclusions and Future Work
+</sectionHeader>
+<bodyText confidence="0.9998601875">
+Given the growing importance of distant supervi-
+sion, a comprehensive understanding of its vari-
+ants is crucial. While some of the optimizations
+we propose may seem intuitive, they have not pre-
+viously been systematically explored. Our experi-
+ments show that NEL, type constraints, and type
+partitioning are extremely important in order to
+best take advantage of the seed KB during training
+as well as known information at extraction time.
+Our best system results in a 44% increase in pre-
+cision, and a 70% increase in recall over our NER
+baseline using GORECO. While we were not able
+to evaluate all our methods on Hoffmann et al.
+(2011)’s sentential evaluation, our baseline per-
+forms significantly better than previous methods,
+especially in precision, and training-only modifi-
+cations perform similarly in both evaluations.
+Future work will explore the use of NEL in dis-
+tantly supervised relation extraction further, tun-
+ing a confidence parameter for the NEL system,
+and determining whether different confidence pa-
+rameters should be used for training and extrac-
+tion. Another possible direction is interleaving
+NEL with relation extraction by using newly ex-
+tracted facts to try to improve NEL performance.
+We freely distribute GORECO a new gold stan-
+dard evaluation for relation extraction consisting
+of exhaustive annotations of the 128 documents
+from ACE 2004 newswire for 48 relations. The
+source code of our system, its output, as well as
+our gold data are available at
+http://cs.uw.edu/homes/mkoch/re.
+</bodyText>
+<sectionHeader confidence="0.996936" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.9998764375">
+We thank Raphael Hoffmann, Luke Zettlemoyer,
+Mausam, Xiao Ling, Congle Zhang, Hannaneh
+Hajishirzi, Leila Zilles, and the anonymous re-
+viewers for helpful feedback. Additionally, we
+thank Anand Mohan and Graeme Britz for annota-
+tions and revisions of the GORECO dataset. This
+work was supported by Defense Advanced Re-
+search Projects Agency (DARPA) Machine Read-
+ing Program under Air Force Research Labora-
+tory (AFRL) prime contract no. FA8750-09-C-
+0181, ONR grant N00014-12-1-0211, a gift from
+Google, a grant from Vulcan, and the WRF / TJ
+Cable Professorship. This material is based upon
+work supported by the National Science Founda-
+tion Graduate Research Fellowship under Grant
+No. DGE-1256082.
+</bodyText>
+<sectionHeader confidence="0.998568" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.997783846153846">
+Andrew Carlson, Justin Betteridge, Bryan Kisiel, Burr
+Settles, Estevam R. Hruschka Jr., and Tom M.
+Mitchell. 2010a. Toward an architecture for never-
+ending language learning. In Proceedings of the
+AAAI Conference on Artificial Intelligence (AAAI-
+10).
+Andrew Carlson, Justin Betteridge, Richard C. Wang,
+Estevam R. Hruschka, Jr., and Tom M. Mitchell.
+2010b. Coupled semi-supervised learning for infor-
+mation extraction. In Proceedings of the Third ACM
+International Conference on Web Search and Data
+Mining, WSDM ’10, pages 101–110, New York,
+NY, USA. ACM.
+</reference>
+<page confidence="0.973292">
+1899
+</page>
+<reference confidence="0.999403366071429">
+Eugene Charniak and Mark Johnson. 2005. Coarse-
+to-fine n-best parsing and maxent discriminative
+reranking. In Proceedings of the 43rd Annual Meet-
+ing on Association for Computational Linguistics,
+ACL ’05, pages 173–180, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Xiao Cheng and Dan Roth. 2013. Relational inference
+for wikification. In EMNLP.
+Silviu Cucerzan. 2007. Large-scale named entity dis-
+ambiguation based on wikipedia data. In EMNLP-
+CoNLL, pages 708–716.
+Marie-Catherine de Marneffe and Christopher D. Man-
+ning. 2008. The stanford typed dependencies rep-
+resentation. In Coling 2008: Proceedings of the
+Workshop on Cross-Framework and Cross-Domain
+Parser Evaluation, CrossParser ’08, pages 1–8,
+Stroudsburg, PA, USA. Association for Computa-
+tional Linguistics.
+George R. Doddington, Alexis Mitchell, Mark A. Przy-
+bocki, Lance A. Ramshaw, Stephanie Strassel, and
+Ralph M. Weischedel. 2004. The automatic content
+extraction (ace) program-tasks, data, and evaluation.
+In LREC.
+Christiane Fellbaum, editor. 1998. WordNet: an elec-
+tronic lexical database. MIT Press.
+Jenny Rose Finkel, Trond Grenager, and Christopher
+Manning. 2005. Incorporating non-local informa-
+tion into information extraction systems by gibbs
+sampling. In Proceedings of the 43rd Annual Meet-
+ing on Association for Computational Linguistics,
+ACL ’05, pages 363–370, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Google. 2012. Freebase data dumps.
+https://developers.google.com/
+freebase/data.
+Ben Hachey, Will Radford, Joel Nothman, Matthew
+Honnibal, and James R. Curran. 2013. Evalu-
+ating entity linking with wikipedia. Artif. Intell.,
+194:130–150, January.
+Hannaneh Hajishirzi, Leila Zilles, Daniel S. Weld, and
+Luke S. Zettlemoyer. 2013. Joint coreference res-
+olution and named-entity linking with multi-pass
+sieves. In EMNLP, pages 289–299. ACL.
+Raphael Hoffmann, Congle Zhang, Xiao Ling,
+Luke Zettlemoyer, and Daniel S. Weld. 2011.
+Knowledge-based weak supervision for information
+extraction of overlapping relations. In ACL-HLT,
+pages 541–550.
+Sayali Kulkarni, Amit Singh, Ganesh Ramakrishnan,
+and Soumen Chakrabarti. 2009. Collective annota-
+tion of wikipedia entities in web text. In Proceed-
+ings of the 15th ACM SIGKDD International Con-
+ference on Knowledge Discovery and Data Mining,
+KDD ’09, pages 457–466, New York, NY, USA.
+ACM.
+Heeyoung Lee, Angel Chang, Yves Peirsman,
+Nathanael Chambers, Mihai Surdeanu, and Dan Ju-
+rafsky. 2013. Deterministic coreference resolu-
+tion based on entity-centric, precision-ranked rules.
+Comput. Linguist., 39(4):885–916, December.
+Xiao Ling and Daniel S. Weld. 2012. Fine-grained
+entity recognition. In Proceedings of the 26th Con-
+ference on Artificial Intelligence (AAAI).
+Xiao Ling and Daniel S. Weld. 2013. Extracting
+meronyms for a biology knowledge base using dis-
+tant supervision. In Automated Knowledge Base
+Construction (AKBC) 2013: The 3rd Workshop on
+Knowledge Extraction at CIKM.
+Paul McNamee and Hoa Trang Dang. 2009. Overview
+of the tac 2009 knowledge base population track. In
+Text Analysis Conference (TAC), volume 17, pages
+111–113.
+David Milne and Ian H. Witten. 2008. Learning to link
+with wikipedia. In Proceedings of the 17th ACM
+Conference on Information and Knowledge Man-
+agement, CIKM ’08, pages 509–518, New York,
+NY, USA. ACM.
+Bonan Min, Ralph Grishman, Li Wan, Chang Wang,
+and David Gondek. 2013. Distant supervision for
+relation extraction with an incomplete knowledge
+base. In Proceedings of NAACL-HLT, pages 777–
+782.
+Mike Mintz, Steven Bills, Rion Snow, and Daniel Ju-
+rafsky. 2009. Distant supervision for relation ex-
+traction without labeled data. In Proceedings of the
+47th Annual Meeting of the Association for Compu-
+tational Linguistics (ACL-2009), pages 1003–1011.
+Tom M. Mitchell, Justin Betteridge, Andrew Carlson,
+Estevam Hruschka, and Richard Wang. 2009. Pop-
+ulating the semantic web by macro-reading internet
+text. In The Semantic Web-ISWC 2009, pages 998–
+1002. Springer.
+Truc-Vien T. Nguyen and Alessandro Moschitti. 2011.
+End-to-end relation extraction using distant super-
+vision from external semantic repositories. In Pro-
+ceedings of the 49th Annual Meeting of the Associ-
+ation for Computational Linguistics: Human Lan-
+guage Technologies: Short Papers - Volume 2, HLT
+’11, pages 277–282, Stroudsburg, PA, USA. Associ-
+ation for Computational Linguistics.
+Lev Ratinov, Dan Roth, Doug Downey, and Mike
+Anderson. 2011. Local and global algorithms
+for disambiguation to wikipedia. In Proceedings
+of the 49th Annual Meeting of the Association for
+Computational Linguistics: Human Language Tech-
+nologies - Volume 1, HLT ’11, pages 1375–1384,
+Stroudsburg, PA, USA. Association for Computa-
+tional Linguistics.
+Sebastian Riedel, Limin Yao, and Andrew McCallum.
+2010. Modeling relations and their mentions with-
+out labeled text. In ECML/PKDD (3), pages 148–
+163.
+</reference>
+<page confidence="0.79794">
+1900
+</page>
+<reference confidence="0.999913">
+Sebastian Riedel, Limin Yao, Benjamin M. Marlin, and
+Andrew McCallum. 2013. Relation extraction with
+matrix factorization and universal schemas. In Joint
+Human Language Technology Conference/Annual
+Meeting of the North American Chapter of the Asso-
+ciation for Computational Linguistics (HLT-NAACL
+’13), June.
+Alan Ritter, Luke Zettlemoyer, Mausam, and Oren Et-
+zioni. 2013. Modeling missing data in distant super-
+vision for information extraction. TACL, 1:367–378.
+Benjamin Roth, Tassilo Barth, Michael Wiegand, and
+Dietrich Klakow. 2013. A survey of noise reduction
+methods for distant supervision. In Proceedings of
+the 2013 Workshop on Automated Knowledge Base
+Construction, AKBC ’13, pages 73–78, New York,
+NY, USA. ACM.
+Sameer Singh, Sebastian Riedel, Brian Martin, Jiaping
+Zheng, and Andrew McCallum. 2013. Joint infer-
+ence of entities, relations, and coreference. In CIKM
+Workshop on Automated Knowledge Base Construc-
+tion (AKBC).
+Pontus Stenetorp, Sampo Pyysalo, Goran Topi´c,
+Tomoko Ohta, Sophia Ananiadou, and Jun’ichi Tsu-
+jii. 2012. brat: a Web-based Tool for NLP-Assisted
+Text Annotation. In Proceedings of the Demonstra-
+tions at the 13th Conference of the European Chap-
+ter of the Association for Computational Linguistics,
+Stroudsburg, PA, USA, April. Association for Com-
+putational Linguistics.
+Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati,
+and Christopher D. Manning. 2012. Multi-instance
+multi-label learning for relation extraction. In Pro-
+ceedings of the 2012 Joint Conference on Empirical
+Methods in Natural Language Processing and Com-
+putational Natural Language Learning, pages 455–
+465. Association for Computational Linguistics.
+Shingo Takamatsu, Issei Sato, and Hiroshi Nakagawa.
+2012. Reducing wrong labels in distant supervi-
+sion for relation extraction. In Proceedings of the
+50th Annual Meeting of the Association for Compu-
+tational Linguistics: Long Papers - Volume 1, ACL
+’12, pages 721–729, Stroudsburg, PA, USA. Associ-
+ation for Computational Linguistics.
+Kristina Toutanova, Dan Klein, Christopher D. Man-
+ning, and Yoram Singer. 2003. Feature-rich part-of-
+speech tagging with a cyclic dependency network.
+In Proceedings of the 2003 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics on Human Language Technology
+- Volume 1, NAACL ’03, pages 173–180, Strouds-
+burg, PA, USA. Association for Computational Lin-
+guistics.
+Wei Xu, Zhao Le, Raphael Hoffmann, and Ralph Gr-
+ishman. 2013. Filling knowledge base gaps for dis-
+tant supervision of relation extraction. In Proceed-
+ings of the 2013 Conference of the Association for
+Computational Linguistics (ACL 2013), Sofia, Bul-
+garia, July. Association for Computational Linguis-
+tics.
+Congle Zhang, Raphael Hoffmann, and Daniel S.
+Weld. 2012. Ontological smoothing for relation ex-
+traction with minimal supervision. In AAAI.
+</reference>
+<page confidence="0.994145">
+1901
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.684036">
+<title confidence="0.9992775">Type-Aware Distantly Supervised Relation with Linked Arguments</title>
+<author confidence="0.999789">Mitchell Koch John Gilmer Stephen Soderland Daniel S</author>
+<affiliation confidence="0.9998465">Department of Computer Science &amp; University of</affiliation>
+<address confidence="0.995689">Seattle, WA 98195,</address>
+<email confidence="0.997336">mkoch@cs.washington.edu</email>
+<email confidence="0.997336">jgilme1@cs.washington.edu</email>
+<email confidence="0.997336">soderlan@cs.washington.edu</email>
+<email confidence="0.997336">weld@cs.washington.edu</email>
+<abstract confidence="0.979703357142857">Distant supervision has become the leading method for training large-scale relation extractors, with nearly universal adoption in recent TAC knowledge-base population competitions. However, there are still many questions about the best way to learn such extractors. In this paper we investigate four orthogonal improvements: integrating named entity linking (NEL) and coreference resolution into argument identification for training and extraction, enforcing type constraints of linked arguments, and partitioning the model by relation type signature. We evaluate sentential extraction performance on two datasets: the popular set of NY Times articles partially annotated by Hoffmann et al. (2011) and a new dataset, that is comprehensively annotated for 48 common relations. We find that using NEL for argument identification boosts performance over the traditional approach (named entity recognition with string match), and there is further improvement from using argument types. Our best system boosts precision by 44% and recall by 70%.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Andrew Carlson</author>
+<author>Justin Betteridge</author>
+<author>Bryan Kisiel</author>
+<author>Burr Settles</author>
+<author>Estevam R Hruschka Jr</author>
+<author>Tom M Mitchell</author>
+</authors>
+<title>Toward an architecture for neverending language learning.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI10).</booktitle>
+<contexts>
+<context position="21082" citStr="Carlson et al., 2010" startWordPosition="3381" endWordPosition="3384">ation/location/contains dominate the results (and are relatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m /business/employment_tenure/company , in this case representing employment. We bring in an additional 20 relations of this form, also under /person, /business, and /organization. Additionally we use NELL (Carlson et al., 2010a) relations mapped to Freebase by Zhang et al. (2012). We only include a relation in our set of target relations if both of its entity arguments are contained in the set of entities found via NER with exact string match or NEL over the training corpus. We also remove inverse relations, since they represent needless duplication. This gives us a set 1895 R of 105 target relations based on joins and unions of Freebase properties. Of the 105 target relations, 48 were used at least once in the GORECO data. 6 Experiments and Results We conduct experiments to determine how changing distantly supervi</context>
+<context position="33495" citStr="Carlson et al. (2010" startWordPosition="5440" endWordPosition="5443">traints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not u</context>
+</contexts>
+<marker>Carlson, Betteridge, Kisiel, Settles, Jr, Mitchell, 2010</marker>
+<rawString>Andrew Carlson, Justin Betteridge, Bryan Kisiel, Burr Settles, Estevam R. Hruschka Jr., and Tom M. Mitchell. 2010a. Toward an architecture for neverending language learning. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI10).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew Carlson</author>
+<author>Justin Betteridge</author>
+<author>Richard C Wang</author>
+<author>Estevam R Hruschka</author>
+<author>Tom M Mitchell</author>
+</authors>
+<title>Coupled semi-supervised learning for information extraction.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Third ACM International Conference on Web Search and Data Mining, WSDM ’10,</booktitle>
+<pages>101--110</pages>
+<publisher>ACM.</publisher>
+<location>New York, NY, USA.</location>
+<contexts>
+<context position="21082" citStr="Carlson et al., 2010" startWordPosition="3381" endWordPosition="3384">ation/location/contains dominate the results (and are relatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m /business/employment_tenure/company , in this case representing employment. We bring in an additional 20 relations of this form, also under /person, /business, and /organization. Additionally we use NELL (Carlson et al., 2010a) relations mapped to Freebase by Zhang et al. (2012). We only include a relation in our set of target relations if both of its entity arguments are contained in the set of entities found via NER with exact string match or NEL over the training corpus. We also remove inverse relations, since they represent needless duplication. This gives us a set 1895 R of 105 target relations based on joins and unions of Freebase properties. Of the 105 target relations, 48 were used at least once in the GORECO data. 6 Experiments and Results We conduct experiments to determine how changing distantly supervi</context>
+<context position="33495" citStr="Carlson et al. (2010" startWordPosition="5440" endWordPosition="5443">traints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not u</context>
+</contexts>
+<marker>Carlson, Betteridge, Wang, Hruschka, Mitchell, 2010</marker>
+<rawString>Andrew Carlson, Justin Betteridge, Richard C. Wang, Estevam R. Hruschka, Jr., and Tom M. Mitchell. 2010b. Coupled semi-supervised learning for information extraction. In Proceedings of the Third ACM International Conference on Web Search and Data Mining, WSDM ’10, pages 101–110, New York, NY, USA. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+<author>Mark Johnson</author>
+</authors>
+<title>Coarseto-fine n-best parsing and maxent discriminative reranking.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05,</booktitle>
+<pages>173--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="23213" citStr="Charniak and Johnson, 2005" startWordPosition="3728" endWordPosition="3731">rministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer, part of speech tagger (Toutanova et al., 2003), and dependency parser (de Marneffe and Manning, 2008), and use the Charniak Johnson constiuent parser (Charniak and Johnson, 2005). For negative training generation, we take a similar approach to Riedel et al. (2010) and define a percentage parameter n of the number of negative instances divided by the number of total instances. Experimenting with n E {0, 20%,80%}, we find that n = 20% works best for our evaluations, optimizing for F1, although using 80% negative training gives high precision at lower recall. We use frequency-based feature selection to eliminate features that appear less than 10 times, which is helpful both for reducing overfitting as well as 0 0.1 0.2 0.3 0.4 0.5 0.6 Relative Recall Figure 2: Methods ev</context>
+</contexts>
+<marker>Charniak, Johnson, 2005</marker>
+<rawString>Eugene Charniak and Mark Johnson. 2005. Coarseto-fine n-best parsing and maxent discriminative reranking. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05, pages 173–180, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiao Cheng</author>
+<author>Dan Roth</author>
+</authors>
+<title>Relational inference for wikification.</title>
+<date>2013</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="11506" citStr="Cheng and Roth, 2013" startWordPosition="1830" endWordPosition="1833">is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define three stages that NEL systems take to perform this task: extraction (mention detection), search (generating candidate KB entities for a mention), and disambiguation (selecting the best entity for a mention). There has been much work on the task of NEL in recent years (Milne and Witten, 2008; Kulkarni et al., 2009; Ratinov et al., 2011; Cheng and Roth, 2013). Our definition of a function ArgIdent(D) is completely served by an NEL system. It can find any entity in the KB, and those entities are grounded. Additionally, NEL can have overlapping mentions as well as support for abbreviated mentions like “Obama”, or acronyms like “US”. NEL does not seek to capture anaphoric mentions, however. 3.3 Coreference Resolution Coreference resolution is the task of clustering mentions of entities together, typically within a single document. Using coreference, we can find even more mentions than NEL, since it can find pronouns and anaphoric mentions. We seek to</context>
+</contexts>
+<marker>Cheng, Roth, 2013</marker>
+<rawString>Xiao Cheng and Dan Roth. 2013. Relational inference for wikification. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Silviu Cucerzan</author>
+</authors>
+<title>Large-scale named entity disambiguation based on wikipedia data. In EMNLPCoNLL,</title>
+<date>2007</date>
+<pages>708--716</pages>
+<contexts>
+<context position="33839" citStr="Cucerzan, 2007" startWordPosition="5496" endWordPosition="5497">et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not use NEL. Ling and Weld (2013) extend MULTIR to find meronym relations in a biology textbook. They get slight improvement over NER by using coreference to pick the best mention of an entity in the sentence for the meronym relation at training and extraction time. 8 Conclusions and Future Work Given the growing importance of distant supervision,</context>
+</contexts>
+<marker>Cucerzan, 2007</marker>
+<rawString>Silviu Cucerzan. 2007. Large-scale named entity disambiguation based on wikipedia data. In EMNLPCoNLL, pages 708–716.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marie-Catherine de Marneffe</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>The stanford typed dependencies representation.</title>
+<date>2008</date>
+<booktitle>In Coling 2008: Proceedings of the Workshop on Cross-Framework and Cross-Domain Parser Evaluation, CrossParser ’08,</booktitle>
+<pages>1--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<marker>de Marneffe, Manning, 2008</marker>
+<rawString>Marie-Catherine de Marneffe and Christopher D. Manning. 2008. The stanford typed dependencies representation. In Coling 2008: Proceedings of the Workshop on Cross-Framework and Cross-Domain Parser Evaluation, CrossParser ’08, pages 1–8, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>George R Doddington</author>
+<author>Alexis Mitchell</author>
+<author>Mark A Przybocki</author>
+<author>Lance A Ramshaw</author>
+<author>Stephanie Strassel</author>
+<author>Ralph M Weischedel</author>
+</authors>
+<title>The automatic content extraction (ace) program-tasks, data, and evaluation.</title>
+<date>2004</date>
+<booktitle>In LREC.</booktitle>
+<contexts>
+<context position="5782" citStr="Doddington et al., 2004" startWordPosition="874" endWordPosition="878">ng and extraction using both NEL and coreference, partitioning the model by relation type signatures, and enforcing type constraints of linked arguments as a postprocessing step. While some of these ideas may seem straightforward, to our knowledge they have not been systematically studied. And, as we show, they lead to dramatic improvements. • Since previous datasets are incapable of measuring an extractor’s true recall, we introduce GORECO, a new exhaustively-labeled dataset with gold annotations for sentential instances of 48 relations across 128 newswire documents from the ACE 2004 corpus (Doddington et al., 2004). • We demonstrate that NEL argument identification boosts both precision and recall, and using type constraints with linked arguments further boosts precision, yielding a 43% increase in precision and 27% boost to recall. Using coreference during training argument identification gives an additional 7% improvement to precision and further boosts recall by 9%. Partitioning the model by relation type signature offers further benefits, so our best system yields a total boost of 44% to precision and 70% to recall. 2 Distantly Supervised Extraction At a sentence-level, the goal for relation extract</context>
+<context position="18231" citStr="Doddington et al., 2004" startWordPosition="2920" endWordPosition="2923">reference each has its own definition of what a mention boundary should be), we want gold relation annotations over coreference clusters broadly defined to allow mentions obtained from NER and NEL, as well as gold coreference mentions. So as long as a relation extraction system extracts a relation annotation s→R(m1, m2) where m1 and m2 are allowed options (based on text spans), it will get credit for extracting the relation annotation. We introduce the GORECO (gold relations and coreference) evaluation to satisfy these constraints. We start with an existing gold coreference dataset, ACE 2004 (Doddington et al., 2004) newswire, consisting of 128 documents. To get relation annotations over coreference clusters, we define two human annotation tasks and use the BRAT (Stenetorp et al., 2012) tool for visualization and relation and coreference annotations. Relation Annotation The annotator is presented with a document with gold mentions indicated and asked to determine for each sentence, what facts involving target relations are expressed by the sentence. They draw an arrow for each fact and label it with the relation. They also have the ability to add mentions not present (ReAnn mentions). Supplemental Corefer</context>
+</contexts>
+<marker>Doddington, Mitchell, Przybocki, Ramshaw, Strassel, Weischedel, 2004</marker>
+<rawString>George R. Doddington, Alexis Mitchell, Mark A. Przybocki, Lance A. Ramshaw, Stephanie Strassel, and Ralph M. Weischedel. 2004. The automatic content extraction (ace) program-tasks, data, and evaluation. In LREC.</rawString>
+</citation>
+<citation valid="true">
+<title>WordNet: an electronic lexical database.</title>
+<date>1998</date>
+<editor>Christiane Fellbaum, editor.</editor>
+<publisher>MIT Press.</publisher>
+<marker>1998</marker>
+<rawString>Christiane Fellbaum, editor. 1998. WordNet: an electronic lexical database. MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jenny Rose Finkel</author>
+<author>Trond Grenager</author>
+<author>Christopher Manning</author>
+</authors>
+<title>Incorporating non-local information into information extraction systems by gibbs sampling.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05,</booktitle>
+<pages>363--370</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="10322" citStr="Finkel et al., 2005" startWordPosition="1629" endWordPosition="1632">nt identification function ArgIdento(D), which takes a document D, finds potential arguments, and links them to entities in A if possible, yielding m, a set of grounded mentions in D. Previous relation extraction systems have based this on NER. We evaluate NER-based argument identification against argument identification based on NEL, as well as NEL with coreference. 3.1 Named Entity Recognition Named entity recognition (NER) tags spans of tokens with basic types such as PERSON, ORGANIZATION, LOCATION, and MISC. This is a high accuracy tagging task often performed using a sequence classifier (Finkel et al., 2005). Relation extraction systems can base their argument identification on NER, by using NER to identify text spans indicating entities and then find corresponding entities in the KB through exact string match (Riedel et al., 2010). Some downsides of using NER with exact string match for relation extraction is that it does not allow for overlapping mentions, it can only capture arguments with full names, and it can only capture arguments with types of the NER system, e.g., “politician” might not be captured. 3.2 Named Entity Linking Named entity linking (NEL) is the task of grounding textual ment</context>
+<context position="22289" citStr="Finkel et al., 2005" startWordPosition="3585" endWordPosition="3588">antly supervised relation extraction along various dimensions affects performance. We examine the choice of argument identification during training and extraction, as well as the effects of model type partitioning, and type constraints. We consider the space of all combinations of these dimensions, but focus on specific combinations where we find improvements. 6.1 Relation Extraction Setup We use and modify Hoffmann et al. (2011)’s system MULTIR to control our experiments and as a baseline. For NER argument identification as well as for the use of NER in the features, we use use Stanford NER (Finkel et al., 2005). For NEL argument identification we use Wikipedia Miner with the default threshold 0.5, and allowing repeated mentions (Milne and Witten, 2008). Since Wikipedia Miner does not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexic</context>
+</contexts>
+<marker>Finkel, Grenager, Manning, 2005</marker>
+<rawString>Jenny Rose Finkel, Trond Grenager, and Christopher Manning. 2005. Incorporating non-local information into information extraction systems by gibbs sampling. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05, pages 363–370, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Google</author>
+</authors>
+<title>Freebase data dumps.</title>
+<date>2012</date>
+<note>https://developers.google.com/ freebase/data.</note>
+<contexts>
+<context position="20689" citStr="Google, 2012" startWordPosition="3326" endWordPosition="3327"> set. 5.2.1 Target Relations Since we use a different evaluation, we also seek to choose a more comprehensive and interesting set of relations than prior work. Riedel et al. (2010), whose train and test data is also used by Hoffmann et al. (2011) and Surdeanu et al. (2012), use Freebase properties under domains /people, /business, and /location. Since /location relations such as /location/location/contains dominate the results (and are relatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m /business/employment_tenure/company , in this case representing employment. We bring in an additional 20 relations of this form, also under /person, /business, and /organization. Additionally we use NELL (Carlson et al., 2010a) relations mapped to Freebase by Zhang et al. (2012). We only include a relation in our set of target relations if both of its entity arguments are contained in the set of entities found via NER with exact</context>
+</contexts>
+<marker>Google, 2012</marker>
+<rawString>Google. 2012. Freebase data dumps. https://developers.google.com/ freebase/data.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ben Hachey</author>
+<author>Will Radford</author>
+<author>Joel Nothman</author>
+<author>Matthew Honnibal</author>
+<author>James R Curran</author>
+</authors>
+<title>Evaluating entity linking with wikipedia.</title>
+<date>2013</date>
+<journal>Artif. Intell.,</journal>
+<volume>194</volume>
+<contexts>
+<context position="11139" citStr="Hachey et al. (2013)" startWordPosition="1770" endWordPosition="1773">ing match (Riedel et al., 2010). Some downsides of using NER with exact string match for relation extraction is that it does not allow for overlapping mentions, it can only capture arguments with full names, and it can only capture arguments with types of the NER system, e.g., “politician” might not be captured. 3.2 Named Entity Linking Named entity linking (NEL) is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define three stages that NEL systems take to perform this task: extraction (mention detection), search (generating candidate KB entities for a mention), and disambiguation (selecting the best entity for a mention). There has been much work on the task of NEL in recent years (Milne and Witten, 2008; Kulkarni et al., 2009; Ratinov et al., 2011; Cheng and Roth, 2013). Our definition of a function ArgIdent(D) is completely served by an NEL system. It can find any entity in the KB, and those entities are grounded. Additionally, NEL can have overlapping mentions as well as support for abbreviated m</context>
+</contexts>
+<marker>Hachey, Radford, Nothman, Honnibal, Curran, 2013</marker>
+<rawString>Ben Hachey, Will Radford, Joel Nothman, Matthew Honnibal, and James R. Curran. 2013. Evaluating entity linking with wikipedia. Artif. Intell., 194:130–150, January.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hannaneh Hajishirzi</author>
+<author>Leila Zilles</author>
+<author>Daniel S Weld</author>
+<author>Luke S Zettlemoyer</author>
+</authors>
+<title>Joint coreference resolution and named-entity linking with multi-pass sieves.</title>
+<date>2013</date>
+<booktitle>In EMNLP,</booktitle>
+<pages>289--299</pages>
+<publisher>ACL.</publisher>
+<contexts>
+<context position="33865" citStr="Hajishirzi et al., 2013" startWordPosition="5498" endWordPosition="5502">tter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not use NEL. Ling and Weld (2013) extend MULTIR to find meronym relations in a biology textbook. They get slight improvement over NER by using coreference to pick the best mention of an entity in the sentence for the meronym relation at training and extraction time. 8 Conclusions and Future Work Given the growing importance of distant supervision, a comprehensive understan</context>
+</contexts>
+<marker>Hajishirzi, Zilles, Weld, Zettlemoyer, 2013</marker>
+<rawString>Hannaneh Hajishirzi, Leila Zilles, Daniel S. Weld, and Luke S. Zettlemoyer. 2013. Joint coreference resolution and named-entity linking with multi-pass sieves. In EMNLP, pages 289–299. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Raphael Hoffmann</author>
+<author>Congle Zhang</author>
+<author>Xiao Ling</author>
+<author>Luke Zettlemoyer</author>
+<author>Daniel S Weld</author>
+</authors>
+<title>Knowledge-based weak supervision for information extraction of overlapping relations.</title>
+<date>2011</date>
+<booktitle>In ACL-HLT,</booktitle>
+<pages>541--550</pages>
+<contexts>
+<context position="980" citStr="Hoffmann et al. (2011)" startWordPosition="130" endWordPosition="133">relation extractors, with nearly universal adoption in recent TAC knowledge-base population competitions. However, there are still many questions about the best way to learn such extractors. In this paper we investigate four orthogonal improvements: integrating named entity linking (NEL) and coreference resolution into argument identification for training and extraction, enforcing type constraints of linked arguments, and partitioning the model by relation type signature. We evaluate sentential extraction performance on two datasets: the popular set of NY Times articles partially annotated by Hoffmann et al. (2011) and a new dataset, called GORECO, that is comprehensively annotated for 48 common relations. We find that using NEL for argument identification boosts performance over the traditional approach (named entity recognition with string match), and there is further improvement from using argument types. Our best system boosts precision by 44% and recall by 70%. 1 Introduction Relation extractors are commonly trained by distant supervision (also known as knowledge-based weak supervision (Hoffmann et al., 2011)), an autonomous technique that creates a labeled training set by heuristically matching th</context>
+<context position="8584" citStr="Hoffmann et al. (2011)" startWordPosition="1350" endWordPosition="1353">d m2. There are several heuristics for generating negative instances, and the number of negative examples and how they are treated can greatly affect performance (Min et al., 2013). Because the distant supervision hypothesis often does not hold, this training data is noisy. That a fact is in the KB does not imply that the sentence in question is expressing the relation. There has been much work in combating noise in distant supervision training data, but one of the most successful ideas is to train a multi-instance classifier which assumes at-least-one relation holds for positive bags. We use Hoffmann et al. (2011)’s MULTIR system, which uses a probabilistic graphical model to jointly reason at the corpus-level and sentence-level, handles overlapping relations in the KB so that multiple relations can hold over an entity pair, and scales to large datasets. 2.2 Extraction The trained relation extractor can assign a most likely relation and a confidence score to a sentential instance (s, m1, m2). To get these sentential instances, argument identification and sentential instance generation are applied to new documents. Then the relation extractor potentially yields a relation annotation of the form s→R(m1, </context>
+<context position="15771" citStr="Hoffmann et al. (2011)" startWordPosition="2519" endWordPosition="2523">ver, we take a micro-reading approach in order to strictly evaluate whether a relation extractor is able to extract every fact expressed by a sentence s—*R(m1, m2). Micro-reading is more difficult, but it provides fully semantic information at the sentence and document level allowing detailed justifications, and, for our purposes, allows us to better understand the effects of our modifications. In order to fairly evaluate different systems, even those using different methods of argument identification, we want to use gold evaluation data allowing for varying mention types. We additionally use Hoffmann et al. (2011)’s sentential evaluation as-is in order to better compare with prior work. For our training corpus, we use the TAC-KBP 2009 (McNamee and Dang, 2009) English newswire corpus containing one million documents with 27 million sentences. 5.1 Hoffmann et al. Sentential Evaluation Hoffmann et al. (2011) generated their gold data by taking the union of sentential instances where some system being evaluated extracted a relation as well as the sentential instances matching arguments in the KB. They took a random sample of these sentential instances and manually labeled them with either a single relation</context>
+<context position="17449" citStr="Hoffmann et al. (2011)" startWordPosition="2794" endWordPosition="2797"> it impossible to determine if the use of NEL or 1894 coreference confers any benefit. Finally, it does not allow for the possibility that there may be multiple relations that should be extracted for a pair of arguments. For example, a CeoOf relation, and an EmployedBy relation might both be present for (Larry Page, Google). To address these issues, we manually annotate a full set of documents with relation annotations. Because we are evaluating changing various aspects of the distant supervision process, we cannot use Riedel et al. (2010)’s distant supervision data as-is as others did on the Hoffmann et al. (2011) sentential evaluation. Instead, we use the TAC-KBP data described above. 5.2 GoReCo Evaluation In order to allow for variations on mentions (NER, NEL, and coreference each has its own definition of what a mention boundary should be), we want gold relation annotations over coreference clusters broadly defined to allow mentions obtained from NER and NEL, as well as gold coreference mentions. So as long as a relation extraction system extracts a relation annotation s→R(m1, m2) where m1 and m2 are allowed options (based on text spans), it will get credit for extracting the relation annotation. We</context>
+<context position="19911" citStr="Hoffmann et al. (2011)" startWordPosition="3199" endWordPosition="3202">) and found mistakes by having others check the work, as well as checking false positives of relation extractors on the development set to find patterns of annotation mistakes. On average, there are 7 relation annotations per document. For the GORECO evaluation, we define our train/test split (with the separate TAC-KBP corpus used for training) such that each has a different set of documents and entities, in order to evaluate how well the system performs on unseen entities. To do this, we remove entities found in the gold evaluation set from the training KB. (We do not remove entities for the Hoffmann et al. (2011) evaluation, since they do not.) We choose the threshold confidence score for each system using the development set to optimize for F1 and report results on the test set. 5.2.1 Target Relations Since we use a different evaluation, we also seek to choose a more comprehensive and interesting set of relations than prior work. Riedel et al. (2010), whose train and test data is also used by Hoffmann et al. (2011) and Surdeanu et al. (2012), use Freebase properties under domains /people, /business, and /location. Since /location relations such as /location/location/contains dominate the results (and</context>
+<context position="22102" citStr="Hoffmann et al. (2011)" startWordPosition="3550" endWordPosition="3553">nd unions of Freebase properties. Of the 105 target relations, 48 were used at least once in the GORECO data. 6 Experiments and Results We conduct experiments to determine how changing distantly supervised relation extraction along various dimensions affects performance. We examine the choice of argument identification during training and extraction, as well as the effects of model type partitioning, and type constraints. We consider the space of all combinations of these dimensions, but focus on specific combinations where we find improvements. 6.1 Relation Extraction Setup We use and modify Hoffmann et al. (2011)’s system MULTIR to control our experiments and as a baseline. For NER argument identification as well as for the use of NER in the features, we use use Stanford NER (Finkel et al., 2005). For NEL argument identification we use Wikipedia Miner with the default threshold 0.5, and allowing repeated mentions (Milne and Witten, 2008). Since Wikipedia Miner does not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overla</context>
+<context position="23861" citStr="Hoffmann et al. (2011)" startWordPosition="3843" endWordPosition="3846">neration, we take a similar approach to Riedel et al. (2010) and define a percentage parameter n of the number of negative instances divided by the number of total instances. Experimenting with n E {0, 20%,80%}, we find that n = 20% works best for our evaluations, optimizing for F1, although using 80% negative training gives high precision at lower recall. We use frequency-based feature selection to eliminate features that appear less than 10 times, which is helpful both for reducing overfitting as well as 0 0.1 0.2 0.3 0.4 0.5 0.6 Relative Recall Figure 2: Methods evaluated in the context of Hoffmann et al. (2011)’s sentential extraction evaluation. NER: our NER baseline used for training and extraction, LT: use NEL for training only, CT: use coreference for training only. (NER+LT+CT means we use NER for extraction, and NEL+Coref for training.) constraining memory usage. Since the perceptron learning of MULTIR is sensitive to instance ordering, we perform 10 random shuffles and average the models. For model type partitioning, when training with NER, we ensure that the NER types match the coarse relation type signatures. For NEL, we attempt to use NER for coarse types of arguments, but if an NER type is</context>
+<context position="25145" citStr="Hoffmann et al. (2011)" startWordPosition="4065" endWordPosition="4068"> and Weld, 2012) to its coarse type. For type constraints, we use Freebase’s expected input and output types for relations. For NIL links, we use the NER type of PERSON, ORGANIZATION, or LOCATION, if available, mapping it to appropriate Freebase types. 6.2 NER Baseline As a result of a larger training set, as well as model averaging, our baseline, which is otherwise equivalent to the methods of Hoffmann et al. (2011) and uses their MULTIR system, has slightly higher precision as shown in Figure 2, curve NER. It is also higher than that of Xu et al. (2013), who achieved higher performance than Hoffmann et al. (2011); our baseline gets 89.9% precision and 59.6% relative recall, while Xu et al. (2013)’s system gets 84.6% precision and 56.1% relative recall. See Figure 3 and Table 1 for results on GORECO. 6.3 NEL and Type Constraints On GORECO, using NEL argument identification increases recall and gives higher precision over the entire curve. We further find that filtering results using type constraints gives a large boost in preNER NER+LT NER+LT+CT Hoffmann et al. (2011) Precision 1 0.9 0.8 0.7 1896 cision at a small cost to recall. Note the increase in performance from NER to NEL to NEL+TC in Figure 3a, </context>
+<context position="32671" citStr="Hoffmann et al. (2011)" startWordPosition="5313" endWordPosition="5316">nCitytown 4 3 1 AthletePlaysForTeam 2 2 0 OrgType 1 1 0 Table 2: By-relation evaluation of the best system (NEL with type constraints and type partitioning) on the GORECO test set. The true positives (TP) are the number of gold relations over coreference clusters that matched, so multiple extractions can match a single true positive. 7 Related Work There has been much recent work on distantly supervised relation extraction. Mintz et al. (2009) use Freebase to train relation extractors over Wikipedia without labeled data using multi-class logistic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. </context>
+<context position="35020" citStr="Hoffmann et al. (2011)" startWordPosition="5692" endWordPosition="5695">rowing importance of distant supervision, a comprehensive understanding of its variants is crucial. While some of the optimizations we propose may seem intuitive, they have not previously been systematically explored. Our experiments show that NEL, type constraints, and type partitioning are extremely important in order to best take advantage of the seed KB during training as well as known information at extraction time. Our best system results in a 44% increase in precision, and a 70% increase in recall over our NER baseline using GORECO. While we were not able to evaluate all our methods on Hoffmann et al. (2011)’s sentential evaluation, our baseline performs significantly better than previous methods, especially in precision, and training-only modifications perform similarly in both evaluations. Future work will explore the use of NEL in distantly supervised relation extraction further, tuning a confidence parameter for the NEL system, and determining whether different confidence parameters should be used for training and extraction. Another possible direction is interleaving NEL with relation extraction by using newly extracted facts to try to improve NEL performance. We freely distribute GORECO a n</context>
+</contexts>
+<marker>Hoffmann, Zhang, Ling, Zettlemoyer, Weld, 2011</marker>
+<rawString>Raphael Hoffmann, Congle Zhang, Xiao Ling, Luke Zettlemoyer, and Daniel S. Weld. 2011. Knowledge-based weak supervision for information extraction of overlapping relations. In ACL-HLT, pages 541–550.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sayali Kulkarni</author>
+<author>Amit Singh</author>
+<author>Ganesh Ramakrishnan</author>
+<author>Soumen Chakrabarti</author>
+</authors>
+<title>Collective annotation of wikipedia entities in web text.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 15th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, KDD ’09,</booktitle>
+<pages>457--466</pages>
+<publisher>ACM.</publisher>
+<location>New York, NY, USA.</location>
+<contexts>
+<context position="11461" citStr="Kulkarni et al., 2009" startWordPosition="1822" endWordPosition="1825">ed Entity Linking Named entity linking (NEL) is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define three stages that NEL systems take to perform this task: extraction (mention detection), search (generating candidate KB entities for a mention), and disambiguation (selecting the best entity for a mention). There has been much work on the task of NEL in recent years (Milne and Witten, 2008; Kulkarni et al., 2009; Ratinov et al., 2011; Cheng and Roth, 2013). Our definition of a function ArgIdent(D) is completely served by an NEL system. It can find any entity in the KB, and those entities are grounded. Additionally, NEL can have overlapping mentions as well as support for abbreviated mentions like “Obama”, or acronyms like “US”. NEL does not seek to capture anaphoric mentions, however. 3.3 Coreference Resolution Coreference resolution is the task of clustering mentions of entities together, typically within a single document. Using coreference, we can find even more mentions than NEL, since it can fin</context>
+</contexts>
+<marker>Kulkarni, Singh, Ramakrishnan, Chakrabarti, 2009</marker>
+<rawString>Sayali Kulkarni, Amit Singh, Ganesh Ramakrishnan, and Soumen Chakrabarti. 2009. Collective annotation of wikipedia entities in web text. In Proceedings of the 15th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, KDD ’09, pages 457–466, New York, NY, USA. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Heeyoung Lee</author>
+<author>Angel Chang</author>
+<author>Yves Peirsman</author>
+<author>Nathanael Chambers</author>
+<author>Mihai Surdeanu</author>
+<author>Dan Jurafsky</author>
+</authors>
+<title>Deterministic coreference resolution based on entity-centric, precision-ranked rules.</title>
+<date>2013</date>
+<journal>Comput. Linguist.,</journal>
+<volume>39</volume>
+<issue>4</issue>
+<contexts>
+<context position="22633" citStr="Lee et al., 2013" startWordPosition="3637" endWordPosition="3640">d improvements. 6.1 Relation Extraction Setup We use and modify Hoffmann et al. (2011)’s system MULTIR to control our experiments and as a baseline. For NER argument identification as well as for the use of NER in the features, we use use Stanford NER (Finkel et al., 2005). For NEL argument identification we use Wikipedia Miner with the default threshold 0.5, and allowing repeated mentions (Milne and Witten, 2008). Since Wikipedia Miner does not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer, part of speech tagger (Toutanova et al., 2003), and dependency parser (de Marneffe and Manning, 2008), and use the Charniak Johnson constiuent parser (Charniak and Johnson, 2005). For negative train</context>
+</contexts>
+<marker>Lee, Chang, Peirsman, Chambers, Surdeanu, Jurafsky, 2013</marker>
+<rawString>Heeyoung Lee, Angel Chang, Yves Peirsman, Nathanael Chambers, Mihai Surdeanu, and Dan Jurafsky. 2013. Deterministic coreference resolution based on entity-centric, precision-ranked rules. Comput. Linguist., 39(4):885–916, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiao Ling</author>
+<author>Daniel S Weld</author>
+</authors>
+<title>Fine-grained entity recognition.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 26th Conference on Artificial Intelligence (AAAI).</booktitle>
+<contexts>
+<context position="24539" citStr="Ling and Weld, 2012" startWordPosition="3958" endWordPosition="3961"> used for training and extraction, LT: use NEL for training only, CT: use coreference for training only. (NER+LT+CT means we use NER for extraction, and NEL+Coref for training.) constraining memory usage. Since the perceptron learning of MULTIR is sensitive to instance ordering, we perform 10 random shuffles and average the models. For model type partitioning, when training with NER, we ensure that the NER types match the coarse relation type signatures. For NEL, we attempt to use NER for coarse types of arguments, but if an NER type is not present, we map the Freebase type to its FIGER type (Ling and Weld, 2012) to its coarse type. For type constraints, we use Freebase’s expected input and output types for relations. For NIL links, we use the NER type of PERSON, ORGANIZATION, or LOCATION, if available, mapping it to appropriate Freebase types. 6.2 NER Baseline As a result of a larger training set, as well as model averaging, our baseline, which is otherwise equivalent to the methods of Hoffmann et al. (2011) and uses their MULTIR system, has slightly higher precision as shown in Figure 2, curve NER. It is also higher than that of Xu et al. (2013), who achieved higher performance than Hoffmann et al. </context>
+</contexts>
+<marker>Ling, Weld, 2012</marker>
+<rawString>Xiao Ling and Daniel S. Weld. 2012. Fine-grained entity recognition. In Proceedings of the 26th Conference on Artificial Intelligence (AAAI).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiao Ling</author>
+<author>Daniel S Weld</author>
+</authors>
+<title>Extracting meronyms for a biology knowledge base using distant supervision.</title>
+<date>2013</date>
+<booktitle>In Automated Knowledge Base Construction (AKBC) 2013: The 3rd Workshop on Knowledge Extraction at CIKM.</booktitle>
+<contexts>
+<context position="34123" citStr="Ling and Weld (2013)" startWordPosition="5539" endWordPosition="5542">any others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not use NEL. Ling and Weld (2013) extend MULTIR to find meronym relations in a biology textbook. They get slight improvement over NER by using coreference to pick the best mention of an entity in the sentence for the meronym relation at training and extraction time. 8 Conclusions and Future Work Given the growing importance of distant supervision, a comprehensive understanding of its variants is crucial. While some of the optimizations we propose may seem intuitive, they have not previously been systematically explored. Our experiments show that NEL, type constraints, and type partitioning are extremely important in order to </context>
+</contexts>
+<marker>Ling, Weld, 2013</marker>
+<rawString>Xiao Ling and Daniel S. Weld. 2013. Extracting meronyms for a biology knowledge base using distant supervision. In Automated Knowledge Base Construction (AKBC) 2013: The 3rd Workshop on Knowledge Extraction at CIKM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Paul McNamee</author>
+<author>Hoa Trang Dang</author>
+</authors>
+<title>Overview of the tac 2009 knowledge base population track.</title>
+<date>2009</date>
+<booktitle>In Text Analysis Conference (TAC),</booktitle>
+<volume>17</volume>
+<pages>111--113</pages>
+<contexts>
+<context position="15919" citStr="McNamee and Dang, 2009" startWordPosition="2544" endWordPosition="2548">nce s—*R(m1, m2). Micro-reading is more difficult, but it provides fully semantic information at the sentence and document level allowing detailed justifications, and, for our purposes, allows us to better understand the effects of our modifications. In order to fairly evaluate different systems, even those using different methods of argument identification, we want to use gold evaluation data allowing for varying mention types. We additionally use Hoffmann et al. (2011)’s sentential evaluation as-is in order to better compare with prior work. For our training corpus, we use the TAC-KBP 2009 (McNamee and Dang, 2009) English newswire corpus containing one million documents with 27 million sentences. 5.1 Hoffmann et al. Sentential Evaluation Hoffmann et al. (2011) generated their gold data by taking the union of sentential instances where some system being evaluated extracted a relation as well as the sentential instances matching arguments in the KB. They took a random sample of these sentential instances and manually labeled them with either a single relation or NA. Although this process provides good coverage, since is is sampled from extractions over a large corpus, it does not allow one to measure tru</context>
+</contexts>
+<marker>McNamee, Dang, 2009</marker>
+<rawString>Paul McNamee and Hoa Trang Dang. 2009. Overview of the tac 2009 knowledge base population track. In Text Analysis Conference (TAC), volume 17, pages 111–113.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Milne</author>
+<author>Ian H Witten</author>
+</authors>
+<title>Learning to link with wikipedia.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 17th ACM Conference on Information and Knowledge Management, CIKM ’08,</booktitle>
+<pages>509--518</pages>
+<publisher>ACM.</publisher>
+<location>New York, NY, USA.</location>
+<contexts>
+<context position="11438" citStr="Milne and Witten, 2008" startWordPosition="1818" endWordPosition="1821">not be captured. 3.2 Named Entity Linking Named entity linking (NEL) is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define three stages that NEL systems take to perform this task: extraction (mention detection), search (generating candidate KB entities for a mention), and disambiguation (selecting the best entity for a mention). There has been much work on the task of NEL in recent years (Milne and Witten, 2008; Kulkarni et al., 2009; Ratinov et al., 2011; Cheng and Roth, 2013). Our definition of a function ArgIdent(D) is completely served by an NEL system. It can find any entity in the KB, and those entities are grounded. Additionally, NEL can have overlapping mentions as well as support for abbreviated mentions like “Obama”, or acronyms like “US”. NEL does not seek to capture anaphoric mentions, however. 3.3 Coreference Resolution Coreference resolution is the task of clustering mentions of entities together, typically within a single document. Using coreference, we can find even more mentions tha</context>
+<context position="22433" citStr="Milne and Witten, 2008" startWordPosition="3607" endWordPosition="3610">aining and extraction, as well as the effects of model type partitioning, and type constraints. We consider the space of all combinations of these dimensions, but focus on specific combinations where we find improvements. 6.1 Relation Extraction Setup We use and modify Hoffmann et al. (2011)’s system MULTIR to control our experiments and as a baseline. For NER argument identification as well as for the use of NER in the features, we use use Stanford NER (Finkel et al., 2005). For NEL argument identification we use Wikipedia Miner with the default threshold 0.5, and allowing repeated mentions (Milne and Witten, 2008). Since Wikipedia Miner does not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer</context>
+</contexts>
+<marker>Milne, Witten, 2008</marker>
+<rawString>David Milne and Ian H. Witten. 2008. Learning to link with wikipedia. In Proceedings of the 17th ACM Conference on Information and Knowledge Management, CIKM ’08, pages 509–518, New York, NY, USA. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bonan Min</author>
+<author>Ralph Grishman</author>
+<author>Li Wan</author>
+<author>Chang Wang</author>
+<author>David Gondek</author>
+</authors>
+<title>Distant supervision for relation extraction with an incomplete knowledge base.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL-HLT,</booktitle>
+<pages>777--782</pages>
+<contexts>
+<context position="8142" citStr="Min et al., 2013" startWordPosition="1273" endWordPosition="1276">se sentential instances can be matched to the seed KB, yielding candidate relation annotations of the form s→R(m1, m2) by finding all relations that hold over the entities in a sentential instance. These candidate relation annotations are all positive instances to use for training. Negative instance generation is also performed, generating 1892 negative examples of the form s→NA(m1, m2) indicating that no relation holds between m1 and m2. There are several heuristics for generating negative instances, and the number of negative examples and how they are treated can greatly affect performance (Min et al., 2013). Because the distant supervision hypothesis often does not hold, this training data is noisy. That a fact is in the KB does not imply that the sentence in question is expressing the relation. There has been much work in combating noise in distant supervision training data, but one of the most successful ideas is to train a multi-instance classifier which assumes at-least-one relation holds for positive bags. We use Hoffmann et al. (2011)’s MULTIR system, which uses a probabilistic graphical model to jointly reason at the corpus-level and sentence-level, handles overlapping relations in the KB</context>
+<context position="33299" citStr="Min et al. (2013)" startWordPosition="5410" endWordPosition="5413">abilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not per</context>
+</contexts>
+<marker>Min, Grishman, Wan, Wang, Gondek, 2013</marker>
+<rawString>Bonan Min, Ralph Grishman, Li Wan, Chang Wang, and David Gondek. 2013. Distant supervision for relation extraction with an incomplete knowledge base. In Proceedings of NAACL-HLT, pages 777– 782.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mike Mintz</author>
+<author>Steven Bills</author>
+<author>Rion Snow</author>
+<author>Daniel Jurafsky</author>
+</authors>
+<title>Distant supervision for relation extraction without labeled data.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 47th Annual Meeting of the Association for Computational Linguistics (ACL-2009),</booktitle>
+<pages>1003--1011</pages>
+<contexts>
+<context position="22970" citStr="Mintz et al. (2009)" startWordPosition="3692" endWordPosition="3695">the default threshold 0.5, and allowing repeated mentions (Milne and Witten, 2008). Since Wikipedia Miner does not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer, part of speech tagger (Toutanova et al., 2003), and dependency parser (de Marneffe and Manning, 2008), and use the Charniak Johnson constiuent parser (Charniak and Johnson, 2005). For negative training generation, we take a similar approach to Riedel et al. (2010) and define a percentage parameter n of the number of negative instances divided by the number of total instances. Experimenting with n E {0, 20%,80%}, we find that n = 20% works best for our evaluations, optimizing for F1, although using 80% negative training gives high</context>
+<context position="32496" citStr="Mintz et al. (2009)" startWordPosition="5288" endWordPosition="5291"> identifying true negatives is quite difficult. Relation #Extractions #TP #FP Nationality 50 11 38 Profession 43 23 20 EmployedBy 27 17 10 Spouse 22 2 20 LivedIn 6 4 2 OrgInCitytown 4 3 1 AthletePlaysForTeam 2 2 0 OrgType 1 1 0 Table 2: By-relation evaluation of the best system (NEL with type constraints and type partitioning) on the GORECO test set. The true positives (TP) are the number of gold relations over coreference clusters that matched, so multiple extractions can match a single true positive. 7 Related Work There has been much recent work on distantly supervised relation extraction. Mintz et al. (2009) use Freebase to train relation extractors over Wikipedia without labeled data using multi-class logistic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been rec</context>
+</contexts>
+<marker>Mintz, Bills, Snow, Jurafsky, 2009</marker>
+<rawString>Mike Mintz, Steven Bills, Rion Snow, and Daniel Jurafsky. 2009. Distant supervision for relation extraction without labeled data. In Proceedings of the 47th Annual Meeting of the Association for Computational Linguistics (ACL-2009), pages 1003–1011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tom M Mitchell</author>
+<author>Justin Betteridge</author>
+<author>Andrew Carlson</author>
+<author>Estevam Hruschka</author>
+<author>Richard Wang</author>
+</authors>
+<title>Populating the semantic web by macro-reading internet text.</title>
+<date>2009</date>
+<booktitle>In The Semantic Web-ISWC</booktitle>
+<pages>998--1002</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="15014" citStr="Mitchell et al., 2009" startWordPosition="2401" endWordPosition="2404">in the type signature. Type Constraints We can additionally reject relation annotations where the types of the arguments do not agree with the expected types of the relation. That is, we only accept a relation annotation s—*R(m1, m2) when EntityTypes(e1) n T1 =� 0 and EntityTypes(e2)nT2 =� 0, where m1 is linked to e1, m2 is linked to e2, EntityTypes provides the set of valid types for an entity, T1 is the set of allowed types for the first argument of target relation r, and T2 for the second argument. 5 Evaluation Setups Relation extraction is often evaluated from a macro-reading perspective (Mitchell et al., 2009), in which the extracted facts, R(e1, e2), are judged true or false independent of any supporting sentence. For these experiments, however, we take a micro-reading approach in order to strictly evaluate whether a relation extractor is able to extract every fact expressed by a sentence s—*R(m1, m2). Micro-reading is more difficult, but it provides fully semantic information at the sentence and document level allowing detailed justifications, and, for our purposes, allows us to better understand the effects of our modifications. In order to fairly evaluate different systems, even those using dif</context>
+</contexts>
+<marker>Mitchell, Betteridge, Carlson, Hruschka, Wang, 2009</marker>
+<rawString>Tom M. Mitchell, Justin Betteridge, Andrew Carlson, Estevam Hruschka, and Richard Wang. 2009. Populating the semantic web by macro-reading internet text. In The Semantic Web-ISWC 2009, pages 998– 1002. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Truc-Vien T Nguyen</author>
+<author>Alessandro Moschitti</author>
+</authors>
+<title>End-to-end relation extraction using distant supervision from external semantic repositories.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies: Short Papers - Volume 2, HLT ’11,</booktitle>
+<pages>277--282</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="33194" citStr="Nguyen and Moschitti, 2011" startWordPosition="5389" endWordPosition="5392">d data using multi-class logistic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performin</context>
+</contexts>
+<marker>Nguyen, Moschitti, 2011</marker>
+<rawString>Truc-Vien T. Nguyen and Alessandro Moschitti. 2011. End-to-end relation extraction using distant supervision from external semantic repositories. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies: Short Papers - Volume 2, HLT ’11, pages 277–282, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lev Ratinov</author>
+<author>Dan Roth</author>
+<author>Doug Downey</author>
+<author>Mike Anderson</author>
+</authors>
+<title>Local and global algorithms for disambiguation to wikipedia.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11,</booktitle>
+<pages>1375--1384</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="11483" citStr="Ratinov et al., 2011" startWordPosition="1826" endWordPosition="1829"> entity linking (NEL) is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define three stages that NEL systems take to perform this task: extraction (mention detection), search (generating candidate KB entities for a mention), and disambiguation (selecting the best entity for a mention). There has been much work on the task of NEL in recent years (Milne and Witten, 2008; Kulkarni et al., 2009; Ratinov et al., 2011; Cheng and Roth, 2013). Our definition of a function ArgIdent(D) is completely served by an NEL system. It can find any entity in the KB, and those entities are grounded. Additionally, NEL can have overlapping mentions as well as support for abbreviated mentions like “Obama”, or acronyms like “US”. NEL does not seek to capture anaphoric mentions, however. 3.3 Coreference Resolution Coreference resolution is the task of clustering mentions of entities together, typically within a single document. Using coreference, we can find even more mentions than NEL, since it can find pronouns and anaphor</context>
+</contexts>
+<marker>Ratinov, Roth, Downey, Anderson, 2011</marker>
+<rawString>Lev Ratinov, Dan Roth, Doug Downey, and Mike Anderson. 2011. Local and global algorithms for disambiguation to wikipedia. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11, pages 1375–1384, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sebastian Riedel</author>
+<author>Limin Yao</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Modeling relations and their mentions without labeled text.</title>
+<date>2010</date>
+<booktitle>In ECML/PKDD (3),</booktitle>
+<pages>148--163</pages>
+<contexts>
+<context position="10550" citStr="Riedel et al., 2010" startWordPosition="1666" endWordPosition="1669">sed this on NER. We evaluate NER-based argument identification against argument identification based on NEL, as well as NEL with coreference. 3.1 Named Entity Recognition Named entity recognition (NER) tags spans of tokens with basic types such as PERSON, ORGANIZATION, LOCATION, and MISC. This is a high accuracy tagging task often performed using a sequence classifier (Finkel et al., 2005). Relation extraction systems can base their argument identification on NER, by using NER to identify text spans indicating entities and then find corresponding entities in the KB through exact string match (Riedel et al., 2010). Some downsides of using NER with exact string match for relation extraction is that it does not allow for overlapping mentions, it can only capture arguments with full names, and it can only capture arguments with types of the NER system, e.g., “politician” might not be captured. 3.2 Named Entity Linking Named entity linking (NEL) is the task of grounding textual mentions to entities in a KB, such as Wikipedia. Thus “named entity” here, has a somewhat broader definition than in NER — these are any entities in the KB, not just those expressed with proper names. Hachey et al. (2013) define thr</context>
+<context position="17372" citStr="Riedel et al. (2010)" startWordPosition="2780" endWordPosition="2783">s sentential instances in which arguments are marked using NER, which makes it impossible to determine if the use of NEL or 1894 coreference confers any benefit. Finally, it does not allow for the possibility that there may be multiple relations that should be extracted for a pair of arguments. For example, a CeoOf relation, and an EmployedBy relation might both be present for (Larry Page, Google). To address these issues, we manually annotate a full set of documents with relation annotations. Because we are evaluating changing various aspects of the distant supervision process, we cannot use Riedel et al. (2010)’s distant supervision data as-is as others did on the Hoffmann et al. (2011) sentential evaluation. Instead, we use the TAC-KBP data described above. 5.2 GoReCo Evaluation In order to allow for variations on mentions (NER, NEL, and coreference each has its own definition of what a mention boundary should be), we want gold relation annotations over coreference clusters broadly defined to allow mentions obtained from NER and NEL, as well as gold coreference mentions. So as long as a relation extraction system extracts a relation annotation s→R(m1, m2) where m1 and m2 are allowed options (based </context>
+<context position="20256" citStr="Riedel et al. (2010)" startWordPosition="3259" endWordPosition="3262">such that each has a different set of documents and entities, in order to evaluate how well the system performs on unseen entities. To do this, we remove entities found in the gold evaluation set from the training KB. (We do not remove entities for the Hoffmann et al. (2011) evaluation, since they do not.) We choose the threshold confidence score for each system using the development set to optimize for F1 and report results on the test set. 5.2.1 Target Relations Since we use a different evaluation, we also seek to choose a more comprehensive and interesting set of relations than prior work. Riedel et al. (2010), whose train and test data is also used by Hoffmann et al. (2011) and Surdeanu et al. (2012), use Freebase properties under domains /people, /business, and /location. Since /location relations such as /location/location/contains dominate the results (and are relatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m</context>
+<context position="23299" citStr="Riedel et al. (2010)" startWordPosition="3743" endWordPosition="3746">all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer, part of speech tagger (Toutanova et al., 2003), and dependency parser (de Marneffe and Manning, 2008), and use the Charniak Johnson constiuent parser (Charniak and Johnson, 2005). For negative training generation, we take a similar approach to Riedel et al. (2010) and define a percentage parameter n of the number of negative instances divided by the number of total instances. Experimenting with n E {0, 20%,80%}, we find that n = 20% works best for our evaluations, optimizing for F1, although using 80% negative training gives high precision at lower recall. We use frequency-based feature selection to eliminate features that appear less than 10 times, which is helpful both for reducing overfitting as well as 0 0.1 0.2 0.3 0.4 0.5 0.6 Relative Recall Figure 2: Methods evaluated in the context of Hoffmann et al. (2011)’s sentential extraction evaluation. N</context>
+</contexts>
+<marker>Riedel, Yao, McCallum, 2010</marker>
+<rawString>Sebastian Riedel, Limin Yao, and Andrew McCallum. 2010. Modeling relations and their mentions without labeled text. In ECML/PKDD (3), pages 148– 163.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sebastian Riedel</author>
+<author>Limin Yao</author>
+<author>Benjamin M Marlin</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Relation extraction with matrix factorization and universal schemas.</title>
+<date>2013</date>
+<booktitle>In Joint Human Language Technology Conference/Annual Meeting of the North American Chapter of the Association for Computational Linguistics (HLT-NAACL ’13),</booktitle>
+<contexts>
+<context position="32928" citStr="Riedel et al. (2013)" startWordPosition="5352" endWordPosition="5355">ters that matched, so multiple extractions can match a single true positive. 7 Related Work There has been much recent work on distantly supervised relation extraction. Mintz et al. (2009) use Freebase to train relation extractors over Wikipedia without labeled data using multi-class logistic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that dis</context>
+</contexts>
+<marker>Riedel, Yao, Marlin, McCallum, 2013</marker>
+<rawString>Sebastian Riedel, Limin Yao, Benjamin M. Marlin, and Andrew McCallum. 2013. Relation extraction with matrix factorization and universal schemas. In Joint Human Language Technology Conference/Annual Meeting of the North American Chapter of the Association for Computational Linguistics (HLT-NAACL ’13), June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alan Ritter</author>
+<author>Luke Zettlemoyer</author>
+<author>Mausam</author>
+<author>Oren Etzioni</author>
+</authors>
+<title>Modeling missing data in distant supervision for information extraction.</title>
+<date>2013</date>
+<tech>TACL,</tech>
+<pages>1--367</pages>
+<contexts>
+<context position="33259" citStr="Ritter et al., 2013" startWordPosition="5401" endWordPosition="5404">features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al.,</context>
+</contexts>
+<marker>Ritter, Zettlemoyer, Mausam, Etzioni, 2013</marker>
+<rawString>Alan Ritter, Luke Zettlemoyer, Mausam, and Oren Etzioni. 2013. Modeling missing data in distant supervision for information extraction. TACL, 1:367–378.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Benjamin Roth</author>
+<author>Tassilo Barth</author>
+<author>Michael Wiegand</author>
+<author>Dietrich Klakow</author>
+</authors>
+<title>A survey of noise reduction methods for distant supervision.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Workshop on Automated Knowledge Base Construction, AKBC ’13,</booktitle>
+<pages>73--78</pages>
+<publisher>ACM.</publisher>
+<location>New York, NY, USA.</location>
+<contexts>
+<context position="33237" citStr="Roth et al., 2013" startWordPosition="5397" endWordPosition="5400">ical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 20</context>
+</contexts>
+<marker>Roth, Barth, Wiegand, Klakow, 2013</marker>
+<rawString>Benjamin Roth, Tassilo Barth, Michael Wiegand, and Dietrich Klakow. 2013. A survey of noise reduction methods for distant supervision. In Proceedings of the 2013 Workshop on Automated Knowledge Base Construction, AKBC ’13, pages 73–78, New York, NY, USA. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sameer Singh</author>
+<author>Sebastian Riedel</author>
+<author>Brian Martin</author>
+<author>Jiaping Zheng</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Joint inference of entities, relations, and coreference.</title>
+<date>2013</date>
+<booktitle>In CIKM Workshop on Automated Knowledge Base Construction (AKBC).</booktitle>
+<contexts>
+<context position="33944" citStr="Singh et al. (2013)" startWordPosition="5511" endWordPosition="5514">stant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however these systems do not perform relation extraction. Singh et al. (2013) performs joint relation extraction, NER, and coreference in a fully-supervised manner. They get slight improvement by adding coreference, but do not use NEL. Ling and Weld (2013) extend MULTIR to find meronym relations in a biology textbook. They get slight improvement over NER by using coreference to pick the best mention of an entity in the sentence for the meronym relation at training and extraction time. 8 Conclusions and Future Work Given the growing importance of distant supervision, a comprehensive understanding of its variants is crucial. While some of the optimizations we propose may</context>
+</contexts>
+<marker>Singh, Riedel, Martin, Zheng, McCallum, 2013</marker>
+<rawString>Sameer Singh, Sebastian Riedel, Brian Martin, Jiaping Zheng, and Andrew McCallum. 2013. Joint inference of entities, relations, and coreference. In CIKM Workshop on Automated Knowledge Base Construction (AKBC).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pontus Stenetorp</author>
+<author>Sampo Pyysalo</author>
+<author>Goran Topi´c</author>
+<author>Tomoko Ohta</author>
+<author>Sophia Ananiadou</author>
+<author>Jun’ichi Tsujii</author>
+</authors>
+<title>brat: a Web-based Tool for NLP-Assisted Text Annotation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Demonstrations at the 13th Conference of the European Chapter of the Association for Computational Linguistics,</booktitle>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA,</location>
+<marker>Stenetorp, Pyysalo, Topi´c, Ohta, Ananiadou, Tsujii, 2012</marker>
+<rawString>Pontus Stenetorp, Sampo Pyysalo, Goran Topi´c, Tomoko Ohta, Sophia Ananiadou, and Jun’ichi Tsujii. 2012. brat: a Web-based Tool for NLP-Assisted Text Annotation. In Proceedings of the Demonstrations at the 13th Conference of the European Chapter of the Association for Computational Linguistics, Stroudsburg, PA, USA, April. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mihai Surdeanu</author>
+<author>Julie Tibshirani</author>
+<author>Ramesh Nallapati</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Multi-instance multi-label learning for relation extraction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>455--465</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="20349" citStr="Surdeanu et al. (2012)" startWordPosition="3278" endWordPosition="3281"> the system performs on unseen entities. To do this, we remove entities found in the gold evaluation set from the training KB. (We do not remove entities for the Hoffmann et al. (2011) evaluation, since they do not.) We choose the threshold confidence score for each system using the development set to optimize for F1 and report results on the test set. 5.2.1 Target Relations Since we use a different evaluation, we also seek to choose a more comprehensive and interesting set of relations than prior work. Riedel et al. (2010), whose train and test data is also used by Hoffmann et al. (2011) and Surdeanu et al. (2012), use Freebase properties under domains /people, /business, and /location. Since /location relations such as /location/location/contains dominate the results (and are relatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m /business/employment_tenure/company , in this case representing employment. We bring in an a</context>
+<context position="32833" citStr="Surdeanu et al. (2012)" startWordPosition="5336" endWordPosition="5339">e GORECO test set. The true positives (TP) are the number of gold relations over coreference clusters that matched, so multiple extractions can match a single true positive. 7 Related Work There has been much recent work on distantly supervised relation extraction. Mintz et al. (2009) use Freebase to train relation extractors over Wikipedia without labeled data using multi-class logistic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semis</context>
+</contexts>
+<marker>Surdeanu, Tibshirani, Nallapati, Manning, 2012</marker>
+<rawString>Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati, and Christopher D. Manning. 2012. Multi-instance multi-label learning for relation extraction. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 455– 465. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shingo Takamatsu</author>
+<author>Issei Sato</author>
+<author>Hiroshi Nakagawa</author>
+</authors>
+<title>Reducing wrong labels in distant supervision for relation extraction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers - Volume 1, ACL ’12,</booktitle>
+<pages>721--729</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="33218" citStr="Takamatsu et al., 2012" startWordPosition="5393" endWordPosition="5396">istic regression and lexical and syntactic features. Hoffmann et al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jo</context>
+</contexts>
+<marker>Takamatsu, Sato, Nakagawa, 2012</marker>
+<rawString>Shingo Takamatsu, Issei Sato, and Hiroshi Nakagawa. 2012. Reducing wrong labels in distant supervision for relation extraction. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers - Volume 1, ACL ’12, pages 721–729, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Feature-rich part-ofspeech tagging with a cyclic dependency network.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, NAACL ’03,</booktitle>
+<pages>173--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="23081" citStr="Toutanova et al., 2003" startWordPosition="3709" endWordPosition="3712">oes not support NIL links, we use non-overlapping NER mentions as NIL links. For coreference, we use Stanford’s sieve-based deterministic coreference system (Lee et al., 2013). For sentential instance generation, we take all pairs of non-overlapping arguments in a sentence (in either order). If the arguments have KB links, we do not allow sentential instances where both arguments represent the same entity. We use the same lexical and syntactic features as MULTIR, based on the features of Mintz et al. (2009). As required for features, we use Stanford CoreNLP’s tokenizer, part of speech tagger (Toutanova et al., 2003), and dependency parser (de Marneffe and Manning, 2008), and use the Charniak Johnson constiuent parser (Charniak and Johnson, 2005). For negative training generation, we take a similar approach to Riedel et al. (2010) and define a percentage parameter n of the number of negative instances divided by the number of total instances. Experimenting with n E {0, 20%,80%}, we find that n = 20% works best for our evaluations, optimizing for F1, although using 80% negative training gives high precision at lower recall. We use frequency-based feature selection to eliminate features that appear less tha</context>
+</contexts>
+<marker>Toutanova, Klein, Manning, Singer, 2003</marker>
+<rawString>Kristina Toutanova, Dan Klein, Christopher D. Manning, and Yoram Singer. 2003. Feature-rich part-ofspeech tagging with a cyclic dependency network. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, NAACL ’03, pages 173–180, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wei Xu</author>
+<author>Zhao Le</author>
+<author>Raphael Hoffmann</author>
+<author>Ralph Grishman</author>
+</authors>
+<title>Filling knowledge base gaps for distant supervision of relation extraction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference of the Association for Computational Linguistics (ACL 2013),</booktitle>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="25084" citStr="Xu et al. (2013)" startWordPosition="4056" endWordPosition="4059">esent, we map the Freebase type to its FIGER type (Ling and Weld, 2012) to its coarse type. For type constraints, we use Freebase’s expected input and output types for relations. For NIL links, we use the NER type of PERSON, ORGANIZATION, or LOCATION, if available, mapping it to appropriate Freebase types. 6.2 NER Baseline As a result of a larger training set, as well as model averaging, our baseline, which is otherwise equivalent to the methods of Hoffmann et al. (2011) and uses their MULTIR system, has slightly higher precision as shown in Figure 2, curve NER. It is also higher than that of Xu et al. (2013), who achieved higher performance than Hoffmann et al. (2011); our baseline gets 89.9% precision and 59.6% relative recall, while Xu et al. (2013)’s system gets 84.6% precision and 56.1% relative recall. See Figure 3 and Table 1 for results on GORECO. 6.3 NEL and Type Constraints On GORECO, using NEL argument identification increases recall and gives higher precision over the entire curve. We further find that filtering results using type constraints gives a large boost in preNER NER+LT NER+LT+CT Hoffmann et al. (2011) Precision 1 0.9 0.8 0.7 1896 cision at a small cost to recall. Note the inc</context>
+<context position="33277" citStr="Xu et al. (2013)" startWordPosition="5405" endWordPosition="5408">al. (2011) use a probabilistic graphical model for multi-instance, multi-label 1898 learning and extract over newswire text using Freebase relations. Surdeanu et al. (2012) take a similar approach and use soft constraints and logistic regression. Riedel et al. (2013) integrate open information extraction with schema-based, proposing a universal schema approach, including using features based on latent types. There has also been recent work on reducing noise in distantly supervised relation extraction (Nguyen and Moschitti, 2011; Takamatsu et al., 2012; Roth et al., 2013; Ritter et al., 2013). Xu et al. (2013) and Min et al. (2013) improve the quality of distant supervision training data by reducing false negative examples. Distant supervision is related to semisupervised bootstrap learning work such as Carlson et al. (2010b) and many others. Note that distant supervision can be viewed as a subroutine of bootstrap learning; bootstrap learning can continue the process of distant supervision by taking the new tuples found and then training on those again, and repeating the process. There has also been work on performing NEL and coreference jointly (Cucerzan, 2007; Hajishirzi et al., 2013), however th</context>
+</contexts>
+<marker>Xu, Le, Hoffmann, Grishman, 2013</marker>
+<rawString>Wei Xu, Zhao Le, Raphael Hoffmann, and Ralph Grishman. 2013. Filling knowledge base gaps for distant supervision of relation extraction. In Proceedings of the 2013 Conference of the Association for Computational Linguistics (ACL 2013), Sofia, Bulgaria, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Congle Zhang</author>
+<author>Raphael Hoffmann</author>
+<author>Daniel S Weld</author>
+</authors>
+<title>Ontological smoothing for relation extraction with minimal supervision.</title>
+<date>2012</date>
+<booktitle>In AAAI.</booktitle>
+<contexts>
+<context position="21136" citStr="Zhang et al. (2012)" startWordPosition="3390" endWordPosition="3393">elatively uninteresting in that they rarely change), we do not use any /location relations, and instead use the domains /people, /business, and /organization (Google, 2012). Since many Freebase properties are between an entity and a table instead of another entity, we also use joined relations, such as /people/person/employment_history m /business/employment_tenure/company , in this case representing employment. We bring in an additional 20 relations of this form, also under /person, /business, and /organization. Additionally we use NELL (Carlson et al., 2010a) relations mapped to Freebase by Zhang et al. (2012). We only include a relation in our set of target relations if both of its entity arguments are contained in the set of entities found via NER with exact string match or NEL over the training corpus. We also remove inverse relations, since they represent needless duplication. This gives us a set 1895 R of 105 target relations based on joins and unions of Freebase properties. Of the 105 target relations, 48 were used at least once in the GORECO data. 6 Experiments and Results We conduct experiments to determine how changing distantly supervised relation extraction along various dimensions affec</context>
+</contexts>
+<marker>Zhang, Hoffmann, Weld, 2012</marker>
+<rawString>Congle Zhang, Raphael Hoffmann, and Daniel S. Weld. 2012. Ontological smoothing for relation extraction with minimal supervision. In AAAI.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

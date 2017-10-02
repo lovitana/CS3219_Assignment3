@@ -1,0 +1,1827 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000006">
+<title confidence="0.987474">
+Max-Violation Perceptron and Forced Decoding for Scalable MT Training
+</title>
+<author confidence="0.999619">
+Heng Yu1*
+</author>
+<affiliation confidence="0.984715">
+1Institute of Computing Tech.
+Chinese Academy of Sciences
+</affiliation>
+<email confidence="0.993093">
+yuheng@ict.ac.cn
+</email>
+<author confidence="0.997888">
+Liang Huang2† Haitao Mi3
+</author>
+<affiliation confidence="0.9905135">
+2Queens College &amp; Grad. Center
+City University of New York
+</affiliation>
+<email confidence="0.999286">
+{huang@cs.qc,kzhao@gc}.cuny.edu
+</email>
+<author confidence="0.731804">
+Kai Zhao2
+</author>
+<affiliation confidence="0.70728">
+3T.J. Watson Research Center
+</affiliation>
+<note confidence="0.856919">
+IBM
+</note>
+<email confidence="0.970112">
+hmi@us.ibm.com
+</email>
+<sectionHeader confidence="0.996949" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999365">
+While large-scale discriminative training has
+triumphed in many NLP problems, its defi-
+nite success on machine translation has been
+largely elusive. Most recent efforts along this
+line are not scalable (training on the small
+dev set with features from top ∼100 most fre-
+quent words) and overly complicated. We in-
+stead present a very simple yet theoretically
+motivated approach by extending the recent
+framework of “violation-fixing perceptron”,
+using forced decoding to compute the target
+derivations. Extensive phrase-based transla-
+tion experiments on both Chinese-to-English
+and Spanish-to-English tasks show substantial
+gains in BLEU by up to +2.3/+2.0 on dev/test
+over MERT, thanks to 20M+ sparse features.
+This is the first successful effort of large-scale
+online discriminative training for MT.
+</bodyText>
+<sectionHeader confidence="0.999519" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9998528">
+Large-scale discriminative training has witnessed
+great success in many NLP problems such as pars-
+ing (McDonald et al., 2005) and tagging (Collins,
+2002), but not yet for machine translation (MT) de-
+spite numerous recent efforts. Due to scalability is-
+sues, most of these recent methods can only train
+on a small dev set of about a thousand sentences
+rather than on the full training set, and only with
+2,000–10,000 rather “dense-like” features (either
+unlexicalized or only considering highest-frequency
+words), as in MIRA (Watanabe et al., 2007; Chiang
+et al., 2008; Chiang, 2012), PRO (Hopkins and May,
+2011), and RAMP (Gimpel and Smith, 2012). How-
+ever, it is well-known that the most important fea-
+tures for NLP are lexicalized, most of which can not
+</bodyText>
+<note confidence="0.565491">
+* Work done while visiting City University of New York.
+†Corresponding author.
+</note>
+<bodyText confidence="0.99997047368421">
+be seen on a small dataset. Furthermore, these meth-
+ods often involve complicated loss functions and
+intricate choices of the “target” derivations to up-
+date towards or against (e.g. k-best/forest oracles, or
+hope/fear derivations), and are thus hard to replicate.
+As a result, the classical method of MERT (Och,
+2003) remains the default training algorithm for MT
+even though it can only tune a handful of dense fea-
+tures. See also Section 6 for other related work.
+As a notable exception, Liang et al. (2006) do
+train a structured perceptron model on the train-
+ing data with sparse features, but fail to outperform
+MERT. We argue this is because structured percep-
+tron, like many structured learning algorithms such
+as CRF and MIRA, assumes exact search, and search
+errors inevitably break theoretical properties such as
+convergence (Huang et al., 2012). Empirically, it
+is now well accepted that standard perceptron per-
+forms poorly when search error is severe (Collins
+and Roark, 2004; Zhang et al., 2013).
+To address the search error problem we propose a
+very simple approach based on the recent framework
+of “violation-fixing perceptron” (Huang et al., 2012)
+which is designed specifically for inexact search,
+with a theoretical convergence guarantee and excel-
+lent empirical performance on beam search pars-
+ing and tagging. The basic idea is to update when
+search error happens, rather than at the end of the
+search. To adapt it to MT, we extend this framework
+to handle latent variables corresponding to the hid-
+den derivations. We update towards “gold-standard”
+derivations computed by forced decoding so that
+each derivation leads to the exact reference transla-
+tion. Forced decoding is also used as a way of data
+selection, since those reachable sentence pairs are
+generally more literal and of higher quality, which
+the training should focus on. When the reachable
+subset is small for some language pairs, we augment
+</bodyText>
+<page confidence="0.964512">
+1112
+</page>
+<note confidence="0.7445705">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1112–1123,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+</note>
+<equation confidence="0.4962">
+0 1 2 3 4 5 6
+</equation>
+<bodyText confidence="0.935930666666667">
+it by including reachable prefix-pairs when the full
+sentence pair is not.
+We make the following contributions:
+</bodyText>
+<listItem confidence="0.9030045">
+1. Our work is the first successful effort to scale
+online structured learning to a large portion of
+the training data (as opposed to the dev set).
+2. Our work is the first to use a principled learning
+method customized for inexact search which
+updates on partial derivations rather than full
+ones in order to fix search errors. We adapt it
+to MT using latent variables for derivations.
+3. Contrary to the common wisdom, we show that
+simply updating towards the exact reference
+translation is helpful, which is much simpler
+than k-best/forest oracles or loss-augmented
+</listItem>
+<bodyText confidence="0.803234052631579">
+(e.g. hope/fear) derivations, avoiding sentence-
+level BLEU scores or other loss functions.
+4. We present a convincing analysis that it is the
+search errors and standard perceptron’s inabil-
+ity to deal with them that prevent previous
+work, esp. Liang et al. (2006), from succeed-
+ing.
+5. Scaling to the training data enables us to engi-
+neer a very rich feature set of sparse, lexical-
+ized, and non-local features, and we propose
+various ways to alleviate overfitting.
+For simplicity and efficiency reasons, in this paper
+we use phrase-based translation, but our method has
+the potential to be applicable to other translation
+paradigms. Extensive experiments on both Chinese-
+to-English and Spanish-to-English tasks show statis-
+tically significant gains in BLEU by up to +2.3/+2.0
+on dev/test over MERT, and up to +1.5/+1.5 over
+PRO, thanks to 20M+ sparse features.
+</bodyText>
+<sectionHeader confidence="0.951163" genericHeader="method">
+2 Phrase-Based MT and Forced Decoding
+</sectionHeader>
+<bodyText confidence="0.999771">
+We first review the basic phrase-based decoding al-
+gorithm (Koehn, 2004), which will be adapted for
+forced decoding.
+</bodyText>
+<subsectionHeader confidence="0.993721">
+2.1 Background: Phrase-based Decoding
+</subsectionHeader>
+<bodyText confidence="0.982577">
+We will use the following running example from
+Chinese to English from Mi et al. (2008):
+</bodyText>
+<figureCaption confidence="0.998678">
+Figure 1: Standard beam-search phrase-based decoding.
+</figureCaption>
+<bodyText confidence="0.983521909090909">
+yˇu Sh¯al´ong jˇux´ıng le hu`ıt´an
+with Sharon hold -ed meeting
+‘Bush held a meeting with Sharon’
+Phrase-based decoders generate partial target-
+language outputs in left-to-right order in the form
+of hypotheses (or states) (Koehn, 2004). Each hy-
+pothesis has a coverage vector capturing the source-
+language words translated so far, and can be ex-
+tended into a longer hypothesis by a phrase-pair
+translating an uncovered segment. For example, the
+following is one possible derivation:
+</bodyText>
+<equation confidence="0.998652">
+(0 ) : (0, “”)
+(•1 ) : (s1, “Bush”)
+(• •••6) : (s2, “Bush held talks”)
+(•••3•••) : (s3, “Bush held talks with Sharon”)
+</equation>
+<bodyText confidence="0.999954866666667">
+where a • in the coverage vector indicates the source
+word at this position is “covered” and where each
+si is the score of each state, each adding the rule
+score and the distortion cost (dc) to the score of the
+previous state. To compute the distortion cost we
+also need to maintain the ending position of the last
+phrase (e.g., the 3 and 6 in the coverage vectors).
+In phrase-based translation there is also a distortion-
+limit which prohibits long-distance reorderings.
+The above states are called −LM states since they
+do not involve language model costs. To add a bi-
+gram model, we split each −LM state into a series
+of +LM states; each +LM state has the form (v,&apos;)
+where a is the last word of the hypothesis. Thus a
++LM version of the above derivation might be:
+</bodyText>
+<equation confidence="0.977214363636364">
+(0 ,&lt;s&gt;) : (0, “&lt;s&gt;”)
+(•1 ,Bush) : (si, “&lt;s&gt; Bush”)
+(• •••6,talks) : (s2, “&lt;s&gt; Bush held talks”)
+(•••3•••,Sharon) : (s3, “&lt;s&gt; Bush held ... with Sharon”)
+B`ush´ı
+Bush
+r1
+r2
+r3
+r1
+r2
+</equation>
+<page confidence="0.9467475">
+r3
+1113
+</page>
+<figure confidence="0.9953182">
+held talks with Sharon
+Bush held
+talks with
+Sharon
+0 1 2 3 4 5 6
+</figure>
+<figureCaption confidence="0.999707">
+Figure 2: Forced decoding and y-good derivation lattice.
+</figureCaption>
+<bodyText confidence="0.999185">
+where the score of applying each rule now also in-
+cludes a combination cost due to the bigrams formed
+when applying the phrase-pair, e.g.
+</bodyText>
+<equation confidence="0.985483">
+s�3 = s�2 + s(r3) + dc(|6 − 3|) − log Pl,,t(with  |talk)
+</equation>
+<bodyText confidence="0.9999256">
+To make this exponential-time algorithm practi-
+cal, beam search is the standard approximate search
+method (Koehn, 2004). Here we group +LM states
+into n bins, with each bin Bi hosting at most b states
+that cover exactly i Chinese words (see Figure 1).
+</bodyText>
+<subsectionHeader confidence="0.9945">
+2.2 Forced Decoding
+</subsectionHeader>
+<bodyText confidence="0.999946545454545">
+The idea of forced decoding is to consider only those
+(partial) derivations that can produce (a prefix of)
+the exact reference translation (assuming single ref-
+erence). We call these partial derivations “y-good”
+derivations (Daum´e, III and Marcu, 2005), and those
+that deviate from the reference translation “y-bad”
+derivations. The forced decoding algorithm is very
+similar to +LM decoding introduced above, with the
+new “forced decoding LM” to be defined as only
+accepting two consecutive words on the reference
+translation, ruling out any y-bad hypothesis:
+</bodyText>
+<equation confidence="0.930305">
+�
+1 if 1j, s.t. a = yj and b = yj+1
+0 otherwise
+</equation>
+<bodyText confidence="0.982827">
+In the +LM state, we can simply replace the
+boundary word by the index on the reference trans-
+lation:
+</bodyText>
+<equation confidence="0.99908925">
+(0 ,0) : (0, “&lt;s&gt;”)
+(01 ,1) : (wl, “&lt;s&gt; Bush”)
+(0 0006,3) : (w2, “&lt;s&gt; Bush held talks”)
+(0003000,5) : (w3, “&lt;s&gt; Bush held talks with Sharon”)
+</equation>
+<bodyText confidence="0.9914465">
+The complexity of this forced decoding algorithm
+is reduced to O(2nn3) where n is the source sen-
+tence length, without the expensive bookkeeping for
+English boundary words.
+</bodyText>
+<equation confidence="0.945923">
+P
+P
+P
+P
+</equation>
+<figureCaption confidence="0.9645116">
+Figure 3: Example of unreachable sentence pair and
+reachable prefix-pair. The first big jump is disallowed for
+a distortion limit of 4, but we can still extract the top-left
+box as a reachable prefix-pair. Note that this example is
+perfectly reachable in syntax-based MT.
+</figureCaption>
+<subsectionHeader confidence="0.990443">
+2.3 Reachable Prefix-Pairs
+</subsectionHeader>
+<bodyText confidence="0.987392">
+In practice, many sentence pairs in the parallel text
+fail in forced decoding due to two reasons:
+</bodyText>
+<listItem confidence="0.994255625">
+1. distortion limit: long-distance reorderings are
+disallowed but are very common between lan-
+guages with very different word orders such as
+English and Chinese.
+2. noisy alignment and phrase limit: the word-
+alignment quality (typically from GIZA++) are
+usually very noisy, which leads to unnecessar-
+ily big chunks of rules beyond the phrase limit.
+</listItem>
+<bodyText confidence="0.9999444">
+If we only rely on the reachable whole sentence
+pairs, we will not be able to use much of the training
+set for Chinese-English. So we propose to augment
+the set of reachable examples by considering reach-
+able prefix-pairs (see Figure 3 for an example).
+</bodyText>
+<sectionHeader confidence="0.945164" genericHeader="method">
+3 Violation-Fixing Perceptron for MT
+</sectionHeader>
+<bodyText confidence="0.999989714285714">
+Huang et al. (2012) establish a theoretical frame-
+work called “violation-fixing perceptron” which is
+tailored for structured learning with inexact search
+and has provable convergence properties. The high-
+level idea is that standard full update does not fix
+search errors; to do that we should instead up-
+date when search error occurs, e.g., when the gold-
+</bodyText>
+<figure confidence="0.935262916666666">
+Pforced(b  |a) =
+r1
+r2
+r3
+U.N.
+sent
+50
+observers
+5 to
+P monitor
+the
+1st
+P P election
+since
+Bolivia
+restored
+democracy
+P
+P
+P
+P
+3
+P
+3
+</figure>
+<page confidence="0.9542895">
+1114
+1
+</page>
+<bodyText confidence="0.999992727272727">
+standard derivation falls below the beam. Huang et
+al. (2012) show dramatic improvements in the qual-
+ity of the learned model using violation-fixing per-
+ceptron (compared to standard perceptron) on incre-
+mental parsing and part-of-speech tagging.
+Since phrase-based decoding is also an incremen-
+tal search problem which closely resembles beam-
+search incremental parsing, it is very natural to em-
+ploy violation-fixing perceptron here for MT train-
+ing. Our goal is to produce the exact reference trans-
+lation, or in other words, we want at least one y-good
+derivation to survive in the beam search.
+To adapt the violation-fixing perceptron frame-
+work to MT we need to extend the framework
+to handle latent variables since the gold-standard
+derivation is not observed. This is done in a way
+similar to the latent variable structured perceptron
+(Zettlemoyer and Collins, 2005; Liang et al., 2006;
+Sun et al., 2009) where each update is from the best
+(y-bad) derivation towards the best y-good deriva-
+tion in the current model; the latter is a constrained
+search which is exactly forced decoding in MT.
+</bodyText>
+<subsectionHeader confidence="0.996889">
+3.1 Notations
+</subsectionHeader>
+<bodyText confidence="0.9827868125">
+We first establish some necessary notations. Let
+hx, yi be a sentence pair in the training data, and
+d = r1 ◦ r2 ◦ ... ◦ r|d|
+be a (partial) derivation, where each ri =
+hc(ri), e(ri)i is a rule, i.e., a Chinese-English
+phrase-pair. Let |c(d) |° = Ei |c(ri) |be the num-
+ber of Chinese words covered by this derivation, and
+e(d) ° e(r1) ◦ e(r2) ... ◦ e(r|d|) be the English pre-
+fix generated so far. Let D(x) be the set of all pos-
+sible partial derivations translating part of the input
+sentence x. Let pre(y) ° {y[o:j]  |0 ≤ j ≤ |y|}
+be the set of prefixes of the reference translation y,
+and goodi(x, y) be the set of partial y-good deriva-
+tions whose English side is a prefix of the reference
+translation y, and whose Chinese projection covers
+exactly i words on the input sentence x, i.e.,
+</bodyText>
+<equation confidence="0.590109">
+goodi(x, y) °= {d ∈ D(x)  |e(d)∈pre(y), |c(d)|=i}.
+</equation>
+<bodyText confidence="0.911181666666667">
+Conversely, we define the set of y-bad partial deriva-
+tions covering i Chinese words to be:
+badi(x, y) °= {d ∈ D(x)  |e(d) Vpre(y), |c(d)|=i}.
+Basically, at each bin Bi, y-good derivations
+goodi(x, y) and y-bad ones badi(x, y) compete for
+the b slots in the bin:
+</bodyText>
+<equation confidence="0.982782">
+Bo = {E} (1)
+Bi = topb U {d ◦ r  |d ∈ Bi−j, |c(r) |= j} (2)
+j=1..l
+</equation>
+<bodyText confidence="0.999858">
+where r is a rule covering j Chinese words, l is
+the phrase-limit, and topb 5 is a shorthand for
+argtopbd∈S w · 4)(x, d) which selects the top b
+derivations according to the current model w.
+</bodyText>
+<subsectionHeader confidence="0.999747">
+3.2 Algorithm 1: Early Update
+</subsectionHeader>
+<bodyText confidence="0.9999212">
+As a special case of violation-fixing perceptron,
+early update (Collins and Roark, 2004) stops decod-
+ing whenever the gold derivation falls off the beam,
+makes an update on the prefix so far and move on
+to the next example. We adapt it to MT as fol-
+lows: if at a certain bin Bi, all y-good derivations
+in goodi(x, y) have fallen off the bin, then we stop
+and update, rewarding the best y-good derivation in
+goodi(x, y) (with respect to current model w), and
+penalizing the best y-bad derivation in the same step:
+</bodyText>
+<equation confidence="0.9994118">
+dz (x, y) ° = argmax w · 4)(x, d) (3)
+d∈goodi(x,y)
+d−i (x, y) ° argmax w · 4)(x, d) (4)
+d∈badi(x,y)∩Bi
+w ← w + 04)(x, dz (x, y), d−i (x, y)) (5)
+</equation>
+<bodyText confidence="0.999840588235294">
+where 04)(x, d, d0) °= 4)(x, d)−4)(x, d0) is a short-
+hand notation for the difference of feature vectors.
+Note that the set goodi(x, y) is independent of the
+beam search and current model and is instead pre-
+computed in the forced decoding phase, whereas the
+negative signal d−i (x, y) depends on the beam.
+In practice, however, there are exponentially
+many y-good derivations for each reachable sen-
+tence pair, and our goal is just to make sure (at least)
+one y-good derivation triumphs at the end. So it
+is possible that at a certain bin, all y-good partial
+derivations fall off the bin, but the search can still
+continue and produce the exact reference translation
+through some other y-good path that avoids that bin.
+For example, in Figure 1, the y-good states in steps
+3 and 5 are not critical; it is totally fine to miss them
+in the search as long as we save the y-good states
+</bodyText>
+<page confidence="0.992647">
+1115
+</page>
+<figureCaption confidence="0.73155">
+Figure 4: Illustration of four update methods. The blue
+paths denote (possibly lots of) gold-standard derivations
+from forced decoding. Standard update in this case is
+invalid as it reinforces the error of w (Huang et al., 2012).
+</figureCaption>
+<bodyText confidence="0.999971166666667">
+in bins 1, 4 and 6. So we actually use a “softer”
+version of the early update algorithm: only stop and
+update when there is no hope to continue. To be
+more concrete, let l denote the phrase-limit then we
+stop where there are l consecutive bins without any
+y-good states, and update on the first among them.
+</bodyText>
+<subsectionHeader confidence="0.998185">
+3.3 Algorithm 2: Max-Violation Update
+</subsectionHeader>
+<bodyText confidence="0.9999675">
+While early update learns substantially better mod-
+els than standard perceptron in the midst of inex-
+act search, it is also well-known to be converging
+much slower than the latter, since each update is
+on a (short) prefix. Huang et al. (2012) propose an
+improved method “max-violation” which updates at
+the worst mistake instead of the first, and converges
+much faster than early update with similar or better
+accuracy. We adopt this idea here as follows: decode
+the whole sentence, and find the step i∗ where the
+difference between the best y-good derivation and
+the best y-bad one is the biggest. This amount of dif-
+ference is called the amount of “violation” in Huang
+et al. (2012), and the place of maximum violation is
+intuitively the site of the biggest mistake during the
+search. More formally, the update rule is:
+</bodyText>
+<equation confidence="0.986215">
+w · A4)(x, d+i (x, y), d−i (x, y)) (6)
+w ← w + A4)(x, d+i�(x, y), d−i*(x, y)) (7)
+</equation>
+<subsectionHeader confidence="0.881159">
+3.4 Previous Work: Standard and Local Updates
+</subsectionHeader>
+<bodyText confidence="0.998187571428571">
+We compare the above new update methods with the
+two existing ones from Liang et al. (2006).
+Standard update (also known as “bold update”
+in Liang et al. (2006)) simply updates at the very
+end, from the best derivation in the beam towards the
+best gold-standard derivation (regardless of whether
+it survives the beam search):
+</bodyText>
+<equation confidence="0.971919">
+w ← w + A4)(x, d+|x|(x, y), d−|x|(x, y)) (8)
+</equation>
+<bodyText confidence="0.985647666666667">
+Local update, however, updates towards the
+derivation in the final bin that is most similar to the
+reference y, denoted dy|x|(x, y):
+</bodyText>
+<equation confidence="0.9981415">
+dy|x|(x, y) = argmax Bleu+1(y, e(d)) (9)
+d∈B|�|
+w ← w + A4)(x, dy|x|(x, y), d−|x|(x, y))
+(10)
+</equation>
+<bodyText confidence="0.999915">
+where Bleu+1(·, ·) returns the sentence-level BLEU.
+Liang et al. (2006) observe that standard update
+performs worse than local update, which they at-
+tribute to the fact that the former often update to-
+wards a gold derivation made up of “unreasonable”
+rules. Here we give a very different but theoreti-
+cally more reasonable explanation based on the the-
+ory of Huang et al. (2012), who define an update
+A4)(x, d+, d−) to be invalid if d+ scores higher
+than d− (i.e., w · A4)(x, d+, d−) &gt; 0, or update
+Aw points to the same direction as w in Fig. 4), in
+which case there is no “violation” or mistake to fix.
+Perceptron is guaranteed to converge if all updates
+are valid. Clearly, early and max-violation updates
+are valid. But standard update is not: it is possible
+that at the end of search, the best y-good derivation
+d+|x|(x, y), though pruned earlier in the search, ranks
+even higher in the current model than anything in the
+final bin (see Figure 4). In other words, there is no
+mistake at the final step, while there must be some
+search error in earlier steps which expels the y-good
+subderivation. We will see in Section 5.3 that invalid
+updates due to search errors are indeed the main rea-
+son why standard update fails. Local update, how-
+ever, is always valid in that definition.
+Finally, it is worth noting that in terms of imple-
+mentation, standard and max-violation are the easi-
+est, while early update is more involved.
+</bodyText>
+<sectionHeader confidence="0.998847" genericHeader="method">
+4 Feature Design
+</sectionHeader>
+<bodyText confidence="0.999696166666667">
+Our feature set includes the following 11 dense fea-
+tures: LM, four conditional and lexical translation
+probabilities (pc( e|f), pc(f|e), pl(e|f), pl(f|e)),
+length and phrase penalties, distortion cost, and
+three lexicalized reordering features. All these fea-
+tures are inherited from Moses (Koehn et al., 2007).
+</bodyText>
+<figure confidence="0.987652322580645">
+model W
+best in the beam
+da
+early
+da.
+max-
+violation
+d�
+|�|
+d+1
+d1XI
+std
+local
+worst in the beam
+dz +
+dz⇤
+standard update
+is invalid
+i∗ 0 = argmin
+i
+1116
+(•1,Bush) : (sl, “&lt;s&gt; Bush”)
+(• •••g,talks) : (s2, “&lt;s&gt; Bush held talks”)
+T2
+y
+&lt;s&gt;
+&lt;/s&gt;
+fixing le huit´an
+B
+held
+talk
+</figure>
+<page confidence="0.937959">
+1117
+</page>
+<table confidence="0.999248833333333">
+Language Scale Reachability # feats OBLEU Sections
+Pair Training Data sent. words # refs dev/test
+# sent. # words
+small 30K 0.8M/1.0M 21.4% 8.8% 7M +2.2/2.0 5.2, 5.3
+large CH-EN 230K 6.9M/8.9M 32.1% 12.7% 23M 4 +2.3/2.0 5.2, 5.4
+large SP-EN 174K 4.9M/4.3M 55.0% 43.9% 21M 1 +1.3/1.1 5.5
+</table>
+<tableCaption confidence="0.984">
+Table 2: Overview of all experiments. The OBLEU column shows the absolute improvements of our method MAX-
+FORCE on dev/test sets over MERT. The Chinese datasets also use prefix-pairs in training (see Table 3).
+</tableCaption>
+<sectionHeader confidence="0.998944" genericHeader="method">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.9996628">
+In order to test our approach in different language
+pairs, we conduct three experiments, shown in Ta-
+ble 2, on two significantly different language pairs
+(long vs. short distance reorderings), Chinese-to-
+English (CH-EN) and Spanish-to-English (SP-EN).
+</bodyText>
+<subsectionHeader confidence="0.993373">
+5.1 System Preparation and Data
+</subsectionHeader>
+<bodyText confidence="0.999988954545455">
+We base our experiments on Cubit, a state-of-art
+phrase-based system in Python (Huang and Chiang,
+2007).1 We set phrase-limit to 7 in rule extraction,
+and beam size to 30 and distortion limit 6 in de-
+coding. We compare our violation-fixing percep-
+tron with two popular tuning methods: MERT (Och,
+2003) and PRO (Hopkins and May, 2011).
+For word alignments we use GIZA++-E0
+(Vaswani et al., 2012) which produces sparser align-
+ments, alleviating the garbage collection problem.
+We use the SRILM toolkit (Stolcke, 2002) to train a
+trigram language model with modified Kneser-Ney
+smoothing on 1.5M English sentences.
+Our dev and test sets for CH-EN task are from the
+newswire portion of 2006 and 2008 NIST MT Eval-
+uations (616/691 sentences, 18575/18875 words),
+with four references.2 The dev and test sets for SP-
+EN task are from newstest2012 and newstest2013,
+with only one reference. Below both MERT and PRO
+tune weights on the dev set, while our method on the
+training set. Specifically, our method only uses the
+dev set to know when to stop training.
+</bodyText>
+<subsectionHeader confidence="0.989631">
+5.2 Forced Decoding Reachability on Chinese
+</subsectionHeader>
+<bodyText confidence="0.999609">
+As mentioned in Section 2.2, we perform forced de-
+coding to select reachable sentences from the train-
+</bodyText>
+<footnote confidence="0.993542">
+1http://www.cis.upenn.edu/˜lhuang3/cubit/. We
+will release the new version at http://acl.cs.qc.edu.
+2We use the “average” reference length to compute the
+brevity penalty factor, which does not decrease with more ref-
+erences unlike the “shortest” heuristic.
+</footnote>
+<figure confidence="0.8889345">
+10 20 30 40 50 60 70
+Sentence length
+</figure>
+<figureCaption confidence="0.9947975">
+Figure 6: Reachability ratio vs. sentence length on the
+small CH-EN training set.
+</figureCaption>
+<table confidence="0.801896">
+small large
+sent. words sent. words
+full 21.4% 8.8% 32.1% 12.7%
++prefix 61.3% 24.6% 67.3% 32.8%
+</table>
+<tableCaption confidence="0.960355">
+Table 3: Ratio of sentence reachability and word cover-
+age on the two CH-EN training data (distortion limit: 6).
+</tableCaption>
+<bodyText confidence="0.999756333333333">
+ing data; this part is done with exact search with-
+out any beam pruning. Figure 6 shows the reacha-
+bility ratio vs. sentence length on the small CH-EN
+training data, where the ratio decreases sharply with
+sentence length, and increases with distortion limit.
+We can see that there are a lot of long distance re-
+orderings beyond small distortion limits. In the ex-
+treme case of unlimited distortion, a large amount of
+sentences will be reachable, but at the cost of much
+slower decoding (O(n2V 2) in beam search decod-
+ing, and O(2nn3) in forced decoding). In fact forced
+decoding is too slow in the unlimited mode that we
+only plot reachability for sentences up to 30 words.
+Table 3 shows the statistics of forced decoding on
+both small and large CH-EN training sets. In the
+</bodyText>
+<figure confidence="0.99751594">
+Ratio of complete coverage
+100%
+90%
+80%
+70%
+60%
+50%
+40%
+30%
+20%
+10%
+0%
+dist-unlimited
+dist-6
+dist-4
+dist-2
+dist-0
+1118
+Average number of derivations
+BLEU
+5 10 15 20 25 30 35 40 45 50
+Sentence length
+2 4 6 8 10 12 14 16 18 20
+Number of iteration
+100000
+90000
+80000
+70000
+60000
+50000
+40000
+30000
+20000
+10000
+0
+dist-6
+dist-4
+dist-2
+dist-0
+26
+25
+24
+23
+22
+21
+20
+19
+18
+17
+MERT
+</figure>
+<figureCaption confidence="0.999988">
+Figure 7: Average number of derivations in gold lattices.
+</figureCaption>
+<bodyText confidence="0.999955352941176">
+small data-set, 21.4% sentences are fully reachable
+which only contains 8.8% words (since shorter sen-
+tences are more likely to be reachable). Larger data
+improves reachable ratios significantly thanks to bet-
+ter alignment quality, but still only 12.7% words can
+be used. In order to add more examples for per-
+ceptron training, we pick all non-trivial reachable
+prefix-pairs (with 5 or more Chinese words) as addi-
+tional training examples (see Section 2.2). As shown
+in Table 3, with prefix-pairs we can use about 1/4 of
+small data and 1/3 of large data for training, which is
+10x and 120x bigger than the 616-sentence dev set.
+After running forced decoding, we obtain gold
+translation lattice for each reachable sentence (or
+prefix) pair. Figure 7 shows, as expected, the av-
+erage number of gold derivations in these lattices
+grows exponentially with sentence length.
+</bodyText>
+<subsectionHeader confidence="0.99985">
+5.3 Analysis on Small Chinese-English Data
+</subsectionHeader>
+<bodyText confidence="0.997940416666667">
+Figure 8 shows the BLEU scores of different learn-
+ing algorithms on the dev set. MAXFORCE3 per-
+forms the best, peaking at iteration 13 while early
+update learns much slower (the first few iterations
+are faster than other methods due to early stopping
+but this difference is immaterial later). The local and
+standard updates, however, underperform MERT; in
+particular, the latter gets worse as training goes on.
+As analysized in Section 3.4, the reason why stan-
+dard update (or “bold update” in Liang et al. (2006))
+fails is that inexact search leads to many invalid up-
+dates. This is confirmed by Figure 9, where more
+</bodyText>
+<footnote confidence="0.59102">
+3Stands for Max-Violation Perceptron w/ Forced Decoding
+</footnote>
+<figureCaption confidence="0.9964605">
+Figure 8: BLEU scores on the heldout dev set for different
+update methods (trained on small CH-EN data).
+</figureCaption>
+<figure confidence="0.612079">
+2 4 6 8 10 12 14 16 18 20 22 24 26 28 30
+beam size
+</figure>
+<figureCaption confidence="0.999952">
+Figure 9: Ratio of invalid updates in standard update.
+</figureCaption>
+<bodyText confidence="0.9999211875">
+than half of the updates remain invalid even at a
+beam of 30. These analyses provide an alternative
+but theoretically more reasonable explanation to the
+findings of Liang et al. (2006): while they blame
+“unreasonable” gold derivations for the failure of
+standard update, we observe that it is the search er-
+rors that make the real difference, and that an up-
+date that respects search errors towards a gold sub-
+derivation is indeed helpful, even if that subderiva-
+tion might be “unreasonable”.
+In order to speedup training, we use mini-batch
+parallelization of Zhao and Huang (2013) which has
+been shown to be much faster than previous paral-
+lelization methods. We set the mini-batch size to
+24 and train MAXFORCE with 1, 6, and 24 cores
+on a small subset of the our original reachable sen-
+</bodyText>
+<figure confidence="0.990999717948718">
+Ratio
+90%
+80%
+70%
+60%
+50%
++non-local features
+standard perceptron
+1119
+BLEU
+BLEU
+0 0.5 1 1.5 2 2.5 3 3.5 4
+Time
+2 4 6 8 10 12 14 16
+Number of iteration
+24
+23
+22
+MERT PRO-dense
+minibatch(24-core)
+minibatch(6-core)
+minibatch(1 core)
+single processor
+26
+25
+24
+23
+22
+21
+20
+19
+18
++non-local
++word-edges
++ruleid
+dense
+MERT
+2 4 6 8 10 12 14 16
+Number of iteration
+</figure>
+<figureCaption confidence="0.9995505">
+Figure 11: Comparison between different training meth-
+ods. Ours trains the training set while others on dev set.
+</figureCaption>
+<bodyText confidence="0.999950181818182">
+tences. The number of sentence pairs in this subset
+is 1,032, which contains similar number of words to
+our 616-sentence dev set (since reachable sentences
+are much shorter). Thus, it is reasonable to compare
+different learning algorithms in terms of speed and
+performance. Figure 10 shows that first of all, mini-
+batch improves BLEU even in the serial setting, and
+when run on 24 cores, it leads to a speedup of about
+7x. It is also interesting to know that on 1 CPU,
+minibatch perceptron takes similar amount of time
+to reach the same performance as MERT and PRO.
+</bodyText>
+<figureCaption confidence="0.9894535">
+Figure 11 compares the learning curves of MAX-
+FORCE, MERT, and PRO. We test PRO in three
+different ways: PRO-dense (dense features only),
+PRO-medium (dense features plus top 3K most fre-
+Figure 12: Incremental contributions of different feature
+sets (dense features, ruleid, WordEdges, and non-local).
+</figureCaption>
+<table confidence="0.999694666666667">
+type count % BLEU
+dense 11 - 22.3
++ruleid +9,264 +0.1% +0.8
++WordEdges +7,046,238 +99.5% +2.0
++non-local +22,536 +0.3% +0.7
+all 7,074,049 100% 25.8
+</table>
+<tableCaption confidence="0.9821185">
+Table 4: Feature counts and incremental BLEU improve-
+ments. MAXFORCE with all features is +2.2 over MERT.
+</tableCaption>
+<bodyText confidence="0.999916117647059">
+quent sparse features4), and PRO-large (dense fea-
+tures plus all sparse features). The results show that
+PRO-dense performs almost the same as MERT but
+with a stabler learning curve while PRO-medium im-
+proves by +0.6. However, PRO-large decreases the
+performance significantly, which indicates PRO is
+not scalable to truly sparse features. By contrast,
+our method handles large-scale sparse features well
+and outperforms all other methods by a large margin
+and with a stable learning curve.
+We also investigate the individual contribution
+from each group of features (ruleid, WordEdges, and
+non-local features). So we perform experiments by
+adding each group incrementally. Figure 12 shows
+the learning curves and Table 4 lists the counts and
+incremental contributions of different feature sets.
+With dense features alone MAXFORCE does not do
+</bodyText>
+<footnote confidence="0.981336333333333">
+4To prevent overfitting we remove all lexicalized features
+and only use Brown clusters. It is difficult to engineer the right
+feature set for PRO, whereas MAXFORCE is much more robust.
+</footnote>
+<figureCaption confidence="0.980231">
+Figure 10: Minibatch parallelization speeds up learning.
+</figureCaption>
+<figure confidence="0.9987644">
+BLEU
+26
+24
+22
+20
+18
+16
+14
+12
+10
+MaxForce
+MERT
+PRO-dense
+PRO-medium
+PRO-large
+</figure>
+<page confidence="0.943189">
+1120
+</page>
+<table confidence="0.999262857142857">
+system algorithm # feat. dev test
+Moses MERT 11 25.5 22.5
+MERT 11 25.4 22.5
+11 25.6 22.6
+Cubit PRO 3K 26.3 23.0
+36K 17.7 14.3
+MAXFORCE 23M 27.8 24.5
+</table>
+<tableCaption confidence="0.977899">
+Table 5: BLEU scores (with four references) using the
+large CH-EN data. Our approach is +2.3/2.0 over MERT.
+</tableCaption>
+<bodyText confidence="0.999418714285714">
+well because perceptron is known to suffer from fea-
+tures of vastly different scales. Adding ruleid helps,
+but still not enough. WordEdges (which is the vast
+majority of features) improves BLEU by +2.0 points
+and outperforms MERT, when sparse features totally
+dominate dense features. Finally, the 0.3% non-local
+features contribute a final +0.7 in BLEU.
+</bodyText>
+<subsectionHeader confidence="0.909142">
+5.4 Results on Large Chinese-English Data
+</subsectionHeader>
+<bodyText confidence="0.9999615">
+Table 5 shows all BLEU scores for different learn-
+ing algorithms on the large CH-EN data. The MERT
+baseline on Cubit is essentially the same as Moses.
+Our MAXFORCE activates 23M features on reach-
+able sentences and prefixes in the training data, and
+takes 35 hours to finish 15 iterations on 24 cores,
+peaking at iteration 13. It achieves significant im-
+provements over other approaches: +2.3/+2.0 points
+over MERT and +1.5/+1.5 over PRO-medium on de-
+v/test sets, respectively.
+</bodyText>
+<subsectionHeader confidence="0.883006">
+5.5 Results on Large Spanish-English Data
+</subsectionHeader>
+<bodyText confidence="0.999948">
+In SP-EN translation, we first run forced decod-
+ing on the training set, and achieve a very high
+reachability of 55% (with the same distortion limit
+of 6), which is expected since the word order be-
+tween Spanish and English are more similar than
+than between Chinese and English, and most SP-
+EN reorderings are local. Table 6 shows that MAX-
+FORCE improves the translation quality over MERT
+by +1.3/+1.1 BLEU on dev/test. These gains are
+comparable to the improvements on the CH-EN task,
+since it is well accepted in MT literature that a
+change of 6 in 1-reference BLEU is roughly equiva-
+lent to a change of 26 with 4 references.
+</bodyText>
+<table confidence="0.990211">
+system algorithm # feat. dev test
+Moses MERT 11 27.4 24.4
+Cubit MAXFORCE 21M 28.7 25.5
+</table>
+<tableCaption confidence="0.992548">
+Table 6: BLEU scores (with one reference) on SP-EN.
+</tableCaption>
+<sectionHeader confidence="0.999846" genericHeader="method">
+6 Related Work
+</sectionHeader>
+<bodyText confidence="0.9998999375">
+Besides those discussed in Section 1, there are also
+some research on tuning sparse features on the train-
+ing data, but they integrate those sparse features into
+the MT log-linear model as a single feature weight,
+and tune its weight on the dev set (e.g. (Liu et al.,
+2008; He et al., 2008; Wuebker et al., 2010; Simi-
+aner et al., 2012; Flanigan et al., 2013; Setiawan
+and Zhou, 2013; He and Deng, 2012; Gao and He,
+2013)). By contrast, our approach learns sparse fea-
+tures only on the training set, and use dev set as held-
+out to know when to stop.
+Forced decoding has been used in the MT litera-
+ture. For example, open source MT systems Moses
+and cdec have implemented it. Liang et al. (2012)
+also use the it to boost the MERT tuning by adding
+more y-good derivations to the standard k-best list.
+</bodyText>
+<sectionHeader confidence="0.998002" genericHeader="conclusions">
+7 Conclusions and Future Work
+</sectionHeader>
+<bodyText confidence="0.999946888888889">
+We have presented a simple yet effective approach
+of structured learning for machine translation which
+scales, for the first time, to a large portion of the
+whole training data, and enables us to tune a rich set
+of sparse, lexical, and non-local features. Our ap-
+proach results in very significant BLEU gains over
+MERT and PRO baselines. For future work, we will
+consider other translation paradigms such as hierar-
+chical phrase-based or syntax-based MT.
+</bodyText>
+<sectionHeader confidence="0.957255" genericHeader="acknowledgments">
+Acknowledgement
+</sectionHeader>
+<bodyText confidence="0.87918175">
+We thank the three anonymous reviewers for helpful sug-
+gestions. We are also grateful to David Chiang, Dan
+Gildea, Yoav Goldberg, Yifan He, Abe Ittycheriah, and
+Hao Zhang for discussions, and Chris Callison-Burch,
+Philipp Koehn, Lemao Liu, and Taro Watanabe for help
+with datasets. Huang, Yu, and Zhao are supported by
+DARPA FA8750-13-2-0041 (DEFT), a Google Faculty
+Research Award, and a PSC-CUNY Award, and Mi by
+DARPA HR0011-12-C-0015. Yu is also supported by the
+China 863 State Key Project (No. 2011AA01A207). The
+views and findings in this paper are those of the authors
+and are not endorsed by the US or Chinese governments.
+</bodyText>
+<page confidence="0.992471">
+1121
+</page>
+<sectionHeader confidence="0.996234" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999649762886598">
+Peter Brown, Peter Desouza, Robert Mercer, Vincent
+Pietra, and Jenifer Lai. 1992. Class-based n-gram
+models of natural language. Computational linguis-
+tics, 18(4):467–479.
+Eugene Charniak and Mark Johnson. 2005. Coarse-to-
+fine n-best parsing and maxent discriminative rerank-
+ing. In Proceedings of ACL, pages 173–180, Ann Ar-
+bor, Michigan, June.
+David Chiang, Yuval Marton, and Philip Resnik. 2008.
+Online large-margin training of syntactic and struc-
+tural translation features. In Proceedings of EMNLP
+2008.
+David Chiang. 2012. Hope and fear for discriminative
+training of statistical translation models. J. Machine
+Learning Research (JMLR), 13:1159–1187.
+Michael Collins and Brian Roark. 2004. Incremental
+parsing with the perceptron algorithm. In Proceedings
+of ACL.
+Michael Collins. 2002. Discriminative training meth-
+ods for hidden markov models: Theory and experi-
+ments with perceptron algorithms. In Proceedings of
+EMNLP.
+Hal Daum´e, III and Daniel Marcu. 2005. Learning as
+search optimization: Approximate large margin meth-
+ods for structured prediction. In Proceedings of ICML.
+Jeffrey Flanigan, Chris Dyer, and Jaime Carbonell. 2013.
+Large-scale discriminative training for statistical ma-
+chine translation using held-out line search. In Pro-
+ceedings of NAACL 2013.
+Jianfeng Gao and Xiaodong He. 2013. Training mrf-
+based phrase translation models using gradient ascent.
+In Proceedings of NAACL:HLT, pages 450–459, At-
+lanta, Georgia, June.
+Kevin Gimpel and Noah A. Smith. 2012. Structured
+ramp loss minimization for machine translation. In
+Proceedings of NAACL 2012.
+Xiaodong He and Li Deng. 2012. Maximum expected
+bleu training of phrase and lexicon translation models.
+In Proceedings ofACL.
+Zhongjun He, Qun Liu, and Shouxun Lin. 2008. Im-
+proving statistical machine translation using lexical-
+ized rule selection. In Proceedings of COLING, pages
+321–328, Manchester, UK, August.
+Mark Hopkins and Jonathan May. 2011. Tuning as rank-
+ing. In Proceedings of EMNLP.
+Liang Huang and David Chiang. 2007. Forest rescor-
+ing: Fast decoding with integrated language models.
+In Proceedings ofACL, Prague, Czech Rep., June.
+Liang Huang, Suphan Fayong, and Yang Guo. 2012.
+Structured perceptron with inexact search. In Proceed-
+ings of NAACL.
+Liang Huang. 2008. Forest reranking: Discriminative
+parsing with non-local features. In Proceedings of the
+ACL: HLT, Columbus, OH, June.
+P. Koehn, H. Hoang, A. Birch, C. Callison-Burch,
+M. Federico, N. Bertoldi, B. Cowan, W. Shen,
+C. Moran, R. Zens, C. Dyer, O. Bojar, A. Constantin,
+and E. Herbst. 2007. Moses: open source toolkit for
+statistical machine translation. In Proceedings ofACL:
+Demonstrations.
+Philipp Koehn. 2004. Pharaoh: a beam search decoder
+for phrase-based statistical machine translation mod-
+els. In Proceedings of AMTA, pages 115–124.
+Percy Liang, Alexandre Bouchard-Cˆot´e, Dan Klein, and
+Ben Taskar. 2006. An end-to-end discriminative
+approach to machine translation. In Proceedings of
+COLING-ACL, Sydney, Australia, July.
+Huashen Liang, Min Zhang, and Tiejun Zhao. 2012.
+Forced decoding for minimum error rate training in
+statistical machine translation. Journal of Computa-
+tional Information Systems, (8):861868.
+Qun Liu, Zhongjun He, Yang Liu, and Shouxun Lin.
+2008. Maximum entropy based rule selection model
+for syntax-based statistical machine translation. In
+Proceedings of EMNLP, pages 89–97, Honolulu,
+Hawaii, October.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated cor-
+pus of English: the Penn Treebank. Computational
+Linguistics, 19:313–330.
+Ryan McDonald, Koby Crammer, and Fernando Pereira.
+2005. Online large-margin training of dependency
+parsers. In Proceedings of the 43rd ACL.
+Haitao Mi, Liang Huang, and Qun Liu. 2008. Forest-
+based translation. In Proceedings ofACL.
+Franz Joseph Och. 2003. Minimum error rate training in
+statistical machine translation. In Proceedings ofACL,
+pages 160–167.
+Hendra Setiawan and Bowen Zhou. 2013. Discrimi-
+native training of 150 million translation parameters
+and its application to pruning. In Proceedings of
+NAACL:HLT, pages 335–341, Atlanta, Georgia, June.
+ACL.
+Patrick Simianer, Stefan Riezler, and Chris Dyer. 2012.
+Joint feature selection in distributed stochastic learn-
+ing for large-scale discriminative training in SMT. In
+Proceedings ofACL, Jeju Island, Korea.
+</reference>
+<page confidence="0.87937">
+1122
+</page>
+<reference confidence="0.999717194444444">
+Andreas Stolcke. 2002. Srilm - an extensible lan-
+guage modeling toolkit. In Proceedings of ICSLP, vol-
+ume 30, pages 901–904.
+Xu Sun, Takuya Matsuzaki, and Daisuke Okanohara.
+2009. Latent variable perceptron algorithm for struc-
+tured classification. In Proceedings of IJCAI.
+Ashish Vaswani, Haitao Mi, Liang Huang, and David
+Chiang. 2011. Rule markov models for fast tree-to-
+string translation. In Proceedings of ACL 2011, Port-
+land, OR.
+Ashish Vaswani, Liang Huang, and David Chiang. 2012.
+Smaller Alignment Models for Better Translations:
+Unsupervised Word Alignment with the L0-norm. In
+Proceedings of ACL.
+Taro Watanabe, Jun Suzuki, Hajime Tsukada, and Hideki
+Isozaki. 2007. Online large-margin training for statis-
+tical machine translation. In Proceedings of EMNLP-
+CoNLL.
+Joern Wuebker, Arne Mauser, and Hermann Ney. 2010.
+Training phrase translation models with leaving-one-
+out. In Proceedings of ACL, pages 475–484, Uppsala,
+Sweden, July.
+Luke Zettlemoyer and Michael Collins. 2005. Learning
+to map sentences to logical form: Structured classifi-
+cation with probabilistic categorial grammars. In Pro-
+ceedings of UAI.
+Hua-Ping Zhang, Hong-Kui Yu, De-Yi Xiong, and Qun
+Liu. 2003. Hhmm-based chinese lexical analyzer ict-
+clas. In Proceedings of the second SIGHAN workshop
+on Chinese language processing, pages 184–187.
+Hao Zhang, Liang Huang, Kai Zhao, and Ryan McDon-
+ald. 2013. Online learning with inexact hypergraph
+search. In Proceedings of EMNLP 2013.
+Kai Zhao and Liang Huang. 2013. Minibatch and paral-
+lelization for online large margin structured learning.
+In Proceedings of NAACL 2013.
+</reference>
+<page confidence="0.966456">
+1123
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.480469">
+<title confidence="0.90395725">Max-Violation Perceptron and Forced Decoding for Scalable MT Training of Computing Tech. Chinese Academy of Sciences yuheng@ict.ac.cn</title>
+<author confidence="0.845881">Haitao</author>
+<affiliation confidence="0.97935975">College &amp; Grad. City University of New Watson Research Center IBM</affiliation>
+<email confidence="0.997451">hmi@us.ibm.com</email>
+<abstract confidence="0.986775157894737">While large-scale discriminative training has triumphed in many NLP problems, its definite success on machine translation has been largely elusive. Most recent efforts along this line are not scalable (training on the small set with features from top most frequent words) and overly complicated. We instead present a very simple yet theoretically motivated approach by extending the recent framework of “violation-fixing perceptron”, using forced decoding to compute the target derivations. Extensive phrase-based translation experiments on both Chinese-to-English and Spanish-to-English tasks show substantial in up to +2.3/+2.0 on dev/test thanks to 20M+ sparse features. This is the first successful effort of large-scale online discriminative training for MT.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Peter Brown</author>
+<author>Peter Desouza</author>
+<author>Robert Mercer</author>
+<author>Vincent Pietra</author>
+<author>Jenifer Lai</author>
+</authors>
+<title>Class-based n-gram models of natural language.</title>
+<date>1992</date>
+<journal>Computational linguistics,</journal>
+<volume>18</volume>
+<issue>4</issue>
+<marker>Brown, Desouza, Mercer, Pietra, Lai, 1992</marker>
+<rawString>Peter Brown, Peter Desouza, Robert Mercer, Vincent Pietra, and Jenifer Lai. 1992. Class-based n-gram models of natural language. Computational linguistics, 18(4):467–479.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+<author>Mark Johnson</author>
+</authors>
+<title>Coarse-tofine n-best parsing and maxent discriminative reranking.</title>
+<date>2005</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>173--180</pages>
+<location>Ann Arbor, Michigan,</location>
+<marker>Charniak, Johnson, 2005</marker>
+<rawString>Eugene Charniak and Mark Johnson. 2005. Coarse-tofine n-best parsing and maxent discriminative reranking. In Proceedings of ACL, pages 173–180, Ann Arbor, Michigan, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+<author>Yuval Marton</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Online large-margin training of syntactic and structural translation features.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP</booktitle>
+<contexts>
+<context position="1715" citStr="Chiang et al., 2008" startWordPosition="249" endWordPosition="252"> online discriminative training for MT. 1 Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the defau</context>
+</contexts>
+<marker>Chiang, Marton, Resnik, 2008</marker>
+<rawString>David Chiang, Yuval Marton, and Philip Resnik. 2008. Online large-margin training of syntactic and structural translation features. In Proceedings of EMNLP 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hope and fear for discriminative training of statistical translation models.</title>
+<date>2012</date>
+<journal>J. Machine Learning Research (JMLR),</journal>
+<pages>13--1159</pages>
+<contexts>
+<context position="1730" citStr="Chiang, 2012" startWordPosition="253" endWordPosition="254">e training for MT. 1 Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the default training alg</context>
+</contexts>
+<marker>Chiang, 2012</marker>
+<rawString>David Chiang. 2012. Hope and fear for discriminative training of statistical translation models. J. Machine Learning Research (JMLR), 13:1159–1187.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+<author>Brian Roark</author>
+</authors>
+<title>Incremental parsing with the perceptron algorithm.</title>
+<date>2004</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="2963" citStr="Collins and Roark, 2004" startWordPosition="454" endWordPosition="457"> MT even though it can only tune a handful of dense features. See also Section 6 for other related work. As a notable exception, Liang et al. (2006) do train a structured perceptron model on the training data with sparse features, but fail to outperform MERT. We argue this is because structured perceptron, like many structured learning algorithms such as CRF and MIRA, assumes exact search, and search errors inevitably break theoretical properties such as convergence (Huang et al., 2012). Empirically, it is now well accepted that standard perceptron performs poorly when search error is severe (Collins and Roark, 2004; Zhang et al., 2013). To address the search error problem we propose a very simple approach based on the recent framework of “violation-fixing perceptron” (Huang et al., 2012) which is designed specifically for inexact search, with a theoretical convergence guarantee and excellent empirical performance on beam search parsing and tagging. The basic idea is to update when search error happens, rather than at the end of the search. To adapt it to MT, we extend this framework to handle latent variables corresponding to the hidden derivations. We update towards “gold-standard” derivations computed</context>
+<context position="13256" citStr="Collins and Roark, 2004" startWordPosition="2210" endWordPosition="2213">we define the set of y-bad partial derivations covering i Chinese words to be: badi(x, y) °= {d ∈ D(x) |e(d) Vpre(y), |c(d)|=i}. Basically, at each bin Bi, y-good derivations goodi(x, y) and y-bad ones badi(x, y) compete for the b slots in the bin: Bo = {E} (1) Bi = topb U {d ◦ r |d ∈ Bi−j, |c(r) |= j} (2) j=1..l where r is a rule covering j Chinese words, l is the phrase-limit, and topb 5 is a shorthand for argtopbd∈S w · 4)(x, d) which selects the top b derivations according to the current model w. 3.2 Algorithm 1: Early Update As a special case of violation-fixing perceptron, early update (Collins and Roark, 2004) stops decoding whenever the gold derivation falls off the beam, makes an update on the prefix so far and move on to the next example. We adapt it to MT as follows: if at a certain bin Bi, all y-good derivations in goodi(x, y) have fallen off the bin, then we stop and update, rewarding the best y-good derivation in goodi(x, y) (with respect to current model w), and penalizing the best y-bad derivation in the same step: dz (x, y) ° = argmax w · 4)(x, d) (3) d∈goodi(x,y) d−i (x, y) ° argmax w · 4)(x, d) (4) d∈badi(x,y)∩Bi w ← w + 04)(x, dz (x, y), d−i (x, y)) (5) where 04)(x, d, d0) °= 4)(x, d)−</context>
+</contexts>
+<marker>Collins, Roark, 2004</marker>
+<rawString>Michael Collins and Brian Roark. 2004. Incremental parsing with the perceptron algorithm. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms.</title>
+<date>2002</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="1303" citStr="Collins, 2002" startWordPosition="184" endWordPosition="185">ally motivated approach by extending the recent framework of “violation-fixing perceptron”, using forced decoding to compute the target derivations. Extensive phrase-based translation experiments on both Chinese-to-English and Spanish-to-English tasks show substantial gains in BLEU by up to +2.3/+2.0 on dev/test over MERT, thanks to 20M+ sparse features. This is the first successful effort of large-scale online discriminative training for MT. 1 Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not *</context>
+</contexts>
+<marker>Collins, 2002</marker>
+<rawString>Michael Collins. 2002. Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hal Daum´e</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Learning as search optimization: Approximate large margin methods for structured prediction.</title>
+<date>2005</date>
+<booktitle>In Proceedings of ICML.</booktitle>
+<marker>Daum´e, Marcu, 2005</marker>
+<rawString>Hal Daum´e, III and Daniel Marcu. 2005. Learning as search optimization: Approximate large margin methods for structured prediction. In Proceedings of ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Flanigan</author>
+<author>Chris Dyer</author>
+<author>Jaime Carbonell</author>
+</authors>
+<title>Large-scale discriminative training for statistical machine translation using held-out line search.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL</booktitle>
+<contexts>
+<context position="30240" citStr="Flanigan et al., 2013" startWordPosition="5143" endWordPosition="5146">T literature that a change of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales, for the first time, t</context>
+</contexts>
+<marker>Flanigan, Dyer, Carbonell, 2013</marker>
+<rawString>Jeffrey Flanigan, Chris Dyer, and Jaime Carbonell. 2013. Large-scale discriminative training for statistical machine translation using held-out line search. In Proceedings of NAACL 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jianfeng Gao</author>
+<author>Xiaodong He</author>
+</authors>
+<title>Training mrfbased phrase translation models using gradient ascent.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL:HLT,</booktitle>
+<pages>450--459</pages>
+<location>Atlanta, Georgia,</location>
+<contexts>
+<context position="30303" citStr="Gao and He, 2013" startWordPosition="5155" endWordPosition="5158">valent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales, for the first time, to a large portion of the whole training data, and enables us to</context>
+</contexts>
+<marker>Gao, He, 2013</marker>
+<rawString>Jianfeng Gao and Xiaodong He. 2013. Training mrfbased phrase translation models using gradient ascent. In Proceedings of NAACL:HLT, pages 450–459, Atlanta, Georgia, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Structured ramp loss minimization for machine translation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of NAACL</booktitle>
+<contexts>
+<context position="1794" citStr="Gimpel and Smith, 2012" startWordPosition="262" endWordPosition="265">native training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the default training algorithm for MT even though it can only tune a handful of dense fe</context>
+</contexts>
+<marker>Gimpel, Smith, 2012</marker>
+<rawString>Kevin Gimpel and Noah A. Smith. 2012. Structured ramp loss minimization for machine translation. In Proceedings of NAACL 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiaodong He</author>
+<author>Li Deng</author>
+</authors>
+<title>Maximum expected bleu training of phrase and lexicon translation models.</title>
+<date>2012</date>
+<booktitle>In Proceedings ofACL.</booktitle>
+<contexts>
+<context position="30284" citStr="He and Deng, 2012" startWordPosition="5151" endWordPosition="5154">LEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales, for the first time, to a large portion of the whole training data</context>
+</contexts>
+<marker>He, Deng, 2012</marker>
+<rawString>Xiaodong He and Li Deng. 2012. Maximum expected bleu training of phrase and lexicon translation models. In Proceedings ofACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongjun He</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Improving statistical machine translation using lexicalized rule selection.</title>
+<date>2008</date>
+<booktitle>In Proceedings of COLING,</booktitle>
+<pages>321--328</pages>
+<location>Manchester, UK,</location>
+<contexts>
+<context position="30172" citStr="He et al., 2008" startWordPosition="5130" endWordPosition="5133">improvements on the CH-EN task, since it is well accepted in MT literature that a change of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured </context>
+</contexts>
+<marker>He, Liu, Lin, 2008</marker>
+<rawString>Zhongjun He, Qun Liu, and Shouxun Lin. 2008. Improving statistical machine translation using lexicalized rule selection. In Proceedings of COLING, pages 321–328, Manchester, UK, August.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Hopkins</author>
+<author>Jonathan May</author>
+</authors>
+<title>Tuning as ranking.</title>
+<date>2011</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="1759" citStr="Hopkins and May, 2011" startWordPosition="256" endWordPosition="259"> Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the default training algorithm for MT even though it </context>
+<context position="19975" citStr="Hopkins and May, 2011" startWordPosition="3399" endWordPosition="3402">eriments In order to test our approach in different language pairs, we conduct three experiments, shown in Table 2, on two significantly different language pairs (long vs. short distance reorderings), Chinese-toEnglish (CH-EN) and Spanish-to-English (SP-EN). 5.1 System Preparation and Data We base our experiments on Cubit, a state-of-art phrase-based system in Python (Huang and Chiang, 2007).1 We set phrase-limit to 7 in rule extraction, and beam size to 30 and distortion limit 6 in decoding. We compare our violation-fixing perceptron with two popular tuning methods: MERT (Och, 2003) and PRO (Hopkins and May, 2011). For word alignments we use GIZA++-E0 (Vaswani et al., 2012) which produces sparser alignments, alleviating the garbage collection problem. We use the SRILM toolkit (Stolcke, 2002) to train a trigram language model with modified Kneser-Ney smoothing on 1.5M English sentences. Our dev and test sets for CH-EN task are from the newswire portion of 2006 and 2008 NIST MT Evaluations (616/691 sentences, 18575/18875 words), with four references.2 The dev and test sets for SPEN task are from newstest2012 and newstest2013, with only one reference. Below both MERT and PRO tune weights on the dev set, w</context>
+</contexts>
+<marker>Hopkins, May, 2011</marker>
+<rawString>Mark Hopkins and Jonathan May. 2011. Tuning as ranking. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Forest rescoring: Fast decoding with integrated language models.</title>
+<date>2007</date>
+<booktitle>In Proceedings ofACL,</booktitle>
+<location>Prague, Czech Rep.,</location>
+<contexts>
+<context position="19747" citStr="Huang and Chiang, 2007" startWordPosition="3359" endWordPosition="3362"> 1 +1.3/1.1 5.5 Table 2: Overview of all experiments. The OBLEU column shows the absolute improvements of our method MAXFORCE on dev/test sets over MERT. The Chinese datasets also use prefix-pairs in training (see Table 3). 5 Experiments In order to test our approach in different language pairs, we conduct three experiments, shown in Table 2, on two significantly different language pairs (long vs. short distance reorderings), Chinese-toEnglish (CH-EN) and Spanish-to-English (SP-EN). 5.1 System Preparation and Data We base our experiments on Cubit, a state-of-art phrase-based system in Python (Huang and Chiang, 2007).1 We set phrase-limit to 7 in rule extraction, and beam size to 30 and distortion limit 6 in decoding. We compare our violation-fixing perceptron with two popular tuning methods: MERT (Och, 2003) and PRO (Hopkins and May, 2011). For word alignments we use GIZA++-E0 (Vaswani et al., 2012) which produces sparser alignments, alleviating the garbage collection problem. We use the SRILM toolkit (Stolcke, 2002) to train a trigram language model with modified Kneser-Ney smoothing on 1.5M English sentences. Our dev and test sets for CH-EN task are from the newswire portion of 2006 and 2008 NIST MT Ev</context>
+</contexts>
+<marker>Huang, Chiang, 2007</marker>
+<rawString>Liang Huang and David Chiang. 2007. Forest rescoring: Fast decoding with integrated language models. In Proceedings ofACL, Prague, Czech Rep., June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Suphan Fayong</author>
+<author>Yang Guo</author>
+</authors>
+<title>Structured perceptron with inexact search.</title>
+<date>2012</date>
+<booktitle>In Proceedings of NAACL.</booktitle>
+<contexts>
+<context position="2831" citStr="Huang et al., 2012" startWordPosition="433" endWordPosition="436">and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the default training algorithm for MT even though it can only tune a handful of dense features. See also Section 6 for other related work. As a notable exception, Liang et al. (2006) do train a structured perceptron model on the training data with sparse features, but fail to outperform MERT. We argue this is because structured perceptron, like many structured learning algorithms such as CRF and MIRA, assumes exact search, and search errors inevitably break theoretical properties such as convergence (Huang et al., 2012). Empirically, it is now well accepted that standard perceptron performs poorly when search error is severe (Collins and Roark, 2004; Zhang et al., 2013). To address the search error problem we propose a very simple approach based on the recent framework of “violation-fixing perceptron” (Huang et al., 2012) which is designed specifically for inexact search, with a theoretical convergence guarantee and excellent empirical performance on beam search parsing and tagging. The basic idea is to update when search error happens, rather than at the end of the search. To adapt it to MT, we extend this </context>
+<context position="10210" citStr="Huang et al. (2012)" startWordPosition="1667" endWordPosition="1670">reorderings are disallowed but are very common between languages with very different word orders such as English and Chinese. 2. noisy alignment and phrase limit: the wordalignment quality (typically from GIZA++) are usually very noisy, which leads to unnecessarily big chunks of rules beyond the phrase limit. If we only rely on the reachable whole sentence pairs, we will not be able to use much of the training set for Chinese-English. So we propose to augment the set of reachable examples by considering reachable prefix-pairs (see Figure 3 for an example). 3 Violation-Fixing Perceptron for MT Huang et al. (2012) establish a theoretical framework called “violation-fixing perceptron” which is tailored for structured learning with inexact search and has provable convergence properties. The highlevel idea is that standard full update does not fix search errors; to do that we should instead update when search error occurs, e.g., when the goldPforced(b |a) = r1 r2 r3 U.N. sent 50 observers 5 to P monitor the 1st P P election since Bolivia restored democracy P P P P 3 P 3 1114 1 standard derivation falls below the beam. Huang et al. (2012) show dramatic improvements in the quality of the learned model using</context>
+<context position="14936" citStr="Huang et al., 2012" startWordPosition="2522" endWordPosition="2525">d. So it is possible that at a certain bin, all y-good partial derivations fall off the bin, but the search can still continue and produce the exact reference translation through some other y-good path that avoids that bin. For example, in Figure 1, the y-good states in steps 3 and 5 are not critical; it is totally fine to miss them in the search as long as we save the y-good states 1115 Figure 4: Illustration of four update methods. The blue paths denote (possibly lots of) gold-standard derivations from forced decoding. Standard update in this case is invalid as it reinforces the error of w (Huang et al., 2012). in bins 1, 4 and 6. So we actually use a “softer” version of the early update algorithm: only stop and update when there is no hope to continue. To be more concrete, let l denote the phrase-limit then we stop where there are l consecutive bins without any y-good states, and update on the first among them. 3.3 Algorithm 2: Max-Violation Update While early update learns substantially better models than standard perceptron in the midst of inexact search, it is also well-known to be converging much slower than the latter, since each update is on a (short) prefix. Huang et al. (2012) propose an i</context>
+<context position="17202" citStr="Huang et al. (2012)" startWordPosition="2921" endWordPosition="2924"> d−|x|(x, y)) (8) Local update, however, updates towards the derivation in the final bin that is most similar to the reference y, denoted dy|x|(x, y): dy|x|(x, y) = argmax Bleu+1(y, e(d)) (9) d∈B|�| w ← w + A4)(x, dy|x|(x, y), d−|x|(x, y)) (10) where Bleu+1(·, ·) returns the sentence-level BLEU. Liang et al. (2006) observe that standard update performs worse than local update, which they attribute to the fact that the former often update towards a gold derivation made up of “unreasonable” rules. Here we give a very different but theoretically more reasonable explanation based on the theory of Huang et al. (2012), who define an update A4)(x, d+, d−) to be invalid if d+ scores higher than d− (i.e., w · A4)(x, d+, d−) &gt; 0, or update Aw points to the same direction as w in Fig. 4), in which case there is no “violation” or mistake to fix. Perceptron is guaranteed to converge if all updates are valid. Clearly, early and max-violation updates are valid. But standard update is not: it is possible that at the end of search, the best y-good derivation d+|x|(x, y), though pruned earlier in the search, ranks even higher in the current model than anything in the final bin (see Figure 4). In other words, there is </context>
+</contexts>
+<marker>Huang, Fayong, Guo, 2012</marker>
+<rawString>Liang Huang, Suphan Fayong, and Yang Guo. 2012. Structured perceptron with inexact search. In Proceedings of NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+</authors>
+<title>Forest reranking: Discriminative parsing with non-local features.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the ACL: HLT,</booktitle>
+<location>Columbus, OH,</location>
+<marker>Huang, 2008</marker>
+<rawString>Liang Huang. 2008. Forest reranking: Discriminative parsing with non-local features. In Proceedings of the ACL: HLT, Columbus, OH, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Koehn</author>
+<author>H Hoang</author>
+<author>A Birch</author>
+<author>C Callison-Burch</author>
+<author>M Federico</author>
+<author>N Bertoldi</author>
+<author>B Cowan</author>
+<author>W Shen</author>
+<author>C Moran</author>
+<author>R Zens</author>
+<author>C Dyer</author>
+<author>O Bojar</author>
+<author>A Constantin</author>
+<author>E Herbst</author>
+</authors>
+<title>Moses: open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings ofACL: Demonstrations.</booktitle>
+<contexts>
+<context position="18576" citStr="Koehn et al., 2007" startWordPosition="3159" endWordPosition="3162"> invalid updates due to search errors are indeed the main reason why standard update fails. Local update, however, is always valid in that definition. Finally, it is worth noting that in terms of implementation, standard and max-violation are the easiest, while early update is more involved. 4 Feature Design Our feature set includes the following 11 dense features: LM, four conditional and lexical translation probabilities (pc( e|f), pc(f|e), pl(e|f), pl(f|e)), length and phrase penalties, distortion cost, and three lexicalized reordering features. All these features are inherited from Moses (Koehn et al., 2007). model W best in the beam da early da. maxviolation d� |�| d+1 d1XI std local worst in the beam dz + dz⇤ standard update is invalid i∗ 0 = argmin i 1116 (•1,Bush) : (sl, “&lt;s&gt; Bush”) (• •••g,talks) : (s2, “&lt;s&gt; Bush held talks”) T2 y &lt;s&gt; &lt;/s&gt; fixing le huit´an B held talk 1117 Language Scale Reachability # feats OBLEU Sections Pair Training Data sent. words # refs dev/test # sent. # words small 30K 0.8M/1.0M 21.4% 8.8% 7M +2.2/2.0 5.2, 5.3 large CH-EN 230K 6.9M/8.9M 32.1% 12.7% 23M 4 +2.3/2.0 5.2, 5.4 large SP-EN 174K 4.9M/4.3M 55.0% 43.9% 21M 1 +1.3/1.1 5.5 Table 2: Overview of all experiments</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, Dyer, Bojar, Constantin, Herbst, 2007</marker>
+<rawString>P. Koehn, H. Hoang, A. Birch, C. Callison-Burch, M. Federico, N. Bertoldi, B. Cowan, W. Shen, C. Moran, R. Zens, C. Dyer, O. Bojar, A. Constantin, and E. Herbst. 2007. Moses: open source toolkit for statistical machine translation. In Proceedings ofACL: Demonstrations.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Pharaoh: a beam search decoder for phrase-based statistical machine translation models.</title>
+<date>2004</date>
+<booktitle>In Proceedings of AMTA,</booktitle>
+<pages>115--124</pages>
+<contexts>
+<context position="5764" citStr="Koehn, 2004" startWordPosition="905" endWordPosition="906">re set of sparse, lexicalized, and non-local features, and we propose various ways to alleviate overfitting. For simplicity and efficiency reasons, in this paper we use phrase-based translation, but our method has the potential to be applicable to other translation paradigms. Extensive experiments on both Chineseto-English and Spanish-to-English tasks show statistically significant gains in BLEU by up to +2.3/+2.0 on dev/test over MERT, and up to +1.5/+1.5 over PRO, thanks to 20M+ sparse features. 2 Phrase-Based MT and Forced Decoding We first review the basic phrase-based decoding algorithm (Koehn, 2004), which will be adapted for forced decoding. 2.1 Background: Phrase-based Decoding We will use the following running example from Chinese to English from Mi et al. (2008): Figure 1: Standard beam-search phrase-based decoding. yˇu Sh¯al´ong jˇux´ıng le hu`ıt´an with Sharon hold -ed meeting ‘Bush held a meeting with Sharon’ Phrase-based decoders generate partial targetlanguage outputs in left-to-right order in the form of hypotheses (or states) (Koehn, 2004). Each hypothesis has a coverage vector capturing the sourcelanguage words translated so far, and can be extended into a longer hypothesis b</context>
+<context position="7975" citStr="Koehn, 2004" startWordPosition="1292" endWordPosition="1293">(0, “&lt;s&gt;”) (•1 ,Bush) : (si, “&lt;s&gt; Bush”) (• •••6,talks) : (s2, “&lt;s&gt; Bush held talks”) (•••3•••,Sharon) : (s3, “&lt;s&gt; Bush held ... with Sharon”) B`ush´ı Bush r1 r2 r3 r1 r2 r3 1113 held talks with Sharon Bush held talks with Sharon 0 1 2 3 4 5 6 Figure 2: Forced decoding and y-good derivation lattice. where the score of applying each rule now also includes a combination cost due to the bigrams formed when applying the phrase-pair, e.g. s�3 = s�2 + s(r3) + dc(|6 − 3|) − log Pl,,t(with |talk) To make this exponential-time algorithm practical, beam search is the standard approximate search method (Koehn, 2004). Here we group +LM states into n bins, with each bin Bi hosting at most b states that cover exactly i Chinese words (see Figure 1). 2.2 Forced Decoding The idea of forced decoding is to consider only those (partial) derivations that can produce (a prefix of) the exact reference translation (assuming single reference). We call these partial derivations “y-good” derivations (Daum´e, III and Marcu, 2005), and those that deviate from the reference translation “y-bad” derivations. The forced decoding algorithm is very similar to +LM decoding introduced above, with the new “forced decoding LM” to b</context>
+</contexts>
+<marker>Koehn, 2004</marker>
+<rawString>Philipp Koehn. 2004. Pharaoh: a beam search decoder for phrase-based statistical machine translation models. In Proceedings of AMTA, pages 115–124.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Alexandre Bouchard-Cˆot´e</author>
+<author>Dan Klein</author>
+<author>Ben Taskar</author>
+</authors>
+<title>An end-to-end discriminative approach to machine translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of COLING-ACL,</booktitle>
+<location>Sydney, Australia,</location>
+<marker>Liang, Bouchard-Cˆot´e, Klein, Taskar, 2006</marker>
+<rawString>Percy Liang, Alexandre Bouchard-Cˆot´e, Dan Klein, and Ben Taskar. 2006. An end-to-end discriminative approach to machine translation. In Proceedings of COLING-ACL, Sydney, Australia, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Huashen Liang</author>
+<author>Min Zhang</author>
+<author>Tiejun Zhao</author>
+</authors>
+<title>Forced decoding for minimum error rate training in statistical machine translation.</title>
+<date>2012</date>
+<journal>Journal of Computational Information Systems,</journal>
+<pages>8--861868</pages>
+<contexts>
+<context position="30573" citStr="Liang et al. (2012)" startWordPosition="5206" endWordPosition="5209">tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales, for the first time, to a large portion of the whole training data, and enables us to tune a rich set of sparse, lexical, and non-local features. Our approach results in very significant BLEU gains over MERT and PRO baselines. For future work, we will consider other translation paradigms such as hierarchical phrase-based or syntax-based MT. Acknowledgem</context>
+</contexts>
+<marker>Liang, Zhang, Zhao, 2012</marker>
+<rawString>Huashen Liang, Min Zhang, and Tiejun Zhao. 2012. Forced decoding for minimum error rate training in statistical machine translation. Journal of Computational Information Systems, (8):861868.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Qun Liu</author>
+<author>Zhongjun He</author>
+<author>Yang Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Maximum entropy based rule selection model for syntax-based statistical machine translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP,</booktitle>
+<pages>89--97</pages>
+<location>Honolulu, Hawaii,</location>
+<contexts>
+<context position="30155" citStr="Liu et al., 2008" startWordPosition="5126" endWordPosition="5129">comparable to the improvements on the CH-EN task, since it is well accepted in MT literature that a change of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approa</context>
+</contexts>
+<marker>Liu, He, Liu, Lin, 2008</marker>
+<rawString>Qun Liu, Zhongjun He, Yang Liu, and Shouxun Lin. 2008. Maximum entropy based rule selection model for syntax-based statistical machine translation. In Proceedings of EMNLP, pages 89–97, Honolulu, Hawaii, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Beatrice Santorini</author>
+<author>Mary Ann Marcinkiewicz</author>
+</authors>
+<title>Building a large annotated corpus of English: the Penn Treebank. Computational Linguistics,</title>
+<date>1993</date>
+<marker>Marcus, Santorini, Marcinkiewicz, 1993</marker>
+<rawString>Mitchell P. Marcus, Beatrice Santorini, and Mary Ann Marcinkiewicz. 1993. Building a large annotated corpus of English: the Penn Treebank. Computational Linguistics, 19:313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Koby Crammer</author>
+<author>Fernando Pereira</author>
+</authors>
+<title>Online large-margin training of dependency parsers.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd ACL.</booktitle>
+<contexts>
+<context position="1275" citStr="McDonald et al., 2005" startWordPosition="178" endWordPosition="181"> present a very simple yet theoretically motivated approach by extending the recent framework of “violation-fixing perceptron”, using forced decoding to compute the target derivations. Extensive phrase-based translation experiments on both Chinese-to-English and Spanish-to-English tasks show substantial gains in BLEU by up to +2.3/+2.0 on dev/test over MERT, thanks to 20M+ sparse features. This is the first successful effort of large-scale online discriminative training for MT. 1 Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicali</context>
+</contexts>
+<marker>McDonald, Crammer, Pereira, 2005</marker>
+<rawString>Ryan McDonald, Koby Crammer, and Fernando Pereira. 2005. Online large-margin training of dependency parsers. In Proceedings of the 43rd ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+<author>Qun Liu</author>
+</authors>
+<title>Forestbased translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings ofACL.</booktitle>
+<contexts>
+<context position="5934" citStr="Mi et al. (2008)" startWordPosition="930" endWordPosition="933">se phrase-based translation, but our method has the potential to be applicable to other translation paradigms. Extensive experiments on both Chineseto-English and Spanish-to-English tasks show statistically significant gains in BLEU by up to +2.3/+2.0 on dev/test over MERT, and up to +1.5/+1.5 over PRO, thanks to 20M+ sparse features. 2 Phrase-Based MT and Forced Decoding We first review the basic phrase-based decoding algorithm (Koehn, 2004), which will be adapted for forced decoding. 2.1 Background: Phrase-based Decoding We will use the following running example from Chinese to English from Mi et al. (2008): Figure 1: Standard beam-search phrase-based decoding. yˇu Sh¯al´ong jˇux´ıng le hu`ıt´an with Sharon hold -ed meeting ‘Bush held a meeting with Sharon’ Phrase-based decoders generate partial targetlanguage outputs in left-to-right order in the form of hypotheses (or states) (Koehn, 2004). Each hypothesis has a coverage vector capturing the sourcelanguage words translated so far, and can be extended into a longer hypothesis by a phrase-pair translating an uncovered segment. For example, the following is one possible derivation: (0 ) : (0, “”) (•1 ) : (s1, “Bush”) (• •••6) : (s2, “Bush held ta</context>
+</contexts>
+<marker>Mi, Huang, Liu, 2008</marker>
+<rawString>Haitao Mi, Liang Huang, and Qun Liu. 2008. Forestbased translation. In Proceedings ofACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Joseph Och</author>
+</authors>
+<title>Minimum error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings ofACL,</booktitle>
+<pages>160--167</pages>
+<contexts>
+<context position="2297" citStr="Och, 2003" startWordPosition="346" endWordPosition="347">., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 2003) remains the default training algorithm for MT even though it can only tune a handful of dense features. See also Section 6 for other related work. As a notable exception, Liang et al. (2006) do train a structured perceptron model on the training data with sparse features, but fail to outperform MERT. We argue this is because structured perceptron, like many structured learning algorithms such as CRF and MIRA, assumes exact search, and search errors inevitably break theoretical properties such as convergence (Huang et al., 2012). Empirically, it is now well accepted that standard perceptron pe</context>
+<context position="19943" citStr="Och, 2003" startWordPosition="3395" endWordPosition="3396">(see Table 3). 5 Experiments In order to test our approach in different language pairs, we conduct three experiments, shown in Table 2, on two significantly different language pairs (long vs. short distance reorderings), Chinese-toEnglish (CH-EN) and Spanish-to-English (SP-EN). 5.1 System Preparation and Data We base our experiments on Cubit, a state-of-art phrase-based system in Python (Huang and Chiang, 2007).1 We set phrase-limit to 7 in rule extraction, and beam size to 30 and distortion limit 6 in decoding. We compare our violation-fixing perceptron with two popular tuning methods: MERT (Och, 2003) and PRO (Hopkins and May, 2011). For word alignments we use GIZA++-E0 (Vaswani et al., 2012) which produces sparser alignments, alleviating the garbage collection problem. We use the SRILM toolkit (Stolcke, 2002) to train a trigram language model with modified Kneser-Ney smoothing on 1.5M English sentences. Our dev and test sets for CH-EN task are from the newswire portion of 2006 and 2008 NIST MT Evaluations (616/691 sentences, 18575/18875 words), with four references.2 The dev and test sets for SPEN task are from newstest2012 and newstest2013, with only one reference. Below both MERT and PR</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Joseph Och. 2003. Minimum error rate training in statistical machine translation. In Proceedings ofACL, pages 160–167.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hendra Setiawan</author>
+<author>Bowen Zhou</author>
+</authors>
+<title>Discriminative training of 150 million translation parameters and its application to pruning.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL:HLT,</booktitle>
+<pages>335--341</pages>
+<publisher>ACL.</publisher>
+<location>Atlanta, Georgia,</location>
+<contexts>
+<context position="30265" citStr="Setiawan and Zhou, 2013" startWordPosition="5147" endWordPosition="5150">nge of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales, for the first time, to a large portion of the </context>
+</contexts>
+<marker>Setiawan, Zhou, 2013</marker>
+<rawString>Hendra Setiawan and Bowen Zhou. 2013. Discriminative training of 150 million translation parameters and its application to pruning. In Proceedings of NAACL:HLT, pages 335–341, Atlanta, Georgia, June. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Patrick Simianer</author>
+<author>Stefan Riezler</author>
+<author>Chris Dyer</author>
+</authors>
+<title>Joint feature selection in distributed stochastic learning for large-scale discriminative training in SMT.</title>
+<date>2012</date>
+<booktitle>In Proceedings ofACL, Jeju Island,</booktitle>
+<contexts>
+<context position="30217" citStr="Simianer et al., 2012" startWordPosition="5138" endWordPosition="5142">t is well accepted in MT literature that a change of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine translation which scales</context>
+</contexts>
+<marker>Simianer, Riezler, Dyer, 2012</marker>
+<rawString>Patrick Simianer, Stefan Riezler, and Chris Dyer. 2012. Joint feature selection in distributed stochastic learning for large-scale discriminative training in SMT. In Proceedings ofACL, Jeju Island, Korea.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+</authors>
+<title>Srilm - an extensible language modeling toolkit.</title>
+<date>2002</date>
+<booktitle>In Proceedings of ICSLP,</booktitle>
+<volume>30</volume>
+<pages>901--904</pages>
+<contexts>
+<context position="20156" citStr="Stolcke, 2002" startWordPosition="3428" endWordPosition="3429">orderings), Chinese-toEnglish (CH-EN) and Spanish-to-English (SP-EN). 5.1 System Preparation and Data We base our experiments on Cubit, a state-of-art phrase-based system in Python (Huang and Chiang, 2007).1 We set phrase-limit to 7 in rule extraction, and beam size to 30 and distortion limit 6 in decoding. We compare our violation-fixing perceptron with two popular tuning methods: MERT (Och, 2003) and PRO (Hopkins and May, 2011). For word alignments we use GIZA++-E0 (Vaswani et al., 2012) which produces sparser alignments, alleviating the garbage collection problem. We use the SRILM toolkit (Stolcke, 2002) to train a trigram language model with modified Kneser-Ney smoothing on 1.5M English sentences. Our dev and test sets for CH-EN task are from the newswire portion of 2006 and 2008 NIST MT Evaluations (616/691 sentences, 18575/18875 words), with four references.2 The dev and test sets for SPEN task are from newstest2012 and newstest2013, with only one reference. Below both MERT and PRO tune weights on the dev set, while our method on the training set. Specifically, our method only uses the dev set to know when to stop training. 5.2 Forced Decoding Reachability on Chinese As mentioned in Sectio</context>
+</contexts>
+<marker>Stolcke, 2002</marker>
+<rawString>Andreas Stolcke. 2002. Srilm - an extensible language modeling toolkit. In Proceedings of ICSLP, volume 30, pages 901–904.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xu Sun</author>
+<author>Takuya Matsuzaki</author>
+<author>Daisuke Okanohara</author>
+</authors>
+<title>Latent variable perceptron algorithm for structured classification.</title>
+<date>2009</date>
+<booktitle>In Proceedings of IJCAI.</booktitle>
+<contexts>
+<context position="11582" citStr="Sun et al., 2009" startWordPosition="1896" endWordPosition="1899">cremental search problem which closely resembles beamsearch incremental parsing, it is very natural to employ violation-fixing perceptron here for MT training. Our goal is to produce the exact reference translation, or in other words, we want at least one y-good derivation to survive in the beam search. To adapt the violation-fixing perceptron framework to MT we need to extend the framework to handle latent variables since the gold-standard derivation is not observed. This is done in a way similar to the latent variable structured perceptron (Zettlemoyer and Collins, 2005; Liang et al., 2006; Sun et al., 2009) where each update is from the best (y-bad) derivation towards the best y-good derivation in the current model; the latter is a constrained search which is exactly forced decoding in MT. 3.1 Notations We first establish some necessary notations. Let hx, yi be a sentence pair in the training data, and d = r1 ◦ r2 ◦ ... ◦ r|d| be a (partial) derivation, where each ri = hc(ri), e(ri)i is a rule, i.e., a Chinese-English phrase-pair. Let |c(d) |° = Ei |c(ri) |be the number of Chinese words covered by this derivation, and e(d) ° e(r1) ◦ e(r2) ... ◦ e(r|d|) be the English prefix generated so far. Let</context>
+</contexts>
+<marker>Sun, Matsuzaki, Okanohara, 2009</marker>
+<rawString>Xu Sun, Takuya Matsuzaki, and Daisuke Okanohara. 2009. Latent variable perceptron algorithm for structured classification. In Proceedings of IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ashish Vaswani</author>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Rule markov models for fast tree-tostring translation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL 2011,</booktitle>
+<location>Portland, OR.</location>
+<marker>Vaswani, Mi, Huang, Chiang, 2011</marker>
+<rawString>Ashish Vaswani, Haitao Mi, Liang Huang, and David Chiang. 2011. Rule markov models for fast tree-tostring translation. In Proceedings of ACL 2011, Portland, OR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ashish Vaswani</author>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Smaller Alignment Models for Better Translations: Unsupervised Word Alignment with the L0-norm.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="20036" citStr="Vaswani et al., 2012" startWordPosition="3409" endWordPosition="3412">airs, we conduct three experiments, shown in Table 2, on two significantly different language pairs (long vs. short distance reorderings), Chinese-toEnglish (CH-EN) and Spanish-to-English (SP-EN). 5.1 System Preparation and Data We base our experiments on Cubit, a state-of-art phrase-based system in Python (Huang and Chiang, 2007).1 We set phrase-limit to 7 in rule extraction, and beam size to 30 and distortion limit 6 in decoding. We compare our violation-fixing perceptron with two popular tuning methods: MERT (Och, 2003) and PRO (Hopkins and May, 2011). For word alignments we use GIZA++-E0 (Vaswani et al., 2012) which produces sparser alignments, alleviating the garbage collection problem. We use the SRILM toolkit (Stolcke, 2002) to train a trigram language model with modified Kneser-Ney smoothing on 1.5M English sentences. Our dev and test sets for CH-EN task are from the newswire portion of 2006 and 2008 NIST MT Evaluations (616/691 sentences, 18575/18875 words), with four references.2 The dev and test sets for SPEN task are from newstest2012 and newstest2013, with only one reference. Below both MERT and PRO tune weights on the dev set, while our method on the training set. Specifically, our method</context>
+</contexts>
+<marker>Vaswani, Huang, Chiang, 2012</marker>
+<rawString>Ashish Vaswani, Liang Huang, and David Chiang. 2012. Smaller Alignment Models for Better Translations: Unsupervised Word Alignment with the L0-norm. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taro Watanabe</author>
+<author>Jun Suzuki</author>
+<author>Hajime Tsukada</author>
+<author>Hideki Isozaki</author>
+</authors>
+<title>Online large-margin training for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of EMNLPCoNLL.</booktitle>
+<contexts>
+<context position="1694" citStr="Watanabe et al., 2007" startWordPosition="245" endWordPosition="248">l effort of large-scale online discriminative training for MT. 1 Introduction Large-scale discriminative training has witnessed great success in many NLP problems such as parsing (McDonald et al., 2005) and tagging (Collins, 2002), but not yet for machine translation (MT) despite numerous recent efforts. Due to scalability issues, most of these recent methods can only train on a small dev set of about a thousand sentences rather than on the full training set, and only with 2,000–10,000 rather “dense-like” features (either unlexicalized or only considering highest-frequency words), as in MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang, 2012), PRO (Hopkins and May, 2011), and RAMP (Gimpel and Smith, 2012). However, it is well-known that the most important features for NLP are lexicalized, most of which can not * Work done while visiting City University of New York. †Corresponding author. be seen on a small dataset. Furthermore, these methods often involve complicated loss functions and intricate choices of the “target” derivations to update towards or against (e.g. k-best/forest oracles, or hope/fear derivations), and are thus hard to replicate. As a result, the classical method of MERT (Och, 20</context>
+</contexts>
+<marker>Watanabe, Suzuki, Tsukada, Isozaki, 2007</marker>
+<rawString>Taro Watanabe, Jun Suzuki, Hajime Tsukada, and Hideki Isozaki. 2007. Online large-margin training for statistical machine translation. In Proceedings of EMNLPCoNLL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joern Wuebker</author>
+<author>Arne Mauser</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Training phrase translation models with leaving-oneout.</title>
+<date>2010</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>475--484</pages>
+<location>Uppsala, Sweden,</location>
+<contexts>
+<context position="30194" citStr="Wuebker et al., 2010" startWordPosition="5134" endWordPosition="5137">he CH-EN task, since it is well accepted in MT literature that a change of 6 in 1-reference BLEU is roughly equivalent to a change of 26 with 4 references. system algorithm # feat. dev test Moses MERT 11 27.4 24.4 Cubit MAXFORCE 21M 28.7 25.5 Table 6: BLEU scores (with one reference) on SP-EN. 6 Related Work Besides those discussed in Section 1, there are also some research on tuning sparse features on the training data, but they integrate those sparse features into the MT log-linear model as a single feature weight, and tune its weight on the dev set (e.g. (Liu et al., 2008; He et al., 2008; Wuebker et al., 2010; Simianer et al., 2012; Flanigan et al., 2013; Setiawan and Zhou, 2013; He and Deng, 2012; Gao and He, 2013)). By contrast, our approach learns sparse features only on the training set, and use dev set as heldout to know when to stop. Forced decoding has been used in the MT literature. For example, open source MT systems Moses and cdec have implemented it. Liang et al. (2012) also use the it to boost the MERT tuning by adding more y-good derivations to the standard k-best list. 7 Conclusions and Future Work We have presented a simple yet effective approach of structured learning for machine t</context>
+</contexts>
+<marker>Wuebker, Mauser, Ney, 2010</marker>
+<rawString>Joern Wuebker, Arne Mauser, and Hermann Ney. 2010. Training phrase translation models with leaving-oneout. In Proceedings of ACL, pages 475–484, Uppsala, Sweden, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Luke Zettlemoyer</author>
+<author>Michael Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In Proceedings of UAI.</booktitle>
+<contexts>
+<context position="11543" citStr="Zettlemoyer and Collins, 2005" startWordPosition="1888" endWordPosition="1891"> tagging. Since phrase-based decoding is also an incremental search problem which closely resembles beamsearch incremental parsing, it is very natural to employ violation-fixing perceptron here for MT training. Our goal is to produce the exact reference translation, or in other words, we want at least one y-good derivation to survive in the beam search. To adapt the violation-fixing perceptron framework to MT we need to extend the framework to handle latent variables since the gold-standard derivation is not observed. This is done in a way similar to the latent variable structured perceptron (Zettlemoyer and Collins, 2005; Liang et al., 2006; Sun et al., 2009) where each update is from the best (y-bad) derivation towards the best y-good derivation in the current model; the latter is a constrained search which is exactly forced decoding in MT. 3.1 Notations We first establish some necessary notations. Let hx, yi be a sentence pair in the training data, and d = r1 ◦ r2 ◦ ... ◦ r|d| be a (partial) derivation, where each ri = hc(ri), e(ri)i is a rule, i.e., a Chinese-English phrase-pair. Let |c(d) |° = Ei |c(ri) |be the number of Chinese words covered by this derivation, and e(d) ° e(r1) ◦ e(r2) ... ◦ e(r|d|) be t</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Luke Zettlemoyer and Michael Collins. 2005. Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In Proceedings of UAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hua-Ping Zhang</author>
+<author>Hong-Kui Yu</author>
+<author>De-Yi Xiong</author>
+<author>Qun Liu</author>
+</authors>
+<title>Hhmm-based chinese lexical analyzer ictclas.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the second SIGHAN workshop on Chinese language processing,</booktitle>
+<pages>184--187</pages>
+<marker>Zhang, Yu, Xiong, Liu, 2003</marker>
+<rawString>Hua-Ping Zhang, Hong-Kui Yu, De-Yi Xiong, and Qun Liu. 2003. Hhmm-based chinese lexical analyzer ictclas. In Proceedings of the second SIGHAN workshop on Chinese language processing, pages 184–187.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hao Zhang</author>
+<author>Liang Huang</author>
+<author>Kai Zhao</author>
+<author>Ryan McDonald</author>
+</authors>
+<title>Online learning with inexact hypergraph search.</title>
+<date>2013</date>
+<booktitle>In Proceedings of EMNLP</booktitle>
+<contexts>
+<context position="2984" citStr="Zhang et al., 2013" startWordPosition="458" endWordPosition="461">ly tune a handful of dense features. See also Section 6 for other related work. As a notable exception, Liang et al. (2006) do train a structured perceptron model on the training data with sparse features, but fail to outperform MERT. We argue this is because structured perceptron, like many structured learning algorithms such as CRF and MIRA, assumes exact search, and search errors inevitably break theoretical properties such as convergence (Huang et al., 2012). Empirically, it is now well accepted that standard perceptron performs poorly when search error is severe (Collins and Roark, 2004; Zhang et al., 2013). To address the search error problem we propose a very simple approach based on the recent framework of “violation-fixing perceptron” (Huang et al., 2012) which is designed specifically for inexact search, with a theoretical convergence guarantee and excellent empirical performance on beam search parsing and tagging. The basic idea is to update when search error happens, rather than at the end of the search. To adapt it to MT, we extend this framework to handle latent variables corresponding to the hidden derivations. We update towards “gold-standard” derivations computed by forced decoding s</context>
+</contexts>
+<marker>Zhang, Huang, Zhao, McDonald, 2013</marker>
+<rawString>Hao Zhang, Liang Huang, Kai Zhao, and Ryan McDonald. 2013. Online learning with inexact hypergraph search. In Proceedings of EMNLP 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kai Zhao</author>
+<author>Liang Huang</author>
+</authors>
+<title>Minibatch and parallelization for online large margin structured learning.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL</booktitle>
+<contexts>
+<context position="24980" citStr="Zhao and Huang (2013)" startWordPosition="4252" endWordPosition="4255">atio of invalid updates in standard update. than half of the updates remain invalid even at a beam of 30. These analyses provide an alternative but theoretically more reasonable explanation to the findings of Liang et al. (2006): while they blame “unreasonable” gold derivations for the failure of standard update, we observe that it is the search errors that make the real difference, and that an update that respects search errors towards a gold subderivation is indeed helpful, even if that subderivation might be “unreasonable”. In order to speedup training, we use mini-batch parallelization of Zhao and Huang (2013) which has been shown to be much faster than previous parallelization methods. We set the mini-batch size to 24 and train MAXFORCE with 1, 6, and 24 cores on a small subset of the our original reachable senRatio 90% 80% 70% 60% 50% +non-local features standard perceptron 1119 BLEU BLEU 0 0.5 1 1.5 2 2.5 3 3.5 4 Time 2 4 6 8 10 12 14 16 Number of iteration 24 23 22 MERT PRO-dense minibatch(24-core) minibatch(6-core) minibatch(1 core) single processor 26 25 24 23 22 21 20 19 18 +non-local +word-edges +ruleid dense MERT 2 4 6 8 10 12 14 16 Number of iteration Figure 11: Comparison between differe</context>
+</contexts>
+<marker>Zhao, Huang, 2013</marker>
+<rawString>Kai Zhao and Liang Huang. 2013. Minibatch and parallelization for online large margin structured learning. In Proceedings of NAACL 2013.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

@@ -1,0 +1,1121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.040584">
+<title confidence="0.989669">
+Scaling to Large3 Data: An efficient and effective method
+to compute Distributional Thesauri
+</title>
+<author confidence="0.993632">
+Martin Riedl and Chris Biemann
+</author>
+<affiliation confidence="0.987567">
+FG Language Technology
+Computer Science Department, Technische Universit¨at Darmstadt
+</affiliation>
+<address confidence="0.960807">
+Hochschulstrasse 10, D-64289 Darmstadt, Germany
+</address>
+<email confidence="0.999344">
+{riedl,biem}@cs.tu-darmstadt.de
+</email>
+<sectionHeader confidence="0.997395" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999840153846154">
+We introduce a new highly scalable approach
+for computing Distributional Thesauri (DTs).
+By employing pruning techniques and a dis-
+tributed framework, we make the computation
+for very large corpora feasible on comparably
+small computational resources. We demon-
+strate this by releasing a DT for the whole vo-
+cabulary of Google Books syntactic n-grams.
+Evaluating against lexical resources using two
+measures, we show that our approach pro-
+duces higher quality DTs than previous ap-
+proaches, and is thus preferable in terms of
+speed and quality for large corpora.
+</bodyText>
+<sectionHeader confidence="0.999517" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.99994576">
+Using larger data to estimate models for machine
+learning applications as well as for applications of
+Natural Language Processing (NLP) has repeatedly
+shown to be advantageous, see e.g. (Banko and
+Brill, 2001; Brants et al., 2007). In this work, we
+tackle the influence of corpus size for building a
+distributional thesaurus (Lin, 1998). Especially, we
+shed light on the interaction of similarity measures
+and corpus size, as well as aspects of scalability.
+We shortly introduce the JoBimText framework
+for distributional semantics and show its scalability
+for large corpora. For the computation of the data
+we follow the MapReduce (Dean and Ghemawat,
+2004) paradigm. The computation of similarities
+between terms becomes challenging on large cor-
+pora, as both the numbers of terms to be compared
+and the number of context features increases. This
+makes standard similarity calculations as proposed
+in (Lin, 1998; Curran, 2002; Lund and Burgess,
+1996; Weeds et al., 2004) computationally infeasi-
+ble. These approaches first calculate an informa-
+tion measure between each word and the accord-
+ing context and then calculate the similarity between
+all words, based on the information measure for all
+shared contexts.
+</bodyText>
+<sectionHeader confidence="0.999943" genericHeader="related work">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999940275862069">
+A variety of approaches to compute DTs have been
+proposed to tackle issues regarding size and run-
+time. The reduction of the feature space seems to
+be one possibility, but still requires the computation
+of such reduction cf. (Blei et al., 2003; Golub and
+Kahan, 1965). Other approaches use randomised in-
+dexing for storing counts or hashing functions to ap-
+proximate counts and measures (Gorman and Cur-
+ran, 2006; Goyal et al., 2010; Sahlgren, 2006). An-
+other possibility is the usage of distributed process-
+ing like MapReduce. In (Pantel et al., 2009; Agirre
+et al., 2009) a DT is computed using MapReduce
+on 200 quad core nodes (for 5.2 billion sentences)
+respectively 2000 cores (1.6 Terawords), an amount
+of hardware only available to commercial search en-
+gines. Whereas Agirre uses a x2 test to measure the
+information between terms and context, Pantel uses
+the Pointwise Mutual Information (PMI). Then, both
+approaches use the cosine similarity to calculate the
+similarity between terms. Furthermore, Pantel de-
+scribes an optimization for the calculation of the co-
+sine similarity. Whereas Pantel and Lin (2002) de-
+scribe a method for sense clustering, they also use
+a method to calculate similarities between terms.
+Here, they propose a pruning scheme similar to ours,
+but do not explicitly evaluate its effect.
+The evaluation of DTs has been performed in ex-
+trinsic and intrinsic manner. Extrinsic evaluations
+have been performed using e.g. DTs for automatic
+</bodyText>
+<page confidence="0.975213">
+884
+</page>
+<bodyText confidence="0.959597818181818">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 884–890,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+set expansion (Pantel et al., 2009) or phrase polar-
+ity identification (Goyal and Daum´e, 2011). In this
+work we will concentrate on intrinsic evaluations:
+Lin (1997; 1998) introduced two measures using
+WordNet (Miller, 1995) and Roget’s Thesaurus. Us-
+ing WordNet, he defines context features (synsets a
+word occurs in Wordnet or subsets when using Ro-
+get’s Thesaurus) and then builds a gold standard the-
+saurus using a similarity measure. Then he evaluates
+his generated Distributional Thesaurus (DT) with re-
+spect to the gold standard thesauri. Weeds et al.
+(2004) evaluate various similarity measures based
+on 1000 frequent and 1000 infrequent words. Curran
+(2004) created a gold standard thesaurus by manu-
+ally extracting entries from several English thesauri
+for 70 words. His automatically generated DTs are
+evaluated against this gold standard thesaurus using
+several measures. We will report on his measure and
+additionally propose a measure based on WordNet
+paths.
+</bodyText>
+<sectionHeader confidence="0.864147" genericHeader="method">
+3 Building a Distributional Thesaurus
+</sectionHeader>
+<bodyText confidence="0.999966142857143">
+Here we present our scalable DT algorithm using
+the MapReduce paradigm, which is divided into
+two parts: The holing system and a computational
+method to calculate distributional similarities. A
+more detailed description, especially for the MapRe-
+duce steps, can be found in (Biemann and Riedl,
+2013).
+</bodyText>
+<subsectionHeader confidence="0.999897">
+3.1 Holing System
+</subsectionHeader>
+<bodyText confidence="0.99419">
+The holing operation splits an observation (e.g. a
+dependency relation) into a pair of two parts: a
+term and a context feature. This captures their first-
+order relationship. These pairs are subsequently
+used for the computation of the similarities between
+terms, leading to a second-order relation. The rep-
+resentation can be formalized by the pair &lt;x,y&gt;
+where x is the term and y represents the context
+feature. The position of x in y is denoted by the
+hole symbol ’@’. As an example the dependency
+relation (nsub;gave2;I1) could be transferred to
+&lt;gave2,(nsub;@;I1)&gt; and &lt;I1,(nsub;gave2;@)&gt;.
+This representation scheme is more generic then the
+schemes introduced in (Lin, 1998; Curran, 2002),
+as it allows to characterise pairs by several holes,
+which could be used to learn analogies, cf. (Turney
+and Littman, 2005).
+</bodyText>
+<subsectionHeader confidence="0.999562">
+3.2 Distributional Similarity
+</subsectionHeader>
+<bodyText confidence="0.999855666666666">
+First, we count the frequency for each first-order
+relation and remove all features that occur with
+more than w terms, as these context features tend to
+be too general to characterise the similarity between
+other words (Rychl´y and Kilgarriff, 2007; Goyal
+et al., 2010, cmp.). From this. we calculate a sig-
+nificance score for all first-order relations. For this
+work, we implemented two different significance
+measures: Pointwise Mutual Information (PMI):
+</bodyText>
+<equation confidence="0.966758833333333">
+PMI(term, feature) = l�92( f(term,feature)
+f(term)f(feature))
+(Church and Hanks, 1990) and Lexicographer’s Mu-
+tual Information (LMI): LMI(term, feature) =
+f(term, feature)l�92( f(term,feature)
+f(term)f(feature)) (Evert,
+</equation>
+<bodyText confidence="0.99600221875">
+2005).
+We then prune all negatively correlated pairs
+(s&lt;0). The maximum number of context features
+per term are defined with p, as we argue that it is
+sufficient to keep only the p most salient (ordered
+descending by their significance score) context fea-
+tures per term. Features of low saliency generally
+should not contribute much to the similarity of terms
+and also could lead to spurious similarity scores. Af-
+terwards, all terms are aggregated by their features,
+which allows us to compute similarity scores be-
+tween all terms that share at least one such feature.
+Whereas the method introduced by (Pantel and
+Lin, 2002) is very similar to the one proposed in
+this paper (the similarity between terms is calculated
+solely by the number of features two terms share),
+they use PMI to rank features and do not use pruning
+to scale to large corpora, as they use a rather small
+corpus. Additionally, they do not evaluate the effect
+of such pruning.
+In contrast to the best measures proposed by Lin
+(1998; Curran (2002; Pantel et al. (2009; Goyal et
+al. (2010) we do not calculate any information mea-
+sure using frequencies of features and terms (we use
+significance ranking instead), as shown in Table 1.
+Additionally, we avoid any similarity measure-
+ment using the information measure, as also done in
+these approaches, to calculate the similarity over the
+feature counts of each term: we merely count how
+many salient features two terms share. All these con-
+straints makes this approach more scalable to larger
+corpora, as we do not need to know the full list of
+</bodyText>
+<page confidence="0.995988">
+885
+</page>
+<table confidence="0.96098165">
+Information Measures
+Lin’s formula I(term, feature) = lin(term, feature) = log f(term,feature)*f(relature))eature))
+&apos;
+Curran&apos;s TTest
+— p(E(f(word,relation(featu �(f(wojd)
+term,feature)−p(feature)* term
+I (term, feature) = ttest(term, feature)
+_
+-,/p(feature)*p(term)
+Similarity Measures
+Lin’s formula Ef∈ features (t1)∩ features (t2)(I(t1,f)+I(t2,f))
+Curran’s Dice sim(t1,t2)
+Our Measure
+Ef∈features(t1) I(t1,f)+Ef∈features(w ) I(w2,f)
+Ef∈ features (t1)∩features(t2) min(I(t1,fj,I(t2,f))
+I 0
+sim(t1,t2) = (t, f) &gt;
+I tl, +I t2, with
+Ef∈features(t1)∩features(t2)( ( f) ( f))
+sim(t1, t2) = E fEfeatures(t1)nfeatures(t2) 1 with s &gt; 0
+</table>
+<tableCaption confidence="0.765826">
+Table 1: Similarity measures used for computing the distributional similarity between terms.
+features for a term pair at any time. While our com-
+putations might seem simplistic, we demonstrate its
+adequacy for large corpora in Section 5.
+</tableCaption>
+<sectionHeader confidence="0.999167" genericHeader="method">
+4 Evaluation
+</sectionHeader>
+<bodyText confidence="0.99996505">
+The evaluation is performed using a recent dump of
+English Wikipedia, containing 36 million sentences
+and a newspaper corpus, compiled from 120 million
+sentences (about 2 Gigawords) from Leipzig Cor-
+pora Collection (Richter et al., 2006) and the Giga-
+word corpus (Parker et al., 2011). The DTs are based
+on collapsed dependencies from the Stanford Parser
+(Marneffe et al., 2006) in the holing operation. For
+all DTs we use the pruning parameters s=0, p=1000
+and w=1000. In a final evaluation, we use the syn-
+tactic n-grams built from Google Books (Goldberg
+and Orwant, 2013).
+To show the impact of corpus size, we down-
+sampled our corpora to 10 million, 1 million and
+100,000 sentences. We compare our results against
+DTs calculated using Lin’s (Lin, 1998) measure and
+the best measure proposed by Curran (2002) (see Ta-
+ble 1).
+Our evaluation is performed using the same 1000
+frequent and 1000 infrequent nouns as previously
+employed by Weeds et al. (2004). We create a gold
+standard, by extracting reasonable entries of these
+2000 nouns using Roget’s 1911 thesaurus, Moby
+Thesaurus, Merriam Webster’s Thesaurus, the Big
+Huge Thesaurus and the OpenOffice Thesaurus and
+employ the inverse ranking measure (Curran, 2002)
+to evaluate the DTs.
+Furthermore, we introduce a WordNet-based
+method. To calculate the similarity between two
+terms, we use the WordNet::Similarity path (Peder-
+sen et al., 2004) measure. While its absolute scores
+are hard to interpret due to inhomogenity in the gran-
+ularity of WordNet, they are well-suited for relative
+comparison. The score between two terms is in-
+versely proportional to the shortest path between all
+the synsets of both terms. The highest possible score
+is one, if two terms share a synset. We compare the
+average score of the top five (or ten) entries in the
+DT for each of the 2000 selected words for our com-
+parison.
+</bodyText>
+<sectionHeader confidence="0.999967" genericHeader="evaluation">
+5 Results
+</sectionHeader>
+<bodyText confidence="0.961841185185185">
+First, we inspect the results of Curran’s measure us-
+ing the Wikipedia and newspaper corpus for the fre-
+quent nouns, shown in Figure 1.
+Both graphs show the inverse ranking score
+against the size of the corpus. Our method scores
+consistently higher when using LMI instead of PMI
+for ranking the features per term. The PMI measure
+declines when the corpus becomes larger. This can
+be attributed to the fact that PMI favors term-context
+pairs involving rare contexts (Bordag, 2008). Com-
+puting similarities between terms should not be per-
+formed on the basis of rare contexts, as these do not
+generalize well because of their sparseness.
+All other measures improve with larger corpora.
+It is surprising that recent works use PMI to calcu-
+late similarities between terms (Goyal et al., 2010;
+Pantel et al., 2009), who, however evaluate their ap-
+proach only with respect to their own implementa-
+tion or extrinsically, and do not prune on saliency.
+Apart from the PMI measure, Curran’s measure
+leads to the weakest results. We could not confirm
+that his measure outperforms Lin’s measure as stated
+in (Curran, 2002)1. An explanation for this results
+1Regarding Curran’s Dice formula, it is not clear whether to
+use the intersection or the union of the features. We use an inter-
+section, as it is unclear how to interpret the minimum function
+otherwise, and the alternatives performed worse.
+</bodyText>
+<page confidence="0.998109">
+886
+</page>
+<figureCaption confidence="0.998456333333333">
+Figure 1: Inverse ranking for 1000 frequent nouns (Wikipedia left, Newspaper right) for different sized corpora. The
+4 lines represent the scores of following DTs: our method using LMI (dashed black line) and the PMI significance
+measure (solid black line) and Curran’s (dash bray line) and Lin’s measure (solid tray line).
+</figureCaption>
+<bodyText confidence="0.999909153846154">
+might be the use of a different parser, very few test
+words and also a different gold standard thesaurus
+in his evaluation. Comparing our method using LMI
+to Lin’s method, we achieve lower scores with our
+method using small corpora, but surpass Lin’s mea-
+sure from 10 million sentences onwards.
+Next, we show the results of the WordNet eval-
+uation measure in Figure 2. Comparing the top 10
+(upper) to the top 5 words (lower) used for the eval-
+uation, we can observe higher scores for the top 5
+words, which validates the ranking. These results
+are highly correlated to the results achieved with the
+inverse ranking measure. This is a positive result,
+as the WordNet measure can be performed automat-
+ically using a single public resource2. In Figure 3,
+we show results for the 1000 infrequent nouns using
+the inverse ranking (upper) and the WordNet mea-
+sure (lower).
+We can see that our method using PMI does not
+decline for larger corpora, as the limit on first-order
+features is not reached and frequent features are still
+being used. Comparing our LMI DT is en par with
+Lin’s measure for 10 million sentences, and makes
+better use of large data when using the complete
+dataset. Again, the inverse ranking and the Word-
+Net Path measure are highly correlated.
+</bodyText>
+<footnote confidence="0.98345425">
+2Building a gold standard thesaurus following Curran
+(2002) needs access to all the used thesauri. Whereas for some,
+programming interfaces exist, often with limited access and li-
+cence restrictions, others have to be extracted manually.
+</footnote>
+<figureCaption confidence="0.5665045">
+Figure 2: Results, using the WordNet:Path measure for
+frequent nouns using the newspaper corpus.
+</figureCaption>
+<page confidence="0.98657">
+887
+</page>
+<figureCaption confidence="0.996731">
+Figure 3: WordNet::Path results for 1000 infrequent
+nouns
+</figureCaption>
+<bodyText confidence="0.999983625">
+The results shown here validate our pruning ap-
+proach. Whereas Lin and Curran propose ap-
+proaches to filter features that have low word feature
+scores, they do not remove features that occur with
+too many words, which is done in this work. Using
+these pruning steps, a simplistic similarity measure
+does not only lead to reduced computation times, but
+also to better results, when using larger corpora.
+</bodyText>
+<subsectionHeader confidence="0.996995">
+5.1 Using a large3 corpus
+</subsectionHeader>
+<bodyText confidence="0.999611571428572">
+We demonstrate the scalability of our method using
+the very large Google Books dataset (Goldberg and
+Orwant, 2013), consisting of dependencies extracted
+from 17.6 billion sentences. The evaluation results,
+using different measures, are given in Table 2.
+Comparing the results for the Google Books DT
+to the ones achieved using Wikipedia and the news-
+</bodyText>
+<table confidence="0.999369857142857">
+Corpus Inv. P@1 Path@5 Path@10
+Newspaper 2.0935 0.709 0.3277 0.2906
+frequent Wikipedia 2.1213 0.703 0.3365 0.2968
+nouns Google Books 2.3171 0.764 0.3712 0.3217
+Newspaper 1.4097 0.516 0.2577 0.2269
+infrequent Wikipedia 1.3832 0.514 0.2565 0.2265
+nouns Google Books 1.8125 0.641 0.2989 0.2565
+</table>
+<tableCaption confidence="0.999451">
+Table 2: Comparing results for different corpora.
+</tableCaption>
+<bodyText confidence="0.999978">
+paper, we can observe a boost in the performance,
+both for the inverse ranking and the WordNet mea-
+sures. Additionally, we show results for the P@1
+measure, which indicates the percentage of entries,
+whose first entry is in the gold standard thesaurus.
+Remarkably, we get a P@1 against our gold stan-
+dard thesaurus of 76% for frequent and 64% for in-
+frequent nouns using the Google Books DT.
+The most computation time was needed for the
+dependency parsing and took two weeks on a small
+cluster (64 cores on 8 nodes) for the 120 million
+Newspaper sentences. The DT for the Google Books
+was calculated in under 30 hours on a Hadoop clus-
+ter (192 cores on 16 nodes) and could be calculated
+within 10 hours for the Newspaper corpus. The com-
+putation of a DT using this huge corpus would be in-
+tractable with standard vector-based measurements.
+Even computing Lin’s and Curran’s vector-based
+similarity measure for the whole vocabulary of the
+newspaper corpus was not possible with our Hadoop
+cluster, as too much memory would have been re-
+quired and thus we computed similarities only for
+the 2000 test nouns on a server with 92GB of main
+memory.
+</bodyText>
+<sectionHeader confidence="0.995661" genericHeader="conclusions">
+6 Conclusion
+</sectionHeader>
+<bodyText confidence="0.998536727272727">
+We have introduced a highly scalable approach
+to DT computation and showed its adequacy for
+very large corpora. Evaluating against thesauri and
+WordNet, we demonstrated that our similarity mea-
+sure yields better-quality DTs and scales to corpora
+of billions of sentences, even on comparably small
+compute clusters. We achieve this by a number of
+pruning operations, and distributed processing. The
+framework and the DTs for Google Books, News-
+paper and Wikipedia are available online3 under the
+ASL 2.0 licence.
+</bodyText>
+<footnote confidence="0.971118">
+3https://sf.net/projects/jobimtext/
+</footnote>
+<page confidence="0.996186">
+888
+</page>
+<sectionHeader confidence="0.995195" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999966">
+This work has been supported by the Hessian re-
+search excellence program “Landes-Offensive zur
+Entwicklung Wissenschaftlich-konomischer Exzel-
+lenz” (LOEWE) as part of the research center “Dig-
+ital Humanities”. We would also thank the anony-
+mous reviewers for their comments, which greatly
+helped to improve the paper.
+</bodyText>
+<sectionHeader confidence="0.988292" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.993159152173913">
+Eneko Agirre, Enrique Alfonseca, Keith Hall, Jana
+Kravalova, Marius Pas¸ca, and Aitor Soroa. 2009. A
+study on similarity and relatedness using distributional
+and wordnet-based approaches. In Proceedings of Hu-
+man Language Technologies: The 2009 Annual Con-
+ference of the North American Chapter of the Asso-
+ciation for Computational Linguistics, NAACL ’09,
+pages 19–27, Boulder, Colorado, USA.
+Michele Banko and Eric Brill. 2001. Scaling to very
+very large corpora for natural language disambigua-
+tion. In Proceedings of the 39th Annual Meeting on
+Association for Computational Linguistics, ACL ’01,
+pages 26–33, Toulouse, France.
+Chris Biemann and Martin Riedl. 2013. Text: Now in
+2D! a framework for lexical expansion with contextual
+similarity. Journal of Language Modelling, 1(1):55–
+95.
+David M. Blei, Andrew Y. Ng, and Michael I. Jordan.
+2003. Latent dirichlet allocation. Journal of Machine
+Learning Research, 3:993–1022.
+Stefan Bordag. 2008. A comparison of co-occurrence
+and similarity measures as simulations of context. In
+CICLing’08 Proceedings of the 9th international con-
+ference on Computational linguistics and intelligent
+text processing, pages 52–63, Haifa, Israel.
+Thorsten Brants, Ashok C. Popat, Peng Xu, Franz J.
+Och, and Jeffrey Dean. 2007. Large language mod-
+els in machine translation. In Proceedings of the
+2007 Joint Conference on Empirical Methods in Nat-
+ural Language Processing and Computational Natu-
+ral Language Learning (EMNLP-CoNLL), pages 858–
+867, Prague, Czech Republic.
+Kenneth Ward Church and Patrick Hanks. 1990. Word
+association norms, mutual information, and lexicogra-
+phy. Computational Linguistics, 16(1):22–29.
+James R. Curran. 2002. Ensemble methods for au-
+tomatic thesaurus extraction. In Proceedings of the
+ACL-02 conference on Empirical methods in natural
+language processing - Volume 10, EMNLP ’02, pages
+222–229, Philadelphia, PA, USA.
+James R. Curran. 2004. From Distributional to Semantic
+Similarity. Ph.D. thesis, University of Edinburgh.
+Jeffrey Dean and Sanjay Ghemawat. 2004. MapReduce:
+Simplified Data Processing on Large Clusters. In Pro-
+ceedings of Operating Systems, Desing &amp; Implementa-
+tion (OSDI) ’04, pages 137–150, San Francisco, CA,
+USA.
+Stefan Evert. 2005. The Statistics of Word Cooccur-
+rences: Word Pairs and Collocations. Ph.D. thesis, In-
+stitut f¨ur maschinelle Sprachverarbeitung, University
+of Stuttgart.
+Yoav Goldberg and Jon Orwant. 2013. A dataset of
+syntactic-ngrams over time from a very large corpus
+of english books. In Second Joint Conference on Lex-
+ical and Computational Semantics (*SEM), Volume 1:
+Proceedings of the Main Conference and the Shared
+Task: Semantic Textual Similarity, pages 241–247, At-
+lanta, Georgia, USA.
+Gene H. Golub and William M. Kahan. 1965. Calcu-
+lating the singular values and pseudo-inverse of a ma-
+trix. J. Soc. Indust. Appl. Math.: Ser. B, Numer. Anal.,
+2:205–224.
+James Gorman and James R. Curran. 2006. Scaling dis-
+tributional similarity to large corpora. In Proceedings
+of the 21st International Conference on Computational
+Linguistics and the 44th annual meeting of the Associ-
+ation for Computational Linguistics, ACL-44, pages
+361–368, Sydney, Australia.
+Amit Goyal and Hal Daum´e, III. 2011. Generating se-
+mantic orientation lexicon using large data and the-
+saurus. In Proceedings of the 2nd Workshop on Com-
+putational Approaches to Subjectivity and Sentiment
+Analysis, WASSA ’11, pages 37–43, Portland, Ore-
+gon, USA.
+Amit Goyal, Jagadeesh Jagarlamudi, Hal Daum´e, III, and
+Suresh Venkatasubramanian. 2010. Sketch techniques
+for scaling distributional similarity to the web. In Pro-
+ceedings of the 2010 Workshop on GEometrical Mod-
+els of Natural Language Semantics, GEMS ’10, pages
+51–56, Uppsala, Sweden.
+Dekang Lin. 1997. Using syntactic dependency as local
+context to resolve word sense ambiguity. In Proceed-
+ings of the 35th Annual Meeting of the Association for
+Computational Linguistics and Eighth Conference of
+the European Chapter of the Association for Compu-
+tational Linguistics, ACL ’98, pages 64–71, Madrid,
+Spain.
+Dekang Lin. 1998. Automatic retrieval and clustering
+of similar words. In Proceedings of the 17th interna-
+tional conference on Computational linguistics - Vol-
+ume 2, COLING ’98, pages 768–774, Montreal, Que-
+bec, Canada.
+</reference>
+<page confidence="0.987991">
+889
+</page>
+<reference confidence="0.999862166666667">
+Kevin Lund and Curt Burgess. 1996. Producing
+high-dimensional semantic spaces from lexical co-
+occurrence. Behavior Research Methods, 28(2):203–
+208.
+Marie-Catherine De Marneffe, Bill Maccartney, and
+Christopher D. Manning. 2006. Generating typed de-
+pendency parses from phrase structure parses. In Pro-
+ceedings of the International Conference on Language
+Resources and Evaluation, LREC 2006, Genova, Italy.
+George A. Miller. 1995. Wordnet: A lexical database for
+english. Communications of the ACM, 38:39–41.
+Patrick Pantel and Dekang Lin. 2002. Discovering word
+senses from text. In Proceedings of the eighth ACM
+SIGKDD international conference on Knowledge dis-
+covery and data mining, KDD ’02, pages 613–619,
+Edmonton, Alberta, Canada.
+Patrick Pantel, Eric Crestan, Arkady Borkovsky, Ana-
+Maria Popescu, and Vishnu Vyas. 2009. Web-scale
+distributional similarity and entity set expansion. In
+Proceedings of the 2009 Conference on Empirical
+Methods in Natural Language Processing: Volume 2
+- Volume 2, EMNLP ’09, pages 938–947, Singapore.
+Robert Parker, David Graff, Junbo Kong, Ke Chen, and
+Kazuaki Maeda. 2011. English Gigaword Fifth Edi-
+tion. Linguistic Data Consortium, Philadelphia, PA,
+USA.
+Ted Pedersen, Siddharth Patwardhan, and Jason Miche-
+lizzi. 2004. Wordnet::similarity: measuring the
+relatedness of concepts. In Demonstration Papers
+at HLT-NAACL 2004, HLT-NAACL–Demonstrations
+’04, pages 38–41, Boston, Massachusetts, USA.
+Matthias Richter, Uwe Quasthoff, Erla Hallsteinsd´ottir,
+and Chris Biemann. 2006. Exploiting the leipzig cor-
+pora collection. In Proceedings of the IS-LTC 2006,
+Ljubljana, Slovenia.
+Pavel Rychl´y and Adam Kilgarriff. 2007. An efficient
+algorithm for building a distributional thesaurus (and
+other sketch engine developments). In Proceedings
+of the 45th Annual Meeting of the ACL on Interactive
+Poster and Demonstration Sessions, ACL ’07, pages
+41–44, Prague, Czech Republic.
+Magnus Sahlgren. 2006. The Word-Space Model: us-
+ing distributional analysis to represent syntagmatic
+and paradigmatic relations between words in high-
+dimensional vector spaces. Ph.D. thesis, Stockholm
+University.
+Peter D. Turney and Michael L. Littman. 2005. Corpus-
+based learning of analogies and semantic relations.
+Machine Learning, 60(1-3):251–278.
+Julie Weeds, David Weir, and Diana McCarthy. 2004.
+Characterising measures of lexical distributional sim-
+ilarity. In Proceedings of the 20th international con-
+ference on Computational Linguistics, COLING ’04,
+pages 1015–1021, Geneva, Switzerland.
+</reference>
+<page confidence="0.998054">
+890
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.324558">
+<title confidence="0.958504">to Data: An efficient and effective</title>
+<author confidence="0.7133335">to compute Distributional Thesauri Riedl</author>
+<affiliation confidence="0.9677795">FG Language Computer Science Department, Technische Universit¨at</affiliation>
+<address confidence="0.722987">Hochschulstrasse 10, D-64289 Darmstadt,</address>
+<abstract confidence="0.998383714285714">We introduce a new highly scalable approach for computing Distributional Thesauri (DTs). By employing pruning techniques and a distributed framework, we make the computation for very large corpora feasible on comparably small computational resources. We demonstrate this by releasing a DT for the whole vocabulary of Google Books syntactic n-grams. Evaluating against lexical resources using two measures, we show that our approach produces higher quality DTs than previous approaches, and is thus preferable in terms of speed and quality for large corpora.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Eneko Agirre</author>
+<author>Enrique Alfonseca</author>
+<author>Keith Hall</author>
+<author>Jana Kravalova</author>
+<author>Marius Pas¸ca</author>
+<author>Aitor Soroa</author>
+</authors>
+<title>A study on similarity and relatedness using distributional and wordnet-based approaches.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, NAACL ’09,</booktitle>
+<pages>pages</pages>
+<location>Boulder, Colorado, USA.</location>
+<marker>Agirre, Alfonseca, Hall, Kravalova, Pas¸ca, Soroa, 2009</marker>
+<rawString>Eneko Agirre, Enrique Alfonseca, Keith Hall, Jana Kravalova, Marius Pas¸ca, and Aitor Soroa. 2009. A study on similarity and relatedness using distributional and wordnet-based approaches. In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, NAACL ’09, pages 19–27, Boulder, Colorado, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michele Banko</author>
+<author>Eric Brill</author>
+</authors>
+<title>Scaling to very very large corpora for natural language disambiguation.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics, ACL ’01,</booktitle>
+<pages>26--33</pages>
+<location>Toulouse, France.</location>
+<contexts>
+<context position="1080" citStr="Banko and Brill, 2001" startWordPosition="151" endWordPosition="154">e computation for very large corpora feasible on comparably small computational resources. We demonstrate this by releasing a DT for the whole vocabulary of Google Books syntactic n-grams. Evaluating against lexical resources using two measures, we show that our approach produces higher quality DTs than previous approaches, and is thus preferable in terms of speed and quality for large corpora. 1 Introduction Using larger data to estimate models for machine learning applications as well as for applications of Natural Language Processing (NLP) has repeatedly shown to be advantageous, see e.g. (Banko and Brill, 2001; Brants et al., 2007). In this work, we tackle the influence of corpus size for building a distributional thesaurus (Lin, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the numb</context>
+</contexts>
+<marker>Banko, Brill, 2001</marker>
+<rawString>Michele Banko and Eric Brill. 2001. Scaling to very very large corpora for natural language disambiguation. In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics, ACL ’01, pages 26–33, Toulouse, France.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Biemann</author>
+<author>Martin Riedl</author>
+</authors>
+<title>Text: Now in 2D! a framework for lexical expansion with contextual similarity.</title>
+<date>2013</date>
+<journal>Journal of Language Modelling,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<pages>95</pages>
+<contexts>
+<context position="5059" citStr="Biemann and Riedl, 2013" startWordPosition="771" endWordPosition="774">andard thesaurus by manually extracting entries from several English thesauri for 70 words. His automatically generated DTs are evaluated against this gold standard thesaurus using several measures. We will report on his measure and additionally propose a measure based on WordNet paths. 3 Building a Distributional Thesaurus Here we present our scalable DT algorithm using the MapReduce paradigm, which is divided into two parts: The holing system and a computational method to calculate distributional similarities. A more detailed description, especially for the MapReduce steps, can be found in (Biemann and Riedl, 2013). 3.1 Holing System The holing operation splits an observation (e.g. a dependency relation) into a pair of two parts: a term and a context feature. This captures their firstorder relationship. These pairs are subsequently used for the computation of the similarities between terms, leading to a second-order relation. The representation can be formalized by the pair &lt;x,y&gt; where x is the term and y represents the context feature. The position of x in y is denoted by the hole symbol ’@’. As an example the dependency relation (nsub;gave2;I1) could be transferred to &lt;gave2,(nsub;@;I1)&gt; and &lt;I1,(nsub</context>
+</contexts>
+<marker>Biemann, Riedl, 2013</marker>
+<rawString>Chris Biemann and Martin Riedl. 2013. Text: Now in 2D! a framework for lexical expansion with contextual similarity. Journal of Language Modelling, 1(1):55– 95.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David M Blei</author>
+<author>Andrew Y Ng</author>
+<author>Michael I Jordan</author>
+</authors>
+<title>Latent dirichlet allocation.</title>
+<date>2003</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>3--993</pages>
+<contexts>
+<context position="2339" citStr="Blei et al., 2003" startWordPosition="351" endWordPosition="354">es standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing counts or hashing functions to approximate counts and measures (Gorman and Curran, 2006; Goyal et al., 2010; Sahlgren, 2006). Another possibility is the usage of distributed processing like MapReduce. In (Pantel et al., 2009; Agirre et al., 2009) a DT is computed using MapReduce on 200 quad core nodes (for 5.2 billion sentences) respectively 2000 cores (1.6 Terawords), an amount of hardware only available to commercial search engines. Whereas Agirre uses a x2 test to measure the information between terms and context</context>
+</contexts>
+<marker>Blei, Ng, Jordan, 2003</marker>
+<rawString>David M. Blei, Andrew Y. Ng, and Michael I. Jordan. 2003. Latent dirichlet allocation. Journal of Machine Learning Research, 3:993–1022.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stefan Bordag</author>
+</authors>
+<title>A comparison of co-occurrence and similarity measures as simulations of context.</title>
+<date>2008</date>
+<booktitle>In CICLing’08 Proceedings of the 9th international conference on Computational linguistics and intelligent text processing,</booktitle>
+<pages>52--63</pages>
+<location>Haifa,</location>
+<contexts>
+<context position="11384" citStr="Bordag, 2008" startWordPosition="1775" endWordPosition="1776"> compare the average score of the top five (or ten) entries in the DT for each of the 2000 selected words for our comparison. 5 Results First, we inspect the results of Curran’s measure using the Wikipedia and newspaper corpus for the frequent nouns, shown in Figure 1. Both graphs show the inverse ranking score against the size of the corpus. Our method scores consistently higher when using LMI instead of PMI for ranking the features per term. The PMI measure declines when the corpus becomes larger. This can be attributed to the fact that PMI favors term-context pairs involving rare contexts (Bordag, 2008). Computing similarities between terms should not be performed on the basis of rare contexts, as these do not generalize well because of their sparseness. All other measures improve with larger corpora. It is surprising that recent works use PMI to calculate similarities between terms (Goyal et al., 2010; Pantel et al., 2009), who, however evaluate their approach only with respect to their own implementation or extrinsically, and do not prune on saliency. Apart from the PMI measure, Curran’s measure leads to the weakest results. We could not confirm that his measure outperforms Lin’s measure a</context>
+</contexts>
+<marker>Bordag, 2008</marker>
+<rawString>Stefan Bordag. 2008. A comparison of co-occurrence and similarity measures as simulations of context. In CICLing’08 Proceedings of the 9th international conference on Computational linguistics and intelligent text processing, pages 52–63, Haifa, Israel.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thorsten Brants</author>
+<author>Ashok C Popat</author>
+<author>Peng Xu</author>
+<author>Franz J Och</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Large language models in machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL),</booktitle>
+<pages>858--867</pages>
+<location>Prague, Czech Republic.</location>
+<contexts>
+<context position="1102" citStr="Brants et al., 2007" startWordPosition="155" endWordPosition="158">large corpora feasible on comparably small computational resources. We demonstrate this by releasing a DT for the whole vocabulary of Google Books syntactic n-grams. Evaluating against lexical resources using two measures, we show that our approach produces higher quality DTs than previous approaches, and is thus preferable in terms of speed and quality for large corpora. 1 Introduction Using larger data to estimate models for machine learning applications as well as for applications of Natural Language Processing (NLP) has repeatedly shown to be advantageous, see e.g. (Banko and Brill, 2001; Brants et al., 2007). In this work, we tackle the influence of corpus size for building a distributional thesaurus (Lin, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features</context>
+</contexts>
+<marker>Brants, Popat, Xu, Och, Dean, 2007</marker>
+<rawString>Thorsten Brants, Ashok C. Popat, Peng Xu, Franz J. Och, and Jeffrey Dean. 2007. Large language models in machine translation. In Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL), pages 858– 867, Prague, Czech Republic.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Ward Church</author>
+<author>Patrick Hanks</author>
+</authors>
+<title>Word association norms, mutual information, and lexicography.</title>
+<date>1990</date>
+<journal>Computational Linguistics,</journal>
+<volume>16</volume>
+<issue>1</issue>
+<contexts>
+<context position="6469" citStr="Church and Hanks, 1990" startWordPosition="987" endWordPosition="990">o learn analogies, cf. (Turney and Littman, 2005). 3.2 Distributional Similarity First, we count the frequency for each first-order relation and remove all features that occur with more than w terms, as these context features tend to be too general to characterise the similarity between other words (Rychl´y and Kilgarriff, 2007; Goyal et al., 2010, cmp.). From this. we calculate a significance score for all first-order relations. For this work, we implemented two different significance measures: Pointwise Mutual Information (PMI): PMI(term, feature) = l�92( f(term,feature) f(term)f(feature)) (Church and Hanks, 1990) and Lexicographer’s Mutual Information (LMI): LMI(term, feature) = f(term, feature)l�92( f(term,feature) f(term)f(feature)) (Evert, 2005). We then prune all negatively correlated pairs (s&lt;0). The maximum number of context features per term are defined with p, as we argue that it is sufficient to keep only the p most salient (ordered descending by their significance score) context features per term. Features of low saliency generally should not contribute much to the similarity of terms and also could lead to spurious similarity scores. Afterwards, all terms are aggregated by their features, w</context>
+</contexts>
+<marker>Church, Hanks, 1990</marker>
+<rawString>Kenneth Ward Church and Patrick Hanks. 1990. Word association norms, mutual information, and lexicography. Computational Linguistics, 16(1):22–29.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James R Curran</author>
+</authors>
+<title>Ensemble methods for automatic thesaurus extraction.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the ACL-02 conference on Empirical methods in natural language processing - Volume 10, EMNLP ’02,</booktitle>
+<pages>222--229</pages>
+<location>Philadelphia, PA, USA.</location>
+<contexts>
+<context position="1797" citStr="Curran, 2002" startWordPosition="264" endWordPosition="265">l thesaurus (Lin, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features increases. This makes standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised </context>
+<context position="5770" citStr="Curran, 2002" startWordPosition="885" endWordPosition="886"> pair of two parts: a term and a context feature. This captures their firstorder relationship. These pairs are subsequently used for the computation of the similarities between terms, leading to a second-order relation. The representation can be formalized by the pair &lt;x,y&gt; where x is the term and y represents the context feature. The position of x in y is denoted by the hole symbol ’@’. As an example the dependency relation (nsub;gave2;I1) could be transferred to &lt;gave2,(nsub;@;I1)&gt; and &lt;I1,(nsub;gave2;@)&gt;. This representation scheme is more generic then the schemes introduced in (Lin, 1998; Curran, 2002), as it allows to characterise pairs by several holes, which could be used to learn analogies, cf. (Turney and Littman, 2005). 3.2 Distributional Similarity First, we count the frequency for each first-order relation and remove all features that occur with more than w terms, as these context features tend to be too general to characterise the similarity between other words (Rychl´y and Kilgarriff, 2007; Goyal et al., 2010, cmp.). From this. we calculate a significance score for all first-order relations. For this work, we implemented two different significance measures: Pointwise Mutual Inform</context>
+<context position="7616" citStr="Curran (2002" startWordPosition="1177" endWordPosition="1178">scores. Afterwards, all terms are aggregated by their features, which allows us to compute similarity scores between all terms that share at least one such feature. Whereas the method introduced by (Pantel and Lin, 2002) is very similar to the one proposed in this paper (the similarity between terms is calculated solely by the number of features two terms share), they use PMI to rank features and do not use pruning to scale to large corpora, as they use a rather small corpus. Additionally, they do not evaluate the effect of such pruning. In contrast to the best measures proposed by Lin (1998; Curran (2002; Pantel et al. (2009; Goyal et al. (2010) we do not calculate any information measure using frequencies of features and terms (we use significance ranking instead), as shown in Table 1. Additionally, we avoid any similarity measurement using the information measure, as also done in these approaches, to calculate the similarity over the feature counts of each term: we merely count how many salient features two terms share. All these constraints makes this approach more scalable to larger corpora, as we do not need to know the full list of 885 Information Measures Lin’s formula I(term, feature)</context>
+<context position="9852" citStr="Curran (2002)" startWordPosition="1521" endWordPosition="1522"> Corpora Collection (Richter et al., 2006) and the Gigaword corpus (Parker et al., 2011). The DTs are based on collapsed dependencies from the Stanford Parser (Marneffe et al., 2006) in the holing operation. For all DTs we use the pruning parameters s=0, p=1000 and w=1000. In a final evaluation, we use the syntactic n-grams built from Google Books (Goldberg and Orwant, 2013). To show the impact of corpus size, we downsampled our corpora to 10 million, 1 million and 100,000 sentences. We compare our results against DTs calculated using Lin’s (Lin, 1998) measure and the best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent and 1000 infrequent nouns as previously employed by Weeds et al. (2004). We create a gold standard, by extracting reasonable entries of these 2000 nouns using Roget’s 1911 thesaurus, Moby Thesaurus, Merriam Webster’s Thesaurus, the Big Huge Thesaurus and the OpenOffice Thesaurus and employ the inverse ranking measure (Curran, 2002) to evaluate the DTs. Furthermore, we introduce a WordNet-based method. To calculate the similarity between two terms, we use the WordNet::Similarity path (Pedersen et al., 2004) measure. While </context>
+<context position="12010" citStr="Curran, 2002" startWordPosition="1879" endWordPosition="1880">imilarities between terms should not be performed on the basis of rare contexts, as these do not generalize well because of their sparseness. All other measures improve with larger corpora. It is surprising that recent works use PMI to calculate similarities between terms (Goyal et al., 2010; Pantel et al., 2009), who, however evaluate their approach only with respect to their own implementation or extrinsically, and do not prune on saliency. Apart from the PMI measure, Curran’s measure leads to the weakest results. We could not confirm that his measure outperforms Lin’s measure as stated in (Curran, 2002)1. An explanation for this results 1Regarding Curran’s Dice formula, it is not clear whether to use the intersection or the union of the features. We use an intersection, as it is unclear how to interpret the minimum function otherwise, and the alternatives performed worse. 886 Figure 1: Inverse ranking for 1000 frequent nouns (Wikipedia left, Newspaper right) for different sized corpora. The 4 lines represent the scores of following DTs: our method using LMI (dashed black line) and the PMI significance measure (solid black line) and Curran’s (dash bray line) and Lin’s measure (solid tray line</context>
+<context position="13926" citStr="Curran (2002)" startWordPosition="2202" endWordPosition="2203">y using a single public resource2. In Figure 3, we show results for the 1000 infrequent nouns using the inverse ranking (upper) and the WordNet measure (lower). We can see that our method using PMI does not decline for larger corpora, as the limit on first-order features is not reached and frequent features are still being used. Comparing our LMI DT is en par with Lin’s measure for 10 million sentences, and makes better use of large data when using the complete dataset. Again, the inverse ranking and the WordNet Path measure are highly correlated. 2Building a gold standard thesaurus following Curran (2002) needs access to all the used thesauri. Whereas for some, programming interfaces exist, often with limited access and licence restrictions, others have to be extracted manually. Figure 2: Results, using the WordNet:Path measure for frequent nouns using the newspaper corpus. 887 Figure 3: WordNet::Path results for 1000 infrequent nouns The results shown here validate our pruning approach. Whereas Lin and Curran propose approaches to filter features that have low word feature scores, they do not remove features that occur with too many words, which is done in this work. Using these pruning steps</context>
+</contexts>
+<marker>Curran, 2002</marker>
+<rawString>James R. Curran. 2002. Ensemble methods for automatic thesaurus extraction. In Proceedings of the ACL-02 conference on Empirical methods in natural language processing - Volume 10, EMNLP ’02, pages 222–229, Philadelphia, PA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James R Curran</author>
+</authors>
+<title>From Distributional to Semantic Similarity.</title>
+<date>2004</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of Edinburgh.</institution>
+<contexts>
+<context position="4417" citStr="Curran (2004)" startWordPosition="676" endWordPosition="677">arity identification (Goyal and Daum´e, 2011). In this work we will concentrate on intrinsic evaluations: Lin (1997; 1998) introduced two measures using WordNet (Miller, 1995) and Roget’s Thesaurus. Using WordNet, he defines context features (synsets a word occurs in Wordnet or subsets when using Roget’s Thesaurus) and then builds a gold standard thesaurus using a similarity measure. Then he evaluates his generated Distributional Thesaurus (DT) with respect to the gold standard thesauri. Weeds et al. (2004) evaluate various similarity measures based on 1000 frequent and 1000 infrequent words. Curran (2004) created a gold standard thesaurus by manually extracting entries from several English thesauri for 70 words. His automatically generated DTs are evaluated against this gold standard thesaurus using several measures. We will report on his measure and additionally propose a measure based on WordNet paths. 3 Building a Distributional Thesaurus Here we present our scalable DT algorithm using the MapReduce paradigm, which is divided into two parts: The holing system and a computational method to calculate distributional similarities. A more detailed description, especially for the MapReduce steps,</context>
+</contexts>
+<marker>Curran, 2004</marker>
+<rawString>James R. Curran. 2004. From Distributional to Semantic Similarity. Ph.D. thesis, University of Edinburgh.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Dean</author>
+<author>Sanjay Ghemawat</author>
+</authors>
+<title>MapReduce: Simplified Data Processing on Large Clusters.</title>
+<date>2004</date>
+<booktitle>In Proceedings of Operating Systems, Desing &amp; Implementation (OSDI) ’04,</booktitle>
+<pages>137--150</pages>
+<location>San Francisco, CA, USA.</location>
+<contexts>
+<context position="1529" citStr="Dean and Ghemawat, 2004" startWordPosition="221" endWordPosition="224">els for machine learning applications as well as for applications of Natural Language Processing (NLP) has repeatedly shown to be advantageous, see e.g. (Banko and Brill, 2001; Brants et al., 2007). In this work, we tackle the influence of corpus size for building a distributional thesaurus (Lin, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features increases. This makes standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compu</context>
+</contexts>
+<marker>Dean, Ghemawat, 2004</marker>
+<rawString>Jeffrey Dean and Sanjay Ghemawat. 2004. MapReduce: Simplified Data Processing on Large Clusters. In Proceedings of Operating Systems, Desing &amp; Implementation (OSDI) ’04, pages 137–150, San Francisco, CA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stefan Evert</author>
+</authors>
+<title>The Statistics of Word Cooccurrences: Word Pairs and Collocations.</title>
+<date>2005</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Institut f¨ur maschinelle Sprachverarbeitung, University of Stuttgart.</institution>
+<contexts>
+<context position="6607" citStr="Evert, 2005" startWordPosition="1004" endWordPosition="1005">ve all features that occur with more than w terms, as these context features tend to be too general to characterise the similarity between other words (Rychl´y and Kilgarriff, 2007; Goyal et al., 2010, cmp.). From this. we calculate a significance score for all first-order relations. For this work, we implemented two different significance measures: Pointwise Mutual Information (PMI): PMI(term, feature) = l�92( f(term,feature) f(term)f(feature)) (Church and Hanks, 1990) and Lexicographer’s Mutual Information (LMI): LMI(term, feature) = f(term, feature)l�92( f(term,feature) f(term)f(feature)) (Evert, 2005). We then prune all negatively correlated pairs (s&lt;0). The maximum number of context features per term are defined with p, as we argue that it is sufficient to keep only the p most salient (ordered descending by their significance score) context features per term. Features of low saliency generally should not contribute much to the similarity of terms and also could lead to spurious similarity scores. Afterwards, all terms are aggregated by their features, which allows us to compute similarity scores between all terms that share at least one such feature. Whereas the method introduced by (Pant</context>
+</contexts>
+<marker>Evert, 2005</marker>
+<rawString>Stefan Evert. 2005. The Statistics of Word Cooccurrences: Word Pairs and Collocations. Ph.D. thesis, Institut f¨ur maschinelle Sprachverarbeitung, University of Stuttgart.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Goldberg</author>
+<author>Jon Orwant</author>
+</authors>
+<title>A dataset of syntactic-ngrams over time from a very large corpus of english books.</title>
+<date>2013</date>
+<booktitle>In Second Joint Conference on Lexical and Computational Semantics (*SEM), Volume 1: Proceedings of the Main Conference and the Shared Task: Semantic Textual Similarity,</booktitle>
+<pages>241--247</pages>
+<location>Atlanta, Georgia, USA.</location>
+<contexts>
+<context position="9616" citStr="Goldberg and Orwant, 2013" startWordPosition="1479" endWordPosition="1482"> adequacy for large corpora in Section 5. 4 Evaluation The evaluation is performed using a recent dump of English Wikipedia, containing 36 million sentences and a newspaper corpus, compiled from 120 million sentences (about 2 Gigawords) from Leipzig Corpora Collection (Richter et al., 2006) and the Gigaword corpus (Parker et al., 2011). The DTs are based on collapsed dependencies from the Stanford Parser (Marneffe et al., 2006) in the holing operation. For all DTs we use the pruning parameters s=0, p=1000 and w=1000. In a final evaluation, we use the syntactic n-grams built from Google Books (Goldberg and Orwant, 2013). To show the impact of corpus size, we downsampled our corpora to 10 million, 1 million and 100,000 sentences. We compare our results against DTs calculated using Lin’s (Lin, 1998) measure and the best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent and 1000 infrequent nouns as previously employed by Weeds et al. (2004). We create a gold standard, by extracting reasonable entries of these 2000 nouns using Roget’s 1911 thesaurus, Moby Thesaurus, Merriam Webster’s Thesaurus, the Big Huge Thesaurus and the OpenOffice Thesaurus and employ </context>
+<context position="14804" citStr="Goldberg and Orwant, 2013" startWordPosition="2340" endWordPosition="2343"> the newspaper corpus. 887 Figure 3: WordNet::Path results for 1000 infrequent nouns The results shown here validate our pruning approach. Whereas Lin and Curran propose approaches to filter features that have low word feature scores, they do not remove features that occur with too many words, which is done in this work. Using these pruning steps, a simplistic similarity measure does not only lead to reduced computation times, but also to better results, when using larger corpora. 5.1 Using a large3 corpus We demonstrate the scalability of our method using the very large Google Books dataset (Goldberg and Orwant, 2013), consisting of dependencies extracted from 17.6 billion sentences. The evaluation results, using different measures, are given in Table 2. Comparing the results for the Google Books DT to the ones achieved using Wikipedia and the newsCorpus Inv. P@1 Path@5 Path@10 Newspaper 2.0935 0.709 0.3277 0.2906 frequent Wikipedia 2.1213 0.703 0.3365 0.2968 nouns Google Books 2.3171 0.764 0.3712 0.3217 Newspaper 1.4097 0.516 0.2577 0.2269 infrequent Wikipedia 1.3832 0.514 0.2565 0.2265 nouns Google Books 1.8125 0.641 0.2989 0.2565 Table 2: Comparing results for different corpora. paper, we can observe a </context>
+</contexts>
+<marker>Goldberg, Orwant, 2013</marker>
+<rawString>Yoav Goldberg and Jon Orwant. 2013. A dataset of syntactic-ngrams over time from a very large corpus of english books. In Second Joint Conference on Lexical and Computational Semantics (*SEM), Volume 1: Proceedings of the Main Conference and the Shared Task: Semantic Textual Similarity, pages 241–247, Atlanta, Georgia, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gene H Golub</author>
+<author>William M Kahan</author>
+</authors>
+<title>Calculating the singular values and pseudo-inverse of a matrix.</title>
+<date>1965</date>
+<journal>J. Soc. Indust. Appl. Math.: Ser. B, Numer. Anal.,</journal>
+<pages>2--205</pages>
+<contexts>
+<context position="2363" citStr="Golub and Kahan, 1965" startWordPosition="355" endWordPosition="358">ity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing counts or hashing functions to approximate counts and measures (Gorman and Curran, 2006; Goyal et al., 2010; Sahlgren, 2006). Another possibility is the usage of distributed processing like MapReduce. In (Pantel et al., 2009; Agirre et al., 2009) a DT is computed using MapReduce on 200 quad core nodes (for 5.2 billion sentences) respectively 2000 cores (1.6 Terawords), an amount of hardware only available to commercial search engines. Whereas Agirre uses a x2 test to measure the information between terms and context, Pantel uses the Pointw</context>
+</contexts>
+<marker>Golub, Kahan, 1965</marker>
+<rawString>Gene H. Golub and William M. Kahan. 1965. Calculating the singular values and pseudo-inverse of a matrix. J. Soc. Indust. Appl. Math.: Ser. B, Numer. Anal., 2:205–224.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Gorman</author>
+<author>James R Curran</author>
+</authors>
+<title>Scaling distributional similarity to large corpora.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, ACL-44,</booktitle>
+<pages>361--368</pages>
+<location>Sydney, Australia.</location>
+<contexts>
+<context position="2505" citStr="Gorman and Curran, 2006" startWordPosition="377" endWordPosition="381">aches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing counts or hashing functions to approximate counts and measures (Gorman and Curran, 2006; Goyal et al., 2010; Sahlgren, 2006). Another possibility is the usage of distributed processing like MapReduce. In (Pantel et al., 2009; Agirre et al., 2009) a DT is computed using MapReduce on 200 quad core nodes (for 5.2 billion sentences) respectively 2000 cores (1.6 Terawords), an amount of hardware only available to commercial search engines. Whereas Agirre uses a x2 test to measure the information between terms and context, Pantel uses the Pointwise Mutual Information (PMI). Then, both approaches use the cosine similarity to calculate the similarity between terms. Furthermore, Pantel d</context>
+</contexts>
+<marker>Gorman, Curran, 2006</marker>
+<rawString>James Gorman and James R. Curran. 2006. Scaling distributional similarity to large corpora. In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, ACL-44, pages 361–368, Sydney, Australia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Amit Goyal</author>
+<author>Hal Daum´e</author>
+</authors>
+<title>Generating semantic orientation lexicon using large data and thesaurus.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 2nd Workshop on Computational Approaches to Subjectivity and Sentiment Analysis, WASSA ’11,</booktitle>
+<pages>37--43</pages>
+<location>Portland, Oregon, USA.</location>
+<marker>Goyal, Daum´e, 2011</marker>
+<rawString>Amit Goyal and Hal Daum´e, III. 2011. Generating semantic orientation lexicon using large data and thesaurus. In Proceedings of the 2nd Workshop on Computational Approaches to Subjectivity and Sentiment Analysis, WASSA ’11, pages 37–43, Portland, Oregon, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Amit Goyal</author>
+<author>Jagadeesh Jagarlamudi</author>
+<author>Hal Daum´e</author>
+<author>Suresh Venkatasubramanian</author>
+</authors>
+<title>Sketch techniques for scaling distributional similarity to the web.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 Workshop on GEometrical Models of Natural Language Semantics, GEMS ’10,</booktitle>
+<pages>51--56</pages>
+<location>Uppsala,</location>
+<marker>Goyal, Jagarlamudi, Daum´e, Venkatasubramanian, 2010</marker>
+<rawString>Amit Goyal, Jagadeesh Jagarlamudi, Hal Daum´e, III, and Suresh Venkatasubramanian. 2010. Sketch techniques for scaling distributional similarity to the web. In Proceedings of the 2010 Workshop on GEometrical Models of Natural Language Semantics, GEMS ’10, pages 51–56, Uppsala, Sweden.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dekang Lin</author>
+</authors>
+<title>Using syntactic dependency as local context to resolve word sense ambiguity.</title>
+<date>1997</date>
+<booktitle>In Proceedings of the 35th Annual Meeting of the Association for Computational Linguistics and Eighth Conference of the European Chapter of the Association for Computational Linguistics, ACL ’98,</booktitle>
+<pages>64--71</pages>
+<location>Madrid,</location>
+<contexts>
+<context position="3919" citStr="Lin (1997" startWordPosition="599" endWordPosition="600">Here, they propose a pruning scheme similar to ours, but do not explicitly evaluate its effect. The evaluation of DTs has been performed in extrinsic and intrinsic manner. Extrinsic evaluations have been performed using e.g. DTs for automatic 884 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 884–890, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics set expansion (Pantel et al., 2009) or phrase polarity identification (Goyal and Daum´e, 2011). In this work we will concentrate on intrinsic evaluations: Lin (1997; 1998) introduced two measures using WordNet (Miller, 1995) and Roget’s Thesaurus. Using WordNet, he defines context features (synsets a word occurs in Wordnet or subsets when using Roget’s Thesaurus) and then builds a gold standard thesaurus using a similarity measure. Then he evaluates his generated Distributional Thesaurus (DT) with respect to the gold standard thesauri. Weeds et al. (2004) evaluate various similarity measures based on 1000 frequent and 1000 infrequent words. Curran (2004) created a gold standard thesaurus by manually extracting entries from several English thesauri for 70</context>
+</contexts>
+<marker>Lin, 1997</marker>
+<rawString>Dekang Lin. 1997. Using syntactic dependency as local context to resolve word sense ambiguity. In Proceedings of the 35th Annual Meeting of the Association for Computational Linguistics and Eighth Conference of the European Chapter of the Association for Computational Linguistics, ACL ’98, pages 64–71, Madrid, Spain.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dekang Lin</author>
+</authors>
+<title>Automatic retrieval and clustering of similar words.</title>
+<date>1998</date>
+<booktitle>In Proceedings of the 17th international conference on Computational linguistics - Volume 2, COLING ’98,</booktitle>
+<pages>768--774</pages>
+<location>Montreal, Quebec, Canada.</location>
+<contexts>
+<context position="1208" citStr="Lin, 1998" startWordPosition="174" endWordPosition="175">ole vocabulary of Google Books syntactic n-grams. Evaluating against lexical resources using two measures, we show that our approach produces higher quality DTs than previous approaches, and is thus preferable in terms of speed and quality for large corpora. 1 Introduction Using larger data to estimate models for machine learning applications as well as for applications of Natural Language Processing (NLP) has repeatedly shown to be advantageous, see e.g. (Banko and Brill, 2001; Brants et al., 2007). In this work, we tackle the influence of corpus size for building a distributional thesaurus (Lin, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features increases. This makes standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and </context>
+<context position="5755" citStr="Lin, 1998" startWordPosition="883" endWordPosition="884">ion) into a pair of two parts: a term and a context feature. This captures their firstorder relationship. These pairs are subsequently used for the computation of the similarities between terms, leading to a second-order relation. The representation can be formalized by the pair &lt;x,y&gt; where x is the term and y represents the context feature. The position of x in y is denoted by the hole symbol ’@’. As an example the dependency relation (nsub;gave2;I1) could be transferred to &lt;gave2,(nsub;@;I1)&gt; and &lt;I1,(nsub;gave2;@)&gt;. This representation scheme is more generic then the schemes introduced in (Lin, 1998; Curran, 2002), as it allows to characterise pairs by several holes, which could be used to learn analogies, cf. (Turney and Littman, 2005). 3.2 Distributional Similarity First, we count the frequency for each first-order relation and remove all features that occur with more than w terms, as these context features tend to be too general to characterise the similarity between other words (Rychl´y and Kilgarriff, 2007; Goyal et al., 2010, cmp.). From this. we calculate a significance score for all first-order relations. For this work, we implemented two different significance measures: Pointwis</context>
+<context position="7602" citStr="Lin (1998" startWordPosition="1175" endWordPosition="1176">similarity scores. Afterwards, all terms are aggregated by their features, which allows us to compute similarity scores between all terms that share at least one such feature. Whereas the method introduced by (Pantel and Lin, 2002) is very similar to the one proposed in this paper (the similarity between terms is calculated solely by the number of features two terms share), they use PMI to rank features and do not use pruning to scale to large corpora, as they use a rather small corpus. Additionally, they do not evaluate the effect of such pruning. In contrast to the best measures proposed by Lin (1998; Curran (2002; Pantel et al. (2009; Goyal et al. (2010) we do not calculate any information measure using frequencies of features and terms (we use significance ranking instead), as shown in Table 1. Additionally, we avoid any similarity measurement using the information measure, as also done in these approaches, to calculate the similarity over the feature counts of each term: we merely count how many salient features two terms share. All these constraints makes this approach more scalable to larger corpora, as we do not need to know the full list of 885 Information Measures Lin’s formula I(</context>
+<context position="9797" citStr="Lin, 1998" startWordPosition="1512" endWordPosition="1513">0 million sentences (about 2 Gigawords) from Leipzig Corpora Collection (Richter et al., 2006) and the Gigaword corpus (Parker et al., 2011). The DTs are based on collapsed dependencies from the Stanford Parser (Marneffe et al., 2006) in the holing operation. For all DTs we use the pruning parameters s=0, p=1000 and w=1000. In a final evaluation, we use the syntactic n-grams built from Google Books (Goldberg and Orwant, 2013). To show the impact of corpus size, we downsampled our corpora to 10 million, 1 million and 100,000 sentences. We compare our results against DTs calculated using Lin’s (Lin, 1998) measure and the best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent and 1000 infrequent nouns as previously employed by Weeds et al. (2004). We create a gold standard, by extracting reasonable entries of these 2000 nouns using Roget’s 1911 thesaurus, Moby Thesaurus, Merriam Webster’s Thesaurus, the Big Huge Thesaurus and the OpenOffice Thesaurus and employ the inverse ranking measure (Curran, 2002) to evaluate the DTs. Furthermore, we introduce a WordNet-based method. To calculate the similarity between two terms, we use the WordNet::</context>
+</contexts>
+<marker>Lin, 1998</marker>
+<rawString>Dekang Lin. 1998. Automatic retrieval and clustering of similar words. In Proceedings of the 17th international conference on Computational linguistics - Volume 2, COLING ’98, pages 768–774, Montreal, Quebec, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Lund</author>
+<author>Curt Burgess</author>
+</authors>
+<title>Producing high-dimensional semantic spaces from lexical cooccurrence.</title>
+<date>1996</date>
+<journal>Behavior Research Methods,</journal>
+<volume>28</volume>
+<issue>2</issue>
+<pages>208</pages>
+<contexts>
+<context position="1821" citStr="Lund and Burgess, 1996" startWordPosition="266" endWordPosition="269">in, 1998). Especially, we shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features increases. This makes standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing cou</context>
+</contexts>
+<marker>Lund, Burgess, 1996</marker>
+<rawString>Kevin Lund and Curt Burgess. 1996. Producing high-dimensional semantic spaces from lexical cooccurrence. Behavior Research Methods, 28(2):203– 208.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marie-Catherine De Marneffe</author>
+<author>Bill Maccartney</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Generating typed dependency parses from phrase structure parses.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the International Conference on Language Resources and Evaluation, LREC 2006,</booktitle>
+<location>Genova, Italy.</location>
+<marker>De Marneffe, Maccartney, Manning, 2006</marker>
+<rawString>Marie-Catherine De Marneffe, Bill Maccartney, and Christopher D. Manning. 2006. Generating typed dependency parses from phrase structure parses. In Proceedings of the International Conference on Language Resources and Evaluation, LREC 2006, Genova, Italy.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>George A Miller</author>
+</authors>
+<title>Wordnet: A lexical database for english.</title>
+<date>1995</date>
+<journal>Communications of the ACM,</journal>
+<pages>38--39</pages>
+<contexts>
+<context position="3979" citStr="Miller, 1995" startWordPosition="607" endWordPosition="608"> do not explicitly evaluate its effect. The evaluation of DTs has been performed in extrinsic and intrinsic manner. Extrinsic evaluations have been performed using e.g. DTs for automatic 884 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 884–890, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics set expansion (Pantel et al., 2009) or phrase polarity identification (Goyal and Daum´e, 2011). In this work we will concentrate on intrinsic evaluations: Lin (1997; 1998) introduced two measures using WordNet (Miller, 1995) and Roget’s Thesaurus. Using WordNet, he defines context features (synsets a word occurs in Wordnet or subsets when using Roget’s Thesaurus) and then builds a gold standard thesaurus using a similarity measure. Then he evaluates his generated Distributional Thesaurus (DT) with respect to the gold standard thesauri. Weeds et al. (2004) evaluate various similarity measures based on 1000 frequent and 1000 infrequent words. Curran (2004) created a gold standard thesaurus by manually extracting entries from several English thesauri for 70 words. His automatically generated DTs are evaluated agains</context>
+</contexts>
+<marker>Miller, 1995</marker>
+<rawString>George A. Miller. 1995. Wordnet: A lexical database for english. Communications of the ACM, 38:39–41.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Patrick Pantel</author>
+<author>Dekang Lin</author>
+</authors>
+<title>Discovering word senses from text.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the eighth ACM SIGKDD international conference on Knowledge discovery and data mining, KDD ’02,</booktitle>
+<pages>613--619</pages>
+<location>Edmonton, Alberta, Canada.</location>
+<contexts>
+<context position="3205" citStr="Pantel and Lin (2002)" startWordPosition="489" endWordPosition="492">ributed processing like MapReduce. In (Pantel et al., 2009; Agirre et al., 2009) a DT is computed using MapReduce on 200 quad core nodes (for 5.2 billion sentences) respectively 2000 cores (1.6 Terawords), an amount of hardware only available to commercial search engines. Whereas Agirre uses a x2 test to measure the information between terms and context, Pantel uses the Pointwise Mutual Information (PMI). Then, both approaches use the cosine similarity to calculate the similarity between terms. Furthermore, Pantel describes an optimization for the calculation of the cosine similarity. Whereas Pantel and Lin (2002) describe a method for sense clustering, they also use a method to calculate similarities between terms. Here, they propose a pruning scheme similar to ours, but do not explicitly evaluate its effect. The evaluation of DTs has been performed in extrinsic and intrinsic manner. Extrinsic evaluations have been performed using e.g. DTs for automatic 884 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 884–890, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics set expansion (Pantel et al., 2009) or phrase pola</context>
+<context position="7224" citStr="Pantel and Lin, 2002" startWordPosition="1105" endWordPosition="1108">005). We then prune all negatively correlated pairs (s&lt;0). The maximum number of context features per term are defined with p, as we argue that it is sufficient to keep only the p most salient (ordered descending by their significance score) context features per term. Features of low saliency generally should not contribute much to the similarity of terms and also could lead to spurious similarity scores. Afterwards, all terms are aggregated by their features, which allows us to compute similarity scores between all terms that share at least one such feature. Whereas the method introduced by (Pantel and Lin, 2002) is very similar to the one proposed in this paper (the similarity between terms is calculated solely by the number of features two terms share), they use PMI to rank features and do not use pruning to scale to large corpora, as they use a rather small corpus. Additionally, they do not evaluate the effect of such pruning. In contrast to the best measures proposed by Lin (1998; Curran (2002; Pantel et al. (2009; Goyal et al. (2010) we do not calculate any information measure using frequencies of features and terms (we use significance ranking instead), as shown in Table 1. Additionally, we avoi</context>
+</contexts>
+<marker>Pantel, Lin, 2002</marker>
+<rawString>Patrick Pantel and Dekang Lin. 2002. Discovering word senses from text. In Proceedings of the eighth ACM SIGKDD international conference on Knowledge discovery and data mining, KDD ’02, pages 613–619, Edmonton, Alberta, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Patrick Pantel</author>
+</authors>
+<title>Eric Crestan, Arkady Borkovsky, AnaMaria Popescu, and Vishnu Vyas.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume</booktitle>
+<volume>2</volume>
+<pages>938--947</pages>
+<marker>Pantel, 2009</marker>
+<rawString>Patrick Pantel, Eric Crestan, Arkady Borkovsky, AnaMaria Popescu, and Vishnu Vyas. 2009. Web-scale distributional similarity and entity set expansion. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume 2 - Volume 2, EMNLP ’09, pages 938–947, Singapore.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert Parker</author>
+<author>David Graff</author>
+<author>Junbo Kong</author>
+<author>Ke Chen</author>
+<author>Kazuaki Maeda</author>
+</authors>
+<title>English Gigaword Fifth Edition. Linguistic Data Consortium,</title>
+<date>2011</date>
+<location>Philadelphia, PA, USA.</location>
+<contexts>
+<context position="9327" citStr="Parker et al., 2011" startWordPosition="1430" endWordPosition="1433">s(t1)∩features(t2)( ( f) ( f)) sim(t1, t2) = E fEfeatures(t1)nfeatures(t2) 1 with s &gt; 0 Table 1: Similarity measures used for computing the distributional similarity between terms. features for a term pair at any time. While our computations might seem simplistic, we demonstrate its adequacy for large corpora in Section 5. 4 Evaluation The evaluation is performed using a recent dump of English Wikipedia, containing 36 million sentences and a newspaper corpus, compiled from 120 million sentences (about 2 Gigawords) from Leipzig Corpora Collection (Richter et al., 2006) and the Gigaword corpus (Parker et al., 2011). The DTs are based on collapsed dependencies from the Stanford Parser (Marneffe et al., 2006) in the holing operation. For all DTs we use the pruning parameters s=0, p=1000 and w=1000. In a final evaluation, we use the syntactic n-grams built from Google Books (Goldberg and Orwant, 2013). To show the impact of corpus size, we downsampled our corpora to 10 million, 1 million and 100,000 sentences. We compare our results against DTs calculated using Lin’s (Lin, 1998) measure and the best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent an</context>
+</contexts>
+<marker>Parker, Graff, Kong, Chen, Maeda, 2011</marker>
+<rawString>Robert Parker, David Graff, Junbo Kong, Ke Chen, and Kazuaki Maeda. 2011. English Gigaword Fifth Edition. Linguistic Data Consortium, Philadelphia, PA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ted Pedersen</author>
+<author>Siddharth Patwardhan</author>
+<author>Jason Michelizzi</author>
+</authors>
+<title>Wordnet::similarity: measuring the relatedness of concepts.</title>
+<date>2004</date>
+<booktitle>In Demonstration Papers at HLT-NAACL 2004, HLT-NAACL–Demonstrations ’04,</booktitle>
+<pages>38--41</pages>
+<location>Boston, Massachusetts, USA.</location>
+<contexts>
+<context position="10436" citStr="Pedersen et al., 2004" startWordPosition="1608" endWordPosition="1612">best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent and 1000 infrequent nouns as previously employed by Weeds et al. (2004). We create a gold standard, by extracting reasonable entries of these 2000 nouns using Roget’s 1911 thesaurus, Moby Thesaurus, Merriam Webster’s Thesaurus, the Big Huge Thesaurus and the OpenOffice Thesaurus and employ the inverse ranking measure (Curran, 2002) to evaluate the DTs. Furthermore, we introduce a WordNet-based method. To calculate the similarity between two terms, we use the WordNet::Similarity path (Pedersen et al., 2004) measure. While its absolute scores are hard to interpret due to inhomogenity in the granularity of WordNet, they are well-suited for relative comparison. The score between two terms is inversely proportional to the shortest path between all the synsets of both terms. The highest possible score is one, if two terms share a synset. We compare the average score of the top five (or ten) entries in the DT for each of the 2000 selected words for our comparison. 5 Results First, we inspect the results of Curran’s measure using the Wikipedia and newspaper corpus for the frequent nouns, shown in Figur</context>
+</contexts>
+<marker>Pedersen, Patwardhan, Michelizzi, 2004</marker>
+<rawString>Ted Pedersen, Siddharth Patwardhan, and Jason Michelizzi. 2004. Wordnet::similarity: measuring the relatedness of concepts. In Demonstration Papers at HLT-NAACL 2004, HLT-NAACL–Demonstrations ’04, pages 38–41, Boston, Massachusetts, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthias Richter</author>
+<author>Uwe Quasthoff</author>
+<author>Erla Hallsteinsd´ottir</author>
+<author>Chris Biemann</author>
+</authors>
+<title>Exploiting the leipzig corpora collection.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the IS-LTC</booktitle>
+<location>Ljubljana, Slovenia.</location>
+<marker>Richter, Quasthoff, Hallsteinsd´ottir, Biemann, 2006</marker>
+<rawString>Matthias Richter, Uwe Quasthoff, Erla Hallsteinsd´ottir, and Chris Biemann. 2006. Exploiting the leipzig corpora collection. In Proceedings of the IS-LTC 2006, Ljubljana, Slovenia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pavel Rychl´y</author>
+<author>Adam Kilgarriff</author>
+</authors>
+<title>An efficient algorithm for building a distributional thesaurus (and other sketch engine developments).</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07,</booktitle>
+<pages>41--44</pages>
+<location>Prague, Czech Republic.</location>
+<marker>Rychl´y, Kilgarriff, 2007</marker>
+<rawString>Pavel Rychl´y and Adam Kilgarriff. 2007. An efficient algorithm for building a distributional thesaurus (and other sketch engine developments). In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07, pages 41–44, Prague, Czech Republic.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Magnus Sahlgren</author>
+</authors>
+<title>The Word-Space Model: using distributional analysis to represent syntagmatic and paradigmatic relations between words in highdimensional vector spaces.</title>
+<date>2006</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Stockholm University.</institution>
+<contexts>
+<context position="2542" citStr="Sahlgren, 2006" startWordPosition="386" endWordPosition="387">between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing counts or hashing functions to approximate counts and measures (Gorman and Curran, 2006; Goyal et al., 2010; Sahlgren, 2006). Another possibility is the usage of distributed processing like MapReduce. In (Pantel et al., 2009; Agirre et al., 2009) a DT is computed using MapReduce on 200 quad core nodes (for 5.2 billion sentences) respectively 2000 cores (1.6 Terawords), an amount of hardware only available to commercial search engines. Whereas Agirre uses a x2 test to measure the information between terms and context, Pantel uses the Pointwise Mutual Information (PMI). Then, both approaches use the cosine similarity to calculate the similarity between terms. Furthermore, Pantel describes an optimization for the calc</context>
+</contexts>
+<marker>Sahlgren, 2006</marker>
+<rawString>Magnus Sahlgren. 2006. The Word-Space Model: using distributional analysis to represent syntagmatic and paradigmatic relations between words in highdimensional vector spaces. Ph.D. thesis, Stockholm University.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter D Turney</author>
+<author>Michael L Littman</author>
+</authors>
+<title>Corpusbased learning of analogies and semantic relations.</title>
+<date>2005</date>
+<booktitle>Machine Learning,</booktitle>
+<pages>60--1</pages>
+<contexts>
+<context position="5895" citStr="Turney and Littman, 2005" startWordPosition="904" endWordPosition="907">bsequently used for the computation of the similarities between terms, leading to a second-order relation. The representation can be formalized by the pair &lt;x,y&gt; where x is the term and y represents the context feature. The position of x in y is denoted by the hole symbol ’@’. As an example the dependency relation (nsub;gave2;I1) could be transferred to &lt;gave2,(nsub;@;I1)&gt; and &lt;I1,(nsub;gave2;@)&gt;. This representation scheme is more generic then the schemes introduced in (Lin, 1998; Curran, 2002), as it allows to characterise pairs by several holes, which could be used to learn analogies, cf. (Turney and Littman, 2005). 3.2 Distributional Similarity First, we count the frequency for each first-order relation and remove all features that occur with more than w terms, as these context features tend to be too general to characterise the similarity between other words (Rychl´y and Kilgarriff, 2007; Goyal et al., 2010, cmp.). From this. we calculate a significance score for all first-order relations. For this work, we implemented two different significance measures: Pointwise Mutual Information (PMI): PMI(term, feature) = l�92( f(term,feature) f(term)f(feature)) (Church and Hanks, 1990) and Lexicographer’s Mutua</context>
+</contexts>
+<marker>Turney, Littman, 2005</marker>
+<rawString>Peter D. Turney and Michael L. Littman. 2005. Corpusbased learning of analogies and semantic relations. Machine Learning, 60(1-3):251–278.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Julie Weeds</author>
+<author>David Weir</author>
+<author>Diana McCarthy</author>
+</authors>
+<title>Characterising measures of lexical distributional similarity.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the 20th international conference on Computational Linguistics, COLING ’04,</booktitle>
+<pages>1015--1021</pages>
+<location>Geneva, Switzerland.</location>
+<contexts>
+<context position="1842" citStr="Weeds et al., 2004" startWordPosition="270" endWordPosition="273">e shed light on the interaction of similarity measures and corpus size, as well as aspects of scalability. We shortly introduce the JoBimText framework for distributional semantics and show its scalability for large corpora. For the computation of the data we follow the MapReduce (Dean and Ghemawat, 2004) paradigm. The computation of similarities between terms becomes challenging on large corpora, as both the numbers of terms to be compared and the number of context features increases. This makes standard similarity calculations as proposed in (Lin, 1998; Curran, 2002; Lund and Burgess, 1996; Weeds et al., 2004) computationally infeasible. These approaches first calculate an information measure between each word and the according context and then calculate the similarity between all words, based on the information measure for all shared contexts. 2 Related Work A variety of approaches to compute DTs have been proposed to tackle issues regarding size and runtime. The reduction of the feature space seems to be one possibility, but still requires the computation of such reduction cf. (Blei et al., 2003; Golub and Kahan, 1965). Other approaches use randomised indexing for storing counts or hashing functi</context>
+<context position="4316" citStr="Weeds et al. (2004)" startWordPosition="660" endWordPosition="663">er 2013. c�2013 Association for Computational Linguistics set expansion (Pantel et al., 2009) or phrase polarity identification (Goyal and Daum´e, 2011). In this work we will concentrate on intrinsic evaluations: Lin (1997; 1998) introduced two measures using WordNet (Miller, 1995) and Roget’s Thesaurus. Using WordNet, he defines context features (synsets a word occurs in Wordnet or subsets when using Roget’s Thesaurus) and then builds a gold standard thesaurus using a similarity measure. Then he evaluates his generated Distributional Thesaurus (DT) with respect to the gold standard thesauri. Weeds et al. (2004) evaluate various similarity measures based on 1000 frequent and 1000 infrequent words. Curran (2004) created a gold standard thesaurus by manually extracting entries from several English thesauri for 70 words. His automatically generated DTs are evaluated against this gold standard thesaurus using several measures. We will report on his measure and additionally propose a measure based on WordNet paths. 3 Building a Distributional Thesaurus Here we present our scalable DT algorithm using the MapReduce paradigm, which is divided into two parts: The holing system and a computational method to ca</context>
+<context position="9996" citStr="Weeds et al. (2004)" startWordPosition="1544" endWordPosition="1547"> the Stanford Parser (Marneffe et al., 2006) in the holing operation. For all DTs we use the pruning parameters s=0, p=1000 and w=1000. In a final evaluation, we use the syntactic n-grams built from Google Books (Goldberg and Orwant, 2013). To show the impact of corpus size, we downsampled our corpora to 10 million, 1 million and 100,000 sentences. We compare our results against DTs calculated using Lin’s (Lin, 1998) measure and the best measure proposed by Curran (2002) (see Table 1). Our evaluation is performed using the same 1000 frequent and 1000 infrequent nouns as previously employed by Weeds et al. (2004). We create a gold standard, by extracting reasonable entries of these 2000 nouns using Roget’s 1911 thesaurus, Moby Thesaurus, Merriam Webster’s Thesaurus, the Big Huge Thesaurus and the OpenOffice Thesaurus and employ the inverse ranking measure (Curran, 2002) to evaluate the DTs. Furthermore, we introduce a WordNet-based method. To calculate the similarity between two terms, we use the WordNet::Similarity path (Pedersen et al., 2004) measure. While its absolute scores are hard to interpret due to inhomogenity in the granularity of WordNet, they are well-suited for relative comparison. The s</context>
+</contexts>
+<marker>Weeds, Weir, McCarthy, 2004</marker>
+<rawString>Julie Weeds, David Weir, and Diana McCarthy. 2004. Characterising measures of lexical distributional similarity. In Proceedings of the 20th international conference on Computational Linguistics, COLING ’04, pages 1015–1021, Geneva, Switzerland.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

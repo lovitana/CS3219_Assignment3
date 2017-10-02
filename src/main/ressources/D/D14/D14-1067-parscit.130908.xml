@@ -1,0 +1,965 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.007697">
+<title confidence="0.976906">
+Question Answering with Subgraph Embeddings
+</title>
+<author confidence="0.889564">
+Antoine Bordes
+</author>
+<affiliation confidence="0.739328">
+Facebook AI Research
+</affiliation>
+<address confidence="0.7403305">
+112 avenue de Wagram,
+Paris, France
+</address>
+<email confidence="0.932848">
+abordes@fb.com
+</email>
+<author confidence="0.880091">
+Sumit Chopra
+</author>
+<affiliation confidence="0.859907">
+Facebook AI Research
+</affiliation>
+<address confidence="0.9662485">
+770 Broadway,
+New York, USA
+</address>
+<email confidence="0.992547">
+spchopra@fb.com
+</email>
+<author confidence="0.956303">
+Jason Weston
+</author>
+<affiliation confidence="0.927644">
+Facebook AI Research
+</affiliation>
+<address confidence="0.9791435">
+770 Broadway,
+New York, USA
+</address>
+<email confidence="0.997195">
+jase@fb.com
+</email>
+<sectionHeader confidence="0.997368" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999981538461539">
+This paper presents a system which learns
+to answer questions on a broad range of
+topics from a knowledge base using few
+hand-crafted features. Our model learns
+low-dimensional embeddings of words
+and knowledge base constituents; these
+representations are used to score natural
+language questions against candidate an-
+swers. Training our system using pairs of
+questions and structured representations of
+their answers, and pairs of question para-
+phrases, yields competitive results on a re-
+cent benchmark of the literature.
+</bodyText>
+<sectionHeader confidence="0.999394" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999960415384615">
+Teaching machines how to automatically answer
+questions asked in natural language on any topic
+or in any domain has always been a long stand-
+ing goal in Artificial Intelligence. With the rise
+of large scale structured knowledge bases (KBs),
+this problem, known as open-domain question an-
+swering (or open QA), boils down to being able
+to query efficiently such databases with natural
+language. These KBs, such as FREEBASE (Bol-
+lacker et al., 2008) encompass huge ever growing
+amounts of information and ease open QA by or-
+ganizing a great variety of answers in a structured
+format. However, the scale and the difficulty for
+machines to interpret natural language still makes
+this task a challenging problem.
+The state-of-the-art techniques in open QA can
+be classified into two main classes, namely, infor-
+mation retrieval based and semantic parsing based.
+Information retrieval systems first retrieve a broad
+set of candidate answers by querying the search
+API of KBs with a transformation of the ques-
+tion into a valid query and then use fine-grained
+detection heuristics to identify the exact answer
+(Kolomiyets and Moens, 2011; Unger et al., 2012;
+Yao and Van Durme, 2014). On the other hand,
+semantic parsing methods focus on the correct in-
+terpretation of the meaning of a question by a se-
+mantic parsing system. A correct interpretation
+converts a question into the exact database query
+that returns the correct answer. Interestingly, re-
+cent works (Berant et al., 2013; Kwiatkowski et
+al., 2013; Berant and Liang, 2014; Fader et al.,
+2014) have shown that such systems can be ef-
+ficiently trained under indirect and imperfect su-
+pervision and hence scale to large-scale regimes,
+while bypassing most of the annotation costs.
+Yet, even if both kinds of system have shown the
+ability to handle large-scale KBs, they still require
+experts to hand-craft lexicons, grammars, and KB
+schema to be effective. This non-negligible hu-
+man intervention might not be generic enough to
+conveniently scale up to new databases with other
+schema, broader vocabularies or languages other
+than English. In contrast, (Fader et al., 2013) pro-
+posed a framework for open QA requiring almost
+no human annotation. Despite being an interesting
+approach, this method is outperformed by other
+competing methods. (Bordes et al., 2014b) in-
+troduced an embedding model, which learns low-
+dimensional vector representations of words and
+symbols (such as KBs constituents) and can be
+trained with even less supervision than the system
+of (Fader et al., 2013) while being able to achieve
+better prediction performance. However, this ap-
+proach is only compared with (Fader et al., 2013)
+which operates in a simplified setting and has not
+been applied in more realistic conditions nor eval-
+uated against the best performing methods.
+In this paper, we improve the model of (Bor-
+des et al., 2014b) by providing the ability to an-
+swer more complicated questions. The main con-
+tributions of the paper are: (1) a more sophisti-
+cated inference procedure that is both efficient and
+can consider longer paths ((Bordes et al., 2014b)
+considered only answers directly connected to the
+</bodyText>
+<page confidence="0.974268">
+615
+</page>
+<bodyText confidence="0.904836818181818">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 615–620,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+question in the graph); and (2) a richer represen-
+tation of the answers which encodes the question-
+answer path and surrounding subgraph of the KB.
+Our approach is competitive with the current state-
+of-the-art on the recent benchmark WEBQUES-
+TIONS (Berant et al., 2013) without using any lex-
+icon, rules or additional system for part-of-speech
+tagging, syntactic or dependency parsing during
+training as most other systems do.
+</bodyText>
+<sectionHeader confidence="0.980528" genericHeader="method">
+2 Task Definition
+</sectionHeader>
+<bodyText confidence="0.999735149425288">
+Our main motivation is to provide a system for
+open QA able to be trained as long as it has ac-
+cess to: (1) a training set of questions paired with
+answers and (2) a KB providing a structure among
+answers. We suppose that all potential answers are
+entities in the KB and that questions are sequences
+of words that include one identified KB entity.
+When this entity is not given, plain string match-
+ing is used to perform entity resolution. Smarter
+methods could be used but this is not our focus.
+We use WEBQUESTIONS (Berant et al., 2013)
+as our evaluation bemchmark. Since it contains
+few training samples, it is impossible to learn on
+it alone, and this section describes the various data
+sources that were used for training. These are sim-
+ilar to those used in (Berant and Liang, 2014).
+WebQuestions This dataset is built using FREE-
+BASE as the KB and contains 5,810 question-
+answer pairs. It was created by crawling questions
+through the Google Suggest API, and then obtain-
+ing answers using Amazon Mechanical Turk. We
+used the original split (3,778 examples for train-
+ing and 2,032 for testing), and isolated 1k ques-
+tions from the training set for validation. WE-
+BQUESTIONS is built on FREEBASE since all an-
+swers are defined as FREEBASE entities. In each
+question, we identified one FREEBASE entity us-
+ing string matching between words of the ques-
+tion and entity names in FREEBASE. When the
+same string matches multiple entities, only the en-
+tity appearing in most triples, i.e. the most popular
+in FREEBASE, was kept. Example questions (an-
+swers) in the dataset include “Where did Edgar
+Allan Poe died?” (baltimore) or “What degrees
+did Barack Obama get?” (bachelor of arts,
+juris doctor).
+Freebase FREEBASE (Bollacker et al., 2008)
+is a huge and freely available database of
+general facts; data is organized as triplets
+(subject, type1.type2.predicate, object),
+where two entities subject and object (identi-
+fied by mids) are connected by the relation type
+type1.type2.predicate. We used a subset, cre-
+ated by only keeping triples where one of the
+entities was appearing in either the WEBQUES-
+TIONS training/validation set or in CLUEWEB ex-
+tractions. We also removed all entities appearing
+less than 5 times and finally obtained a FREEBASE
+set containing 14M triples made of 2.2M entities
+and 7k relation types.1 Since the format of triples
+does not correspond to any structure one could
+find in language, we decided to transform them
+into automatically generated questions. Hence, all
+triples were converted into questions “What is the
+predicate of the type2 subject?” (using the
+mid of the subject) with the answer being object.
+An example is “What is the nationality of the
+person barack obama?” (united states). More
+examples and details are given in a longer version
+of this paper (Bordes et al., 2014a).
+ClueWeb Extractions FREEBASE data allows
+to train our model on 14M questions but these have
+a fixed lexicon and vocabulary, which is not real-
+istic. Following (Berant et al., 2013), we also cre-
+ated questions using CLUEWEB extractions pro-
+vided by (Lin et al., 2012). Using string match-
+ing, we ended up with 2M extractions structured
+as (subject, “text string”, object) with both
+subject and object linked to FREEBASE. We
+also converted these triples into questions by using
+simple patterns and FREEBASE types. An exam-
+ple of generated question is “Where barack obama
+was allegedly bear in?” (hawaii).
+Paraphrases The automatically generated ques-
+tions that are useful to connect FREEBASE triples
+and natural language, do not provide a satisfac-
+tory modeling of natural language because of their
+semi-automatic wording and rigid syntax. To
+overcome this issue, we follow (Fader et al., 2013)
+and supplement our training data with an indirect
+supervision signal made of pairs of question para-
+phrases collected from the WIKIANSWERS web-
+site. On WIKIANSWERS, users can tag pairs of
+questions as rephrasings of each other: (Fader et
+al., 2013) harvested a set of 2M distinct questions
+from WIKIANSWERS, which were grouped into
+350k paraphrase clusters.
+</bodyText>
+<footnote confidence="0.847118">
+1WEBQUESTIONS contains ∼2k entities, hence restrict-
+ing FREEBASE to 2.2M entities does not ease the task for us.
+</footnote>
+<page confidence="0.997496">
+616
+</page>
+<sectionHeader confidence="0.896489" genericHeader="method">
+3 Embedding Questions and Answers
+</sectionHeader>
+<bodyText confidence="0.999955">
+Inspired by (Bordes et al., 2014b), our model
+works by learning low-dimensional vector embed-
+dings of words appearing in questions and of enti-
+ties and relation types of FREEBASE, so that repre-
+sentations of questions and of their corresponding
+answers are close to each other in the joint embed-
+ding space. Let q denote a question and a a can-
+didate answer. Learning embeddings is achieved
+by learning a scoring function S(q, a), so that S
+generates a high score if a is the correct answer to
+the question q, and a low score otherwise. Note
+that both q and a are represented as a combina-
+tion of the embeddings of their individual words
+and/or symbols; hence, learning S essentially in-
+volves learning these embeddings. In our model,
+the form of the scoring function is:
+</bodyText>
+<equation confidence="0.848498">
+S(q, a) = f(q)Tg(a). (1)
+</equation>
+<bodyText confidence="0.999682294117647">
+Let W be a matrix of Rk×N, where k is the di-
+mension of the embedding space which is fixed a-
+priori, and N is the dictionary of embeddings to be
+learned. Let NW denote the total number of words
+and NS the total number of entities and relation
+types. With N = NW+NS, the i-th column of W
+is the embedding of the i-th element (word, entity
+or relation type) in the dictionary. The function
+f(.), which maps the questions into the embed-
+ding space Rk is defined as f(q) = Wφ(q), where
+φ(q) E NN, is a sparse vector indicating the num-
+ber of times each word appears in the question q
+(usually 0 or 1). Likewise the function g(.) which
+maps the answer into the same embedding space
+Rk as the questions, is given by g(a) = Wψ(a).
+Here ψ(a) E NN is a sparse vector representation
+of the answer a, which we now detail.
+</bodyText>
+<subsectionHeader confidence="0.999315">
+3.1 Representing Candidate Answers
+</subsectionHeader>
+<bodyText confidence="0.999470833333333">
+We now describe possible feature representations
+for a single candidate answer. (When there are
+multiple correct answers, we average these rep-
+resentations, see Section 3.4.) We consider three
+different types of representation, corresponding to
+different subgraphs of FREEBASE around it.
+</bodyText>
+<listItem confidence="0.985794666666667">
+(i) Single Entity. The answer is represented as
+a single entity from FREEBASE: ψ(a) is a 1-
+of-NS coded vector with 1 corresponding to
+the entity of the answer, and 0 elsewhere.
+(ii) Path Representation. The answer is
+represented as a path from the entity
+</listItem>
+<bodyText confidence="0.992214916666667">
+mentioned in the question to the answer
+entity. In our experiments, we consid-
+ered 1- or 2-hops paths (i.e. with either
+1 or 2 edges to traverse): (barack obama,
+people.person.place of birth,honolulu)
+is a 1-hop path and (barack obama,
+people.person.place of birth, location.
+location.containedby, hawaii) a 2-hops
+path. This results in a ψ(a) which is a
+3-of-NS or 4-of-NS coded vector, expressing
+the start and end entities of the path and the
+relation types (but not entities) in-between.
+</bodyText>
+<listItem confidence="0.8484845">
+(iii) Subgraph Representation. We encode both
+the path representation from (ii), and the en-
+</listItem>
+<bodyText confidence="0.95724740625">
+tire subgraph of entities connected to the can-
+didate answer entity. That is, for each entity
+connected to the answer we include both the
+relation type and the entity itself in the repre-
+sentation ψ(a). In order to represent the an-
+swer path differently to the surrounding sub-
+graph (so the model can differentiate them),
+we double the dictionary size for entities, and
+use one embedding representation if they are
+in the path and another if they are in the sub-
+graph. Thus we now learn a parameter matrix
+Rk×N where N = NW + 2NS (NS is the to-
+tal number of entities and relation types). If
+there are C connected entities with D relation
+types to the candidate answer, its representa-
+tion is a 3+C +D or 4+C+D-of-NS coded
+vector, depending on the path length.
+Our hypothesis is that including more informa-
+tion about the answer in its representation will lead
+to improved results. While it is possible that all
+required information could be encoded in the k di-
+mensional embedding of the single entity (i), it is
+unclear what dimension k should be to make this
+possible. For example the embedding of a country
+entity encoding all of its citizens seems unrealis-
+tic. Similarly, only having access to the path ig-
+nores all the other information we have about the
+answer entity, unless it is encoded in the embed-
+dings of either the entity of the question, the an-
+swer or the relations linking them, which might be
+quite complicated as well. We thus adopt the sub-
+graph approach. Figure 1 illustrates our model.
+</bodyText>
+<subsectionHeader confidence="0.999529">
+3.2 Training and Loss Function
+</subsectionHeader>
+<bodyText confidence="0.905785">
+As in (Weston et al., 2010), we train our model
+using a margin-based ranking loss function. Let
+D = {(qi, ai) : i = 1, ... , |D|} be the training set
+</bodyText>
+<page confidence="0.974969">
+617
+</page>
+<figure confidence="0.99787575">
+Binary encoding of
+the ques0on Φ(q)
+Ques0on q
+Embedding of the
+ques0on f(q)
+“Who did Clooney
+Embedding model
+Embedding matrix W
+marry in 1987?”
+Detec0on of Freebase
+en0ty in the ques0on
+Score S(q,a) How the candidate answer
+fits the ques0on
+Freebase subgraph
+Dot product
+G. Clooney
+Subgraph of a candidate
+answer a (here K. Preston)
+Embedding matrix W
+K. Preston
+Honolulu
+Embedding of the
+subgraph g(a)
+J. Travolta
+Binary encoding of
+the subgraph ψ(a)
+Model
+1987
+</figure>
+<figureCaption confidence="0.93803">
+Figure 1: Illustration of the subgraph embedding model scoring a candidate answer: (i) locate entity in
+the question; (ii) compute path from entity to answer; (iii) represent answer as path plus all connected
+entities to the answer (the subgraph); (iv) embed both the question and the answer subgraph separately
+using the learnt embedding vectors, and score the match via their dot product.
+</figureCaption>
+<bodyText confidence="0.993605">
+of questions qi paired with their correct answer ai.
+The loss function we minimize is
+</bodyText>
+<equation confidence="0.993362">
+� |D |max{0, m−S(qi, ai)+S(qi, ¯a)}, (2)
+i=1
+¯aE A(ai)
+</equation>
+<bodyText confidence="0.999906285714286">
+where m is the margin (fixed to 0.1). Minimizing
+Eq. (2) learns the embedding matrix W so that
+the score of a question paired with a correct an-
+swer is greater than with any incorrect answer a¯
+by at least m. a¯ is sampled from a set of incor-
+rect candidates ¯A. This is achieved by sampling
+50% of the time from the set of entities connected
+to the entity of the question (i.e. other candidate
+paths), and by replacing the answer entity by a ran-
+dom one otherwise. Optimization is accomplished
+using stochastic gradient descent, multi-threaded
+with Hogwild! (Recht et al., 2011), with the con-
+straint that the columns wi of W remain within
+the unit-ball, i.e., bi, ||wi||2 ≤ 1.
+</bodyText>
+<subsectionHeader confidence="0.999294">
+3.3 Multitask Training of Embeddings
+</subsectionHeader>
+<bodyText confidence="0.999617190476191">
+Since a large number of questions in our training
+datasets are synthetically generated, they do not
+adequately cover the range of syntax used in natu-
+ral language. Hence, we also multi-task the train-
+ing of our model with the task of paraphrase pre-
+diction. We do so by alternating the training of
+S with that of a scoring function Sprp(q1, q2) =
+f(q1)Tf(q2), which uses the same embedding ma-
+trix W and makes the embeddings of a pair of
+questions (q1, q2) similar to each other if they are
+paraphrases (i.e. if they belong to the same para-
+phrase cluster), and make them different other-
+wise. Training Sprp is similar to that of S except
+that negative samples are obtained by sampling a
+question from another paraphrase cluster.
+We also multitask the training of the embed-
+dings with the mapping of the mids of FREEBASE
+entities to the actual words of their names, so that
+the model learns that the embedding of the mid of
+an entity should be similar to the embedding of the
+word(s) that compose its name(s).
+</bodyText>
+<subsectionHeader confidence="0.646602">
+3.4 Inference
+</subsectionHeader>
+<bodyText confidence="0.9995035">
+Once W is trained, at test time, for a given ques-
+tion q the model predicts the answer with:
+</bodyText>
+<equation confidence="0.995469">
+aˆ = argmaxa,EA(q)S(q, a&apos;) (3)
+</equation>
+<bodyText confidence="0.999778055555556">
+where A(q) is the candidate answer set. This can-
+didate set could be the whole KB but this has both
+speed and potentially precision issues. Instead, we
+create a candidate set A(q) for each question.
+We recall that each question contains one identi-
+fied FREEBASE entity. A(q) is first populated with
+all triples from FREEBASE involving this entity.
+This allows to answer simple factual questions
+whose answers are directly connected to them (i.e.
+1-hop paths). This strategy is denoted C1.
+Since a system able to answer only such ques-
+tions would be limited, we supplement A(q) with
+examples situated in the KB graph at 2-hops from
+the entity of the question. We do not add all such
+quadruplets since this would lead to very large
+candidate sets. Instead, we consider the follow-
+ing general approach: given that we are predicting
+a path, we can predict its elements in turn using
+</bodyText>
+<page confidence="0.994162">
+618
+</page>
+<table confidence="0.999858375">
+Method P@1 F1 F1
+(%) (Berant) (Yao)
+Baselines
+(Berant et al., 2013) – 31.4 –
+(Bordes et al., 2014b) 31.3 29.7 31.8
+(Yao and Van Durme, 2014) – 33.0 42.0
+(Berant and Liang, 2014) – 39.9 43.0
+Our approach
+Subgraph &amp; A(q) = C2 40.4 39.2 43.2
+Ensemble with (Berant &amp; Liang, 14) – 41.8 45.7
+Variants
+Without multiple predictions 40.4 31.3 34.2
+Subgraph &amp; A(q) = All 2-hops 38.0 37.1 41.4
+Subgraph &amp; A(q) = C1 34.0 32.6 35.1
+Path &amp; A(q) = C2 36.2 35.3 38.5
+Single Entity &amp; A(q) = C1 25.8 16.0 17.8
+</table>
+<tableCaption confidence="0.999968">
+Table 1: Results on the WEBQUESTIONS test set.
+</tableCaption>
+<bodyText confidence="0.994579888888889">
+a beam search, and hence avoid scoring all can-
+didates. Specifically, our model first ranks rela-
+tion types using Eq. (1), i.e. selects which rela-
+tion types are the most likely to be expressed in
+q. We keep the top 10 types (10 was selected on
+the validation set) and only add 2-hops candidates
+to A(q) when these relations appear in their path.
+Scores of 1-hop triples are weighted by 1.5 since
+they have one less element than 2-hops quadru-
+plets. This strategy, denoted C2, is used by default.
+A prediction a0 can commonly actually be
+a set of candidate answers, not just one an-
+swer, for example for questions like “Who are
+David Beckham’s children?”. This is achieved
+by considering a prediction to be all the en-
+tities that lie on the same 1-hop or 2-hops
+path from the entity found in the question.
+Hence, all answers to the above question are
+connected to david beckham via the same path
+(david beckham, people.person.children, *).
+The feature representation of the prediction is then
+the average over each candidate entity’s features
+(see Section 3. 1), i.e. Oall(a0) = |a&apos; |Eaj:a&apos;O(a0j)
+where a0j are the individual entities in the over-
+all prediction a0. In the results, we compare to a
+baseline method that can only predict single can-
+didates, which understandly performs poorly.
+</bodyText>
+<sectionHeader confidence="0.999917" genericHeader="evaluation">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.999976833333333">
+We compare our system in terms of F1 score as
+computed by the official evaluation script2 (F1
+(Berant)) but also with a slightly different F1 def-
+inition, termed F1 (Yao) which was used in (Yao
+and Van Durme, 2014) (the difference being the
+way that questions with no answers are dealt with),
+</bodyText>
+<footnote confidence="0.912652">
+2Available from www-nlp.stanford.edu/software/sempre/
+</footnote>
+<bodyText confidence="0.999986526315789">
+and precision @ 1 (p@1) of the first candidate en-
+tity (even when there are a set of correct answers),
+comparing to recently published systems.3 The
+upper part of Table 1 indicates that our approach
+outperforms (Yao and Van Durme, 2014), (Berant
+et al., 2013) and (Bordes et al., 2014b), and per-
+forms similarly as (Berant and Liang, 2014).
+The lower part of Table 1 compares various ver-
+sions of our model. Our default approach uses
+the Subgraph representation for answers and C2
+as the candidate answers set. Replacing C2 by
+C1 induces a large drop in performance because
+many questions do not have answers thatare di-
+rectly connected to their inluded entity (not in
+C1). However, using all 2-hops connections as
+a candidate set is also detrimental, because the
+larger number of candidates confuses (and slows
+a lot) our ranking based inference. Our results
+also verify our hypothesis of Section 3.1, that a
+richer representation for answers (using the local
+subgraph) can store more pertinent information.
+Finally, we demonstrate that we greatly improve
+upon the model of (Bordes et al., 2014b), which
+actually corresponds to a setting with the Path rep-
+resentation and C1 as candidate set.
+We also considered an ensemble of our ap-
+proach and that of (Berant and Liang, 2014). As
+we only had access to their test predictions we
+used the following combination method. Our ap-
+proach gives a score 5(q, a) for the answer it pre-
+dicts. We chose a threshold such that our approach
+predicts 50% of the time (when 5(q, a) is above
+its value), and the other 50% of the time we use
+the prediction of (Berant and Liang, 2014) instead.
+We aimed for a 50/50 ratio because both meth-
+ods perform similarly. The ensemble improves the
+state-of-the-art, and indicates that our models are
+significantly different in their design.
+</bodyText>
+<sectionHeader confidence="0.999301" genericHeader="conclusions">
+5 Conclusion
+</sectionHeader>
+<bodyText confidence="0.85307775">
+This paper presented an embedding model that
+learns to perform open QA using training data
+made of questions paired with their answers and
+of a KB to provide a structure among answers, and
+can achieve promising performance on the com-
+petitive benchmark WEBQUESTIONS.
+3Results of baselines except (Bordes et al., 2014b) have
+been extracted from the original papers. For our experiments,
+all hyperparameters have been selected on the WEBQUES-
+TIONS validation set: k was chosen among 64, 128, 2561,
+the learning rate on a log. scale between 10−4 and 10−1 and
+we used at most 100 paths in the subgraph representation.
+</bodyText>
+<page confidence="0.998271">
+619
+</page>
+<sectionHeader confidence="0.996341" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999862802816902">
+Jonathan Berant and Percy Liang. 2014. Semantic
+parsing via paraphrasing. In Proceedings of the
+52nd Annual Meeting of the Association for Com-
+putational Linguistics (ACL’14), Baltimore, USA.
+Jonathan Berant, Andrew Chou, Roy Frostig, and Percy
+Liang. 2013. Semantic parsing on Freebase from
+question-answer pairs. In Proceedings of the 2013
+Conference on Empirical Methods in Natural Lan-
+guage Processing (EMNLP’13), Seattle, USA.
+Kurt Bollacker, Colin Evans, Praveen Paritosh, Tim
+Sturge, and Jamie Taylor. 2008. Freebase: a col-
+laboratively created graph database for structuring
+human knowledge. In Proceedings of the 2008 ACM
+SIGMOD international conference on Management
+of data, Vancouver, Canada. ACM.
+Antoine Bordes, Sumit Chopra, and Jason Weston.
+2014a. Question answering with subgraph embed-
+dings. CoRR, abs/1406.3676.
+Antoine Bordes, Jason Weston, and Nicolas Usunier.
+2014b. Open question answering with weakly su-
+pervised embedding models. In Proceedings of the
+7th European Conference on Machine Learning and
+Principles and Practice of Knowledge Discovery
+in Databases (ECML-PKDD’14), Nancy, France.
+Springer.
+Anthony Fader, Luke Zettlemoyer, and Oren Etzioni.
+2013. Paraphrase-driven learning for open question
+answering. In Proceedings of the 51st Annual Meet-
+ing of the Association for Computational Linguistics
+(ACL’13), Sofia, Bulgaria.
+Anthony Fader, Luke Zettlemoyer, and Oren Etzioni.
+2014. Open question answering over curated and
+extracted knowledge bases. In Proceedings of 20th
+SIGKDD Conference on Knowledge Discovery and
+Data Mining (KDD’14), New York City, USA.
+ACM.
+Oleksandr Kolomiyets and Marie-Francine Moens.
+2011. A survey on question answering technology
+from an information retrieval perspective. Informa-
+tion Sciences, 181(24):5412–5434.
+Tom Kwiatkowski, Eunsol Choi, Yoav Artzi, and Luke
+Zettlemoyer. 2013. Scaling semantic parsers with
+on-the-fly ontology matching. In Proceedings of the
+2013 Conference on Empirical Methods in Natural
+Language Processing (EMNLP’13), Seattle, USA,
+October.
+Thomas Lin, Mausam, and Oren Etzioni. 2012. En-
+tity linking at web scale. In Proceedings of the Joint
+Workshop on Automatic Knowledge Base Construc-
+tion and Web-scale Knowledge Extraction (AKBC-
+WEKEX’12), Montreal, Canada.
+Benjamin Recht, Christopher R´e, Stephen J Wright,
+and Feng Niu. 2011. Hogwild!: A lock-free ap-
+proach to parallelizing stochastic gradient descent.
+In Advances in Neural Information Processing Sys-
+tems (NIPS 24)., Vancouver, Canada.
+Christina Unger, Lorenz B¨uhmann, Jens Lehmann,
+Axel-Cyrille Ngonga Ngomo, Daniel Gerber, and
+Philipp Cimiano. 2012. Template-based question
+answering over RDF data. In Proceedings of the
+21st international conference on World Wide Web
+(WWW’12), Lyon, France. ACM.
+Jason Weston, Samy Bengio, and Nicolas Usunier.
+2010. Large scale image annotation: learning to
+rank with joint word-image embeddings. Machine
+learning, 81(1).
+Xuchen Yao and Benjamin Van Durme. 2014. Infor-
+mation extraction over structured data: Question an-
+swering with freebase. In Proceedings of the 52nd
+Annual Meeting of the Association for Computa-
+tional Linguistics (ACL’14), Baltimore, USA.
+</reference>
+<page confidence="0.997607">
+620
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.036836">
+<title confidence="0.996476">Question Answering with Subgraph Embeddings</title>
+<author confidence="0.578297">Antoine</author>
+<affiliation confidence="0.276673">Facebook AI</affiliation>
+<address confidence="0.407237">112 avenue de Paris,</address>
+<email confidence="0.998956">abordes@fb.com</email>
+<author confidence="0.717533">Sumit Chopra</author>
+<affiliation confidence="0.855004">Facebook AI Research</affiliation>
+<address confidence="0.998639">770 Broadway, New York, USA</address>
+<email confidence="0.999714">spchopra@fb.com</email>
+<author confidence="0.94149">Jason</author>
+<affiliation confidence="0.496356">Facebook AI</affiliation>
+<address confidence="0.8910275">770 New York,</address>
+<email confidence="0.999952">jase@fb.com</email>
+<abstract confidence="0.997853857142857">This paper presents a system which learns to answer questions on a broad range of topics from a knowledge base using few hand-crafted features. Our model learns low-dimensional embeddings of words and knowledge base constituents; these representations are used to score natural language questions against candidate answers. Training our system using pairs of questions and structured representations of their answers, and pairs of question paraphrases, yields competitive results on a recent benchmark of the literature.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Jonathan Berant</author>
+<author>Percy Liang</author>
+</authors>
+<title>Semantic parsing via paraphrasing.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (ACL’14),</booktitle>
+<location>Baltimore, USA.</location>
+<contexts>
+<context position="2345" citStr="Berant and Liang, 2014" startWordPosition="363" endWordPosition="366">e a broad set of candidate answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grained detection heuristics to identify the exact answer (Kolomiyets and Moens, 2011; Unger et al., 2012; Yao and Van Durme, 2014). On the other hand, semantic parsing methods focus on the correct interpretation of the meaning of a question by a semantic parsing system. A correct interpretation converts a question into the exact database query that returns the correct answer. Interestingly, recent works (Berant et al., 2013; Kwiatkowski et al., 2013; Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, (Fader et al., 2013) pro</context>
+<context position="5376" citStr="Berant and Liang, 2014" startWordPosition="861" endWordPosition="864"> a KB providing a structure among answers. We suppose that all potential answers are entities in the KB and that questions are sequences of words that include one identified KB entity. When this entity is not given, plain string matching is used to perform entity resolution. Smarter methods could be used but this is not our focus. We use WEBQUESTIONS (Berant et al., 2013) as our evaluation bemchmark. Since it contains few training samples, it is impossible to learn on it alone, and this section describes the various data sources that were used for training. These are similar to those used in (Berant and Liang, 2014). WebQuestions This dataset is built using FREEBASE as the KB and contains 5,810 questionanswer pairs. It was created by crawling questions through the Google Suggest API, and then obtaining answers using Amazon Mechanical Turk. We used the original split (3,778 examples for training and 2,032 for testing), and isolated 1k questions from the training set for validation. WEBQUESTIONS is built on FREEBASE since all answers are defined as FREEBASE entities. In each question, we identified one FREEBASE entity using string matching between words of the question and entity names in FREEBASE. When th</context>
+<context position="17125" citStr="Berant and Liang, 2014" startWordPosition="2877" endWordPosition="2880">them (i.e. 1-hop paths). This strategy is denoted C1. Since a system able to answer only such questions would be limited, we supplement A(q) with examples situated in the KB graph at 2-hops from the entity of the question. We do not add all such quadruplets since this would lead to very large candidate sets. Instead, we consider the following general approach: given that we are predicting a path, we can predict its elements in turn using 618 Method P@1 F1 F1 (%) (Berant) (Yao) Baselines (Berant et al., 2013) – 31.4 – (Bordes et al., 2014b) 31.3 29.7 31.8 (Yao and Van Durme, 2014) – 33.0 42.0 (Berant and Liang, 2014) – 39.9 43.0 Our approach Subgraph &amp; A(q) = C2 40.4 39.2 43.2 Ensemble with (Berant &amp; Liang, 14) – 41.8 45.7 Variants Without multiple predictions 40.4 31.3 34.2 Subgraph &amp; A(q) = All 2-hops 38.0 37.1 41.4 Subgraph &amp; A(q) = C1 34.0 32.6 35.1 Path &amp; A(q) = C2 36.2 35.3 38.5 Single Entity &amp; A(q) = C1 25.8 16.0 17.8 Table 1: Results on the WEBQUESTIONS test set. a beam search, and hence avoid scoring all candidates. Specifically, our model first ranks relation types using Eq. (1), i.e. selects which relation types are the most likely to be expressed in q. We keep the top 10 types (10 was selected</context>
+<context position="19468" citStr="Berant and Liang, 2014" startWordPosition="3285" endWordPosition="3288">e official evaluation script2 (F1 (Berant)) but also with a slightly different F1 definition, termed F1 (Yao) which was used in (Yao and Van Durme, 2014) (the difference being the way that questions with no answers are dealt with), 2Available from www-nlp.stanford.edu/software/sempre/ and precision @ 1 (p@1) of the first candidate entity (even when there are a set of correct answers), comparing to recently published systems.3 The upper part of Table 1 indicates that our approach outperforms (Yao and Van Durme, 2014), (Berant et al., 2013) and (Bordes et al., 2014b), and performs similarly as (Berant and Liang, 2014). The lower part of Table 1 compares various versions of our model. Our default approach uses the Subgraph representation for answers and C2 as the candidate answers set. Replacing C2 by C1 induces a large drop in performance because many questions do not have answers thatare directly connected to their inluded entity (not in C1). However, using all 2-hops connections as a candidate set is also detrimental, because the larger number of candidates confuses (and slows a lot) our ranking based inference. Our results also verify our hypothesis of Section 3.1, that a richer representation for answe</context>
+<context position="20741" citStr="Berant and Liang, 2014" startWordPosition="3505" endWordPosition="3508">nent information. Finally, we demonstrate that we greatly improve upon the model of (Bordes et al., 2014b), which actually corresponds to a setting with the Path representation and C1 as candidate set. We also considered an ensemble of our approach and that of (Berant and Liang, 2014). As we only had access to their test predictions we used the following combination method. Our approach gives a score 5(q, a) for the answer it predicts. We chose a threshold such that our approach predicts 50% of the time (when 5(q, a) is above its value), and the other 50% of the time we use the prediction of (Berant and Liang, 2014) instead. We aimed for a 50/50 ratio because both methods perform similarly. The ensemble improves the state-of-the-art, and indicates that our models are significantly different in their design. 5 Conclusion This paper presented an embedding model that learns to perform open QA using training data made of questions paired with their answers and of a KB to provide a structure among answers, and can achieve promising performance on the competitive benchmark WEBQUESTIONS. 3Results of baselines except (Bordes et al., 2014b) have been extracted from the original papers. For our experiments, all hy</context>
+</contexts>
+<marker>Berant, Liang, 2014</marker>
+<rawString>Jonathan Berant and Percy Liang. 2014. Semantic parsing via paraphrasing. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (ACL’14), Baltimore, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Berant</author>
+<author>Andrew Chou</author>
+<author>Roy Frostig</author>
+<author>Percy Liang</author>
+</authors>
+<title>Semantic parsing on Freebase from question-answer pairs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP’13),</booktitle>
+<location>Seattle, USA.</location>
+<contexts>
+<context position="2295" citStr="Berant et al., 2013" startWordPosition="355" endWordPosition="358">ed. Information retrieval systems first retrieve a broad set of candidate answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grained detection heuristics to identify the exact answer (Kolomiyets and Moens, 2011; Unger et al., 2012; Yao and Van Durme, 2014). On the other hand, semantic parsing methods focus on the correct interpretation of the meaning of a question by a semantic parsing system. A correct interpretation converts a question into the exact database query that returns the correct answer. Interestingly, recent works (Berant et al., 2013; Kwiatkowski et al., 2013; Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other t</context>
+<context position="4416" citStr="Berant et al., 2013" startWordPosition="693" endWordPosition="696">histicated inference procedure that is both efficient and can consider longer paths ((Bordes et al., 2014b) considered only answers directly connected to the 615 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 615–620, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics question in the graph); and (2) a richer representation of the answers which encodes the questionanswer path and surrounding subgraph of the KB. Our approach is competitive with the current stateof-the-art on the recent benchmark WEBQUESTIONS (Berant et al., 2013) without using any lexicon, rules or additional system for part-of-speech tagging, syntactic or dependency parsing during training as most other systems do. 2 Task Definition Our main motivation is to provide a system for open QA able to be trained as long as it has access to: (1) a training set of questions paired with answers and (2) a KB providing a structure among answers. We suppose that all potential answers are entities in the KB and that questions are sequences of words that include one identified KB entity. When this entity is not given, plain string matching is used to perform entity</context>
+<context position="7572" citStr="Berant et al., 2013" startWordPosition="1220" endWordPosition="1223">tructure one could find in language, we decided to transform them into automatically generated questions. Hence, all triples were converted into questions “What is the predicate of the type2 subject?” (using the mid of the subject) with the answer being object. An example is “What is the nationality of the person barack obama?” (united states). More examples and details are given in a longer version of this paper (Bordes et al., 2014a). ClueWeb Extractions FREEBASE data allows to train our model on 14M questions but these have a fixed lexicon and vocabulary, which is not realistic. Following (Berant et al., 2013), we also created questions using CLUEWEB extractions provided by (Lin et al., 2012). Using string matching, we ended up with 2M extractions structured as (subject, “text string”, object) with both subject and object linked to FREEBASE. We also converted these triples into questions by using simple patterns and FREEBASE types. An example of generated question is “Where barack obama was allegedly bear in?” (hawaii). Paraphrases The automatically generated questions that are useful to connect FREEBASE triples and natural language, do not provide a satisfactory modeling of natural language becaus</context>
+<context position="17015" citStr="Berant et al., 2013" startWordPosition="2855" endWordPosition="2858">olving this entity. This allows to answer simple factual questions whose answers are directly connected to them (i.e. 1-hop paths). This strategy is denoted C1. Since a system able to answer only such questions would be limited, we supplement A(q) with examples situated in the KB graph at 2-hops from the entity of the question. We do not add all such quadruplets since this would lead to very large candidate sets. Instead, we consider the following general approach: given that we are predicting a path, we can predict its elements in turn using 618 Method P@1 F1 F1 (%) (Berant) (Yao) Baselines (Berant et al., 2013) – 31.4 – (Bordes et al., 2014b) 31.3 29.7 31.8 (Yao and Van Durme, 2014) – 33.0 42.0 (Berant and Liang, 2014) – 39.9 43.0 Our approach Subgraph &amp; A(q) = C2 40.4 39.2 43.2 Ensemble with (Berant &amp; Liang, 14) – 41.8 45.7 Variants Without multiple predictions 40.4 31.3 34.2 Subgraph &amp; A(q) = All 2-hops 38.0 37.1 41.4 Subgraph &amp; A(q) = C1 34.0 32.6 35.1 Path &amp; A(q) = C2 36.2 35.3 38.5 Single Entity &amp; A(q) = C1 25.8 16.0 17.8 Table 1: Results on the WEBQUESTIONS test set. a beam search, and hence avoid scoring all candidates. Specifically, our model first ranks relation types using Eq. (1), i.e. se</context>
+<context position="19389" citStr="Berant et al., 2013" startWordPosition="3271" endWordPosition="3274">. 4 Experiments We compare our system in terms of F1 score as computed by the official evaluation script2 (F1 (Berant)) but also with a slightly different F1 definition, termed F1 (Yao) which was used in (Yao and Van Durme, 2014) (the difference being the way that questions with no answers are dealt with), 2Available from www-nlp.stanford.edu/software/sempre/ and precision @ 1 (p@1) of the first candidate entity (even when there are a set of correct answers), comparing to recently published systems.3 The upper part of Table 1 indicates that our approach outperforms (Yao and Van Durme, 2014), (Berant et al., 2013) and (Bordes et al., 2014b), and performs similarly as (Berant and Liang, 2014). The lower part of Table 1 compares various versions of our model. Our default approach uses the Subgraph representation for answers and C2 as the candidate answers set. Replacing C2 by C1 induces a large drop in performance because many questions do not have answers thatare directly connected to their inluded entity (not in C1). However, using all 2-hops connections as a candidate set is also detrimental, because the larger number of candidates confuses (and slows a lot) our ranking based inference. Our results al</context>
+</contexts>
+<marker>Berant, Chou, Frostig, Liang, 2013</marker>
+<rawString>Jonathan Berant, Andrew Chou, Roy Frostig, and Percy Liang. 2013. Semantic parsing on Freebase from question-answer pairs. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP’13), Seattle, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kurt Bollacker</author>
+<author>Colin Evans</author>
+<author>Praveen Paritosh</author>
+<author>Tim Sturge</author>
+<author>Jamie Taylor</author>
+</authors>
+<title>Freebase: a collaboratively created graph database for structuring human knowledge.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 2008 ACM SIGMOD international conference on Management of data,</booktitle>
+<publisher>ACM.</publisher>
+<location>Vancouver, Canada.</location>
+<contexts>
+<context position="1272" citStr="Bollacker et al., 2008" startWordPosition="188" endWordPosition="192">f questions and structured representations of their answers, and pairs of question paraphrases, yields competitive results on a recent benchmark of the literature. 1 Introduction Teaching machines how to automatically answer questions asked in natural language on any topic or in any domain has always been a long standing goal in Artificial Intelligence. With the rise of large scale structured knowledge bases (KBs), this problem, known as open-domain question answering (or open QA), boils down to being able to query efficiently such databases with natural language. These KBs, such as FREEBASE (Bollacker et al., 2008) encompass huge ever growing amounts of information and ease open QA by organizing a great variety of answers in a structured format. However, the scale and the difficulty for machines to interpret natural language still makes this task a challenging problem. The state-of-the-art techniques in open QA can be classified into two main classes, namely, information retrieval based and semantic parsing based. Information retrieval systems first retrieve a broad set of candidate answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grain</context>
+<context position="6318" citStr="Bollacker et al., 2008" startWordPosition="1017" endWordPosition="1020">ed 1k questions from the training set for validation. WEBQUESTIONS is built on FREEBASE since all answers are defined as FREEBASE entities. In each question, we identified one FREEBASE entity using string matching between words of the question and entity names in FREEBASE. When the same string matches multiple entities, only the entity appearing in most triples, i.e. the most popular in FREEBASE, was kept. Example questions (answers) in the dataset include “Where did Edgar Allan Poe died?” (baltimore) or “What degrees did Barack Obama get?” (bachelor of arts, juris doctor). Freebase FREEBASE (Bollacker et al., 2008) is a huge and freely available database of general facts; data is organized as triplets (subject, type1.type2.predicate, object), where two entities subject and object (identified by mids) are connected by the relation type type1.type2.predicate. We used a subset, created by only keeping triples where one of the entities was appearing in either the WEBQUESTIONS training/validation set or in CLUEWEB extractions. We also removed all entities appearing less than 5 times and finally obtained a FREEBASE set containing 14M triples made of 2.2M entities and 7k relation types.1 Since the format of tr</context>
+</contexts>
+<marker>Bollacker, Evans, Paritosh, Sturge, Taylor, 2008</marker>
+<rawString>Kurt Bollacker, Colin Evans, Praveen Paritosh, Tim Sturge, and Jamie Taylor. 2008. Freebase: a collaboratively created graph database for structuring human knowledge. In Proceedings of the 2008 ACM SIGMOD international conference on Management of data, Vancouver, Canada. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Sumit Chopra</author>
+<author>Jason Weston</author>
+</authors>
+<title>Question answering with subgraph embeddings.</title>
+<date>2014</date>
+<location>CoRR, abs/1406.3676.</location>
+<contexts>
+<context position="3128" citStr="Bordes et al., 2014" startWordPosition="487" endWordPosition="490"> bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, (Fader et al., 2013) proposed a framework for open QA requiring almost no human annotation. Despite being an interesting approach, this method is outperformed by other competing methods. (Bordes et al., 2014b) introduced an embedding model, which learns lowdimensional vector representations of words and symbols (such as KBs constituents) and can be trained with even less supervision than the system of (Fader et al., 2013) while being able to achieve better prediction performance. However, this approach is only compared with (Fader et al., 2013) which operates in a simplified setting and has not been applied in more realistic conditions nor evaluated against the best performing methods. In this paper, we improve the model of (Bordes et al., 2014b) by providing the ability to answer more complicate</context>
+<context position="7389" citStr="Bordes et al., 2014" startWordPosition="1190" endWordPosition="1193">ng less than 5 times and finally obtained a FREEBASE set containing 14M triples made of 2.2M entities and 7k relation types.1 Since the format of triples does not correspond to any structure one could find in language, we decided to transform them into automatically generated questions. Hence, all triples were converted into questions “What is the predicate of the type2 subject?” (using the mid of the subject) with the answer being object. An example is “What is the nationality of the person barack obama?” (united states). More examples and details are given in a longer version of this paper (Bordes et al., 2014a). ClueWeb Extractions FREEBASE data allows to train our model on 14M questions but these have a fixed lexicon and vocabulary, which is not realistic. Following (Berant et al., 2013), we also created questions using CLUEWEB extractions provided by (Lin et al., 2012). Using string matching, we ended up with 2M extractions structured as (subject, “text string”, object) with both subject and object linked to FREEBASE. We also converted these triples into questions by using simple patterns and FREEBASE types. An example of generated question is “Where barack obama was allegedly bear in?” (hawaii)</context>
+<context position="8817" citStr="Bordes et al., 2014" startWordPosition="1418" endWordPosition="1421">wording and rigid syntax. To overcome this issue, we follow (Fader et al., 2013) and supplement our training data with an indirect supervision signal made of pairs of question paraphrases collected from the WIKIANSWERS website. On WIKIANSWERS, users can tag pairs of questions as rephrasings of each other: (Fader et al., 2013) harvested a set of 2M distinct questions from WIKIANSWERS, which were grouped into 350k paraphrase clusters. 1WEBQUESTIONS contains ∼2k entities, hence restricting FREEBASE to 2.2M entities does not ease the task for us. 616 3 Embedding Questions and Answers Inspired by (Bordes et al., 2014b), our model works by learning low-dimensional vector embeddings of words appearing in questions and of entities and relation types of FREEBASE, so that representations of questions and of their corresponding answers are close to each other in the joint embedding space. Let q denote a question and a a candidate answer. Learning embeddings is achieved by learning a scoring function S(q, a), so that S generates a high score if a is the correct answer to the question q, and a low score otherwise. Note that both q and a are represented as a combination of the embeddings of their individual words </context>
+<context position="17045" citStr="Bordes et al., 2014" startWordPosition="2862" endWordPosition="2865"> to answer simple factual questions whose answers are directly connected to them (i.e. 1-hop paths). This strategy is denoted C1. Since a system able to answer only such questions would be limited, we supplement A(q) with examples situated in the KB graph at 2-hops from the entity of the question. We do not add all such quadruplets since this would lead to very large candidate sets. Instead, we consider the following general approach: given that we are predicting a path, we can predict its elements in turn using 618 Method P@1 F1 F1 (%) (Berant) (Yao) Baselines (Berant et al., 2013) – 31.4 – (Bordes et al., 2014b) 31.3 29.7 31.8 (Yao and Van Durme, 2014) – 33.0 42.0 (Berant and Liang, 2014) – 39.9 43.0 Our approach Subgraph &amp; A(q) = C2 40.4 39.2 43.2 Ensemble with (Berant &amp; Liang, 14) – 41.8 45.7 Variants Without multiple predictions 40.4 31.3 34.2 Subgraph &amp; A(q) = All 2-hops 38.0 37.1 41.4 Subgraph &amp; A(q) = C1 34.0 32.6 35.1 Path &amp; A(q) = C2 36.2 35.3 38.5 Single Entity &amp; A(q) = C1 25.8 16.0 17.8 Table 1: Results on the WEBQUESTIONS test set. a beam search, and hence avoid scoring all candidates. Specifically, our model first ranks relation types using Eq. (1), i.e. selects which relation types are</context>
+<context position="19414" citStr="Bordes et al., 2014" startWordPosition="3276" endWordPosition="3279"> our system in terms of F1 score as computed by the official evaluation script2 (F1 (Berant)) but also with a slightly different F1 definition, termed F1 (Yao) which was used in (Yao and Van Durme, 2014) (the difference being the way that questions with no answers are dealt with), 2Available from www-nlp.stanford.edu/software/sempre/ and precision @ 1 (p@1) of the first candidate entity (even when there are a set of correct answers), comparing to recently published systems.3 The upper part of Table 1 indicates that our approach outperforms (Yao and Van Durme, 2014), (Berant et al., 2013) and (Bordes et al., 2014b), and performs similarly as (Berant and Liang, 2014). The lower part of Table 1 compares various versions of our model. Our default approach uses the Subgraph representation for answers and C2 as the candidate answers set. Replacing C2 by C1 induces a large drop in performance because many questions do not have answers thatare directly connected to their inluded entity (not in C1). However, using all 2-hops connections as a candidate set is also detrimental, because the larger number of candidates confuses (and slows a lot) our ranking based inference. Our results also verify our hypothesis </context>
+</contexts>
+<marker>Bordes, Chopra, Weston, 2014</marker>
+<rawString>Antoine Bordes, Sumit Chopra, and Jason Weston. 2014a. Question answering with subgraph embeddings. CoRR, abs/1406.3676.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Jason Weston</author>
+<author>Nicolas Usunier</author>
+</authors>
+<title>Open question answering with weakly supervised embedding models.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 7th European Conference on Machine Learning and Principles and Practice of Knowledge Discovery in Databases (ECML-PKDD’14),</booktitle>
+<publisher>Springer.</publisher>
+<location>Nancy, France.</location>
+<contexts>
+<context position="3128" citStr="Bordes et al., 2014" startWordPosition="487" endWordPosition="490"> bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, (Fader et al., 2013) proposed a framework for open QA requiring almost no human annotation. Despite being an interesting approach, this method is outperformed by other competing methods. (Bordes et al., 2014b) introduced an embedding model, which learns lowdimensional vector representations of words and symbols (such as KBs constituents) and can be trained with even less supervision than the system of (Fader et al., 2013) while being able to achieve better prediction performance. However, this approach is only compared with (Fader et al., 2013) which operates in a simplified setting and has not been applied in more realistic conditions nor evaluated against the best performing methods. In this paper, we improve the model of (Bordes et al., 2014b) by providing the ability to answer more complicate</context>
+<context position="7389" citStr="Bordes et al., 2014" startWordPosition="1190" endWordPosition="1193">ng less than 5 times and finally obtained a FREEBASE set containing 14M triples made of 2.2M entities and 7k relation types.1 Since the format of triples does not correspond to any structure one could find in language, we decided to transform them into automatically generated questions. Hence, all triples were converted into questions “What is the predicate of the type2 subject?” (using the mid of the subject) with the answer being object. An example is “What is the nationality of the person barack obama?” (united states). More examples and details are given in a longer version of this paper (Bordes et al., 2014a). ClueWeb Extractions FREEBASE data allows to train our model on 14M questions but these have a fixed lexicon and vocabulary, which is not realistic. Following (Berant et al., 2013), we also created questions using CLUEWEB extractions provided by (Lin et al., 2012). Using string matching, we ended up with 2M extractions structured as (subject, “text string”, object) with both subject and object linked to FREEBASE. We also converted these triples into questions by using simple patterns and FREEBASE types. An example of generated question is “Where barack obama was allegedly bear in?” (hawaii)</context>
+<context position="8817" citStr="Bordes et al., 2014" startWordPosition="1418" endWordPosition="1421">wording and rigid syntax. To overcome this issue, we follow (Fader et al., 2013) and supplement our training data with an indirect supervision signal made of pairs of question paraphrases collected from the WIKIANSWERS website. On WIKIANSWERS, users can tag pairs of questions as rephrasings of each other: (Fader et al., 2013) harvested a set of 2M distinct questions from WIKIANSWERS, which were grouped into 350k paraphrase clusters. 1WEBQUESTIONS contains ∼2k entities, hence restricting FREEBASE to 2.2M entities does not ease the task for us. 616 3 Embedding Questions and Answers Inspired by (Bordes et al., 2014b), our model works by learning low-dimensional vector embeddings of words appearing in questions and of entities and relation types of FREEBASE, so that representations of questions and of their corresponding answers are close to each other in the joint embedding space. Let q denote a question and a a candidate answer. Learning embeddings is achieved by learning a scoring function S(q, a), so that S generates a high score if a is the correct answer to the question q, and a low score otherwise. Note that both q and a are represented as a combination of the embeddings of their individual words </context>
+<context position="17045" citStr="Bordes et al., 2014" startWordPosition="2862" endWordPosition="2865"> to answer simple factual questions whose answers are directly connected to them (i.e. 1-hop paths). This strategy is denoted C1. Since a system able to answer only such questions would be limited, we supplement A(q) with examples situated in the KB graph at 2-hops from the entity of the question. We do not add all such quadruplets since this would lead to very large candidate sets. Instead, we consider the following general approach: given that we are predicting a path, we can predict its elements in turn using 618 Method P@1 F1 F1 (%) (Berant) (Yao) Baselines (Berant et al., 2013) – 31.4 – (Bordes et al., 2014b) 31.3 29.7 31.8 (Yao and Van Durme, 2014) – 33.0 42.0 (Berant and Liang, 2014) – 39.9 43.0 Our approach Subgraph &amp; A(q) = C2 40.4 39.2 43.2 Ensemble with (Berant &amp; Liang, 14) – 41.8 45.7 Variants Without multiple predictions 40.4 31.3 34.2 Subgraph &amp; A(q) = All 2-hops 38.0 37.1 41.4 Subgraph &amp; A(q) = C1 34.0 32.6 35.1 Path &amp; A(q) = C2 36.2 35.3 38.5 Single Entity &amp; A(q) = C1 25.8 16.0 17.8 Table 1: Results on the WEBQUESTIONS test set. a beam search, and hence avoid scoring all candidates. Specifically, our model first ranks relation types using Eq. (1), i.e. selects which relation types are</context>
+<context position="19414" citStr="Bordes et al., 2014" startWordPosition="3276" endWordPosition="3279"> our system in terms of F1 score as computed by the official evaluation script2 (F1 (Berant)) but also with a slightly different F1 definition, termed F1 (Yao) which was used in (Yao and Van Durme, 2014) (the difference being the way that questions with no answers are dealt with), 2Available from www-nlp.stanford.edu/software/sempre/ and precision @ 1 (p@1) of the first candidate entity (even when there are a set of correct answers), comparing to recently published systems.3 The upper part of Table 1 indicates that our approach outperforms (Yao and Van Durme, 2014), (Berant et al., 2013) and (Bordes et al., 2014b), and performs similarly as (Berant and Liang, 2014). The lower part of Table 1 compares various versions of our model. Our default approach uses the Subgraph representation for answers and C2 as the candidate answers set. Replacing C2 by C1 induces a large drop in performance because many questions do not have answers thatare directly connected to their inluded entity (not in C1). However, using all 2-hops connections as a candidate set is also detrimental, because the larger number of candidates confuses (and slows a lot) our ranking based inference. Our results also verify our hypothesis </context>
+</contexts>
+<marker>Bordes, Weston, Usunier, 2014</marker>
+<rawString>Antoine Bordes, Jason Weston, and Nicolas Usunier. 2014b. Open question answering with weakly supervised embedding models. In Proceedings of the 7th European Conference on Machine Learning and Principles and Practice of Knowledge Discovery in Databases (ECML-PKDD’14), Nancy, France. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Anthony Fader</author>
+<author>Luke Zettlemoyer</author>
+<author>Oren Etzioni</author>
+</authors>
+<title>Paraphrase-driven learning for open question answering.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (ACL’13),</booktitle>
+<location>Sofia, Bulgaria.</location>
+<contexts>
+<context position="2941" citStr="Fader et al., 2013" startWordPosition="458" endWordPosition="461"> Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, (Fader et al., 2013) proposed a framework for open QA requiring almost no human annotation. Despite being an interesting approach, this method is outperformed by other competing methods. (Bordes et al., 2014b) introduced an embedding model, which learns lowdimensional vector representations of words and symbols (such as KBs constituents) and can be trained with even less supervision than the system of (Fader et al., 2013) while being able to achieve better prediction performance. However, this approach is only compared with (Fader et al., 2013) which operates in a simplified setting and has not been applied in mo</context>
+<context position="8278" citStr="Fader et al., 2013" startWordPosition="1332" endWordPosition="1335">sing string matching, we ended up with 2M extractions structured as (subject, “text string”, object) with both subject and object linked to FREEBASE. We also converted these triples into questions by using simple patterns and FREEBASE types. An example of generated question is “Where barack obama was allegedly bear in?” (hawaii). Paraphrases The automatically generated questions that are useful to connect FREEBASE triples and natural language, do not provide a satisfactory modeling of natural language because of their semi-automatic wording and rigid syntax. To overcome this issue, we follow (Fader et al., 2013) and supplement our training data with an indirect supervision signal made of pairs of question paraphrases collected from the WIKIANSWERS website. On WIKIANSWERS, users can tag pairs of questions as rephrasings of each other: (Fader et al., 2013) harvested a set of 2M distinct questions from WIKIANSWERS, which were grouped into 350k paraphrase clusters. 1WEBQUESTIONS contains ∼2k entities, hence restricting FREEBASE to 2.2M entities does not ease the task for us. 616 3 Embedding Questions and Answers Inspired by (Bordes et al., 2014b), our model works by learning low-dimensional vector embedd</context>
+</contexts>
+<marker>Fader, Zettlemoyer, Etzioni, 2013</marker>
+<rawString>Anthony Fader, Luke Zettlemoyer, and Oren Etzioni. 2013. Paraphrase-driven learning for open question answering. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (ACL’13), Sofia, Bulgaria.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Anthony Fader</author>
+<author>Luke Zettlemoyer</author>
+<author>Oren Etzioni</author>
+</authors>
+<title>Open question answering over curated and extracted knowledge bases.</title>
+<date>2014</date>
+<booktitle>In Proceedings of 20th SIGKDD Conference on Knowledge Discovery and Data Mining (KDD’14),</booktitle>
+<publisher>ACM.</publisher>
+<location>New York City, USA.</location>
+<contexts>
+<context position="2366" citStr="Fader et al., 2014" startWordPosition="367" endWordPosition="370">te answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grained detection heuristics to identify the exact answer (Kolomiyets and Moens, 2011; Unger et al., 2012; Yao and Van Durme, 2014). On the other hand, semantic parsing methods focus on the correct interpretation of the meaning of a question by a semantic parsing system. A correct interpretation converts a question into the exact database query that returns the correct answer. Interestingly, recent works (Berant et al., 2013; Kwiatkowski et al., 2013; Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, (Fader et al., 2013) proposed a framework for</context>
+</contexts>
+<marker>Fader, Zettlemoyer, Etzioni, 2014</marker>
+<rawString>Anthony Fader, Luke Zettlemoyer, and Oren Etzioni. 2014. Open question answering over curated and extracted knowledge bases. In Proceedings of 20th SIGKDD Conference on Knowledge Discovery and Data Mining (KDD’14), New York City, USA. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Oleksandr Kolomiyets</author>
+<author>Marie-Francine Moens</author>
+</authors>
+<title>A survey on question answering technology from an information retrieval perspective.</title>
+<date>2011</date>
+<journal>Information Sciences,</journal>
+<volume>181</volume>
+<issue>24</issue>
+<contexts>
+<context position="1952" citStr="Kolomiyets and Moens, 2011" startWordPosition="297" endWordPosition="300">d ease open QA by organizing a great variety of answers in a structured format. However, the scale and the difficulty for machines to interpret natural language still makes this task a challenging problem. The state-of-the-art techniques in open QA can be classified into two main classes, namely, information retrieval based and semantic parsing based. Information retrieval systems first retrieve a broad set of candidate answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grained detection heuristics to identify the exact answer (Kolomiyets and Moens, 2011; Unger et al., 2012; Yao and Van Durme, 2014). On the other hand, semantic parsing methods focus on the correct interpretation of the meaning of a question by a semantic parsing system. A correct interpretation converts a question into the exact database query that returns the correct answer. Interestingly, recent works (Berant et al., 2013; Kwiatkowski et al., 2013; Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Ye</context>
+</contexts>
+<marker>Kolomiyets, Moens, 2011</marker>
+<rawString>Oleksandr Kolomiyets and Marie-Francine Moens. 2011. A survey on question answering technology from an information retrieval perspective. Information Sciences, 181(24):5412–5434.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tom Kwiatkowski</author>
+<author>Eunsol Choi</author>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+</authors>
+<title>Scaling semantic parsers with on-the-fly ontology matching.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP’13),</booktitle>
+<location>Seattle, USA,</location>
+<contexts>
+<context position="2321" citStr="Kwiatkowski et al., 2013" startWordPosition="359" endWordPosition="362">eval systems first retrieve a broad set of candidate answers by querying the search API of KBs with a transformation of the question into a valid query and then use fine-grained detection heuristics to identify the exact answer (Kolomiyets and Moens, 2011; Unger et al., 2012; Yao and Van Durme, 2014). On the other hand, semantic parsing methods focus on the correct interpretation of the meaning of a question by a semantic parsing system. A correct interpretation converts a question into the exact database query that returns the correct answer. Interestingly, recent works (Berant et al., 2013; Kwiatkowski et al., 2013; Berant and Liang, 2014; Fader et al., 2014) have shown that such systems can be efficiently trained under indirect and imperfect supervision and hence scale to large-scale regimes, while bypassing most of the annotation costs. Yet, even if both kinds of system have shown the ability to handle large-scale KBs, they still require experts to hand-craft lexicons, grammars, and KB schema to be effective. This non-negligible human intervention might not be generic enough to conveniently scale up to new databases with other schema, broader vocabularies or languages other than English. In contrast, </context>
+</contexts>
+<marker>Kwiatkowski, Choi, Artzi, Zettlemoyer, 2013</marker>
+<rawString>Tom Kwiatkowski, Eunsol Choi, Yoav Artzi, and Luke Zettlemoyer. 2013. Scaling semantic parsers with on-the-fly ontology matching. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP’13), Seattle, USA, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas Lin</author>
+<author>Mausam</author>
+<author>Oren Etzioni</author>
+</authors>
+<title>Entity linking at web scale.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Joint Workshop on Automatic Knowledge Base Construction and Web-scale Knowledge Extraction (AKBCWEKEX’12),</booktitle>
+<location>Montreal, Canada.</location>
+<contexts>
+<context position="7656" citStr="Lin et al., 2012" startWordPosition="1235" endWordPosition="1238">nerated questions. Hence, all triples were converted into questions “What is the predicate of the type2 subject?” (using the mid of the subject) with the answer being object. An example is “What is the nationality of the person barack obama?” (united states). More examples and details are given in a longer version of this paper (Bordes et al., 2014a). ClueWeb Extractions FREEBASE data allows to train our model on 14M questions but these have a fixed lexicon and vocabulary, which is not realistic. Following (Berant et al., 2013), we also created questions using CLUEWEB extractions provided by (Lin et al., 2012). Using string matching, we ended up with 2M extractions structured as (subject, “text string”, object) with both subject and object linked to FREEBASE. We also converted these triples into questions by using simple patterns and FREEBASE types. An example of generated question is “Where barack obama was allegedly bear in?” (hawaii). Paraphrases The automatically generated questions that are useful to connect FREEBASE triples and natural language, do not provide a satisfactory modeling of natural language because of their semi-automatic wording and rigid syntax. To overcome this issue, we follo</context>
+</contexts>
+<marker>Lin, Mausam, Etzioni, 2012</marker>
+<rawString>Thomas Lin, Mausam, and Oren Etzioni. 2012. Entity linking at web scale. In Proceedings of the Joint Workshop on Automatic Knowledge Base Construction and Web-scale Knowledge Extraction (AKBCWEKEX’12), Montreal, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Benjamin Recht</author>
+<author>Christopher R´e</author>
+<author>Stephen J Wright</author>
+<author>Feng Niu</author>
+</authors>
+<title>Hogwild!: A lock-free approach to parallelizing stochastic gradient descent.</title>
+<date>2011</date>
+<booktitle>In Advances in Neural Information Processing Systems (NIPS 24).,</booktitle>
+<location>Vancouver, Canada.</location>
+<marker>Recht, R´e, Wright, Niu, 2011</marker>
+<rawString>Benjamin Recht, Christopher R´e, Stephen J Wright, and Feng Niu. 2011. Hogwild!: A lock-free approach to parallelizing stochastic gradient descent. In Advances in Neural Information Processing Systems (NIPS 24)., Vancouver, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christina Unger</author>
+<author>Lorenz B¨uhmann</author>
+<author>Jens Lehmann</author>
+<author>Axel-Cyrille Ngonga Ngomo</author>
+<author>Daniel Gerber</author>
+<author>Philipp Cimiano</author>
+</authors>
+<title>Template-based question answering over RDF data.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 21st international conference on World Wide Web (WWW’12),</booktitle>
+<publisher>ACM.</publisher>
+<location>Lyon, France.</location>
+<marker>Unger, B¨uhmann, Lehmann, Ngomo, Gerber, Cimiano, 2012</marker>
+<rawString>Christina Unger, Lorenz B¨uhmann, Jens Lehmann, Axel-Cyrille Ngonga Ngomo, Daniel Gerber, and Philipp Cimiano. 2012. Template-based question answering over RDF data. In Proceedings of the 21st international conference on World Wide Web (WWW’12), Lyon, France. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Weston</author>
+<author>Samy Bengio</author>
+<author>Nicolas Usunier</author>
+</authors>
+<title>Large scale image annotation: learning to rank with joint word-image embeddings.</title>
+<date>2010</date>
+<booktitle>Machine learning,</booktitle>
+<volume>81</volume>
+<issue>1</issue>
+<contexts>
+<context position="13095" citStr="Weston et al., 2010" startWordPosition="2169" endWordPosition="2172">encoded in the k dimensional embedding of the single entity (i), it is unclear what dimension k should be to make this possible. For example the embedding of a country entity encoding all of its citizens seems unrealistic. Similarly, only having access to the path ignores all the other information we have about the answer entity, unless it is encoded in the embeddings of either the entity of the question, the answer or the relations linking them, which might be quite complicated as well. We thus adopt the subgraph approach. Figure 1 illustrates our model. 3.2 Training and Loss Function As in (Weston et al., 2010), we train our model using a margin-based ranking loss function. Let D = {(qi, ai) : i = 1, ... , |D|} be the training set 617 Binary encoding of the ques0on Φ(q) Ques0on q Embedding of the ques0on f(q) “Who did Clooney Embedding model Embedding matrix W marry in 1987?” Detec0on of Freebase en0ty in the ques0on Score S(q,a) How the candidate answer fits the ques0on Freebase subgraph Dot product G. Clooney Subgraph of a candidate answer a (here K. Preston) Embedding matrix W K. Preston Honolulu Embedding of the subgraph g(a) J. Travolta Binary encoding of the subgraph ψ(a) Model 1987 Figure 1: </context>
+</contexts>
+<marker>Weston, Bengio, Usunier, 2010</marker>
+<rawString>Jason Weston, Samy Bengio, and Nicolas Usunier. 2010. Large scale image annotation: learning to rank with joint word-image embeddings. Machine learning, 81(1).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xuchen Yao</author>
+<author>Benjamin Van Durme</author>
+</authors>
+<title>Information extraction over structured data: Question answering with freebase.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (ACL’14),</booktitle>
+<location>Baltimore, USA.</location>
+<marker>Yao, Van Durme, 2014</marker>
+<rawString>Xuchen Yao and Benjamin Van Durme. 2014. Information extraction over structured data: Question answering with freebase. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (ACL’14), Baltimore, USA.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

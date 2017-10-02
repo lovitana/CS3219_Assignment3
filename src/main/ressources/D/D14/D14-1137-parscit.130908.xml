@@ -1,0 +1,1708 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000004">
+<title confidence="0.989755">
+Semantic Parsing with Relaxed Hybrid Trees
+</title>
+<author confidence="0.998556">
+Wei Lu
+</author>
+<affiliation confidence="0.996315">
+Information Systems Technology and Design
+Singapore University of Technology and Design
+</affiliation>
+<email confidence="0.973653">
+luwei@sutd.edu.sg
+</email>
+<sectionHeader confidence="0.997145" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.99996375862069">
+We propose a novel model for parsing
+natural language sentences into their for-
+mal semantic representations. The model
+is able to perform integrated lexicon ac-
+quisition and semantic parsing, mapping
+each atomic element in a complete seman-
+tic representation to a contiguous word
+sequence in the input sentence in a re-
+cursive manner, where certain overlap-
+pings amongst such word sequences are
+allowed. It defines distributions over the
+novel relaxed hybrid tree structures which
+jointly represent both sentences and se-
+mantics. Such structures allow tractable
+dynamic programming algorithms to be
+developed for efficient learning and decod-
+ing. Trained under a discriminative set-
+ting, our model is able to incorporate a rich
+set of features where certain unbounded
+long-distance dependencies can be cap-
+tured in a principled manner. We demon-
+strate through experiments that by exploit-
+ing a large collection of simple features,
+our model is shown to be competitive to
+previous works and achieves state-of-the-
+art performance on standard benchmark
+data across four different languages. The
+system and code can be downloaded from
+http://statnlp.org/research/sp/.
+</bodyText>
+<sectionHeader confidence="0.99963" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.99933">
+Semantic parsing, the task of transforming natu-
+ral language sentences into formal representations
+of their underlying semantics, is one of the clas-
+sic goals for natural language processing and ar-
+tificial intelligence. This area of research recently
+has received a significant amount of attention. Var-
+ious models have been proposed over the past few
+years (Zettlemoyer and Collins, 2005; Kate and
+</bodyText>
+<figure confidence="0.805242833333333">
+QUERY: answer(RIVER)
+RIVER: exclude(RIVER, RIVER)
+RIVER: river(all) RIVER: traverse(STATE)
+STATE: stateid(STATENAME)
+STATENAME : (&apos;tn&apos;)
+What rivers do not run through Tennessee ?
+</figure>
+<figureCaption confidence="0.7969114">
+Figure 1: An example tree-structured semantic
+representation (above) and its corresponding nat-
+ural language sentence.
+Mooney, 2006; Wong and Mooney, 2006; Lu et
+al., 2008; Jones et al., 2012).
+</figureCaption>
+<bodyText confidence="0.970574333333333">
+Following previous research efforts, we perform
+semantic parsing under a setting where the seman-
+tics for complete sentences are provided as train-
+ing data, but detailed word-level semantic infor-
+mation is not explicitly given during the training
+phase. As one example, consider the following
+natural language sentence paired with its corre-
+sponding semantic representation:
+What rivers do not run through Tennessee ?
+answer(exclude(river(all), traverse(stateid(&apos;tn&apos;))))
+The training data consists of a set of sentences
+paired with semantic representations. Our goal is
+to learn from such pairs a model, which can be
+effectively used for parsing novel sentences into
+their semantic representations.
+Certain assumptions about the semantics are
+typically made. One common assumption is that
+the semantics can be represented as certain re-
+cursive structures such as trees, which consist of
+atomic semantic units as tree nodes. For exam-
+ple, the above semantics can be converted into an
+equivalent tree structure as illustrated in Figure 1.
+We will provide more details about such tree struc-
+tured semantic representations in Section 2.1.
+</bodyText>
+<page confidence="0.941289">
+1308
+</page>
+<note confidence="0.8981905">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1308–1318,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999941552631579">
+Currently, most state-of-the-art approaches that
+deal with such tree structured semantic represen-
+tations either cast the semantic parsing problem as
+a statistical string-to-string transformation prob-
+lem (Wong and Mooney, 2006), which ignores
+the potentially useful structural information of the
+tree, or employ latent-variable models to cap-
+ture the correspondences between words and tree
+nodes using a generative approach (Lu et al., 2008;
+Jones et al., 2012). While generative models can
+be used to flexibly model the correspondences be-
+tween individual words and semantic nodes of the
+tree, such an approach is limited to modeling local
+dependencies and is unable to flexibly incorporate
+a large set of potentially useful features.
+In this work, we propose a novel model for
+parsing natural language into tree structured se-
+mantic representations. Specifically, we propose
+a novel relaxed hybrid tree representation which
+jointly encodes both natural language sentences
+and semantics; such representations can be effec-
+tively learned with a latent-variable discriminative
+model where long-distance dependencies can be
+captured. We present dynamic programming al-
+gorithms for efficient learning and decoding. With
+a large collection of simple features, our model
+reports state-of-the-art results on benchmark data
+annotated with four different languages.
+Furthermore, although we focus our discussions
+on semantic parsing in this work, our proposed
+model is a general. Essentially our model is a dis-
+criminative string-to-tree model which recursively
+maps overlapping contiguous word sequences to
+tree nodes at different levels, where efficient dy-
+namic programming algorithms can be used. Such
+a model may find applications in other areas of
+natural language processing, such as statistical
+machine translation and information extraction.
+</bodyText>
+<sectionHeader confidence="0.995647" genericHeader="introduction">
+2 Background
+</sectionHeader>
+<subsectionHeader confidence="0.939308">
+2.1 Semantics
+</subsectionHeader>
+<bodyText confidence="0.99893225">
+Various semantic formalisms have been consid-
+ered for semantic parsing. Examples include the
+tree-structured semantic representations (Wong
+and Mooney, 2006), the lambda calculus expres-
+sions (Zettlemoyer and Collins, 2005; Wong and
+Mooney, 2007), and dependency-based compo-
+sitional semantic representations (Liang et al.,
+2013). In this work, we specifically focus on the
+tree-structured representations for semantics.
+Each semantic representation consists of se-
+mantic units as its tree nodes, where each semantic
+unit is of the following form:
+</bodyText>
+<equation confidence="0.937218">
+ma ≡ Ta : pα(Tb*) (1)
+</equation>
+<bodyText confidence="0.999560363636364">
+Here ma is used to denote a complete seman-
+tic unit, which consists of its semantic type Ta, its
+function symbol pα, as well as an argument list Tb*
+(we assume there are at most two arguments for
+each semantic unit). In other words, each seman-
+tic unit can be regarded as a function which takes
+in other semantics of specific types as arguments,
+and returns new semantics of a particular type. For
+example, in Figure 1, the semantic unit at the root
+has a type QUERY, a function name answer, and
+a single argument type RIVER.
+</bodyText>
+<subsectionHeader confidence="0.999441">
+2.2 Joint Representations
+</subsectionHeader>
+<bodyText confidence="0.999595323529412">
+Semantic parsing models transform sentences into
+their corresponding semantics. It is therefore es-
+sential to make proper assumptions about joint
+representations for language and semantics that
+capture how individual words and atomic seman-
+tic units connect to each other. Typically, differ-
+ent existing models employ different assumptions
+for establishing such connections, leading to very
+different definitions of joint representations. We
+survey in this section various representations pro-
+posed by previous works.
+The WASP semantic parser (Wong and Mooney,
+2006) essentially casts the semantic parsing prob-
+lem as a string-to-string transformation problem
+by employing a statistical phrase-based machine
+translation approach with synchronous gram-
+mars (Chiang, 2007). Therefore, one can think of
+the joint representation for both language and se-
+mantics as a synchronous derivation tree consist-
+ing of those derivation steps for transforming sen-
+tences into target semantic representation strings.
+While this joint representation is flexible, allow-
+ing blocks of semantic structures to map to word
+sequences, it does not fully exploit the structural
+information (tree) as conveyed by the semantics.
+The KRISP semantic parser (Kate and Mooney,
+2006) makes use of Support Vector Machines with
+string kernels (Lodhi et al., 2002) to recursively
+map contiguous word sequences into semantic
+units to construct a tree structure. Our relaxed
+hybrid tree structures also allow input word se-
+quences to map to semantic units in a recursive
+manner. One key distinction, as we will see, is that
+our structure distinguishes words which are imme-
+</bodyText>
+<page confidence="0.993292">
+1309
+</page>
+<bodyText confidence="0.999739098039216">
+diately associated with a particular semantic unit,
+from words which are remotely associated.
+The SCISSOR model (Ge and Mooney, 2005)
+performs integrated semantic and syntactic pars-
+ing. The model parses natural language sentences
+into semantically augmented parse trees whose
+nodes consist of both semantic and syntactic labels
+and then builds semantic representations based on
+such augmented trees. Such a joint representation
+conveys more information, but requires language-
+specific syntactic analysis.
+The hybrid tree model (Lu et al., 2008) is based
+on the assumption that there exists an underlying
+generative process which jointly produces both the
+sentence and the semantic tree in a top-down re-
+cursive manner. The generative process results in
+a hybrid tree structure which consists of words as
+leaves and semantic units as nodes. An example
+hybrid tree structure is shown in Figure 2 (a). Such
+a representation allows each semantic unit to map
+to a possibly discontiguous sequence of words.
+The model was shown to be effective empirically,
+but it implicitly assumes that both the sentence and
+semantics exhibit certain degree of structural sim-
+ilarity that allows the hybrid tree structures to be
+constructed.
+UBL (Kwiatkowski et al., 2010) is a semantic
+parser based on restricted higher-order unification
+with CCG (Steedman, 1996). The model can be
+used to handle both tree structured semantic rep-
+resentations and lambda calculus expressions, and
+assumes there exist CCG derivations as joint rep-
+resentations in which each semantic unit is associ-
+ated with a contiguous word sequence where over-
+lappings amongst word sequences are not allowed.
+Jones et al. (2012) recently proposed a frame-
+work that performs semantic parsing with tree
+transducers. The model learns representations that
+are similar to the hybrid tree structures using a
+generative process under a Bayesian setting. Thus,
+their representations also potentially present simi-
+lar issues as the ones mentioned above.
+Besides these supervised approaches, recently
+there are also several works that take alternative
+learning approaches to (mostly task-dependent)
+semantic parsing. Poon and Domingos (2009) pro-
+posed a model for unsupervised semantic pars-
+ing that transforms dependency trees into seman-
+tic representations using Markov logic (Richard-
+son and Domingos, 2006). Clarke et al. (2010)
+proposed a model that learns a semantic parser
+</bodyText>
+<table confidence="0.995224333333333">
+Symbol Description
+n A complete natural language sentence
+m A complete semantic representation
+h A complete latent joint representation (or, a
+relaxed hybrid tree for our work)
+H(n, m) A complete set of latent joint representations
+that contain the (n, m) pair exactly
+n, na A contiguous sequence of words
+w, wk A natural language word
+m, ma A semantic unit
+h, ha A node in the relaxed hybrid tree
+Φ The feature vector
+Ok The k-th feature
+A The weight vector (model parameters)
+ak The weight for the k-th feature Ok
+</table>
+<tableCaption confidence="0.999849">
+Table 1: Notation Table
+</tableCaption>
+<bodyText confidence="0.9999266">
+for answering questions without relying on seman-
+tic annotations. Goldwasser et al. (2011) took
+an unsupervised approach for semantic parsing
+based on self-training driven by confidence esti-
+mation. Liang et al. (2013) proposed a model for
+learning the dependency-based compositional se-
+mantics (DCS) which can be used for optimiz-
+ing the end-task performance. Artzi and Zettle-
+moyer (2013) proposed a model for mapping in-
+structions to actions with weak supervision.
+</bodyText>
+<sectionHeader confidence="0.995516" genericHeader="method">
+3 Approach
+</sectionHeader>
+<bodyText confidence="0.999561">
+We discuss our approach to semantic parsing in
+this section. The notation that we use in this paper
+is summarized in Table 1.
+</bodyText>
+<subsectionHeader confidence="0.999096">
+3.1 Model
+</subsectionHeader>
+<bodyText confidence="0.999955411764706">
+In standard supervised syntactic parsing, one typi-
+cally has access to a complete syntactic parse tree
+for each sentence in the training phase, which ex-
+actly tells the correct associations between words
+and syntactic labels. In our problem, however,
+each sentence is only paired with a complete se-
+mantic representation where the correct associa-
+tions between words and semantic units are un-
+available. We thus need to model such information
+with latent variables.
+For a given n-m pair (where n is a complete
+natural language sentence, and m is a complete
+semantic representation), we assume there exists a
+latent joint representation h that consists of both n
+and m which tells the correct associations between
+words and semantic units in such a pair. We use
+x(n, m)1 to denote the set of all such possible
+</bodyText>
+<footnote confidence="0.694026">
+1We will give a concrete definition of W(n, m) used for
+this work, which is the complete set of all possible relaxed
+hybrid tree structures for the n-m pair, when we discuss our
+own joint representations later in Section 3.2.
+</footnote>
+<page confidence="0.683438">
+1310
+</page>
+<equation confidence="0.8916083">
+ma ma
+(w1 w2 w3) w4 w5 w6 w7 w8 w9 w10
+w1 w2 w3 mb
+mb
+(w4 w5) w6 w7 (w8) w9 (w10)
+md
+(w6 w7) (w9)
+(b)
+w4 w5 mc w8 md w10
+w6 w7 w9
+</equation>
+<figure confidence="0.75509">
+(a)
+mc
+</figure>
+<figureCaption confidence="0.840312">
+Figure 2: Two different ways of jointly representing sentences and their semantics. The hybrid tree
+</figureCaption>
+<bodyText confidence="0.9979871875">
+representation of Lu et al. (2008) (left), and our novel relaxed hybrid tree representation (right). In
+our representation, a word w can be either immediately associated with its parent m (the words which
+appear inside the parenthesis), or remotely associated with m (the words that do not appear inside the
+parenthesis, and will also appear under a subtree rooted by one of m’s children).
+latent joint representations that contain both n and
+m exactly.
+Given the joint representations, to model how
+the data is generated, one can either take a gener-
+ative approach which models the joint probability
+distribution over (n, m, h) tuples, or a discrimina-
+tive approach which models the distribution over
+(m, h) tuples given the observation n. Following
+several previous research efforts (Zettlemoyer and
+Collins, 2005; Kwiatkowski et al., 2010; Liang et
+al., 2013), in this work we define a discriminative
+model using a log-linear approach:
+</bodyText>
+<equation confidence="0.989687222222222">
+P(m, h|n; A) = eΛ·Φ(,0 h0) (2)
+Pm
+,
+(n,m
+nm
+0
+0∈H
+0
+)
+</equation>
+<bodyText confidence="0.997293375">
+Here Φ(n, m, h) is a function defined over the
+tuple (n, m, h) that returns a vector consisting of
+counts of features associated with the tuple, and A
+is a vector consisting of feature weights, which are
+the parameters of the model.
+In practice, we are only given the n-m pairs but
+the latent structures are not observed. We there-
+fore consider the following marginal probability:
+</bodyText>
+<equation confidence="0.9979982">
+P(m|n; A) = X P(m, h|n; A)
+h∈H(n,m)
+= P h∈H(n,m)eΛ·Φ(n,m,h)
+)
+Pm0,h0∈H(n,m0) eΛ·Φ(n m0 h0 (3)
+</equation>
+<bodyText confidence="0.984485666666667">
+The above probability is defined for a particular
+n-m pair. The complete log-likelihood objective
+for the training set is:
+</bodyText>
+<equation confidence="0.989422">
+L(A) = X log P(mi|ni; A) − κ||A||2
+i
+X= log X P(mi, h|ni; A) − κ||A||2 (4)
+i h∈H(ni,mi)
+</equation>
+<bodyText confidence="0.999988">
+where (ni, mi) refers to the i-th instance in the
+training set. Note that here we introduce the ad-
+ditional regularization term −κ · ||A||2 to control
+over-fitting, where κ is a positive scalar.
+Our goal is to maximize this objective function
+by tuning the model parameters A. Let’s assume
+A = (λ1, λ2,. . . , λN), where N is the total num-
+ber of features (or the total number of parameters).
+Differentiating with respect to λk, the weight as-
+sociated with the k-th feature φk, yields:
+where φk(n, m, h) refers to the number of occur-
+rences for the k-th feature in the tuple (n, m, h).
+Given the objective value (4) and gradients (5),
+standard methods such as stochastic gradient de-
+scent or L-BFGS (Liu and Nocedal, 1989) can be
+employed to optimize the objective function. We
+will discuss the computation of the objective func-
+tion and gradients next.
+</bodyText>
+<subsectionHeader confidence="0.996699">
+3.2 Relaxed Hybrid Trees
+</subsectionHeader>
+<bodyText confidence="0.9998635">
+To allow tractable computation of the values for
+the objective function (4) and the gradients (5),
+</bodyText>
+<equation confidence="0.9969748">
+∂L(A) X= X EP(h|ni,mi;Λ)[φk(ni, mi, h)]
+∂λk i h
+X− X EP(m,h|ni;Λ)[φk(ni, m, h)] − 2κλk (5)
+i m,h
+eΛ·Φ(n,m,h)
+</equation>
+<page confidence="0.724527">
+1311
+</page>
+<figure confidence="0.838092333333333">
+. . . . . .
+NUM: count(STATE)
+STATE : state(STATE)
+STATE: next to(CITY) states
+. . . borders how many . . .
+(a) (b)
+</figure>
+<figureCaption confidence="0.8591365">
+Figure 3: An example hybrid tree and an example relaxed hybrid tree representation. When the correct
+latent structure can not be found, the dependency between the words “how many” and the semantic unit
+“NUM : count(STATE)” can not be captured if the hybrid tree is used, whereas with our relaxed hybrid
+tree representation, such a dependency can still be captured.
+</figureCaption>
+<bodyText confidence="0.989723083333334">
+NUM: count(STATE)
+... borders how many states (... )
+STATE : state(STATE)
+... borders how many (states)
+STATE: next to(CITY)
+... (borders how many)
+certain restrictions on the latent structures (h) will
+need to be imposed. We define in this section the
+set of all valid latent structures H(n, m) for the
+(n, m) pair so that some efficient dynamic pro-
+gramming algorithms can be deployed.
+We introduce our novel relaxed hybrid tree rep-
+resentations which jointly encode both natural lan-
+guage sentences and the tree-structured semantics.
+A relaxed hybrid tree h defined over (n, m) is a
+tree whose nodes are (n, m) pairs, where each n is
+a contiguous sequence of words from n, and each
+m is a semantic unit (a tree node) from m. For
+any two nodes ha - (na, ma) and hb - (nb, mb)
+that appear in the relaxed hybrid tree h, if ha is the
+parent of hb in h, then ma must also be the parent
+of mb in m, and na must contain nb. If the low-
+est common ancestor of ha and hb in h is neither
+ha nor hb, then na and nb do not share any com-
+mon word. Note that words that appear at different
+positions in n are regarded as different words, re-
+gardless of their string forms.
+Figure 2 (b) shows an example relaxed hybrid
+tree structure that we consider. Assume we would
+like to jointly represent both the natural language
+sentence n - w1w2 ... w10 and its corresponding
+semantic representation m - ma(mb(mc, md)).
+In the given example, the semantic unit ma maps
+to the complete sentence, mb maps to the sequence
+w4w5 ... w10, mc maps to w6w7, and md maps to
+w9. Certain words such as w4 and w10 that ap-
+pear directly below the semantic unit mb but do
+not map to any of mb’s child semantic units are
+highlighted with parentheses “()”, indicating they
+are immediately associated with mb. These words
+play unique roles in the sub-tree rooted by mb and
+are expected to be semantically closely related to
+mb. Note that each word is immediately associ-
+ated with exactly one semantic unit.
+As a comparison, we also show an example hy-
+brid tree representation (Lu et al., 2008) in Fig-
+ure 2 (a) that has similar words-semantics cor-
+respondences. Different from our representation,
+the hybrid tree representation assumes each natu-
+ral language word only maps to a single seman-
+tic unit (which is its immediate parent), and each
+semantic unit maps to a possibly discontiguous
+sequence of words. We believe that such a rep-
+resentation is overly restrictive, which might ex-
+hibit problems in cases where natural language
+sentences are highly non-isomorphic to their se-
+mantic tree structures. Under our relaxed hybrid
+tree representations, words that are immediately
+associated with a particular semantic unit now can
+also be remotely associated with all its parent se-
+mantic units as well. Essentially, our representa-
+tion allows us to capture certain unbounded depen-
+dencies – for any word, as long as it appears be-
+low a certain semantic unit (in the relaxed hybrid
+tree), we can always capture the dependency be-
+tween the two, regardless of which actual seman-
+tic unit that word is immediately associated with.
+Such an important relaxation allows some long-
+distance dependencies to be captured, which can
+potentially alleviate the sentence-semantics non-
+isomorphism issue reported in several earlier se-
+mantic parsing works (Kate and Mooney, 2006;
+</bodyText>
+<page confidence="0.978248">
+1312
+</page>
+<bodyText confidence="0.998645">
+Wong and Mooney, 2007).
+To better illustrate the differences, we show a
+concrete example in Figure 3, where the correct
+latent structure showing the correspondences be-
+tween words and semantic units can not be found
+with the hybrid tree model. As a result, the hy-
+brid tree model will fail to capture the correct de-
+pendency between the words “how many” and the
+semantic unit “NUM : count(STATE)”. On the
+other hand, with our relaxed hybrid tree represen-
+tation, such a dependency can still be captured,
+since these words will still be (remotely) associ-
+ated with the semantic unit.
+Such a relaxed hybrid tree representation, when
+further constrained with the word association pat-
+terns that we will introduce next, allows both the
+objective function (4) and the gradients of (5) to
+be computed through the dynamic programming
+algorithms to be presented in Section 4.
+</bodyText>
+<subsectionHeader confidence="0.995676">
+3.3 Word Association Patterns
+</subsectionHeader>
+<bodyText confidence="0.967363677419355">
+As we have mentioned above, in the relaxed hy-
+brid tree structures, each word w under a certain
+semantic unit m can either appear directly below
+m only (immediately associated with m), or can
+also appear in a subtree rooted by one of m’s child
+semantic unit (remotely associated with m).
+We allow several different ways for word asso-
+ciations and define the allowable patterns for se-
+mantic units with different number of arguments
+in Table 2. Such patterns are defined so that our
+model is amendable to dynamic programming al-
+gorithms to be discussed in Sec 4. In this table,
+w refers to a contiguous sequence of natural lan-
+guage words that are immediately associated with
+the current semantic unit, while X and Y refers
+to a sequence of natural language words that the
+first and second child semantic unit will map to,
+respectively.
+For example, in Figure 2 (b), the word sequence
+directly below the semantic unit ma follows the
+pattern wX (since the word sequence w1w2w3 is
+immediately associated with ma, and the remain-
+ing words are remotely associated with ma), and
+the word sequence below mb follows wXwYw2.
+The word association patterns are similar to
+those hybrid patterns used in hybrid trees. One
+key difference is that we disallow the unary pat-
+2This is based on the assumption that m. and md are the
+first and second child of mb in the semantic representation,
+respectively. If md is the first child in the semantic represen-
+tation and m. is the second, the pattern should be wYwXw.
+</bodyText>
+<table confidence="0.99905">
+#Args Word Association Patterns
+0 w
+1 wX, Xw, wXw
+2 XY, YX, wXY, wYX, XwY, YwX
+XYw, YXw, wXwY, wYwX
+wXYw, wYXw, XwYw, YwXw
+wXwYw, wYwXw
+</table>
+<tableCaption confidence="0.820070333333333">
+Table 2: The complete list of word association pat-
+terns. Here #Args means the number of arguments
+for a semantic unit.
+</tableCaption>
+<bodyText confidence="0.922257">
+tern X. The reason is, when computing the parti-
+tion function in Equation 3, inclusion of pattern X
+will result in relaxed hybrid trees consisting of an
+infinite number of nodes. However, this issue does
+not come up in the original hybrid tree models due
+to their generative setting, where the training pro-
+cess does not involve such a partition function.
+</bodyText>
+<sectionHeader confidence="0.513825" genericHeader="method">
+3.4 Features
+</sectionHeader>
+<bodyText confidence="0.999818758620689">
+The features are defined over the (n, m, h) tuples.
+In practice, we define features at each level of the
+relaxed hybrid tree structure h. In other words,
+features are defined over (n, m) tuples where n is
+a contiguous sequence of natural language words
+(immediately or remotely) associated with the se-
+mantic unit m (recall that h contains both n and
+m, and each level of h simply consists of a seman-
+tic unit and a contiguous sequence of words). Each
+feature over (n, m) is then further decomposed
+as a product between two indicator feature func-
+tions, defined over the natural language words (n)
+and semantic unit (m) respectively: O(n, m) =
+Oz(n) × Oo(m). For each Oz(n) we define two
+types of features: the local features, which are de-
+fined over immediately associated words only, and
+the span features, which are defined over all (im-
+mediately or remotely) associated words to cap-
+ture long range dependencies.
+The local features include word unigrams and
+bigrams, the word association patterns, as well as
+character-level features3 which perform implicit
+morphological analysis. The span features include
+word unigrams, bigrams, as well as trigrams. Al-
+though our model allows certain more sophisti-
+cated features to be exploited, such as word POS
+features, word similarity features based on the
+WordNet (Pedersen et al., 2004), we deliberately
+choose to only include these simple features so
+</bodyText>
+<footnote confidence="0.999609">
+3For each word, we used all its prefixes (not necessarily
+linguistically meaningful ones) whose length are greater than
+2 as features, for all languages.
+</footnote>
+<page confidence="0.988906">
+1313
+</page>
+<bodyText confidence="0.9999845">
+as to make a fair comparison with previous works
+which also did not make use of external resources.
+For the features defined on m (i.e., φo(m)), we in-
+clude only the string form of m, as well as m’s
+function name as features.
+Finally, we also define features over m only.
+Such features are defined over semantic unit pairs
+such as (ma, mb) where ma is the parent node of
+mb as in m. They include: 1) concatenation of the
+string forms of ma and mb, 2) concatenation of the
+string form of ma and mb’s type, and 3) concate-
+nation of the function names of ma and mb.
+</bodyText>
+<sectionHeader confidence="0.998228" genericHeader="method">
+4 Algorithms
+</sectionHeader>
+<bodyText confidence="0.999459555555556">
+In this section we describe the efficient algorithms
+used for learning and decoding. The algorithms
+are inspired by the inside-outside style algorithms
+used for the generative hybrid tree models (Lu
+et al., 2008), but are different in the following
+ways: 1) we need to handle features, including
+long-distance features, 2) we need to additionally
+handle the computation of the partition function of
+Equation (3).
+</bodyText>
+<subsectionHeader confidence="0.994044">
+4.1 Learning
+</subsectionHeader>
+<bodyText confidence="0.999910333333333">
+The training process involves the computation of
+the objective function (4) as well as the gradient
+terms (5).
+The objective function (4) (excluding the regu-
+larization term which can be trivially computed) is
+equivalent to the following:
+</bodyText>
+<equation confidence="0.9971655">
+L(A) = X log X eA·Φ(ni,mi,h)
+i h∈H(ni,mi)
+X− log X eA·Φ(ni,m&apos;,h&apos;) (6)
+i m&apos;,h&apos;∈H(ni,m&apos;)
+</equation>
+<bodyText confidence="0.999828125">
+In the first term, P h∈H(ni,mi)eA·Φ(ni,mi,h) is
+in fact the sum of the scores (as defined by Φ and
+A) associated with all such latent structures that
+contain both mi and ni exactly. The second term
+is the sum of the scores associated with all the la-
+tent structures that contain ni exactly. We focus
+our discussions on the computation of the first part
+first.
+</bodyText>
+<equation confidence="0.568946">
+m(p)
+</equation>
+<bodyText confidence="0.840910111111111">
+to denote the combined score
+wi ... wj
+of all such latent relaxed hybrid tree structures that
+contain both the semantic tree rooted by m and the
+natural language word sequence wi ... wj that
+forms the word association pattern p with respect
+to m. For example, the score of the relaxed hybrid
+ma(wX)
+tree in Figure 2 (b) is contained by
+</bodyText>
+<equation confidence="0.865833">
+w1 ... w10
+</equation>
+<bodyText confidence="0.994023">
+(here p = wX because only w1w2w3 are imme-
+diately associated with ma).
+We give an illustrative example that shows how
+these scores can be computed efficiently using dy-
+namic programming. Consider the following case
+when m has at least one child semantic unit:
+Here the symbol ® means extract and compute,
+a process that involves 1) extraction of additional
+features when the two structures on the right-hand
+side are put together (for example, the local bi-
+gram feature “wiwi+1” can be extracted in the
+above case), and 2) computation of the score for
+the new structure when the two structures from
+both sides of ® are combined, based on the scores
+of these structures and newly extracted features.
+The above equation holds because for any re-
+laxed hybrid tree contained by the left-hand side,
+the left-most word wi is always immediately as-
+sociated with m. The term
+ing a similar but smaller structure to the term on
+</bodyText>
+<equation confidence="0.557943">
+m(wX)
+</equation>
+<bodyText confidence="0.963017733333334">
+the left-hand side. The other term
+wi ... wj
+also be computed based on similar equations. In
+other words, such terms can be computed from
+even smaller similar terms in a recursive manner.
+A bottom-up dynamic programming algorithm is
+used for computing such terms.
+When the semantic unit m has two child nodes,
+similar equations can also be established. Here we
+give an illustrative example:
+Finally, we have the following equation:
+The left-hand side simply means the combined
+score for all such relaxed hybrid trees that have
+(n, m) as the root, where n ≡ wi ... wj. Once the
+computation for a certain (n, m) pair is done, we
+</bodyText>
+<equation confidence="0.986754296296296">
+m(wXw) m(w) m(wXw)
+=
+wi . . . wj
+m(w)
++
+wi
+®
+wi wi+1 ... wj
+m(Xw)
+®
+wi+1 ... wj
+m(wXwYw)
+wi ... wj
+= Pj−1
+k=i
+m(wX) m(wYw)
+®
+wi ... wk
+wk+1 ... wj
+m m(p)
+wi ... wj= Pp
+wi ... wj
+We use
+m(wXw)
+wi+1 ... wj
+is present-
+can
+</equation>
+<page confidence="0.968434">
+1314
+</page>
+<bodyText confidence="0.999730909090909">
+can move up to process such pairs that involve m’s
+parent node.
+The above process essentially computes the in-
+side score associated with the (n, m) pair, which
+gives the sum of the scores of all such (incomplete)
+relaxed hybrid trees that can be constructed with
+(n, m) as the root. Similar to (Lu et al., 2008), we
+can also define and compute the outside scores for
+(n, m) (the combined score of such incomplete re-
+laxed hybrid trees that contain (n, m) as one of its
+leave nodes) in an analogous manner, where the
+computation of the gradient functions can be effi-
+ciently integrated in this process.
+Computation of the second part of the objective
+function (6) involves dynamic programming over
+a packed forest representation rather than a single
+tree, which requires an extension to the algorithm
+described in (Lu et al., 2008). The resulting al-
+gorithm is similar to the one used in (Lu and Ng,
+2011), which has been used for language gener-
+ation from packed forest representations of typed
+A-calculus expressions.
+</bodyText>
+<subsectionHeader confidence="0.994707">
+4.2 Decoding
+</subsectionHeader>
+<bodyText confidence="0.997944">
+The decoding phase involves finding the optimal
+semantic tree m* given a new input sentence n:
+</bodyText>
+<equation confidence="0.984659">
+m* = arg max P(mln) (7)
+m
+</equation>
+<bodyText confidence="0.9204755">
+This in fact is equivalent to finding the follow-
+ing optimal semantic tree m*:
+</bodyText>
+<equation confidence="0.991194">
+eA4(n,m,h) (8)
+</equation>
+<bodyText confidence="0.999687166666667">
+Unfortunately, the summation operation inside
+the arg max prevents us from employing a simi-
+lar version of the dynamic programming algorithm
+we developed for learning in Section 4.1. To over-
+come this difficulty, we instead find the optimal
+semantic tree using the following equation:
+</bodyText>
+<equation confidence="0.9892305">
+m* = arg max eA4(n,m,h) (9)
+m,hEW(n,m)
+</equation>
+<bodyText confidence="0.999959">
+We essentially replace the E operation by the
+max operation inside the arg max. In other words,
+we first find the best latent relaxed hybrid tree h*
+that contains the input sentence n, and next we ex-
+tract the optimal semantic tree m* from h*.
+This decoding algorithm is similar to the dy-
+namic programming algorithm used for comput-
+ing the inside score for a given natural language
+sentence n (i.e., the algorithm for computing the
+second term of Equation (6)). The difference here
+is, at each intermediate step, instead of computing
+the combined score for all possible relaxed hybrid
+tree structures (i.e., performing sum), we find the
+single-best relaxed hybrid tree structure (i.e., per-
+forming max).
+</bodyText>
+<sectionHeader confidence="0.998827" genericHeader="evaluation">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.999826447368421">
+We present evaluations on the standard GeoQuery
+dataset which is publicly available. This dataset
+has been used for evaluations in various seman-
+tic parsing works (Wong and Mooney, 2006; Kate
+and Mooney, 2006; Lu et al., 2008; Jones et al.,
+2012). It consists of 880 natural language sen-
+tences paired with their corresponding formal se-
+mantic representations. Each semantic represen-
+tation is a tree structured representation derived
+from a Prolog query that can be used to interact
+with a database of U.S. geography facts for retriev-
+ing answers. The original dataset was fully anno-
+tated in English, and recently Jones et al. (2012)
+released a new version of this dataset with three
+additional language annotations (German, Greek
+and Thai). For all the experiments, we used the
+identical experimental setup as described in Jones
+et al. (2012). Specifically, we trained on 600 in-
+stances, and evaluated on the remaining 280.
+We note that there exist two different versions of
+the GeoQuery dataset annotated with completely
+different semantic representations. Besides the
+version that we use in this work, which is an-
+notated with tree structured semantic representa-
+tions, the other version is annotated with lambda
+calculus expressions (Zettlemoyer and Collins,
+2005). Results obtained from these two versions
+are not comparable.4 Like many previous works,
+we focus on tree structured semantic representa-
+tions for evaluations in this work since our model
+is designed for handling the class of semantic rep-
+resentations with recursive tree structures.
+We used the standard evaluation criteria for
+judging the correctness of the outputs. Specifi-
+cally, our system constructs Prolog queries from
+the output parses, and uses such queries to retrieve
+answers from the GeoQuery database. An output
+is considered correct if and only if it retrieves the
+</bodyText>
+<footnote confidence="0.9944308">
+4Kwiatkowski et al. (2010) showed in Table 3 of their
+work that the version with tree-structured representations ap-
+peared to be more challenging – their semantic parser’s per-
+formance on this version was substantially lower than that on
+the lambda calculus version.
+</footnote>
+<table confidence="0.8919702">
+m* = arg max �
+m hEW(n,m)
+1315
+System English Thai German Greek
+Acc. F1 Acc. F1 Acc. F1 Acc. F1
+WASP 71.1 77.7 71.4 75.0 65.7 74.9 70.7 78.6
+HYBRIDTREE+ 76.8 81.0 73.6 76.7 62.1 68.5 69.3 74.6
+UBL-S 82.1 82.1 66.4 66.4 75.0 75.0 73.6 73.7
+TREETRANS 79.3 79.3 78.2 78.2 74.6 74.6 75.4 75.4
+RHT (all features) 83.6 83.6 79.3 79.3 74.3 74.3 78.2 78.2
+</table>
+<tableCaption confidence="0.9886425">
+Table 3: Performance on the benchmark data, using four different languages as inputs. RHT: relaxed
+hybrid tree (this work).
+</tableCaption>
+<bodyText confidence="0.99997765">
+same answers as the gold standard (Jones et al.,
+2012). We report accuracy scores – the percentage
+of inputs with correct answers, and F1 measures –
+the harmonic mean of precision (the proportion of
+correct answers out of inputs with an answer) and
+recall (the proportion of correct answers out of all
+inputs). By adopting such an evaluation method
+we will be able to directly compare our model’s
+performance against those of the previous works.
+The evaluations were conducted under such a
+setting in order to make comparisons to previous
+works. We would like to stress that our model
+is designed for general-purpose semantic parsing
+that is not only natural language-independent, but
+also task-independent. We thus distinguish our
+work from several previous works in the literature
+which focused on semantic parsing under other as-
+sumptions. Specifically, for example, works such
+as (Liang et al., 2013; Poon and Domingos, 2009;
+Clarke et al., 2010) essentially performed seman-
+tic parsing under different settings where the goal
+was to optimize the performance of certain down-
+stream NLP tasks such as answering questions,
+and different semantic formalisms and language-
+specific features were usually involved.
+For all our experiments, we used the L-BFGS
+algorithm for learning the feature weights, where
+feature weights were all initialized to zeros and the
+regularization hyper-parameter κ was set to 0.01.
+We set the maximum number of L-BFGS steps to
+100. When all the features are considered, our
+model creates over 2 million features for each lan-
+guage on the dataset (English: 2.1M, Thai: 2.3M,
+German: 2.7M, Greek: 2.6M). Our model re-
+quires (on average) a per-instance learning time of
+0.428 seconds and a per-instance decoding time of
+0.235 seconds, on an Intel machine with a 2.2 GHz
+CPU. Our implementation is in Java. Here the
+per-instance learning time refers to the time spent
+on computing the instance-level log-likelihood as
+well as the expected feature counts (needed for the
+gradients).
+Table 3 shows the evaluation results of our sys-
+tem as well as those of several other comparable
+previous works which share the same experimen-
+tal setup as ours. UBL-S is the system presented
+in Kwiatkowski et al. (2010) which performs se-
+mantic parsing with the CCG based on mapping
+between graphs, and is the only non-tree based
+top-performing system. Their system, similar to
+ours, also uses a discriminative log-linear model
+where two types of features are defined. WASP is
+a model based on statistical phrase-based machine
+translation as we have described earlier. The hy-
+brid tree model (HYBRIDTREE+) performs learn-
+ing using a generative process which is augmented
+with an additional discriminative-reranking stage,
+where certain global features are incorporated (Lu
+et al., 2008). The Bayesian tree transducer model
+(TREETRANS) learns under a Bayesian genera-
+tive framework, using hyper-parameters manually
+tuned on the German training data.
+We can observe from Table 3 that the semantic
+parser based on relaxed hybrid tree gives compet-
+itive performance when all the features (described
+in Sec 3.4) are used. It significantly outperforms
+the hybrid tree model that is augmented with a dis-
+criminative reranking step. The model reports the
+best accuracy and F1 scores on English and Thai
+and best accuracy score on Greek. The scores
+on German are lower than those of UBL-S and
+TREETRANS, mainly because the span features
+appear not to be effective for this language, as we
+will discuss next.
+We report in Table 4 the test set performance
+when certain types of features are excluded from
+our system. Such results can help us understand
+the effectiveness of features of different types. As
+we can see from the table, in general, all fea-
+tures play essential roles, though their effective-
+</bodyText>
+<page confidence="0.962134">
+1316
+</page>
+<table confidence="0.997141166666667">
+System English Thai German Greek
+Acc. F1 Acc. F1 Acc. F1 Acc. F1
+RHT (all features) 83.6 83.6 79.3 79.3 74.3 74.3 78.2 78.2
+RHT (no local features) 81.4 81.4 78.2 78.2 74.3 74.3 75.7 75.7
+RHT (no span features) 81.1 81.1 77.9 77.9 78.2 78.2 78.9 78.9
+RHT (no char features) 79.6 79.6 82.1 82.1 73.6 73.6 76.1 76.1
+</table>
+<tableCaption confidence="0.9589335">
+Table 4: Results when certain types of features (local features, span features and character-level features)
+are excluded.
+</tableCaption>
+<bodyText confidence="0.997813333333333">
+ness vary across different languages. The local
+features, which capture local dependencies, are
+of particular importance. Performance on three
+languages (English, Thai, and Greek) will drop
+when such features are excluded. Character-level
+features are very helpful for the three European
+languages (English, German, and Greek), but ap-
+pear to be harmful for Thai. This indicates the
+character-level features that we propose do not
+perform effective morphological analysis for this
+Asian language.5 The span features, which are
+able to capture certain long-distance dependen-
+cies, also play important roles. Specifically, if
+such features are excluded, our model’s perfor-
+mance on three languages (Greek, English, Thai)
+will drop. Such features do not appear to be help-
+ful for Thai and appear to be harmful for Ger-
+man. Clearly, such long-distance features are not
+contributing useful information to the model when
+these two languages are considered. This is espe-
+cially the case for German, where we believe such
+features are contributing substantial noisy infor-
+mation to the model. What underlying language-
+specific, syntactic properties are generally caus-
+ing these gaps in the performances? We believe
+this is an important question that needs to be ad-
+dressed in future research. As we have mentioned,
+to make an appropriate comparison with previ-
+ous works, only simple features are used. We be-
+lieve that our system’s performance can be further
+improved when additional informative language-
+specific features can be extracted from effective
+language tools and incorporated into our system.
+</bodyText>
+<sectionHeader confidence="0.999536" genericHeader="conclusions">
+6 Conclusions
+</sectionHeader>
+<bodyText confidence="0.9961485">
+In this work, we present a new discriminative
+model for semantic parsing which extends the hy-
+</bodyText>
+<footnote confidence="0.6029808">
+5The character-level features that we introduced are in-
+deed very general. We have conducted several additional ex-
+periments, which show that our model’s performance for each
+language can be further improved when certain language-
+specific character-level features are introduced.
+</footnote>
+<bodyText confidence="0.999904">
+brid tree model. Such an extension is similar to the
+extension of the generative syntactic parser based
+on probabilistic context-free grammars (PCFG) to
+the feature-based CRF parser (Finkel et al., 2008),
+but is slightly more complex due to latent struc-
+tures. Developed on top of our novel relaxed hy-
+brid tree representations, our model allows cer-
+tain long-distance dependencies to be captured.
+We also present efficient algorithms for learn-
+ing and decoding. Experiments on benchmark
+data show that our model is competitive to previ-
+ous works and achieves the state-of-the-art perfor-
+mance across several different languages.
+Future works include development of efficient
+algorithms for feature-based semantic parsing
+with alternative loss functions (Zhou et al., 2013),
+development of feature-based language generation
+models (Lu et al., 2009; Lu and Ng, 2011) and
+multilingual semantic parsers (Jie and Lu, 2014),
+as well as the development of efficient semantic
+parsing algorithms for optimizing the performance
+of certain downstream NLP tasks with less super-
+vision (Clarke et al., 2010; Liang et al., 2013).
+Being able to efficiently exploit features defined
+over individual words, our model also opens up the
+possibility for us to exploit alternative representa-
+tions of words for learning (Turian et al., 2010), or
+to perform joint learning of both distributional and
+logical semantics (Lewis and Steedman, 2013).
+Furthermore, as a general string-to-tree structured
+prediction model, this work may find applications
+in other areas within NLP.
+The system and code can be downloaded from
+http://statnlp.org/research/sp/.
+</bodyText>
+<sectionHeader confidence="0.995043" genericHeader="acknowledgments">
+Acknoledgments
+</sectionHeader>
+<bodyText confidence="0.99909075">
+The author would like to thank the anonymous re-
+viewers for their helpful comments. This work
+was supported by SUTD grant SRG ISTD 2013
+064.
+</bodyText>
+<page confidence="0.992189">
+1317
+</page>
+<sectionHeader confidence="0.998325" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999847152173913">
+Yoav Artzi and Luke Zettlemoyer. 2013. Weakly su-
+pervised learning of semantic parsers for mapping
+instructions to actions. Transactions of the Associa-
+tion for Computational Linguistics, 1(1):49–62.
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Comput. Linguist., 33(2):201–228, June.
+James Clarke, Dan Goldwasser, Ming-Wei Chang, and
+Dan Roth. 2010. Driving semantic parsing from
+the world’s response. In Proc. of CONLL ’10, pages
+18–27.
+Jenny Rose Finkel, Alex Kleeman, and Christopher D.
+Manning. 2008. Efficient, feature-based, condi-
+tional random field parsing. In Proc. of ACL/HLT,
+pages 959–967.
+Ruifang Ge and Raymond J. Mooney. 2005. A statis-
+tical semantic parser that integrates syntax and se-
+mantics. In Proc. of CONLL ’05, pages 9–16.
+Dan Goldwasser, Roi Reichart, James Clarke, and Dan
+Roth. 2011. Confidence driven unsupervised se-
+mantic parsing. In Proc. of ACL ’11, pages 1486–
+1495.
+Zhanming Jie and Wei Lu. 2014. Multilingual se-
+mantic parsing: Parsing multiple languages into se-
+mantic representations. In Proc. of COLING, pages
+1291–1301.
+Bevan Keeley Jones, Mark Johnson, and Sharon Gold-
+water. 2012. Semantic parsing with bayesian tree
+transducers. In Proc. of ACL ’12, pages 488–496.
+Rohit J. Kate and Raymond J. Mooney. 2006. Us-
+ing string-kernels for learning semantic parsers. In
+Proc. of COLING/ACL, pages 913–920.
+Tom Kwiatkowski, Luke Zettlemoyer, Sharon Goldwa-
+ter, and Mark Steedman. 2010. Inducing proba-
+bilistic ccg grammars from logical form with higher-
+order unification. In Proc. EMNLP’10, pages 1223–
+1233.
+Mike Lewis and Mark Steedman. 2013. Combined
+distributional and logical semantics. Transactions
+of the Association for Computational Linguistics,
+1:179–192.
+Percy Liang, Michael I Jordan, and Dan Klein. 2013.
+Learning dependency-based compositional seman-
+tics. Computational Linguistics, 39(2):389–446.
+D. C. Liu and J. Nocedal. 1989. On the limited mem-
+ory bfgs method for large scale optimization. Math.
+Program., 45(3):503–528, December.
+Huma Lodhi, Craig Saunders, John Shawe-Taylor,
+Nello Cristianini, and Chris Watkins. 2002. Text
+classification using string kernels. The Journal of
+Machine Learning Research, 2:419–444.
+Wei Lu and Hwee Tou Ng. 2011. A probabilis-
+tic forest-to-string model for language generation
+from typed lambda calculus expressions. In Proc.
+of EMNLP ’11, pages 1611–1622.
+Wei Lu, Hwee Tou Ng, Wee Sun Lee, and Luke S.
+Zettlemoyer. 2008. A generative model for pars-
+ing natural language to meaning representations. In
+Proc. of EMNLP ’08, pages 783–792.
+Wei Lu, Hwee Tou Ng, and Wee Sun Lee. 2009. Nat-
+ural language generation with tree conditional ran-
+dom fields. In Proc. of EMNLP, pages 400–409.
+Ted Pedersen, Siddharth Patwardhan, and Jason Miche-
+lizzi. 2004. Wordnet:: Similarity: measuring the re-
+latedness of concepts. In Proc. of HLT-NAACL ’04
+(Demonstration), pages 38–41.
+Hoifung Poon and Pedro Domingos. 2009. Unsuper-
+vised semantic parsing. In Proc. of EMNLP ’09,
+pages 1–10.
+Matthew Richardson and Pedro Domingos. 2006.
+Markov logic networks. Machine learning, 62(1-
+2):107–136.
+Mark Steedman. 1996. Surface structure and interpre-
+tation. MIT press.
+Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010.
+Word representations: A simple and general method
+for semi-supervised learning. In Proc. of ACL ’10,
+pages 384–394.
+Yuk Wah Wong and Raymond J. Mooney. 2006.
+Learning for semantic parsing with statistical ma-
+chine translation. In Proc. of HLT/NAACL ’06,
+pages 439–446.
+Yuk Wah Wong and Raymond J Mooney. 2007.
+Learning synchronous grammars for semantic pars-
+ing with lambda calculus. In Proc. of ACL ’07.
+Luke S Zettlemoyer and Michael Collins. 2005.
+Learning to map sentences to logical form: Struc-
+tured classification with probabilistic categorial
+grammars. In Proc. of UAI ’05.
+Junsheng Zhou, Juhong Xu, and Weiguang Qu. 2013.
+Efficient latent structural perceptron with hybrid
+trees for semantic parsing. In IJCAI, pages 2246–
+2252.
+</reference>
+<page confidence="0.993456">
+1318
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.433103">
+<title confidence="0.999395">Semantic Parsing with Relaxed Hybrid Trees</title>
+<author confidence="0.997134">Wei</author>
+<affiliation confidence="0.9887385">Information Systems Technology and Singapore University of Technology and</affiliation>
+<email confidence="0.89722">luwei@sutd.edu.sg</email>
+<abstract confidence="0.99976375">We propose a novel model for parsing natural language sentences into their formal semantic representations. The model is able to perform integrated lexicon acquisition and semantic parsing, mapping each atomic element in a complete semantic representation to a contiguous word sequence in the input sentence in a recursive manner, where certain overlappings amongst such word sequences are allowed. It defines distributions over the hybrid tree which jointly represent both sentences and semantics. Such structures allow tractable dynamic programming algorithms to be developed for efficient learning and decoding. Trained under a discriminative setting, our model is able to incorporate a rich set of features where certain unbounded long-distance dependencies can be captured in a principled manner. We demonstrate through experiments that by exploiting a large collection of simple features, our model is shown to be competitive to previous works and achieves state-of-theart performance on standard benchmark data across four different languages. The</abstract>
+<intro confidence="0.495307">system and code can be downloaded from</intro>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+</authors>
+<title>Weakly supervised learning of semantic parsers for mapping instructions to actions.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<contexts>
+<context position="11367" citStr="Artzi and Zettlemoyer (2013)" startWordPosition="1710" endWordPosition="1714">of words w, wk A natural language word m, ma A semantic unit h, ha A node in the relaxed hybrid tree Φ The feature vector Ok The k-th feature A The weight vector (model parameters) ak The weight for the k-th feature Ok Table 1: Notation Table for answering questions without relying on semantic annotations. Goldwasser et al. (2011) took an unsupervised approach for semantic parsing based on self-training driven by confidence estimation. Liang et al. (2013) proposed a model for learning the dependency-based compositional semantics (DCS) which can be used for optimizing the end-task performance. Artzi and Zettlemoyer (2013) proposed a model for mapping instructions to actions with weak supervision. 3 Approach We discuss our approach to semantic parsing in this section. The notation that we use in this paper is summarized in Table 1. 3.1 Model In standard supervised syntactic parsing, one typically has access to a complete syntactic parse tree for each sentence in the training phase, which exactly tells the correct associations between words and syntactic labels. In our problem, however, each sentence is only paired with a complete semantic representation where the correct associations between words and semantic </context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Yoav Artzi and Luke Zettlemoyer. 2013. Weakly supervised learning of semantic parsers for mapping instructions to actions. Transactions of the Association for Computational Linguistics, 1(1):49–62.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Comput. Linguist.,</journal>
+<volume>33</volume>
+<issue>2</issue>
+<contexts>
+<context position="7171" citStr="Chiang, 2007" startWordPosition="1057" endWordPosition="1058">entations for language and semantics that capture how individual words and atomic semantic units connect to each other. Typically, different existing models employ different assumptions for establishing such connections, leading to very different definitions of joint representations. We survey in this section various representations proposed by previous works. The WASP semantic parser (Wong and Mooney, 2006) essentially casts the semantic parsing problem as a string-to-string transformation problem by employing a statistical phrase-based machine translation approach with synchronous grammars (Chiang, 2007). Therefore, one can think of the joint representation for both language and semantics as a synchronous derivation tree consisting of those derivation steps for transforming sentences into target semantic representation strings. While this joint representation is flexible, allowing blocks of semantic structures to map to word sequences, it does not fully exploit the structural information (tree) as conveyed by the semantics. The KRISP semantic parser (Kate and Mooney, 2006) makes use of Support Vector Machines with string kernels (Lodhi et al., 2002) to recursively map contiguous word sequence</context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Comput. Linguist., 33(2):201–228, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Clarke</author>
+<author>Dan Goldwasser</author>
+<author>Ming-Wei Chang</author>
+<author>Dan Roth</author>
+</authors>
+<title>Driving semantic parsing from the world’s response.</title>
+<date>2010</date>
+<booktitle>In Proc. of CONLL ’10,</booktitle>
+<pages>18--27</pages>
+<contexts>
+<context position="10394" citStr="Clarke et al. (2010)" startWordPosition="1549" endWordPosition="1552">ree transducers. The model learns representations that are similar to the hybrid tree structures using a generative process under a Bayesian setting. Thus, their representations also potentially present similar issues as the ones mentioned above. Besides these supervised approaches, recently there are also several works that take alternative learning approaches to (mostly task-dependent) semantic parsing. Poon and Domingos (2009) proposed a model for unsupervised semantic parsing that transforms dependency trees into semantic representations using Markov logic (Richardson and Domingos, 2006). Clarke et al. (2010) proposed a model that learns a semantic parser Symbol Description n A complete natural language sentence m A complete semantic representation h A complete latent joint representation (or, a relaxed hybrid tree for our work) H(n, m) A complete set of latent joint representations that contain the (n, m) pair exactly n, na A contiguous sequence of words w, wk A natural language word m, ma A semantic unit h, ha A node in the relaxed hybrid tree Φ The feature vector Ok The k-th feature A The weight vector (model parameters) ak The weight for the k-th feature Ok Table 1: Notation Table for answerin</context>
+<context position="33572" citStr="Clarke et al., 2010" startWordPosition="5547" endWordPosition="5550">n evaluation method we will be able to directly compare our model’s performance against those of the previous works. The evaluations were conducted under such a setting in order to make comparisons to previous works. We would like to stress that our model is designed for general-purpose semantic parsing that is not only natural language-independent, but also task-independent. We thus distinguish our work from several previous works in the literature which focused on semantic parsing under other assumptions. Specifically, for example, works such as (Liang et al., 2013; Poon and Domingos, 2009; Clarke et al., 2010) essentially performed semantic parsing under different settings where the goal was to optimize the performance of certain downstream NLP tasks such as answering questions, and different semantic formalisms and languagespecific features were usually involved. For all our experiments, we used the L-BFGS algorithm for learning the feature weights, where feature weights were all initialized to zeros and the regularization hyper-parameter κ was set to 0.01. We set the maximum number of L-BFGS steps to 100. When all the features are considered, our model creates over 2 million features for each lan</context>
+<context position="39904" citStr="Clarke et al., 2010" startWordPosition="6545" endWordPosition="6548">ts on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional and logical semantics (Lewis and Steedman, 2013). Furthermore, as a general string-to-tree structured prediction model, this work may find applications in other areas within NLP. The system and code can be downloaded from http://statnlp.org/research/sp/. Acknoledgments The author would like to thank the anonymous revie</context>
+</contexts>
+<marker>Clarke, Goldwasser, Chang, Roth, 2010</marker>
+<rawString>James Clarke, Dan Goldwasser, Ming-Wei Chang, and Dan Roth. 2010. Driving semantic parsing from the world’s response. In Proc. of CONLL ’10, pages 18–27.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jenny Rose Finkel</author>
+<author>Alex Kleeman</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Efficient, feature-based, conditional random field parsing.</title>
+<date>2008</date>
+<booktitle>In Proc. of ACL/HLT,</booktitle>
+<pages>959--967</pages>
+<contexts>
+<context position="39020" citStr="Finkel et al., 2008" startWordPosition="6412" endWordPosition="6415">nd incorporated into our system. 6 Conclusions In this work, we present a new discriminative model for semantic parsing which extends the hy5The character-level features that we introduced are indeed very general. We have conducted several additional experiments, which show that our model’s performance for each language can be further improved when certain languagespecific character-level features are introduced. brid tree model. Such an extension is similar to the extension of the generative syntactic parser based on probabilistic context-free grammars (PCFG) to the feature-based CRF parser (Finkel et al., 2008), but is slightly more complex due to latent structures. Developed on top of our novel relaxed hybrid tree representations, our model allows certain long-distance dependencies to be captured. We also present efficient algorithms for learning and decoding. Experiments on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based langu</context>
+</contexts>
+<marker>Finkel, Kleeman, Manning, 2008</marker>
+<rawString>Jenny Rose Finkel, Alex Kleeman, and Christopher D. Manning. 2008. Efficient, feature-based, conditional random field parsing. In Proc. of ACL/HLT, pages 959–967.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ruifang Ge</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>A statistical semantic parser that integrates syntax and semantics.</title>
+<date>2005</date>
+<booktitle>In Proc. of CONLL ’05,</booktitle>
+<pages>9--16</pages>
+<contexts>
+<context position="8170" citStr="Ge and Mooney, 2005" startWordPosition="1212" endWordPosition="1215"> information (tree) as conveyed by the semantics. The KRISP semantic parser (Kate and Mooney, 2006) makes use of Support Vector Machines with string kernels (Lodhi et al., 2002) to recursively map contiguous word sequences into semantic units to construct a tree structure. Our relaxed hybrid tree structures also allow input word sequences to map to semantic units in a recursive manner. One key distinction, as we will see, is that our structure distinguishes words which are imme1309 diately associated with a particular semantic unit, from words which are remotely associated. The SCISSOR model (Ge and Mooney, 2005) performs integrated semantic and syntactic parsing. The model parses natural language sentences into semantically augmented parse trees whose nodes consist of both semantic and syntactic labels and then builds semantic representations based on such augmented trees. Such a joint representation conveys more information, but requires languagespecific syntactic analysis. The hybrid tree model (Lu et al., 2008) is based on the assumption that there exists an underlying generative process which jointly produces both the sentence and the semantic tree in a top-down recursive manner. The generative p</context>
+</contexts>
+<marker>Ge, Mooney, 2005</marker>
+<rawString>Ruifang Ge and Raymond J. Mooney. 2005. A statistical semantic parser that integrates syntax and semantics. In Proc. of CONLL ’05, pages 9–16.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Goldwasser</author>
+<author>Roi Reichart</author>
+<author>James Clarke</author>
+<author>Dan Roth</author>
+</authors>
+<title>Confidence driven unsupervised semantic parsing.</title>
+<date>2011</date>
+<booktitle>In Proc. of ACL ’11,</booktitle>
+<pages>1486--1495</pages>
+<contexts>
+<context position="11071" citStr="Goldwasser et al. (2011)" startWordPosition="1666" endWordPosition="1669">l Description n A complete natural language sentence m A complete semantic representation h A complete latent joint representation (or, a relaxed hybrid tree for our work) H(n, m) A complete set of latent joint representations that contain the (n, m) pair exactly n, na A contiguous sequence of words w, wk A natural language word m, ma A semantic unit h, ha A node in the relaxed hybrid tree Φ The feature vector Ok The k-th feature A The weight vector (model parameters) ak The weight for the k-th feature Ok Table 1: Notation Table for answering questions without relying on semantic annotations. Goldwasser et al. (2011) took an unsupervised approach for semantic parsing based on self-training driven by confidence estimation. Liang et al. (2013) proposed a model for learning the dependency-based compositional semantics (DCS) which can be used for optimizing the end-task performance. Artzi and Zettlemoyer (2013) proposed a model for mapping instructions to actions with weak supervision. 3 Approach We discuss our approach to semantic parsing in this section. The notation that we use in this paper is summarized in Table 1. 3.1 Model In standard supervised syntactic parsing, one typically has access to a complete</context>
+</contexts>
+<marker>Goldwasser, Reichart, Clarke, Roth, 2011</marker>
+<rawString>Dan Goldwasser, Roi Reichart, James Clarke, and Dan Roth. 2011. Confidence driven unsupervised semantic parsing. In Proc. of ACL ’11, pages 1486– 1495.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhanming Jie</author>
+<author>Wei Lu</author>
+</authors>
+<title>Multilingual semantic parsing: Parsing multiple languages into semantic representations.</title>
+<date>2014</date>
+<booktitle>In Proc. of COLING,</booktitle>
+<pages>1291--1301</pages>
+<contexts>
+<context position="39729" citStr="Jie and Lu, 2014" startWordPosition="6518" endWordPosition="6521">ed hybrid tree representations, our model allows certain long-distance dependencies to be captured. We also present efficient algorithms for learning and decoding. Experiments on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional and logical semantics (Lewis and Steedman, 2013). Furthermore, as a general string-to-tree structured prediction model, this work may find applic</context>
+</contexts>
+<marker>Jie, Lu, 2014</marker>
+<rawString>Zhanming Jie and Wei Lu. 2014. Multilingual semantic parsing: Parsing multiple languages into semantic representations. In Proc. of COLING, pages 1291–1301.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bevan Keeley Jones</author>
+<author>Mark Johnson</author>
+<author>Sharon Goldwater</author>
+</authors>
+<title>Semantic parsing with bayesian tree transducers.</title>
+<date>2012</date>
+<booktitle>In Proc. of ACL ’12,</booktitle>
+<pages>488--496</pages>
+<contexts>
+<context position="2098" citStr="Jones et al., 2012" startWordPosition="305" endWordPosition="308">sic goals for natural language processing and artificial intelligence. This area of research recently has received a significant amount of attention. Various models have been proposed over the past few years (Zettlemoyer and Collins, 2005; Kate and QUERY: answer(RIVER) RIVER: exclude(RIVER, RIVER) RIVER: river(all) RIVER: traverse(STATE) STATE: stateid(STATENAME) STATENAME : (&apos;tn&apos;) What rivers do not run through Tennessee ? Figure 1: An example tree-structured semantic representation (above) and its corresponding natural language sentence. Mooney, 2006; Wong and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). Following previous research efforts, we perform semantic parsing under a setting where the semantics for complete sentences are provided as training data, but detailed word-level semantic information is not explicitly given during the training phase. As one example, consider the following natural language sentence paired with its corresponding semantic representation: What rivers do not run through Tennessee ? answer(exclude(river(all), traverse(stateid(&apos;tn&apos;)))) The training data consists of a set of sentences paired with semantic representations. Our goal is to learn from such pairs a model</context>
+<context position="3888" citStr="Jones et al., 2012" startWordPosition="566" endWordPosition="569">n Empirical Methods in Natural Language Processing (EMNLP), pages 1308–1318, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics Currently, most state-of-the-art approaches that deal with such tree structured semantic representations either cast the semantic parsing problem as a statistical string-to-string transformation problem (Wong and Mooney, 2006), which ignores the potentially useful structural information of the tree, or employ latent-variable models to capture the correspondences between words and tree nodes using a generative approach (Lu et al., 2008; Jones et al., 2012). While generative models can be used to flexibly model the correspondences between individual words and semantic nodes of the tree, such an approach is limited to modeling local dependencies and is unable to flexibly incorporate a large set of potentially useful features. In this work, we propose a novel model for parsing natural language into tree structured semantic representations. Specifically, we propose a novel relaxed hybrid tree representation which jointly encodes both natural language sentences and semantics; such representations can be effectively learned with a latent-variable dis</context>
+<context position="9706" citStr="Jones et al. (2012)" startWordPosition="1450" endWordPosition="1453">t it implicitly assumes that both the sentence and semantics exhibit certain degree of structural similarity that allows the hybrid tree structures to be constructed. UBL (Kwiatkowski et al., 2010) is a semantic parser based on restricted higher-order unification with CCG (Steedman, 1996). The model can be used to handle both tree structured semantic representations and lambda calculus expressions, and assumes there exist CCG derivations as joint representations in which each semantic unit is associated with a contiguous word sequence where overlappings amongst word sequences are not allowed. Jones et al. (2012) recently proposed a framework that performs semantic parsing with tree transducers. The model learns representations that are similar to the hybrid tree structures using a generative process under a Bayesian setting. Thus, their representations also potentially present similar issues as the ones mentioned above. Besides these supervised approaches, recently there are also several works that take alternative learning approaches to (mostly task-dependent) semantic parsing. Poon and Domingos (2009) proposed a model for unsupervised semantic parsing that transforms dependency trees into semantic </context>
+<context position="30293" citStr="Jones et al., 2012" startWordPosition="5017" endWordPosition="5020">ide score for a given natural language sentence n (i.e., the algorithm for computing the second term of Equation (6)). The difference here is, at each intermediate step, instead of computing the combined score for all possible relaxed hybrid tree structures (i.e., performing sum), we find the single-best relaxed hybrid tree structure (i.e., performing max). 5 Experiments We present evaluations on the standard GeoQuery dataset which is publicly available. This dataset has been used for evaluations in various semantic parsing works (Wong and Mooney, 2006; Kate and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). It consists of 880 natural language sentences paired with their corresponding formal semantic representations. Each semantic representation is a tree structured representation derived from a Prolog query that can be used to interact with a database of U.S. geography facts for retrieving answers. The original dataset was fully annotated in English, and recently Jones et al. (2012) released a new version of this dataset with three additional language annotations (German, Greek and Thai). For all the experiments, we used the identical experimental setup as described in Jones et al. (2012). Spec</context>
+<context position="32677" citStr="Jones et al., 2012" startWordPosition="5404" endWordPosition="5407">erformance on this version was substantially lower than that on the lambda calculus version. m* = arg max � m hEW(n,m) 1315 System English Thai German Greek Acc. F1 Acc. F1 Acc. F1 Acc. F1 WASP 71.1 77.7 71.4 75.0 65.7 74.9 70.7 78.6 HYBRIDTREE+ 76.8 81.0 73.6 76.7 62.1 68.5 69.3 74.6 UBL-S 82.1 82.1 66.4 66.4 75.0 75.0 73.6 73.7 TREETRANS 79.3 79.3 78.2 78.2 74.6 74.6 75.4 75.4 RHT (all features) 83.6 83.6 79.3 79.3 74.3 74.3 78.2 78.2 Table 3: Performance on the benchmark data, using four different languages as inputs. RHT: relaxed hybrid tree (this work). same answers as the gold standard (Jones et al., 2012). We report accuracy scores – the percentage of inputs with correct answers, and F1 measures – the harmonic mean of precision (the proportion of correct answers out of inputs with an answer) and recall (the proportion of correct answers out of all inputs). By adopting such an evaluation method we will be able to directly compare our model’s performance against those of the previous works. The evaluations were conducted under such a setting in order to make comparisons to previous works. We would like to stress that our model is designed for general-purpose semantic parsing that is not only nat</context>
+</contexts>
+<marker>Jones, Johnson, Goldwater, 2012</marker>
+<rawString>Bevan Keeley Jones, Mark Johnson, and Sharon Goldwater. 2012. Semantic parsing with bayesian tree transducers. In Proc. of ACL ’12, pages 488–496.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rohit J Kate</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Using string-kernels for learning semantic parsers.</title>
+<date>2006</date>
+<booktitle>In Proc. of COLING/ACL,</booktitle>
+<pages>913--920</pages>
+<contexts>
+<context position="7649" citStr="Kate and Mooney, 2006" startWordPosition="1128" endWordPosition="1131">g-to-string transformation problem by employing a statistical phrase-based machine translation approach with synchronous grammars (Chiang, 2007). Therefore, one can think of the joint representation for both language and semantics as a synchronous derivation tree consisting of those derivation steps for transforming sentences into target semantic representation strings. While this joint representation is flexible, allowing blocks of semantic structures to map to word sequences, it does not fully exploit the structural information (tree) as conveyed by the semantics. The KRISP semantic parser (Kate and Mooney, 2006) makes use of Support Vector Machines with string kernels (Lodhi et al., 2002) to recursively map contiguous word sequences into semantic units to construct a tree structure. Our relaxed hybrid tree structures also allow input word sequences to map to semantic units in a recursive manner. One key distinction, as we will see, is that our structure distinguishes words which are imme1309 diately associated with a particular semantic unit, from words which are remotely associated. The SCISSOR model (Ge and Mooney, 2005) performs integrated semantic and syntactic parsing. The model parses natural l</context>
+<context position="19404" citStr="Kate and Mooney, 2006" startWordPosition="3128" endWordPosition="3131">so be remotely associated with all its parent semantic units as well. Essentially, our representation allows us to capture certain unbounded dependencies – for any word, as long as it appears below a certain semantic unit (in the relaxed hybrid tree), we can always capture the dependency between the two, regardless of which actual semantic unit that word is immediately associated with. Such an important relaxation allows some longdistance dependencies to be captured, which can potentially alleviate the sentence-semantics nonisomorphism issue reported in several earlier semantic parsing works (Kate and Mooney, 2006; 1312 Wong and Mooney, 2007). To better illustrate the differences, we show a concrete example in Figure 3, where the correct latent structure showing the correspondences between words and semantic units can not be found with the hybrid tree model. As a result, the hybrid tree model will fail to capture the correct dependency between the words “how many” and the semantic unit “NUM : count(STATE)”. On the other hand, with our relaxed hybrid tree representation, such a dependency can still be captured, since these words will still be (remotely) associated with the semantic unit. Such a relaxed </context>
+<context position="30255" citStr="Kate and Mooney, 2006" startWordPosition="5009" endWordPosition="5012">ing algorithm used for computing the inside score for a given natural language sentence n (i.e., the algorithm for computing the second term of Equation (6)). The difference here is, at each intermediate step, instead of computing the combined score for all possible relaxed hybrid tree structures (i.e., performing sum), we find the single-best relaxed hybrid tree structure (i.e., performing max). 5 Experiments We present evaluations on the standard GeoQuery dataset which is publicly available. This dataset has been used for evaluations in various semantic parsing works (Wong and Mooney, 2006; Kate and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). It consists of 880 natural language sentences paired with their corresponding formal semantic representations. Each semantic representation is a tree structured representation derived from a Prolog query that can be used to interact with a database of U.S. geography facts for retrieving answers. The original dataset was fully annotated in English, and recently Jones et al. (2012) released a new version of this dataset with three additional language annotations (German, Greek and Thai). For all the experiments, we used the identical experimental setup as </context>
+</contexts>
+<marker>Kate, Mooney, 2006</marker>
+<rawString>Rohit J. Kate and Raymond J. Mooney. 2006. Using string-kernels for learning semantic parsers. In Proc. of COLING/ACL, pages 913–920.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tom Kwiatkowski</author>
+<author>Luke Zettlemoyer</author>
+<author>Sharon Goldwater</author>
+<author>Mark Steedman</author>
+</authors>
+<title>Inducing probabilistic ccg grammars from logical form with higherorder unification.</title>
+<date>2010</date>
+<booktitle>In Proc. EMNLP’10,</booktitle>
+<pages>1223--1233</pages>
+<contexts>
+<context position="9284" citStr="Kwiatkowski et al., 2010" startWordPosition="1384" endWordPosition="1387">which jointly produces both the sentence and the semantic tree in a top-down recursive manner. The generative process results in a hybrid tree structure which consists of words as leaves and semantic units as nodes. An example hybrid tree structure is shown in Figure 2 (a). Such a representation allows each semantic unit to map to a possibly discontiguous sequence of words. The model was shown to be effective empirically, but it implicitly assumes that both the sentence and semantics exhibit certain degree of structural similarity that allows the hybrid tree structures to be constructed. UBL (Kwiatkowski et al., 2010) is a semantic parser based on restricted higher-order unification with CCG (Steedman, 1996). The model can be used to handle both tree structured semantic representations and lambda calculus expressions, and assumes there exist CCG derivations as joint representations in which each semantic unit is associated with a contiguous word sequence where overlappings amongst word sequences are not allowed. Jones et al. (2012) recently proposed a framework that performs semantic parsing with tree transducers. The model learns representations that are similar to the hybrid tree structures using a gener</context>
+<context position="13702" citStr="Kwiatkowski et al., 2010" startWordPosition="2115" endWordPosition="2118">ide the parenthesis), or remotely associated with m (the words that do not appear inside the parenthesis, and will also appear under a subtree rooted by one of m’s children). latent joint representations that contain both n and m exactly. Given the joint representations, to model how the data is generated, one can either take a generative approach which models the joint probability distribution over (n, m, h) tuples, or a discriminative approach which models the distribution over (m, h) tuples given the observation n. Following several previous research efforts (Zettlemoyer and Collins, 2005; Kwiatkowski et al., 2010; Liang et al., 2013), in this work we define a discriminative model using a log-linear approach: P(m, h|n; A) = eΛ·Φ(,0 h0) (2) Pm , (n,m nm 0 0∈H 0 ) Here Φ(n, m, h) is a function defined over the tuple (n, m, h) that returns a vector consisting of counts of features associated with the tuple, and A is a vector consisting of feature weights, which are the parameters of the model. In practice, we are only given the n-m pairs but the latent structures are not observed. We therefore consider the following marginal probability: P(m|n; A) = X P(m, h|n; A) h∈H(n,m) = P h∈H(n,m)eΛ·Φ(n,m,h) ) Pm0,h0</context>
+<context position="31912" citStr="Kwiatkowski et al. (2010)" startWordPosition="5269" endWordPosition="5272">yer and Collins, 2005). Results obtained from these two versions are not comparable.4 Like many previous works, we focus on tree structured semantic representations for evaluations in this work since our model is designed for handling the class of semantic representations with recursive tree structures. We used the standard evaluation criteria for judging the correctness of the outputs. Specifically, our system constructs Prolog queries from the output parses, and uses such queries to retrieve answers from the GeoQuery database. An output is considered correct if and only if it retrieves the 4Kwiatkowski et al. (2010) showed in Table 3 of their work that the version with tree-structured representations appeared to be more challenging – their semantic parser’s performance on this version was substantially lower than that on the lambda calculus version. m* = arg max � m hEW(n,m) 1315 System English Thai German Greek Acc. F1 Acc. F1 Acc. F1 Acc. F1 WASP 71.1 77.7 71.4 75.0 65.7 74.9 70.7 78.6 HYBRIDTREE+ 76.8 81.0 73.6 76.7 62.1 68.5 69.3 74.6 UBL-S 82.1 82.1 66.4 66.4 75.0 75.0 73.6 73.7 TREETRANS 79.3 79.3 78.2 78.2 74.6 74.6 75.4 75.4 RHT (all features) 83.6 83.6 79.3 79.3 74.3 74.3 78.2 78.2 Table 3: Perf</context>
+<context position="34842" citStr="Kwiatkowski et al. (2010)" startWordPosition="5753" endWordPosition="5756">3M, German: 2.7M, Greek: 2.6M). Our model requires (on average) a per-instance learning time of 0.428 seconds and a per-instance decoding time of 0.235 seconds, on an Intel machine with a 2.2 GHz CPU. Our implementation is in Java. Here the per-instance learning time refers to the time spent on computing the instance-level log-likelihood as well as the expected feature counts (needed for the gradients). Table 3 shows the evaluation results of our system as well as those of several other comparable previous works which share the same experimental setup as ours. UBL-S is the system presented in Kwiatkowski et al. (2010) which performs semantic parsing with the CCG based on mapping between graphs, and is the only non-tree based top-performing system. Their system, similar to ours, also uses a discriminative log-linear model where two types of features are defined. WASP is a model based on statistical phrase-based machine translation as we have described earlier. The hybrid tree model (HYBRIDTREE+) performs learning using a generative process which is augmented with an additional discriminative-reranking stage, where certain global features are incorporated (Lu et al., 2008). The Bayesian tree transducer model</context>
+</contexts>
+<marker>Kwiatkowski, Zettlemoyer, Goldwater, Steedman, 2010</marker>
+<rawString>Tom Kwiatkowski, Luke Zettlemoyer, Sharon Goldwater, and Mark Steedman. 2010. Inducing probabilistic ccg grammars from logical form with higherorder unification. In Proc. EMNLP’10, pages 1223– 1233.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mike Lewis</author>
+<author>Mark Steedman</author>
+</authors>
+<title>Combined distributional and logical semantics.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>1--179</pages>
+<marker>Lewis, Steedman, 2013</marker>
+<rawString>Mike Lewis and Mark Steedman. 2013. Combined distributional and logical semantics. Transactions of the Association for Computational Linguistics, 1:179–192.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Michael I Jordan</author>
+<author>Dan Klein</author>
+</authors>
+<title>Learning dependency-based compositional semantics.</title>
+<date>2013</date>
+<journal>Computational Linguistics,</journal>
+<volume>39</volume>
+<issue>2</issue>
+<contexts>
+<context position="5617" citStr="Liang et al., 2013" startWordPosition="811" endWordPosition="814">guous word sequences to tree nodes at different levels, where efficient dynamic programming algorithms can be used. Such a model may find applications in other areas of natural language processing, such as statistical machine translation and information extraction. 2 Background 2.1 Semantics Various semantic formalisms have been considered for semantic parsing. Examples include the tree-structured semantic representations (Wong and Mooney, 2006), the lambda calculus expressions (Zettlemoyer and Collins, 2005; Wong and Mooney, 2007), and dependency-based compositional semantic representations (Liang et al., 2013). In this work, we specifically focus on the tree-structured representations for semantics. Each semantic representation consists of semantic units as its tree nodes, where each semantic unit is of the following form: ma ≡ Ta : pα(Tb*) (1) Here ma is used to denote a complete semantic unit, which consists of its semantic type Ta, its function symbol pα, as well as an argument list Tb* (we assume there are at most two arguments for each semantic unit). In other words, each semantic unit can be regarded as a function which takes in other semantics of specific types as arguments, and returns new </context>
+<context position="11198" citStr="Liang et al. (2013)" startWordPosition="1685" endWordPosition="1688">or, a relaxed hybrid tree for our work) H(n, m) A complete set of latent joint representations that contain the (n, m) pair exactly n, na A contiguous sequence of words w, wk A natural language word m, ma A semantic unit h, ha A node in the relaxed hybrid tree Φ The feature vector Ok The k-th feature A The weight vector (model parameters) ak The weight for the k-th feature Ok Table 1: Notation Table for answering questions without relying on semantic annotations. Goldwasser et al. (2011) took an unsupervised approach for semantic parsing based on self-training driven by confidence estimation. Liang et al. (2013) proposed a model for learning the dependency-based compositional semantics (DCS) which can be used for optimizing the end-task performance. Artzi and Zettlemoyer (2013) proposed a model for mapping instructions to actions with weak supervision. 3 Approach We discuss our approach to semantic parsing in this section. The notation that we use in this paper is summarized in Table 1. 3.1 Model In standard supervised syntactic parsing, one typically has access to a complete syntactic parse tree for each sentence in the training phase, which exactly tells the correct associations between words and s</context>
+<context position="13723" citStr="Liang et al., 2013" startWordPosition="2119" endWordPosition="2122">emotely associated with m (the words that do not appear inside the parenthesis, and will also appear under a subtree rooted by one of m’s children). latent joint representations that contain both n and m exactly. Given the joint representations, to model how the data is generated, one can either take a generative approach which models the joint probability distribution over (n, m, h) tuples, or a discriminative approach which models the distribution over (m, h) tuples given the observation n. Following several previous research efforts (Zettlemoyer and Collins, 2005; Kwiatkowski et al., 2010; Liang et al., 2013), in this work we define a discriminative model using a log-linear approach: P(m, h|n; A) = eΛ·Φ(,0 h0) (2) Pm , (n,m nm 0 0∈H 0 ) Here Φ(n, m, h) is a function defined over the tuple (n, m, h) that returns a vector consisting of counts of features associated with the tuple, and A is a vector consisting of feature weights, which are the parameters of the model. In practice, we are only given the n-m pairs but the latent structures are not observed. We therefore consider the following marginal probability: P(m|n; A) = X P(m, h|n; A) h∈H(n,m) = P h∈H(n,m)eΛ·Φ(n,m,h) ) Pm0,h0∈H(n,m0) eΛ·Φ(n m0 h0</context>
+<context position="33525" citStr="Liang et al., 2013" startWordPosition="5539" endWordPosition="5542">nswers out of all inputs). By adopting such an evaluation method we will be able to directly compare our model’s performance against those of the previous works. The evaluations were conducted under such a setting in order to make comparisons to previous works. We would like to stress that our model is designed for general-purpose semantic parsing that is not only natural language-independent, but also task-independent. We thus distinguish our work from several previous works in the literature which focused on semantic parsing under other assumptions. Specifically, for example, works such as (Liang et al., 2013; Poon and Domingos, 2009; Clarke et al., 2010) essentially performed semantic parsing under different settings where the goal was to optimize the performance of certain downstream NLP tasks such as answering questions, and different semantic formalisms and languagespecific features were usually involved. For all our experiments, we used the L-BFGS algorithm for learning the feature weights, where feature weights were all initialized to zeros and the regularization hyper-parameter κ was set to 0.01. We set the maximum number of L-BFGS steps to 100. When all the features are considered, our mod</context>
+<context position="39925" citStr="Liang et al., 2013" startWordPosition="6549" endWordPosition="6552">show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional and logical semantics (Lewis and Steedman, 2013). Furthermore, as a general string-to-tree structured prediction model, this work may find applications in other areas within NLP. The system and code can be downloaded from http://statnlp.org/research/sp/. Acknoledgments The author would like to thank the anonymous reviewers for their helpfu</context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2013</marker>
+<rawString>Percy Liang, Michael I Jordan, and Dan Klein. 2013. Learning dependency-based compositional semantics. Computational Linguistics, 39(2):389–446.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D C Liu</author>
+<author>J Nocedal</author>
+</authors>
+<title>On the limited memory bfgs method for large scale optimization.</title>
+<date>1989</date>
+<journal>Math. Program.,</journal>
+<volume>45</volume>
+<issue>3</issue>
+<contexts>
+<context position="15256" citStr="Liu and Nocedal, 1989" startWordPosition="2400" endWordPosition="2403"> additional regularization term −κ · ||A||2 to control over-fitting, where κ is a positive scalar. Our goal is to maximize this objective function by tuning the model parameters A. Let’s assume A = (λ1, λ2,. . . , λN), where N is the total number of features (or the total number of parameters). Differentiating with respect to λk, the weight associated with the k-th feature φk, yields: where φk(n, m, h) refers to the number of occurrences for the k-th feature in the tuple (n, m, h). Given the objective value (4) and gradients (5), standard methods such as stochastic gradient descent or L-BFGS (Liu and Nocedal, 1989) can be employed to optimize the objective function. We will discuss the computation of the objective function and gradients next. 3.2 Relaxed Hybrid Trees To allow tractable computation of the values for the objective function (4) and the gradients (5), ∂L(A) X= X EP(h|ni,mi;Λ)[φk(ni, mi, h)] ∂λk i h X− X EP(m,h|ni;Λ)[φk(ni, m, h)] − 2κλk (5) i m,h eΛ·Φ(n,m,h) 1311 . . . . . . NUM: count(STATE) STATE : state(STATE) STATE: next to(CITY) states . . . borders how many . . . (a) (b) Figure 3: An example hybrid tree and an example relaxed hybrid tree representation. When the correct latent structu</context>
+</contexts>
+<marker>Liu, Nocedal, 1989</marker>
+<rawString>D. C. Liu and J. Nocedal. 1989. On the limited memory bfgs method for large scale optimization. Math. Program., 45(3):503–528, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Huma Lodhi</author>
+<author>Craig Saunders</author>
+<author>John Shawe-Taylor</author>
+<author>Nello Cristianini</author>
+<author>Chris Watkins</author>
+</authors>
+<title>Text classification using string kernels.</title>
+<date>2002</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<pages>2--419</pages>
+<contexts>
+<context position="7727" citStr="Lodhi et al., 2002" startWordPosition="1141" endWordPosition="1144">e translation approach with synchronous grammars (Chiang, 2007). Therefore, one can think of the joint representation for both language and semantics as a synchronous derivation tree consisting of those derivation steps for transforming sentences into target semantic representation strings. While this joint representation is flexible, allowing blocks of semantic structures to map to word sequences, it does not fully exploit the structural information (tree) as conveyed by the semantics. The KRISP semantic parser (Kate and Mooney, 2006) makes use of Support Vector Machines with string kernels (Lodhi et al., 2002) to recursively map contiguous word sequences into semantic units to construct a tree structure. Our relaxed hybrid tree structures also allow input word sequences to map to semantic units in a recursive manner. One key distinction, as we will see, is that our structure distinguishes words which are imme1309 diately associated with a particular semantic unit, from words which are remotely associated. The SCISSOR model (Ge and Mooney, 2005) performs integrated semantic and syntactic parsing. The model parses natural language sentences into semantically augmented parse trees whose nodes consist </context>
+</contexts>
+<marker>Lodhi, Saunders, Shawe-Taylor, Cristianini, Watkins, 2002</marker>
+<rawString>Huma Lodhi, Craig Saunders, John Shawe-Taylor, Nello Cristianini, and Chris Watkins. 2002. Text classification using string kernels. The Journal of Machine Learning Research, 2:419–444.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wei Lu</author>
+<author>Hwee Tou Ng</author>
+</authors>
+<title>A probabilistic forest-to-string model for language generation from typed lambda calculus expressions.</title>
+<date>2011</date>
+<booktitle>In Proc. of EMNLP ’11,</booktitle>
+<pages>1611--1622</pages>
+<contexts>
+<context position="28670" citStr="Lu and Ng, 2011" startWordPosition="4749" endWordPosition="4752">milar to (Lu et al., 2008), we can also define and compute the outside scores for (n, m) (the combined score of such incomplete relaxed hybrid trees that contain (n, m) as one of its leave nodes) in an analogous manner, where the computation of the gradient functions can be efficiently integrated in this process. Computation of the second part of the objective function (6) involves dynamic programming over a packed forest representation rather than a single tree, which requires an extension to the algorithm described in (Lu et al., 2008). The resulting algorithm is similar to the one used in (Lu and Ng, 2011), which has been used for language generation from packed forest representations of typed A-calculus expressions. 4.2 Decoding The decoding phase involves finding the optimal semantic tree m* given a new input sentence n: m* = arg max P(mln) (7) m This in fact is equivalent to finding the following optimal semantic tree m*: eA4(n,m,h) (8) Unfortunately, the summation operation inside the arg max prevents us from employing a similar version of the dynamic programming algorithm we developed for learning in Section 4.1. To overcome this difficulty, we instead find the optimal semantic tree using </context>
+<context position="39676" citStr="Lu and Ng, 2011" startWordPosition="6510" endWordPosition="6513">tent structures. Developed on top of our novel relaxed hybrid tree representations, our model allows certain long-distance dependencies to be captured. We also present efficient algorithms for learning and decoding. Experiments on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional and logical semantics (Lewis and Steedman, 2013). Furthermore, as a general string-to-tree s</context>
+</contexts>
+<marker>Lu, Ng, 2011</marker>
+<rawString>Wei Lu and Hwee Tou Ng. 2011. A probabilistic forest-to-string model for language generation from typed lambda calculus expressions. In Proc. of EMNLP ’11, pages 1611–1622.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wei Lu</author>
+<author>Hwee Tou Ng</author>
+<author>Wee Sun Lee</author>
+<author>Luke S Zettlemoyer</author>
+</authors>
+<title>A generative model for parsing natural language to meaning representations.</title>
+<date>2008</date>
+<booktitle>In Proc. of EMNLP ’08,</booktitle>
+<pages>783--792</pages>
+<contexts>
+<context position="2077" citStr="Lu et al., 2008" startWordPosition="301" endWordPosition="304">s one of the classic goals for natural language processing and artificial intelligence. This area of research recently has received a significant amount of attention. Various models have been proposed over the past few years (Zettlemoyer and Collins, 2005; Kate and QUERY: answer(RIVER) RIVER: exclude(RIVER, RIVER) RIVER: river(all) RIVER: traverse(STATE) STATE: stateid(STATENAME) STATENAME : (&apos;tn&apos;) What rivers do not run through Tennessee ? Figure 1: An example tree-structured semantic representation (above) and its corresponding natural language sentence. Mooney, 2006; Wong and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). Following previous research efforts, we perform semantic parsing under a setting where the semantics for complete sentences are provided as training data, but detailed word-level semantic information is not explicitly given during the training phase. As one example, consider the following natural language sentence paired with its corresponding semantic representation: What rivers do not run through Tennessee ? answer(exclude(river(all), traverse(stateid(&apos;tn&apos;)))) The training data consists of a set of sentences paired with semantic representations. Our goal is to learn fr</context>
+<context position="3867" citStr="Lu et al., 2008" startWordPosition="562" endWordPosition="565">2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1308–1318, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics Currently, most state-of-the-art approaches that deal with such tree structured semantic representations either cast the semantic parsing problem as a statistical string-to-string transformation problem (Wong and Mooney, 2006), which ignores the potentially useful structural information of the tree, or employ latent-variable models to capture the correspondences between words and tree nodes using a generative approach (Lu et al., 2008; Jones et al., 2012). While generative models can be used to flexibly model the correspondences between individual words and semantic nodes of the tree, such an approach is limited to modeling local dependencies and is unable to flexibly incorporate a large set of potentially useful features. In this work, we propose a novel model for parsing natural language into tree structured semantic representations. Specifically, we propose a novel relaxed hybrid tree representation which jointly encodes both natural language sentences and semantics; such representations can be effectively learned with </context>
+<context position="8580" citStr="Lu et al., 2008" startWordPosition="1270" endWordPosition="1273">e will see, is that our structure distinguishes words which are imme1309 diately associated with a particular semantic unit, from words which are remotely associated. The SCISSOR model (Ge and Mooney, 2005) performs integrated semantic and syntactic parsing. The model parses natural language sentences into semantically augmented parse trees whose nodes consist of both semantic and syntactic labels and then builds semantic representations based on such augmented trees. Such a joint representation conveys more information, but requires languagespecific syntactic analysis. The hybrid tree model (Lu et al., 2008) is based on the assumption that there exists an underlying generative process which jointly produces both the sentence and the semantic tree in a top-down recursive manner. The generative process results in a hybrid tree structure which consists of words as leaves and semantic units as nodes. An example hybrid tree structure is shown in Figure 2 (a). Such a representation allows each semantic unit to map to a possibly discontiguous sequence of words. The model was shown to be effective empirically, but it implicitly assumes that both the sentence and semantics exhibit certain degree of struct</context>
+<context position="12897" citStr="Lu et al. (2008)" startWordPosition="1987" endWordPosition="1990">ociations between words and semantic units in such a pair. We use x(n, m)1 to denote the set of all such possible 1We will give a concrete definition of W(n, m) used for this work, which is the complete set of all possible relaxed hybrid tree structures for the n-m pair, when we discuss our own joint representations later in Section 3.2. 1310 ma ma (w1 w2 w3) w4 w5 w6 w7 w8 w9 w10 w1 w2 w3 mb mb (w4 w5) w6 w7 (w8) w9 (w10) md (w6 w7) (w9) (b) w4 w5 mc w8 md w10 w6 w7 w9 (a) mc Figure 2: Two different ways of jointly representing sentences and their semantics. The hybrid tree representation of Lu et al. (2008) (left), and our novel relaxed hybrid tree representation (right). In our representation, a word w can be either immediately associated with its parent m (the words which appear inside the parenthesis), or remotely associated with m (the words that do not appear inside the parenthesis, and will also appear under a subtree rooted by one of m’s children). latent joint representations that contain both n and m exactly. Given the joint representations, to model how the data is generated, one can either take a generative approach which models the joint probability distribution over (n, m, h) tuples</context>
+<context position="18151" citStr="Lu et al., 2008" startWordPosition="2929" endWordPosition="2932">nit ma maps to the complete sentence, mb maps to the sequence w4w5 ... w10, mc maps to w6w7, and md maps to w9. Certain words such as w4 and w10 that appear directly below the semantic unit mb but do not map to any of mb’s child semantic units are highlighted with parentheses “()”, indicating they are immediately associated with mb. These words play unique roles in the sub-tree rooted by mb and are expected to be semantically closely related to mb. Note that each word is immediately associated with exactly one semantic unit. As a comparison, we also show an example hybrid tree representation (Lu et al., 2008) in Figure 2 (a) that has similar words-semantics correspondences. Different from our representation, the hybrid tree representation assumes each natural language word only maps to a single semantic unit (which is its immediate parent), and each semantic unit maps to a possibly discontiguous sequence of words. We believe that such a representation is overly restrictive, which might exhibit problems in cases where natural language sentences are highly non-isomorphic to their semantic tree structures. Under our relaxed hybrid tree representations, words that are immediately associated with a par</context>
+<context position="24751" citStr="Lu et al., 2008" startWordPosition="4048" endWordPosition="4051">g form of m, as well as m’s function name as features. Finally, we also define features over m only. Such features are defined over semantic unit pairs such as (ma, mb) where ma is the parent node of mb as in m. They include: 1) concatenation of the string forms of ma and mb, 2) concatenation of the string form of ma and mb’s type, and 3) concatenation of the function names of ma and mb. 4 Algorithms In this section we describe the efficient algorithms used for learning and decoding. The algorithms are inspired by the inside-outside style algorithms used for the generative hybrid tree models (Lu et al., 2008), but are different in the following ways: 1) we need to handle features, including long-distance features, 2) we need to additionally handle the computation of the partition function of Equation (3). 4.1 Learning The training process involves the computation of the objective function (4) as well as the gradient terms (5). The objective function (4) (excluding the regularization term which can be trivially computed) is equivalent to the following: L(A) = X log X eA·Φ(ni,mi,h) i h∈H(ni,mi) X− log X eA·Φ(ni,m&apos;,h&apos;) (6) i m&apos;,h&apos;∈H(ni,m&apos;) In the first term, P h∈H(ni,mi)eA·Φ(ni,mi,h) is in fact the s</context>
+<context position="28080" citStr="Lu et al., 2008" startWordPosition="4647" endWordPosition="4650">t, where n ≡ wi ... wj. Once the computation for a certain (n, m) pair is done, we m(wXw) m(w) m(wXw) = wi . . . wj m(w) + wi ® wi wi+1 ... wj m(Xw) ® wi+1 ... wj m(wXwYw) wi ... wj = Pj−1 k=i m(wX) m(wYw) ® wi ... wk wk+1 ... wj m m(p) wi ... wj= Pp wi ... wj We use m(wXw) wi+1 ... wj is presentcan 1314 can move up to process such pairs that involve m’s parent node. The above process essentially computes the inside score associated with the (n, m) pair, which gives the sum of the scores of all such (incomplete) relaxed hybrid trees that can be constructed with (n, m) as the root. Similar to (Lu et al., 2008), we can also define and compute the outside scores for (n, m) (the combined score of such incomplete relaxed hybrid trees that contain (n, m) as one of its leave nodes) in an analogous manner, where the computation of the gradient functions can be efficiently integrated in this process. Computation of the second part of the objective function (6) involves dynamic programming over a packed forest representation rather than a single tree, which requires an extension to the algorithm described in (Lu et al., 2008). The resulting algorithm is similar to the one used in (Lu and Ng, 2011), which ha</context>
+<context position="30272" citStr="Lu et al., 2008" startWordPosition="5013" endWordPosition="5016">computing the inside score for a given natural language sentence n (i.e., the algorithm for computing the second term of Equation (6)). The difference here is, at each intermediate step, instead of computing the combined score for all possible relaxed hybrid tree structures (i.e., performing sum), we find the single-best relaxed hybrid tree structure (i.e., performing max). 5 Experiments We present evaluations on the standard GeoQuery dataset which is publicly available. This dataset has been used for evaluations in various semantic parsing works (Wong and Mooney, 2006; Kate and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). It consists of 880 natural language sentences paired with their corresponding formal semantic representations. Each semantic representation is a tree structured representation derived from a Prolog query that can be used to interact with a database of U.S. geography facts for retrieving answers. The original dataset was fully annotated in English, and recently Jones et al. (2012) released a new version of this dataset with three additional language annotations (German, Greek and Thai). For all the experiments, we used the identical experimental setup as described in Jone</context>
+<context position="35406" citStr="Lu et al., 2008" startWordPosition="5838" endWordPosition="5841">is the system presented in Kwiatkowski et al. (2010) which performs semantic parsing with the CCG based on mapping between graphs, and is the only non-tree based top-performing system. Their system, similar to ours, also uses a discriminative log-linear model where two types of features are defined. WASP is a model based on statistical phrase-based machine translation as we have described earlier. The hybrid tree model (HYBRIDTREE+) performs learning using a generative process which is augmented with an additional discriminative-reranking stage, where certain global features are incorporated (Lu et al., 2008). The Bayesian tree transducer model (TREETRANS) learns under a Bayesian generative framework, using hyper-parameters manually tuned on the German training data. We can observe from Table 3 that the semantic parser based on relaxed hybrid tree gives competitive performance when all the features (described in Sec 3.4) are used. It significantly outperforms the hybrid tree model that is augmented with a discriminative reranking step. The model reports the best accuracy and F1 scores on English and Thai and best accuracy score on Greek. The scores on German are lower than those of UBL-S and TREET</context>
+</contexts>
+<marker>Lu, Ng, Lee, Zettlemoyer, 2008</marker>
+<rawString>Wei Lu, Hwee Tou Ng, Wee Sun Lee, and Luke S. Zettlemoyer. 2008. A generative model for parsing natural language to meaning representations. In Proc. of EMNLP ’08, pages 783–792.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wei Lu</author>
+<author>Hwee Tou Ng</author>
+<author>Wee Sun Lee</author>
+</authors>
+<title>Natural language generation with tree conditional random fields.</title>
+<date>2009</date>
+<booktitle>In Proc. of EMNLP,</booktitle>
+<pages>400--409</pages>
+<contexts>
+<context position="39658" citStr="Lu et al., 2009" startWordPosition="6506" endWordPosition="6509">complex due to latent structures. Developed on top of our novel relaxed hybrid tree representations, our model allows certain long-distance dependencies to be captured. We also present efficient algorithms for learning and decoding. Experiments on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional and logical semantics (Lewis and Steedman, 2013). Furthermore, as a genera</context>
+</contexts>
+<marker>Lu, Ng, Lee, 2009</marker>
+<rawString>Wei Lu, Hwee Tou Ng, and Wee Sun Lee. 2009. Natural language generation with tree conditional random fields. In Proc. of EMNLP, pages 400–409.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ted Pedersen</author>
+<author>Siddharth Patwardhan</author>
+<author>Jason Michelizzi</author>
+</authors>
+<title>Wordnet:: Similarity: measuring the relatedness of concepts.</title>
+<date>2004</date>
+<booktitle>In Proc. of HLT-NAACL ’04 (Demonstration),</booktitle>
+<pages>38--41</pages>
+<contexts>
+<context position="23740" citStr="Pedersen et al., 2004" startWordPosition="3869" endWordPosition="3872">the local features, which are defined over immediately associated words only, and the span features, which are defined over all (immediately or remotely) associated words to capture long range dependencies. The local features include word unigrams and bigrams, the word association patterns, as well as character-level features3 which perform implicit morphological analysis. The span features include word unigrams, bigrams, as well as trigrams. Although our model allows certain more sophisticated features to be exploited, such as word POS features, word similarity features based on the WordNet (Pedersen et al., 2004), we deliberately choose to only include these simple features so 3For each word, we used all its prefixes (not necessarily linguistically meaningful ones) whose length are greater than 2 as features, for all languages. 1313 as to make a fair comparison with previous works which also did not make use of external resources. For the features defined on m (i.e., φo(m)), we include only the string form of m, as well as m’s function name as features. Finally, we also define features over m only. Such features are defined over semantic unit pairs such as (ma, mb) where ma is the parent node of mb as</context>
+</contexts>
+<marker>Pedersen, Patwardhan, Michelizzi, 2004</marker>
+<rawString>Ted Pedersen, Siddharth Patwardhan, and Jason Michelizzi. 2004. Wordnet:: Similarity: measuring the relatedness of concepts. In Proc. of HLT-NAACL ’04 (Demonstration), pages 38–41.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hoifung Poon</author>
+<author>Pedro Domingos</author>
+</authors>
+<title>Unsupervised semantic parsing.</title>
+<date>2009</date>
+<booktitle>In Proc. of EMNLP ’09,</booktitle>
+<pages>1--10</pages>
+<contexts>
+<context position="10207" citStr="Poon and Domingos (2009)" startWordPosition="1520" endWordPosition="1523">s associated with a contiguous word sequence where overlappings amongst word sequences are not allowed. Jones et al. (2012) recently proposed a framework that performs semantic parsing with tree transducers. The model learns representations that are similar to the hybrid tree structures using a generative process under a Bayesian setting. Thus, their representations also potentially present similar issues as the ones mentioned above. Besides these supervised approaches, recently there are also several works that take alternative learning approaches to (mostly task-dependent) semantic parsing. Poon and Domingos (2009) proposed a model for unsupervised semantic parsing that transforms dependency trees into semantic representations using Markov logic (Richardson and Domingos, 2006). Clarke et al. (2010) proposed a model that learns a semantic parser Symbol Description n A complete natural language sentence m A complete semantic representation h A complete latent joint representation (or, a relaxed hybrid tree for our work) H(n, m) A complete set of latent joint representations that contain the (n, m) pair exactly n, na A contiguous sequence of words w, wk A natural language word m, ma A semantic unit h, ha A</context>
+<context position="33550" citStr="Poon and Domingos, 2009" startWordPosition="5543" endWordPosition="5546">puts). By adopting such an evaluation method we will be able to directly compare our model’s performance against those of the previous works. The evaluations were conducted under such a setting in order to make comparisons to previous works. We would like to stress that our model is designed for general-purpose semantic parsing that is not only natural language-independent, but also task-independent. We thus distinguish our work from several previous works in the literature which focused on semantic parsing under other assumptions. Specifically, for example, works such as (Liang et al., 2013; Poon and Domingos, 2009; Clarke et al., 2010) essentially performed semantic parsing under different settings where the goal was to optimize the performance of certain downstream NLP tasks such as answering questions, and different semantic formalisms and languagespecific features were usually involved. For all our experiments, we used the L-BFGS algorithm for learning the feature weights, where feature weights were all initialized to zeros and the regularization hyper-parameter κ was set to 0.01. We set the maximum number of L-BFGS steps to 100. When all the features are considered, our model creates over 2 million</context>
+</contexts>
+<marker>Poon, Domingos, 2009</marker>
+<rawString>Hoifung Poon and Pedro Domingos. 2009. Unsupervised semantic parsing. In Proc. of EMNLP ’09, pages 1–10.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Richardson</author>
+<author>Pedro Domingos</author>
+</authors>
+<title>Markov logic networks.</title>
+<date>2006</date>
+<booktitle>Machine learning,</booktitle>
+<pages>62--1</pages>
+<contexts>
+<context position="10372" citStr="Richardson and Domingos, 2006" startWordPosition="1544" endWordPosition="1548">performs semantic parsing with tree transducers. The model learns representations that are similar to the hybrid tree structures using a generative process under a Bayesian setting. Thus, their representations also potentially present similar issues as the ones mentioned above. Besides these supervised approaches, recently there are also several works that take alternative learning approaches to (mostly task-dependent) semantic parsing. Poon and Domingos (2009) proposed a model for unsupervised semantic parsing that transforms dependency trees into semantic representations using Markov logic (Richardson and Domingos, 2006). Clarke et al. (2010) proposed a model that learns a semantic parser Symbol Description n A complete natural language sentence m A complete semantic representation h A complete latent joint representation (or, a relaxed hybrid tree for our work) H(n, m) A complete set of latent joint representations that contain the (n, m) pair exactly n, na A contiguous sequence of words w, wk A natural language word m, ma A semantic unit h, ha A node in the relaxed hybrid tree Φ The feature vector Ok The k-th feature A The weight vector (model parameters) ak The weight for the k-th feature Ok Table 1: Notat</context>
+</contexts>
+<marker>Richardson, Domingos, 2006</marker>
+<rawString>Matthew Richardson and Pedro Domingos. 2006. Markov logic networks. Machine learning, 62(1-2):107–136.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Steedman</author>
+</authors>
+<title>Surface structure and interpretation.</title>
+<date>1996</date>
+<publisher>MIT press.</publisher>
+<contexts>
+<context position="9376" citStr="Steedman, 1996" startWordPosition="1399" endWordPosition="1400">erative process results in a hybrid tree structure which consists of words as leaves and semantic units as nodes. An example hybrid tree structure is shown in Figure 2 (a). Such a representation allows each semantic unit to map to a possibly discontiguous sequence of words. The model was shown to be effective empirically, but it implicitly assumes that both the sentence and semantics exhibit certain degree of structural similarity that allows the hybrid tree structures to be constructed. UBL (Kwiatkowski et al., 2010) is a semantic parser based on restricted higher-order unification with CCG (Steedman, 1996). The model can be used to handle both tree structured semantic representations and lambda calculus expressions, and assumes there exist CCG derivations as joint representations in which each semantic unit is associated with a contiguous word sequence where overlappings amongst word sequences are not allowed. Jones et al. (2012) recently proposed a framework that performs semantic parsing with tree transducers. The model learns representations that are similar to the hybrid tree structures using a generative process under a Bayesian setting. Thus, their representations also potentially present</context>
+</contexts>
+<marker>Steedman, 1996</marker>
+<rawString>Mark Steedman. 1996. Surface structure and interpretation. MIT press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joseph Turian</author>
+<author>Lev Ratinov</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Word representations: A simple and general method for semi-supervised learning.</title>
+<date>2010</date>
+<booktitle>In Proc. of ACL ’10,</booktitle>
+<pages>384--394</pages>
+<marker>Turian, Ratinov, Bengio, 2010</marker>
+<rawString>Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010. Word representations: A simple and general method for semi-supervised learning. In Proc. of ACL ’10, pages 384–394.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuk Wah Wong</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Learning for semantic parsing with statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proc. of HLT/NAACL ’06,</booktitle>
+<pages>439--446</pages>
+<contexts>
+<context position="2060" citStr="Wong and Mooney, 2006" startWordPosition="297" endWordPosition="300">underlying semantics, is one of the classic goals for natural language processing and artificial intelligence. This area of research recently has received a significant amount of attention. Various models have been proposed over the past few years (Zettlemoyer and Collins, 2005; Kate and QUERY: answer(RIVER) RIVER: exclude(RIVER, RIVER) RIVER: river(all) RIVER: traverse(STATE) STATE: stateid(STATENAME) STATENAME : (&apos;tn&apos;) What rivers do not run through Tennessee ? Figure 1: An example tree-structured semantic representation (above) and its corresponding natural language sentence. Mooney, 2006; Wong and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). Following previous research efforts, we perform semantic parsing under a setting where the semantics for complete sentences are provided as training data, but detailed word-level semantic information is not explicitly given during the training phase. As one example, consider the following natural language sentence paired with its corresponding semantic representation: What rivers do not run through Tennessee ? answer(exclude(river(all), traverse(stateid(&apos;tn&apos;)))) The training data consists of a set of sentences paired with semantic representations. Our go</context>
+<context position="3655" citStr="Wong and Mooney, 2006" startWordPosition="530" endWordPosition="533">he above semantics can be converted into an equivalent tree structure as illustrated in Figure 1. We will provide more details about such tree structured semantic representations in Section 2.1. 1308 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1308–1318, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics Currently, most state-of-the-art approaches that deal with such tree structured semantic representations either cast the semantic parsing problem as a statistical string-to-string transformation problem (Wong and Mooney, 2006), which ignores the potentially useful structural information of the tree, or employ latent-variable models to capture the correspondences between words and tree nodes using a generative approach (Lu et al., 2008; Jones et al., 2012). While generative models can be used to flexibly model the correspondences between individual words and semantic nodes of the tree, such an approach is limited to modeling local dependencies and is unable to flexibly incorporate a large set of potentially useful features. In this work, we propose a novel model for parsing natural language into tree structured sema</context>
+<context position="5447" citStr="Wong and Mooney, 2006" startWordPosition="788" endWordPosition="791">ns on semantic parsing in this work, our proposed model is a general. Essentially our model is a discriminative string-to-tree model which recursively maps overlapping contiguous word sequences to tree nodes at different levels, where efficient dynamic programming algorithms can be used. Such a model may find applications in other areas of natural language processing, such as statistical machine translation and information extraction. 2 Background 2.1 Semantics Various semantic formalisms have been considered for semantic parsing. Examples include the tree-structured semantic representations (Wong and Mooney, 2006), the lambda calculus expressions (Zettlemoyer and Collins, 2005; Wong and Mooney, 2007), and dependency-based compositional semantic representations (Liang et al., 2013). In this work, we specifically focus on the tree-structured representations for semantics. Each semantic representation consists of semantic units as its tree nodes, where each semantic unit is of the following form: ma ≡ Ta : pα(Tb*) (1) Here ma is used to denote a complete semantic unit, which consists of its semantic type Ta, its function symbol pα, as well as an argument list Tb* (we assume there are at most two arguments</context>
+<context position="6969" citStr="Wong and Mooney, 2006" startWordPosition="1029" endWordPosition="1032">and a single argument type RIVER. 2.2 Joint Representations Semantic parsing models transform sentences into their corresponding semantics. It is therefore essential to make proper assumptions about joint representations for language and semantics that capture how individual words and atomic semantic units connect to each other. Typically, different existing models employ different assumptions for establishing such connections, leading to very different definitions of joint representations. We survey in this section various representations proposed by previous works. The WASP semantic parser (Wong and Mooney, 2006) essentially casts the semantic parsing problem as a string-to-string transformation problem by employing a statistical phrase-based machine translation approach with synchronous grammars (Chiang, 2007). Therefore, one can think of the joint representation for both language and semantics as a synchronous derivation tree consisting of those derivation steps for transforming sentences into target semantic representation strings. While this joint representation is flexible, allowing blocks of semantic structures to map to word sequences, it does not fully exploit the structural information (tree)</context>
+<context position="30232" citStr="Wong and Mooney, 2006" startWordPosition="5005" endWordPosition="5008">to the dynamic programming algorithm used for computing the inside score for a given natural language sentence n (i.e., the algorithm for computing the second term of Equation (6)). The difference here is, at each intermediate step, instead of computing the combined score for all possible relaxed hybrid tree structures (i.e., performing sum), we find the single-best relaxed hybrid tree structure (i.e., performing max). 5 Experiments We present evaluations on the standard GeoQuery dataset which is publicly available. This dataset has been used for evaluations in various semantic parsing works (Wong and Mooney, 2006; Kate and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). It consists of 880 natural language sentences paired with their corresponding formal semantic representations. Each semantic representation is a tree structured representation derived from a Prolog query that can be used to interact with a database of U.S. geography facts for retrieving answers. The original dataset was fully annotated in English, and recently Jones et al. (2012) released a new version of this dataset with three additional language annotations (German, Greek and Thai). For all the experiments, we used the identical</context>
+</contexts>
+<marker>Wong, Mooney, 2006</marker>
+<rawString>Yuk Wah Wong and Raymond J. Mooney. 2006. Learning for semantic parsing with statistical machine translation. In Proc. of HLT/NAACL ’06, pages 439–446.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuk Wah Wong</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Learning synchronous grammars for semantic parsing with lambda calculus.</title>
+<date>2007</date>
+<booktitle>In Proc. of ACL ’07.</booktitle>
+<contexts>
+<context position="5535" citStr="Wong and Mooney, 2007" startWordPosition="801" endWordPosition="804">del is a discriminative string-to-tree model which recursively maps overlapping contiguous word sequences to tree nodes at different levels, where efficient dynamic programming algorithms can be used. Such a model may find applications in other areas of natural language processing, such as statistical machine translation and information extraction. 2 Background 2.1 Semantics Various semantic formalisms have been considered for semantic parsing. Examples include the tree-structured semantic representations (Wong and Mooney, 2006), the lambda calculus expressions (Zettlemoyer and Collins, 2005; Wong and Mooney, 2007), and dependency-based compositional semantic representations (Liang et al., 2013). In this work, we specifically focus on the tree-structured representations for semantics. Each semantic representation consists of semantic units as its tree nodes, where each semantic unit is of the following form: ma ≡ Ta : pα(Tb*) (1) Here ma is used to denote a complete semantic unit, which consists of its semantic type Ta, its function symbol pα, as well as an argument list Tb* (we assume there are at most two arguments for each semantic unit). In other words, each semantic unit can be regarded as a functi</context>
+<context position="19433" citStr="Wong and Mooney, 2007" startWordPosition="3133" endWordPosition="3136">th all its parent semantic units as well. Essentially, our representation allows us to capture certain unbounded dependencies – for any word, as long as it appears below a certain semantic unit (in the relaxed hybrid tree), we can always capture the dependency between the two, regardless of which actual semantic unit that word is immediately associated with. Such an important relaxation allows some longdistance dependencies to be captured, which can potentially alleviate the sentence-semantics nonisomorphism issue reported in several earlier semantic parsing works (Kate and Mooney, 2006; 1312 Wong and Mooney, 2007). To better illustrate the differences, we show a concrete example in Figure 3, where the correct latent structure showing the correspondences between words and semantic units can not be found with the hybrid tree model. As a result, the hybrid tree model will fail to capture the correct dependency between the words “how many” and the semantic unit “NUM : count(STATE)”. On the other hand, with our relaxed hybrid tree representation, such a dependency can still be captured, since these words will still be (remotely) associated with the semantic unit. Such a relaxed hybrid tree representation, w</context>
+</contexts>
+<marker>Wong, Mooney, 2007</marker>
+<rawString>Yuk Wah Wong and Raymond J Mooney. 2007. Learning synchronous grammars for semantic parsing with lambda calculus. In Proc. of ACL ’07.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Luke S Zettlemoyer</author>
+<author>Michael Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In Proc. of UAI ’05.</booktitle>
+<contexts>
+<context position="1717" citStr="Zettlemoyer and Collins, 2005" startWordPosition="252" endWordPosition="255"> model is shown to be competitive to previous works and achieves state-of-theart performance on standard benchmark data across four different languages. The system and code can be downloaded from http://statnlp.org/research/sp/. 1 Introduction Semantic parsing, the task of transforming natural language sentences into formal representations of their underlying semantics, is one of the classic goals for natural language processing and artificial intelligence. This area of research recently has received a significant amount of attention. Various models have been proposed over the past few years (Zettlemoyer and Collins, 2005; Kate and QUERY: answer(RIVER) RIVER: exclude(RIVER, RIVER) RIVER: river(all) RIVER: traverse(STATE) STATE: stateid(STATENAME) STATENAME : (&apos;tn&apos;) What rivers do not run through Tennessee ? Figure 1: An example tree-structured semantic representation (above) and its corresponding natural language sentence. Mooney, 2006; Wong and Mooney, 2006; Lu et al., 2008; Jones et al., 2012). Following previous research efforts, we perform semantic parsing under a setting where the semantics for complete sentences are provided as training data, but detailed word-level semantic information is not explicitly</context>
+<context position="5511" citStr="Zettlemoyer and Collins, 2005" startWordPosition="797" endWordPosition="800">s a general. Essentially our model is a discriminative string-to-tree model which recursively maps overlapping contiguous word sequences to tree nodes at different levels, where efficient dynamic programming algorithms can be used. Such a model may find applications in other areas of natural language processing, such as statistical machine translation and information extraction. 2 Background 2.1 Semantics Various semantic formalisms have been considered for semantic parsing. Examples include the tree-structured semantic representations (Wong and Mooney, 2006), the lambda calculus expressions (Zettlemoyer and Collins, 2005; Wong and Mooney, 2007), and dependency-based compositional semantic representations (Liang et al., 2013). In this work, we specifically focus on the tree-structured representations for semantics. Each semantic representation consists of semantic units as its tree nodes, where each semantic unit is of the following form: ma ≡ Ta : pα(Tb*) (1) Here ma is used to denote a complete semantic unit, which consists of its semantic type Ta, its function symbol pα, as well as an argument list Tb* (we assume there are at most two arguments for each semantic unit). In other words, each semantic unit can</context>
+<context position="13676" citStr="Zettlemoyer and Collins, 2005" startWordPosition="2111" endWordPosition="2114">t m (the words which appear inside the parenthesis), or remotely associated with m (the words that do not appear inside the parenthesis, and will also appear under a subtree rooted by one of m’s children). latent joint representations that contain both n and m exactly. Given the joint representations, to model how the data is generated, one can either take a generative approach which models the joint probability distribution over (n, m, h) tuples, or a discriminative approach which models the distribution over (m, h) tuples given the observation n. Following several previous research efforts (Zettlemoyer and Collins, 2005; Kwiatkowski et al., 2010; Liang et al., 2013), in this work we define a discriminative model using a log-linear approach: P(m, h|n; A) = eΛ·Φ(,0 h0) (2) Pm , (n,m nm 0 0∈H 0 ) Here Φ(n, m, h) is a function defined over the tuple (n, m, h) that returns a vector consisting of counts of features associated with the tuple, and A is a vector consisting of feature weights, which are the parameters of the model. In practice, we are only given the n-m pairs but the latent structures are not observed. We therefore consider the following marginal probability: P(m|n; A) = X P(m, h|n; A) h∈H(n,m) = P h∈</context>
+<context position="31309" citStr="Zettlemoyer and Collins, 2005" startWordPosition="5175" endWordPosition="5178">eleased a new version of this dataset with three additional language annotations (German, Greek and Thai). For all the experiments, we used the identical experimental setup as described in Jones et al. (2012). Specifically, we trained on 600 instances, and evaluated on the remaining 280. We note that there exist two different versions of the GeoQuery dataset annotated with completely different semantic representations. Besides the version that we use in this work, which is annotated with tree structured semantic representations, the other version is annotated with lambda calculus expressions (Zettlemoyer and Collins, 2005). Results obtained from these two versions are not comparable.4 Like many previous works, we focus on tree structured semantic representations for evaluations in this work since our model is designed for handling the class of semantic representations with recursive tree structures. We used the standard evaluation criteria for judging the correctness of the outputs. Specifically, our system constructs Prolog queries from the output parses, and uses such queries to retrieve answers from the GeoQuery database. An output is considered correct if and only if it retrieves the 4Kwiatkowski et al. (20</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Luke S Zettlemoyer and Michael Collins. 2005. Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In Proc. of UAI ’05.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Junsheng Zhou</author>
+<author>Juhong Xu</author>
+<author>Weiguang Qu</author>
+</authors>
+<title>Efficient latent structural perceptron with hybrid trees for semantic parsing. In</title>
+<date>2013</date>
+<booktitle>IJCAI,</booktitle>
+<pages>2246--2252</pages>
+<contexts>
+<context position="39584" citStr="Zhou et al., 2013" startWordPosition="6496" endWordPosition="6499"> to the feature-based CRF parser (Finkel et al., 2008), but is slightly more complex due to latent structures. Developed on top of our novel relaxed hybrid tree representations, our model allows certain long-distance dependencies to be captured. We also present efficient algorithms for learning and decoding. Experiments on benchmark data show that our model is competitive to previous works and achieves the state-of-the-art performance across several different languages. Future works include development of efficient algorithms for feature-based semantic parsing with alternative loss functions (Zhou et al., 2013), development of feature-based language generation models (Lu et al., 2009; Lu and Ng, 2011) and multilingual semantic parsers (Jie and Lu, 2014), as well as the development of efficient semantic parsing algorithms for optimizing the performance of certain downstream NLP tasks with less supervision (Clarke et al., 2010; Liang et al., 2013). Being able to efficiently exploit features defined over individual words, our model also opens up the possibility for us to exploit alternative representations of words for learning (Turian et al., 2010), or to perform joint learning of both distributional </context>
+</contexts>
+<marker>Zhou, Xu, Qu, 2013</marker>
+<rawString>Junsheng Zhou, Juhong Xu, and Weiguang Qu. 2013. Efficient latent structural perceptron with hybrid trees for semantic parsing. In IJCAI, pages 2246– 2252.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

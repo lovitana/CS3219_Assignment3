@@ -1,0 +1,691 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.007508">
+<title confidence="0.991972">
+Aligning English Strings with Abstract Meaning Representation Graphs
+</title>
+<author confidence="0.997171">
+Nima Pourdamghani, Yang Gao, Ulf Hermjakob, Kevin Knight
+</author>
+<affiliation confidence="0.998217666666667">
+Information Sciences Institute
+Department of Computer Science
+University of Southern California
+</affiliation>
+<email confidence="0.999386">
+{damghani,yanggao,ulf,knight}@isi.edu
+</email>
+<sectionHeader confidence="0.997397" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9986712">
+We align pairs of English sentences and
+corresponding Abstract Meaning Repre-
+sentations (AMR), at the token level. Such
+alignments will be useful for downstream
+extraction of semantic interpretation and
+generation rules. Our method involves
+linearizing AMR structures and perform-
+ing symmetrized EM training. We obtain
+86.5% and 83.1% alignment F score on de-
+velopment and test sets.
+</bodyText>
+<sectionHeader confidence="0.999389" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9997716875">
+Banarescu et al. (2013) describe a semantics bank
+of English sentences paired with their logical
+meanings, written in Abstract Meaning Represen-
+tation (AMR). The designers of AMR leave open
+the question of how meanings are derived from
+English sentences (and vice-versa), so there are
+no manually-annotated alignment links between
+English words and AMR concepts. This paper
+studies how to build such links automatically, us-
+ing co-occurrence and other information. Auto-
+matic alignments may be useful for downstream
+extraction of semantic interpretation and genera-
+tion rules.
+AMRs are directed, acyclic graphs with labeled
+edges, e.g., the sentence The boy wants to go is
+represented as:
+</bodyText>
+<equation confidence="0.996126">
+(w / want-01
+:arg0 (b / boy)
+:arg1 (g / go-01
+:arg0 b))
+</equation>
+<bodyText confidence="0.999739">
+We have hand-aligned a subset of the 13,050
+available AMR/English pairs. We evaluate our
+automatic alignments against this gold standard.
+A sample hand-aligned AMR is here (“˜n” speci-
+fies a link to the nth English word):
+</bodyText>
+<equation confidence="0.8289704">
+the boy wants to go
+(w / want-01&amp;quot;3
+:arg0 (b / boy&amp;quot;2)
+:arg1 (g / go-01&amp;quot;5
+:arg0 b))
+</equation>
+<bodyText confidence="0.999820361111111">
+This alignment problem resembles that of statisti-
+cal machine translation (SMT). It is easier in some
+ways, because AMR and English are highly cog-
+nate. It is harder in other ways, as AMR is graph-
+structured, and children of an AMR node are un-
+ordered. There are also fewer available training
+pairs than in SMT.
+One approach is to define a generative model
+from AMR graphs to strings. We can then use
+EM to uncover hidden derivations, which align-
+ments weakly reflect. This approach is used in
+string/string SMT (Brown et al., 1993). How-
+ever, we do not yet have such a generative graph-
+to-string model, and even if we did, there might
+not be an efficient EM solution. For exam-
+ple, in syntax-based SMT systems (Galley et al.,
+2004), the generative tree/string transduction story
+is clear, but in the absence of alignment con-
+straints, there are too many derivations and rules
+for EM to efficiently consider.
+We therefore follow syntax-based SMT custom
+and use string/string alignment models in align-
+ing our graph/string pairs. However, while it is
+straightforward to convert syntax trees into strings
+data (by taking yields), it is not obvious how to do
+this for unordered AMR graph elements. The ex-
+ample above also shows that gold alignment links
+reach into the internal nodes of AMR.
+Prior SMT work (Jones et al., 2012) describes
+alignment of semantic graphs and strings, though
+their experiments are limited to the GeoQuery do-
+main, and their methods are not described in de-
+tail. Flanigan et al (2014) describe a heuristic
+AMR/English aligner. While heuristic aligners
+can achieve good accuracy, they will not automat-
+ically improve as more AMR/English data comes
+</bodyText>
+<page confidence="0.983977">
+425
+</page>
+<bodyText confidence="0.70813925">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 425–429,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+online.
+The contributions of this paper are:
+</bodyText>
+<listItem confidence="0.999778571428571">
+• A set of gold, manually-aligned
+AMR/English pairs.
+• An algorithm for automatically aligning
+AMR/English pairs.
+• An empirical study establishing alignment
+accuracy of 86.5% and 83.1% F score for de-
+velopment and test sets respectively.
+</listItem>
+<sectionHeader confidence="0.930269" genericHeader="introduction">
+2 Method
+</sectionHeader>
+<bodyText confidence="0.999987692307692">
+We divide the description of our method into three
+parts: preprocessing, training, and postprocessing.
+In the preprocessing phase, we linearize the AMR
+graphs to change them into strings, clean both the
+AMR and English sides by removing stop words
+and simple stemming, and add a set of correspond-
+ing AMR/English token pairs to the corpus to help
+the training phase. The training phase is based
+on IBM models, but we modify the learning algo-
+rithm to learn the parameters symmetrically. Fi-
+nally, in the postprocessing stage we rebuild the
+aligned AMR graph. These components are de-
+scribed in more detail below.
+</bodyText>
+<subsectionHeader confidence="0.995846">
+2.1 Preprocessing
+</subsectionHeader>
+<bodyText confidence="0.999995666666667">
+The first step of the preprocessing component is to
+linearize the AMR structure into a string. In this
+step we record the original structure of nodes in
+the graph for later reconstruction of AMR. AMR
+has a rooted graph structure. To linearize this
+graph we run a depth first search from the root and
+print each node as soon as it it visited. We print
+but not expand the nodes that are seen previously.
+For example the AMR:
+</bodyText>
+<equation confidence="0.9993525">
+(w / want-01
+:arg0 (b / boy)
+:arg1 (g / go-01
+:arg0 b))
+</equation>
+<bodyText confidence="0.998159678571429">
+is linearized into this order: w / want-01 :arg0 b /
+boy :arg1 g / go-01 :arg0 b.
+Note that semantically related nodes often stay
+close together after linearization.
+After linearizing the AMR graph into a string,
+we perform a series of preprocessing steps includ-
+ing lowercasing the letters, removing stop words,
+and stemming.
+The AMR and English stop word lists are gen-
+erated based on our knowledge of AMR design.
+We know that tokens like an, the or to be verbs
+will very rarely align to any AMR token; similarly,
+AMR role tokens like :arg0, :quant, :opt1 etc. as
+well as the instance-of token /, and tokens like
+temporal-quantity or date-entity rarely align to any
+English token. We remove these tokens from the
+parallel corpus, but remember their position to be
+able to convert the resulting string/string align-
+ment back into a full AMR graph/English string
+alignment. Although some stopwords participate
+in gold alignments, by removing them we will buy
+a large precision gain for some recall cost.
+We remove the word sense indicator and quo-
+tation marks for AMR concepts. For instance we
+will change want-01 to want and “ohio” to ohio.
+Then we stem AMR and English tokens into their
+first four letters, except for role tokens in AMR.
+The purpose of stemming is to normalize English
+morphological variants so that they are easier to
+match to AMR tokens. For example English to-
+kens wants, wanting, wanted, and want as well as
+the AMR token want-01 will all convert to want
+after removing the AMR word sense indicator and
+stemming.
+In the last step of preprocessing, we benefit
+from the fact that AMR concepts and their cor-
+responding English ones are frequently cognates.
+Hence, after stemming, an AMR token often can
+be translated to a token spelled similarly in En-
+glish. This is the case for English token want and
+AMR token want in the previous paragraph. To
+help the training model learn from this fact, we
+extend our sentence pair corpus with the set of
+AMR/English token pairs that are spelled identi-
+cally after preprocessing. Also, for English tokens
+that can be translated into multiple AMR tokens,
+like higher and high :degree more we add the cor-
+responding string/string pairs to the corpus. This
+set is extracted from existing lexical resources, in-
+cluding lists of comparative/superlative adjectives,
+negative words, etc.
+After preprocessing, the AMR at the start of
+this section will change into: want boy go and
+the sentence The boy wants to go changes into boy
+want to go, and we will also add the identity pairs
+want/want, boy/boy, and go/go to the corpus.
+</bodyText>
+<subsectionHeader confidence="0.995536">
+2.2 Training
+</subsectionHeader>
+<bodyText confidence="0.999799666666667">
+Our training method is based on IBM word align-
+ment models (Brown et al., 1993). We modify
+the objective functions of the IBM models to en-
+</bodyText>
+<page confidence="0.996262">
+426
+</page>
+<bodyText confidence="0.997346535714286">
+courage agreement between learning parameters
+in English-to-AMR and AMR-to-English direc-
+tions of EM. The solution of this objective func-
+tion can be approximated in an extremely simple
+way that requires almost no extra coding effort.
+Assume that we have a set of sentence pairs
+{(E, A)}, where each E is an English sentence
+and each A is a linearized AMR. According to
+IBM models, A is generated from E through a
+generative story based on some parameters.
+For example, in IBM Model 2, given E we
+first decide the length of A based on some prob-
+ability l = p(len(A)|len(E)), then we decide
+the distortions based on a distortion table: d =
+p(i|j, len(A), len(E)). Finally, we translate En-
+glish tokens into AMR ones based on a translation
+table t = p(a|e) where a and e are AMR and En-
+glish tokens respectively.
+IBM models estimate these parameters to max-
+imize the conditional likelihood of the data:
+BA|E = argmaxLOA|E(A|E) or BE|A =
+argmaxLOE|A(E|A) where B denotes the set of
+parameters. The conditional likelihood is intrinsic
+to the generative story of IBM models. However,
+word alignment is a symmetric problem. Hence it
+is more reasonable to estimate the parameters in a
+more symmetric manner.
+Our objective function in the training phase is:
+</bodyText>
+<equation confidence="0.6215375">
+BA|E, BE|A = argmaxLOA|E(A|E)+LOE|A(E|A)
+subject to BA|EBE = BE|ABA = BA,E
+</equation>
+<bodyText confidence="0.9997216">
+We approximate the solution of this objective
+function with almost no change to the existing
+implementation of the IBM models. We relax
+the constraint to BA|E = BE|A, then apply the
+following iterative process:
+</bodyText>
+<listItem confidence="0.998188625">
+1. Optimize the first part of the objective func-
+tion: BA|E = argmaxLOA|E(A|E) using EM
+2. Satisfy the constraint: set BE|A a BA|E
+3. Optimize the second part of the objective
+function: BE|A = argmaxLOE|A(E|A)
+using EM
+4. Satisfy the constraint: set BA|E a BE|A
+5. Iterate
+</listItem>
+<bodyText confidence="0.999524516129032">
+Note that steps 1 and 3 are nothing more than
+running the IBM models, and steps 2 and 4 are
+just initialization of the EM parameters, using ta-
+bles from the previous iteration. The initialization
+steps only make sense for the parameters that in-
+volve both sides of the alignment (i.e., the transla-
+tion table and the distortion table). For the trans-
+lation table we set tE|A(e|a) = tA|E(a|e) for En-
+glish and AMR tokens e and a and then normalize
+the t table. The distortion table can also be initial-
+ized in a similar manner. We initialize the fertility
+table with its value in the previous iteration.
+Previously Liang et al. (2006) also presented a
+symmetric method for training alignment parame-
+ters. Similar to our work, their objective function
+involves summation of conditional likelihoods in
+both directions; however, their constraint is on
+agreement between predicted alignments while we
+directly focus on agreement between the parame-
+ters themselves. Moreover their method involves a
+modification of the E step of EM algorithm which
+is very hard to implement for IBM Model 3 and
+above.
+After learning the parameters, alignments are
+computed using the Viterbi algorithm in both di-
+rections of the IBM models. We tried merging
+the alignments of the two directions using meth-
+ods like grow-diag-final heuristic or taking inter-
+section of the alignments and adding some high
+probability links in their union. But these methods
+did not help the alignment accuracy.
+</bodyText>
+<subsectionHeader confidence="0.99896">
+2.3 Postprocessing
+</subsectionHeader>
+<bodyText confidence="0.999984428571428">
+The main goal of the postprocessing component is
+to rebuild the aligned AMR graph. We first insert
+words removed as stop words into their positions,
+then rebuild the graph using the recorded original
+structure of the nodes in the AMR graph.
+We also apply a last modification to the align-
+ments in the postprocessing. Observing that pairs
+like worker and person :arg0-of work-01 appear
+frequently, and in all such cases, all the AMR to-
+kens align to the English one, whenever we see
+any of AMR tokens person, product, thing or com-
+pany is followed by arg0-of, arg1-of or arg2-of
+followed by an AMR concept, we align the two
+former tokens to what the concept is aligned to.
+</bodyText>
+<sectionHeader confidence="0.999897" genericHeader="method">
+3 Experiments
+</sectionHeader>
+<subsectionHeader confidence="0.99991">
+3.1 Data Description
+</subsectionHeader>
+<bodyText confidence="0.9585175">
+Our data consists of 13,050 publicly available
+AMR/English sentence pairs1. We have hand
+</bodyText>
+<footnote confidence="0.9965745">
+1LDC AMR release 1.0, Release date: June 16, 2014
+https://catalog.ldc.upenn.edu/LDC2014T12
+</footnote>
+<page confidence="0.997169">
+427
+</page>
+<bodyText confidence="0.9996335">
+aligned 200 of these pairs to be used as develop-
+ment and test sets2. We train the parameters on
+the whole data. Table 1 presents a description of
+the data. We do not count parenthesis, slash and
+AMR variables as AMR tokens. Role tokens are
+those AMR tokens that start with a colon. They
+do not represent any concept, but provide a link
+between concepts. For example in:
+</bodyText>
+<equation confidence="0.99815975">
+(w / want-01
+:arg0 (b / boy)
+:arg1 (g / go-01
+:arg0 b))
+</equation>
+<bodyText confidence="0.973304">
+the first :arg0 states that the first argument of the
+concept wanting is the boy and the second argu-
+ment is going.
+</bodyText>
+<table confidence="0.9573812">
+train dev test
+Sent. pairs 13050 100 100
+AMR tokens 465 K 3.8 K (52%) 2.3 K (%55)
+AMR role tokens 226 K 1.9 K (23%) 1.1 K (%22)
+ENG tokens 248 K 2.3 K (76%) 1.7 K (%74)
+</table>
+<tableCaption confidence="0.987052">
+Table 1: AMR/English corpus. The number in
+</tableCaption>
+<bodyText confidence="0.97453175">
+parentheses is the percent of the tokens aligned in
+gold annotation. Almost half of AMR tokens are
+role tokens, and less than a quarter of role tokens
+are aligned.
+</bodyText>
+<subsectionHeader confidence="0.999867">
+3.2 Experiment Results
+</subsectionHeader>
+<bodyText confidence="0.925927954545454">
+We use MGIZA++ (Gao and Vogel, 2008) as
+the implementation of the IBM models. We run
+Model 1 and HMM for 5 iterations each, then run
+our training algorithm on Model 4 for 4 iterations,
+at which point the alignments become stable. As
+alignments are usually many to one from AMR to
+English, we compute the alignments from AMR to
+English in the final step.
+Table 2 shows the alignment accuracy for
+Model 1, HMM, Model 4, and Model 4 plus the
+modification described in section 2.2 (Model 4+).
+The alignment accuracy on the test set is lower
+than the development set mainly because it is in-
+trinsically a harder set, as we only made small
+modifications to the system based on the develop-
+ment set. Recall error due to stop words is one
+difference.
+2The development and test AMR/English pairs can be
+found in /data/split/dev/amr-release-1.0-dev-consensus.txt
+and /data/split/test/amr-release-1.0-test-consensus.txt, re-
+spectively. The gold alignments are not included in these
+files but are available separately.
+</bodyText>
+<table confidence="0.977473">
+model precision recall F score
+Dev Model 1 70.9 71.1 71.0
+HMM 87.6 80.1 83.7
+Model 4 89.7 80.4 84.8
+Model 4+ 94.1 80.0 86.5
+Test Model 1 74.8 71.8 73.2
+HMM 83.8 73.8 78.5
+Model 4 85.8 74.9 80.0
+Model 4+ 92.4 75.6 83.1
+</table>
+<tableCaption confidence="0.78215175">
+Table 2: Results on different models. Our training
+method (Model 4+) increases the F score by 1.7
+and 3.1 points on dev and test sets respectively.
+Table 3 breaks down precision, recall, and
+F score for role and non-role AMR tokens, and
+also shows in parentheses the amount of recall er-
+ror that was caused by removing either side of the
+alignment as a stop word.
+</tableCaption>
+<table confidence="0.998948142857143">
+token type precision recall F score
+Dev role 77.1 48.7 59.7
+non-role 97.2 88.2 92.5
+all 94.1 80.0 (34%) 86.5
+Test role 71.0 37.8 49.3
+non-role 95.5 84.7 89.8
+all 92.4 75.6 (36%) 83.1
+</table>
+<tableCaption confidence="0.998781">
+Table 3: Results breakdown into role and non-
+</tableCaption>
+<bodyText confidence="0.9882001">
+role AMR tokens. The numbers in the parentheses
+show the percent of recall errors caused by remov-
+ing aligned tokens as stop words.
+While the alignment method works very well on
+non-role tokens, it works poorly on the role tokens.
+Role tokens are sometimes matched with a word
+or part of a word in the English sentence. For ex-
+ample :polarity is matched with the un part of the
+word unpopular, :manner is matched with most
+adverbs, or even in the pair:
+</bodyText>
+<equation confidence="0.92349175">
+thanks
+(t / thank-01
+:arg0 (i / i)
+:arg1 (y / you))
+</equation>
+<bodyText confidence="0.99824575">
+all AMR tokens including :arg0 and :arg1 are
+matched to the only English word thanks. Incon-
+sistency in aligning role tokens has made this a
+hard problem even for human experts.
+</bodyText>
+<page confidence="0.99841">
+428
+</page>
+<sectionHeader confidence="0.998795" genericHeader="conclusions">
+4 Conclusions and Future Work
+</sectionHeader>
+<bodyText confidence="0.999722625">
+In this paper we present the first set of manually
+aligned English/AMR pairs, as well as the first
+published system for learning the alignments be-
+tween English sentences and AMR graphs that
+provides a strong baseline for future research in
+this area. As the proposed system learns the
+alignments automatically using very little domain
+knowledge, it can be applied in any domain and
+for any language with minor adaptations.
+Computing the alignments between English
+sentences and AMR graphs is a first step for ex-
+traction of semantic interpretation and generation
+rules. Hence, a natural extension to this work
+will be automatically parsing English sentences
+into AMR and generating English sentences from
+AMR.
+</bodyText>
+<sectionHeader confidence="0.999503" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999929">
+This work was supported by DARPA con-
+tracts HR0011-12-C-0014 and FA-8750-13-2-
+0045. The authors would like to thank David Chi-
+ang, Tomer Levinboim, and Ashish Vaswani (in
+no particular order) for their comments and sug-
+gestions.
+</bodyText>
+<sectionHeader confidence="0.999456" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999888107142857">
+Laura Banarescu, Claire Bonial, Shu Cai, Madalina
+Georgescu, Kira Griffitt, Ulf Hermjakob, Kevin
+Knight, Philipp Koehn, Martha Palmer, and Nathan
+Schneider. 2013. Abstract meaning representation
+for sembanking. In Linguistic Annotation Workshop
+(LAW VII-ID), ACL.
+Peter F. Brown, Vincent J. Della Pietra, Stephen
+A. Della Pietra, and Robert L. Mercer. 1993.
+The mathematics of statistical machine translation:
+Parameter estimation. Computational linguistics,
+19(2):263–311.
+Jeffrey Flanigan, Sam Thomson, Jaime Carbonell,
+Chris Dyer, and Noah A. Smith. 2014. A discrim-
+inative graph-based parser for the abstract meaning
+representation. In ACL.
+Michel Galley, Mark Hopkins, Kevin Knight, and
+Daniel Marcu. 2004. What’s in a translation rule?
+In HLT-NAACL.
+Qin Gao and Stephan Vogel. 2008. Parallel implemen-
+tations of word alignment tool. In Software Engi-
+neering, Testing, and Quality Assurance for Natural
+Language Processing Workshop, ACL.
+Bevan Jones, Jacob Andreas, Daniel Bauer,
+Karl Moritz Hermann, and Kevin Knight. 2012.
+Semantics-based machine translation with hyper-
+edge replacement grammars. In COLING.
+Percy Liang, Ben Taskar, and Dan Klein. 2006. Align-
+ment by agreement. In HLT-NAACL.
+</reference>
+<page confidence="0.999243">
+429
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.930970">
+<title confidence="0.999855">Aligning English Strings with Abstract Meaning Representation Graphs</title>
+<author confidence="0.992082">Nima Pourdamghani</author>
+<author confidence="0.992082">Yang Gao</author>
+<author confidence="0.992082">Ulf Hermjakob</author>
+<author confidence="0.992082">Kevin</author>
+<affiliation confidence="0.997831333333333">Information Sciences Department of Computer University of Southern</affiliation>
+<abstract confidence="0.994696">We align pairs of English sentences and corresponding Abstract Meaning Representations (AMR), at the token level. Such alignments will be useful for downstream extraction of semantic interpretation and generation rules. Our method involves linearizing AMR structures and performing symmetrized EM training. We obtain 86.5% and 83.1% alignment F score on development and test sets.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Laura Banarescu</author>
+<author>Claire Bonial</author>
+<author>Shu Cai</author>
+<author>Madalina Georgescu</author>
+<author>Kira Griffitt</author>
+<author>Ulf Hermjakob</author>
+<author>Kevin Knight</author>
+<author>Philipp Koehn</author>
+<author>Martha Palmer</author>
+<author>Nathan Schneider</author>
+</authors>
+<title>Abstract meaning representation for sembanking.</title>
+<date>2013</date>
+<booktitle>In Linguistic Annotation Workshop (LAW VII-ID), ACL.</booktitle>
+<contexts>
+<context position="688" citStr="Banarescu et al. (2013)" startWordPosition="88" endWordPosition="91">phs Nima Pourdamghani, Yang Gao, Ulf Hermjakob, Kevin Knight Information Sciences Institute Department of Computer Science University of Southern California {damghani,yanggao,ulf,knight}@isi.edu Abstract We align pairs of English sentences and corresponding Abstract Meaning Representations (AMR), at the token level. Such alignments will be useful for downstream extraction of semantic interpretation and generation rules. Our method involves linearizing AMR structures and performing symmetrized EM training. We obtain 86.5% and 83.1% alignment F score on development and test sets. 1 Introduction Banarescu et al. (2013) describe a semantics bank of English sentences paired with their logical meanings, written in Abstract Meaning Representation (AMR). The designers of AMR leave open the question of how meanings are derived from English sentences (and vice-versa), so there are no manually-annotated alignment links between English words and AMR concepts. This paper studies how to build such links automatically, using co-occurrence and other information. Automatic alignments may be useful for downstream extraction of semantic interpretation and generation rules. AMRs are directed, acyclic graphs with labeled edg</context>
+</contexts>
+<marker>Banarescu, Bonial, Cai, Georgescu, Griffitt, Hermjakob, Knight, Koehn, Palmer, Schneider, 2013</marker>
+<rawString>Laura Banarescu, Claire Bonial, Shu Cai, Madalina Georgescu, Kira Griffitt, Ulf Hermjakob, Kevin Knight, Philipp Koehn, Martha Palmer, and Nathan Schneider. 2013. Abstract meaning representation for sembanking. In Linguistic Annotation Workshop (LAW VII-ID), ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter F Brown</author>
+<author>Vincent J Della Pietra</author>
+<author>Stephen A Della Pietra</author>
+<author>Robert L Mercer</author>
+</authors>
+<title>The mathematics of statistical machine translation: Parameter estimation.</title>
+<date>1993</date>
+<journal>Computational linguistics,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="2236" citStr="Brown et al., 1993" startWordPosition="348" endWordPosition="351">sh word): the boy wants to go (w / want-01&amp;quot;3 :arg0 (b / boy&amp;quot;2) :arg1 (g / go-01&amp;quot;5 :arg0 b)) This alignment problem resembles that of statistical machine translation (SMT). It is easier in some ways, because AMR and English are highly cognate. It is harder in other ways, as AMR is graphstructured, and children of an AMR node are unordered. There are also fewer available training pairs than in SMT. One approach is to define a generative model from AMR graphs to strings. We can then use EM to uncover hidden derivations, which alignments weakly reflect. This approach is used in string/string SMT (Brown et al., 1993). However, we do not yet have such a generative graphto-string model, and even if we did, there might not be an efficient EM solution. For example, in syntax-based SMT systems (Galley et al., 2004), the generative tree/string transduction story is clear, but in the absence of alignment constraints, there are too many derivations and rules for EM to efficiently consider. We therefore follow syntax-based SMT custom and use string/string alignment models in aligning our graph/string pairs. However, while it is straightforward to convert syntax trees into strings data (by taking yields), it is not</context>
+<context position="7623" citStr="Brown et al., 1993" startWordPosition="1255" endWordPosition="1258">English tokens that can be translated into multiple AMR tokens, like higher and high :degree more we add the corresponding string/string pairs to the corpus. This set is extracted from existing lexical resources, including lists of comparative/superlative adjectives, negative words, etc. After preprocessing, the AMR at the start of this section will change into: want boy go and the sentence The boy wants to go changes into boy want to go, and we will also add the identity pairs want/want, boy/boy, and go/go to the corpus. 2.2 Training Our training method is based on IBM word alignment models (Brown et al., 1993). We modify the objective functions of the IBM models to en426 courage agreement between learning parameters in English-to-AMR and AMR-to-English directions of EM. The solution of this objective function can be approximated in an extremely simple way that requires almost no extra coding effort. Assume that we have a set of sentence pairs {(E, A)}, where each E is an English sentence and each A is a linearized AMR. According to IBM models, A is generated from E through a generative story based on some parameters. For example, in IBM Model 2, given E we first decide the length of A based on some</context>
+</contexts>
+<marker>Brown, Pietra, Pietra, Mercer, 1993</marker>
+<rawString>Peter F. Brown, Vincent J. Della Pietra, Stephen A. Della Pietra, and Robert L. Mercer. 1993. The mathematics of statistical machine translation: Parameter estimation. Computational linguistics, 19(2):263–311.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Flanigan</author>
+<author>Sam Thomson</author>
+<author>Jaime Carbonell</author>
+<author>Chris Dyer</author>
+<author>Noah A Smith</author>
+</authors>
+<title>A discriminative graph-based parser for the abstract meaning representation.</title>
+<date>2014</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="3204" citStr="Flanigan et al (2014)" startWordPosition="511" endWordPosition="514"> to efficiently consider. We therefore follow syntax-based SMT custom and use string/string alignment models in aligning our graph/string pairs. However, while it is straightforward to convert syntax trees into strings data (by taking yields), it is not obvious how to do this for unordered AMR graph elements. The example above also shows that gold alignment links reach into the internal nodes of AMR. Prior SMT work (Jones et al., 2012) describes alignment of semantic graphs and strings, though their experiments are limited to the GeoQuery domain, and their methods are not described in detail. Flanigan et al (2014) describe a heuristic AMR/English aligner. While heuristic aligners can achieve good accuracy, they will not automatically improve as more AMR/English data comes 425 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 425–429, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics online. The contributions of this paper are: • A set of gold, manually-aligned AMR/English pairs. • An algorithm for automatically aligning AMR/English pairs. • An empirical study establishing alignment accuracy of 86.5% and 83.1% F score f</context>
+</contexts>
+<marker>Flanigan, Thomson, Carbonell, Dyer, Smith, 2014</marker>
+<rawString>Jeffrey Flanigan, Sam Thomson, Jaime Carbonell, Chris Dyer, and Noah A. Smith. 2014. A discriminative graph-based parser for the abstract meaning representation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Mark Hopkins</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>What’s in a translation rule?</title>
+<date>2004</date>
+<booktitle>In HLT-NAACL.</booktitle>
+<contexts>
+<context position="2433" citStr="Galley et al., 2004" startWordPosition="385" endWordPosition="388">s, because AMR and English are highly cognate. It is harder in other ways, as AMR is graphstructured, and children of an AMR node are unordered. There are also fewer available training pairs than in SMT. One approach is to define a generative model from AMR graphs to strings. We can then use EM to uncover hidden derivations, which alignments weakly reflect. This approach is used in string/string SMT (Brown et al., 1993). However, we do not yet have such a generative graphto-string model, and even if we did, there might not be an efficient EM solution. For example, in syntax-based SMT systems (Galley et al., 2004), the generative tree/string transduction story is clear, but in the absence of alignment constraints, there are too many derivations and rules for EM to efficiently consider. We therefore follow syntax-based SMT custom and use string/string alignment models in aligning our graph/string pairs. However, while it is straightforward to convert syntax trees into strings data (by taking yields), it is not obvious how to do this for unordered AMR graph elements. The example above also shows that gold alignment links reach into the internal nodes of AMR. Prior SMT work (Jones et al., 2012) describes </context>
+</contexts>
+<marker>Galley, Hopkins, Knight, Marcu, 2004</marker>
+<rawString>Michel Galley, Mark Hopkins, Kevin Knight, and Daniel Marcu. 2004. What’s in a translation rule? In HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Qin Gao</author>
+<author>Stephan Vogel</author>
+</authors>
+<title>Parallel implementations of word alignment tool.</title>
+<date>2008</date>
+<booktitle>In Software Engineering, Testing, and Quality Assurance for Natural Language Processing Workshop, ACL.</booktitle>
+<contexts>
+<context position="12829" citStr="Gao and Vogel, 2008" startWordPosition="2150" endWordPosition="2153">r example in: (w / want-01 :arg0 (b / boy) :arg1 (g / go-01 :arg0 b)) the first :arg0 states that the first argument of the concept wanting is the boy and the second argument is going. train dev test Sent. pairs 13050 100 100 AMR tokens 465 K 3.8 K (52%) 2.3 K (%55) AMR role tokens 226 K 1.9 K (23%) 1.1 K (%22) ENG tokens 248 K 2.3 K (76%) 1.7 K (%74) Table 1: AMR/English corpus. The number in parentheses is the percent of the tokens aligned in gold annotation. Almost half of AMR tokens are role tokens, and less than a quarter of role tokens are aligned. 3.2 Experiment Results We use MGIZA++ (Gao and Vogel, 2008) as the implementation of the IBM models. We run Model 1 and HMM for 5 iterations each, then run our training algorithm on Model 4 for 4 iterations, at which point the alignments become stable. As alignments are usually many to one from AMR to English, we compute the alignments from AMR to English in the final step. Table 2 shows the alignment accuracy for Model 1, HMM, Model 4, and Model 4 plus the modification described in section 2.2 (Model 4+). The alignment accuracy on the test set is lower than the development set mainly because it is intrinsically a harder set, as we only made small mod</context>
+</contexts>
+<marker>Gao, Vogel, 2008</marker>
+<rawString>Qin Gao and Stephan Vogel. 2008. Parallel implementations of word alignment tool. In Software Engineering, Testing, and Quality Assurance for Natural Language Processing Workshop, ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bevan Jones</author>
+<author>Jacob Andreas</author>
+<author>Daniel Bauer</author>
+<author>Karl Moritz Hermann</author>
+<author>Kevin Knight</author>
+</authors>
+<date>2012</date>
+<contexts>
+<context position="3022" citStr="Jones et al., 2012" startWordPosition="481" endWordPosition="484"> systems (Galley et al., 2004), the generative tree/string transduction story is clear, but in the absence of alignment constraints, there are too many derivations and rules for EM to efficiently consider. We therefore follow syntax-based SMT custom and use string/string alignment models in aligning our graph/string pairs. However, while it is straightforward to convert syntax trees into strings data (by taking yields), it is not obvious how to do this for unordered AMR graph elements. The example above also shows that gold alignment links reach into the internal nodes of AMR. Prior SMT work (Jones et al., 2012) describes alignment of semantic graphs and strings, though their experiments are limited to the GeoQuery domain, and their methods are not described in detail. Flanigan et al (2014) describe a heuristic AMR/English aligner. While heuristic aligners can achieve good accuracy, they will not automatically improve as more AMR/English data comes 425 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 425–429, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics online. The contributions of this paper are: • A set of go</context>
+</contexts>
+<marker>Jones, Andreas, Bauer, Hermann, Knight, 2012</marker>
+<rawString>Bevan Jones, Jacob Andreas, Daniel Bauer, Karl Moritz Hermann, and Kevin Knight. 2012.</rawString>
+</citation>
+<citation valid="false">
+<title>Semantics-based machine translation with hyperedge replacement grammars.</title>
+<booktitle>In COLING.</booktitle>
+<marker></marker>
+<rawString>Semantics-based machine translation with hyperedge replacement grammars. In COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Ben Taskar</author>
+<author>Dan Klein</author>
+</authors>
+<title>Alignment by agreement.</title>
+<date>2006</date>
+<booktitle>In HLT-NAACL.</booktitle>
+<contexts>
+<context position="10115" citStr="Liang et al. (2006)" startWordPosition="1684" endWordPosition="1687">t steps 1 and 3 are nothing more than running the IBM models, and steps 2 and 4 are just initialization of the EM parameters, using tables from the previous iteration. The initialization steps only make sense for the parameters that involve both sides of the alignment (i.e., the translation table and the distortion table). For the translation table we set tE|A(e|a) = tA|E(a|e) for English and AMR tokens e and a and then normalize the t table. The distortion table can also be initialized in a similar manner. We initialize the fertility table with its value in the previous iteration. Previously Liang et al. (2006) also presented a symmetric method for training alignment parameters. Similar to our work, their objective function involves summation of conditional likelihoods in both directions; however, their constraint is on agreement between predicted alignments while we directly focus on agreement between the parameters themselves. Moreover their method involves a modification of the E step of EM algorithm which is very hard to implement for IBM Model 3 and above. After learning the parameters, alignments are computed using the Viterbi algorithm in both directions of the IBM models. We tried merging th</context>
+</contexts>
+<marker>Liang, Taskar, Klein, 2006</marker>
+<rawString>Percy Liang, Ben Taskar, and Dan Klein. 2006. Alignment by agreement. In HLT-NAACL.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

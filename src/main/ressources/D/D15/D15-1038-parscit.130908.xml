@@ -1,0 +1,1587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000008">
+<title confidence="0.980739">
+Traversing Knowledge Graphs in Vector Space
+</title>
+<author confidence="0.996583">
+Kelvin Guu John Miller Percy Liang
+</author>
+<affiliation confidence="0.999543">
+Stanford University Stanford University Stanford University
+</affiliation>
+<email confidence="0.996819">
+kguu@stanford.edu millerjp@stanford.edu pliang@cs.stanford.edu
+</email>
+<sectionHeader confidence="0.997364" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999972347826087">
+Path queries on a knowledge graph can
+be used to answer compositional ques-
+tions such as “What languages are spoken
+by people living in Lisbon?”. However,
+knowledge graphs often have missing facts
+(edges) which disrupts path queries. Re-
+cent models for knowledge base comple-
+tion impute missing facts by embedding
+knowledge graphs in vector spaces. We
+show that these models can be recursively
+applied to answer path queries, but that
+they suffer from cascading errors. This
+motivates a new “compositional” training
+objective, which dramatically improves all
+models’ ability to answer path queries, in
+some cases more than doubling accuracy.
+On a standard knowledge base comple-
+tion task, we also demonstrate that com-
+positional training acts as a novel form of
+structural regularization, reliably improv-
+ing performance across all base models
+(reducing errors by up to 43%) and achiev-
+ing new state-of-the-art results.
+</bodyText>
+<sectionHeader confidence="0.999471" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.981444604651163">
+Broad-coverage knowledge bases such as Free-
+base (Bollacker et al., 2008) support a rich array
+of reasoning and question answering applications,
+but they are known to suffer from incomplete cov-
+erage (Min et al., 2013). For example, as of May
+2015, Freebase has an entity Tad Lincoln (Abra-
+ham Lincoln’s son), but does not have his ethnic-
+ity. An elegant solution to incompleteness is using
+vector space representations: Controlling the di-
+mensionality of the vector space forces generaliza-
+tion to new facts (Nickel et al., 2011; Nickel et al.,
+2012; Socher et al., 2013; Riedel et al., 2013; Nee-
+lakantan et al., 2015). In the example, we would
+hope to infer Tad’s ethnicity from the ethnicity of
+his parents.
+Figure 1: We propose performing path queries
+such as tad lincoln/parents/location (“Where
+are Tad Lincoln’s parents located?”) in a parallel
+low-dimensional vector space. Here, entity sets
+(boxed) are represented as real vectors, and edge
+traversal is driven by vector-to-vector transforma-
+tions (e.g., matrix multiplication).
+However, what is missing from these vector
+space models is the original strength of knowledge
+bases: the ability to support compositional queries
+(Ullman, 1985). For example, we might ask
+what the ethnicity of Abraham Lincoln’s daugh-
+ter would be. This can be formulated as a path
+query on the knowledge graph, and we would like
+a method that can answer this efficiently, while
+generalizing over missing facts and even missing
+or hypothetical entities (Abraham Lincoln did not
+in fact have a daughter).
+In this paper, we present a scheme to answer
+path queries on knowledge bases by “composi-
+tionalizing” a broad class of vector space mod-
+els that have been used for knowledge base com-
+pletion (see Figure 1). At a high level, we inter-
+pret the base vector space model as implementing
+a soft edge traversal operator. This operator can
+then be recursively applied to predict paths. Our
+interpretation suggests a new compositional train-
+ing objective that encourages better modeling of
+</bodyText>
+<page confidence="0.974322">
+318
+</page>
+<note confidence="0.9851145">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 318–327,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.99977325">
+paths. Our technique is applicable to a broad class
+of composable models that includes the bilinear
+model (Nickel et al., 2011) and TransE (Bordes et
+al., 2013).
+We have two key empirical findings: First, we
+show that compositional training enables us to
+answer path queries up to at least length 5 by
+substantially reducing cascading errors present in
+the base vector space model. Second, we find
+that somewhat surprisingly, compositional train-
+ing also improves upon state-of-the-art perfor-
+mance for knowledge base completion, which is a
+special case of answering unit length path queries.
+Therefore, compositional training can also be seen
+as a new form of structural regularization for ex-
+isting models.
+</bodyText>
+<sectionHeader confidence="0.998262" genericHeader="introduction">
+2 Task
+</sectionHeader>
+<bodyText confidence="0.999206615384615">
+We now give a formal definition of the task of an-
+swering path queries on a knowledge base. Let
+E be a set of entities and R be a set of binary
+relations. A knowledge graph G is defined as a
+set of triples of the form (s, r, t) where s, t ∈ E
+and r ∈ R. An example of a triple in Freebase is
+(tad lincoln, parents, abraham lincoln).
+A path query q consists of an initial anchor en-
+tity, s, followed by a sequence of relations to be
+traversed, p = (r1, ... , rk). The answer or deno-
+tation of the query, JqK, is the set of all entities that
+can be reached from s by traversing p. Formally,
+this can be defined recursively:
+</bodyText>
+<equation confidence="0.9230855">
+JsK def = {s}, (1)
+Jq/rK def = {t : ∃s ∈ JqK, (s, r, t) ∈ G}. (2)
+</equation>
+<bodyText confidence="0.9993465">
+For example, tad lincoln/parents/location is a
+query q that asks: “Where did Tad Lincoln’s par-
+ents live?”.
+For evaluation (see Section 5 for details), we de-
+fine the set of candidate answers to a query C(q)
+as the set of all entities that “type match”, namely
+those that participate in the final relation of q at
+least once; and let N(q) be the incorrect answers:
+</bodyText>
+<equation confidence="0.9996625">
+C (s/r1/ · · · /rk) def = {t  |∃e, (e, rk, t) ∈ G} (3)
+N (q) def = C (q) \JqK. (4)
+</equation>
+<bodyText confidence="0.9991404">
+Knowledge base completion. Knowledge base
+completion (KBC) is the task of predicting
+whether a given edge (s, r, t) belongs in the graph
+or not. This can be formulated as a path query
+q = s/r with candidate answer t.
+</bodyText>
+<sectionHeader confidence="0.994117" genericHeader="method">
+3 Compositionalization
+</sectionHeader>
+<bodyText confidence="0.999946125">
+In this section, we show how to compositional-
+ize existing KBC models to answer path queries.
+We start with a motivating example in Section 3.1,
+then present the general technique in Section 3.2.
+This suggests a new compositional training objec-
+tive, described in Section 3.3. Finally, we illus-
+trate the technique for several more models in Sec-
+tion 3.4, which we use in our experiments.
+</bodyText>
+<subsectionHeader confidence="0.994495">
+3.1 Example
+</subsectionHeader>
+<bodyText confidence="0.9987115">
+A common vector space model for knowledge
+base completion is the bilinear model (Nickel et
+al., 2011). In this model, we learn a vector xe ∈
+Rd for each entity e ∈ E and a matrix Wr ∈ Rdxd
+for each relation r ∈ R. Given a query s/r (ask-
+ing for the set of entities connected to s via relation
+r), the bilinear model scores how likely t ∈ Js/rK
+holds using
+</bodyText>
+<equation confidence="0.907754">
+score(s/r, t) = xTs Wrxt. (5)
+</equation>
+<bodyText confidence="0.999228">
+To motivate our compositionalization tech-
+nique, take d = |E |and suppose Wr is the ad-
+jacency matrix for relation r and entity vector xe
+is the indicator vector with a 1 in the entry corre-
+sponding to entity e. Then, to answer a path query
+</bodyText>
+<equation confidence="0.9512755">
+q = s/r1/ ... /rk, we would then compute
+score(q, t) = xTs Wrl ... Wrkxt. (6)
+</equation>
+<bodyText confidence="0.998530625">
+It is easy to verify that the score counts the number
+of unique paths between s and t following rela-
+tions r1/ ... /rk. Hence, any t with positive score
+is a correct answer (JqK = {t : score(q, t) &gt; 0}).
+Let us interpret (6) recursively. The model be-
+gins with an entity vector xs, and sequentially
+applies traversal operators Tri(v) = vTWri for
+each rz. Each traversal operation results in a
+new “set vector” representing the entities reached
+at that point in traversal (corresponding to the
+nonzero entries of the set vector). Finally, it ap-
+plies the membership operator M(v, xt) = vTxt
+to check if t ∈ Js/r1/ ... /rkK. Writing graph
+traversal in this way immediately suggests a useful
+generalization: take d much smaller than |E |and
+learn the parameters Wr and xe.
+</bodyText>
+<subsectionHeader confidence="0.999243">
+3.2 General technique
+</subsectionHeader>
+<bodyText confidence="0.993347666666667">
+The strategy used to extend the bilinear model of
+(5) to the compositional model in (6) can be ap-
+plied to any composable model: namely, one that
+</bodyText>
+<page confidence="0.998213">
+319
+</page>
+<bodyText confidence="0.964657">
+has a scoring function of the form:
+</bodyText>
+<equation confidence="0.827296">
+score(s/r, t) = M(Tr(xs), xt) (7)
+</equation>
+<bodyText confidence="0.8557195">
+for some choice of membership operator M : Rd×
+Rd → R and traversal operator Tr : Rd → Rd.
+We can now define the vector denotation of a
+query JqKV analogous to the definition of JqK in
+</bodyText>
+<equation confidence="0.8762102">
+(1) and (2):
+def
+JsKV = xs, (8)
+def
+Jq/rKV = Tr (JqKV) . (9)
+</equation>
+<bodyText confidence="0.9783825">
+The score function for a compositionalized
+model is then
+</bodyText>
+<equation confidence="0.893402">
+score(q, t) = M(JqKV, JtKV). (10)
+</equation>
+<bodyText confidence="0.999939142857143">
+We would like JqKV to approximately represent
+the set JqK in the sense that for every e ∈ JqK,
+M (JqKV, JeKV) is larger than the values for e ∈6
+JqK. Of course it is not possible to represent all
+sets perfectly, but in the next section, we present a
+training objective that explicitly optimizes T and
+M to preserve path information.
+</bodyText>
+<subsectionHeader confidence="0.999606">
+3.3 Compositional training
+</subsectionHeader>
+<bodyText confidence="0.999890428571429">
+The score function in (10) naturally suggests a new
+compositional training objective. Let {(qi, ti)}Ni=1
+denote a set of path query training examples with
+path lengths ranging from 1 to L. We minimize
+the following max-margin objective:
+where the parameters are the membership opera-
+tor, the traversal operators, and the entity vectors:
+</bodyText>
+<equation confidence="0.997102">
+� }
+Θ = {M} ∪ {Tr : r ∈ R} ∪ xe ∈ Rd : e ∈ E .
+</equation>
+<bodyText confidence="0.999774529411765">
+This objective encourages the construction of
+“set vectors”: because there are path queries of
+different lengths and types, the model must learn
+to produce an accurate set vector JqKV after any
+sequence of traversals. Another perspective is
+that each traversal operator is trained such that
+its transformation preserves information in the
+set vector which might be needed in subsequent
+traversal steps.
+In contrast, previously proposed training objec-
+tives for knowledge base completion only train on
+queries of path length 1. We will refer to this spe-
+cial case as single-edge training.
+In Section 5, we show that compositional train-
+ing leads to substantially better results for both
+path query answering and knowledge base com-
+pletion. In Section 6, we provide insight into why.
+</bodyText>
+<subsectionHeader confidence="0.990448">
+3.4 Other composable models
+</subsectionHeader>
+<bodyText confidence="0.993598125">
+There are many possible candidates for T and M.
+For example, T could be one’s favorite neural net-
+work mapping from Rd to Rd. Here, we focus on
+two composable models that were both recently
+shown to achieve state-of-the-art performance on
+knowledge base completion.
+TransE. The TransE model of Bordes et al.
+(2013) uses the scoring function
+</bodyText>
+<equation confidence="0.91069">
+score(s/r, t) = −kxs + wr − xtk22. (11)
+</equation>
+<bodyText confidence="0.997203333333333">
+where xs, wr and xt are all d-dimensional vectors.
+In this case, the model can be expressed using
+membership operator
+</bodyText>
+<equation confidence="0.9711405">
+M(v, xt) = −kv − xtk2 (12)
+2
+</equation>
+<bodyText confidence="0.917867095238095">
+and traversal operator Tr(xs) = xs + wr.
+Hence, TransE can handle a path query q =
+s/r1/r2/ ··· /rk using
+score(q, t) = −kxs + wr1 + · · · + wrk − xtk22.
+We visualize the compositional TransE model in
+Figure 2.
+Bilinear-Diag. The Bilinear-Diag model of
+Yang et al. (2015) is a special case of the bilinear
+model with the relation matrices constrained to be
+diagonal. Alternatively, the model can be viewed
+as a variant of TransE with multiplicative interac-
+tions between entity and relation vectors.
+Not all models can be compositionalized. It
+is important to point out that some models are
+not naturally composable—for example, the latent
+feature model of Riedel et al. (2013) and the neu-
+ral tensor network of Socher et al. (2013). These
+approaches have scoring functions which combine
+s, r and t in a way that does not involve an inter-
+mediate vector representing s/r alone without t,
+so they do not decompose according to (7).
+</bodyText>
+<equation confidence="0.996267">
+J(Θ) = N � [1 − margin(qi, ti, t&apos;)] + ,
+i=1 t&apos;∈N(qi)
+margin(q, t, t&apos;) = score(q, t) − score(q, t&apos;),
+</equation>
+<page confidence="0.988163">
+320
+</page>
+<figure confidence="0.58356175">
+WordNet Freebase
+Train
+Paths
+Test
+</figure>
+<tableCaption confidence="0.9216245">
+Table 1: WordNet and Freebase statistics for base
+and path query datasets.
+</tableCaption>
+<subsectionHeader confidence="0.9606">
+3.5 Implementation
+</subsectionHeader>
+<bodyText confidence="0.999988966666666">
+We use AdaGrad (Duchi et al., 2010) to optimize
+J(Θ), which is in general non-convex. Initial-
+ization scale, mini-batch size and step size were
+cross-validated for all models. We initialize all
+parameters with i.i.d. Gaussians of variance 0.1 in
+every entry, use a mini-batch size of 300 examples,
+and a step size in [0.001, 0.1] (chosen via cross-
+validation) for all of the models. For each exam-
+ple q, we sample 10 negative entities t&apos; E N(q).
+During training, all of the entity vectors are con-
+strained to lie on the unit ball, and we clipped the
+gradients to the median of the observed gradients
+if the update exceeded 3 times the median.
+We first train on path queries of length 1 until
+convergence and then train on all path queries until
+convergence. This guarantees that the model mas-
+ters basic edges before composing them to form
+paths. When training on path queries, we explic-
+itly parameterize inverse relations. For the bilinear
+model, we initialize Wr−1 with Wr�. For TransE,
+we initialize wr−1 with −wr. For Bilinear-Diag,
+we found initializing wr−1 with the exact inverse
+1/wr is numerically unstable, so we instead ran-
+domly initialize wr−1 with i.i.d Gaussians of vari-
+ance 0.1 in every entry. Additionally, for the bi-
+linear model, we replaced the sum over N(qz) in
+the objective with a max since it yielded slightly
+higher accuracy. Our models are implemented us-
+ing Theano (Bastien et al., 2012; Bergstra et al.,
+2010).
+</bodyText>
+<sectionHeader confidence="0.999205" genericHeader="method">
+4 Datasets
+</sectionHeader>
+<bodyText confidence="0.9998918">
+In Section 4.1, we describe two standard knowl-
+edge base completion datasets. These consist of
+single-edge queries, so we call them base datasets.
+In Section 4.2, we generate path query datasets
+from these base datasets.
+</bodyText>
+<subsectionHeader confidence="0.999787">
+4.1 Base datasets
+</subsectionHeader>
+<bodyText confidence="0.999946142857143">
+Our experiments are conducted using the sub-
+sets of WordNet and Freebase from Socher et al.
+(2013). The statistics of these datasets and their
+splits are given in Table 1.
+The WordNet and Freebase subsets exhibit sub-
+stantial differences that can influence model per-
+formance. The Freebase subset is almost bipartite
+with most of the edges taking the form (s, r, t) for
+some person s, relation r and property t. In Word-
+Net, both the source and target entities are arbi-
+trary words.
+Both the raw WordNet and Freebase contain
+many relations that are almost perfectly correlated
+with an inverse relation. For example, WordNet
+contains both has part and part of, and Freebase
+contains both parents and children. At test time,
+a query on an edge (s, r, t) is easy to answer if the
+inverse triple (t, r−1, s) was observed in the train-
+ing set. Following Socher et al. (2013), we ac-
+count for this by excluding such “trivial” queries
+from the test set.
+</bodyText>
+<subsectionHeader confidence="0.998943">
+4.2 Path query datasets
+</subsectionHeader>
+<bodyText confidence="0.9999841">
+Given a base knowledge graph, we generate path
+queries by performing random walks on the graph.
+If we view compositional training as a form of reg-
+ularization, this approach allows us to generate ex-
+tremely large amounts of auxiliary training data.
+The procedure is given below.
+Let ! train be the training graph, which consists
+only of the edges in the training set of the base
+dataset. We then repeatedly generate training ex-
+amples with the following procedure:
+</bodyText>
+<listItem confidence="0.995941384615385">
+1. Uniformly sample a path length L E
+11, ... , LmaxJ, and uniformly sample a start-
+ing entity s E £.
+2. Perform a random walk beginning at entity s
+and continuing L steps.
+(a) At step i of the walk, choose a relation
+rz uniformly from the set of relations in-
+cident on the current entity e.
+(b) Choose the next entity uniformly from
+the set of entities reachable via rz.
+3. Output a query-answer pair, (q, t), where q =
+s/r1/ · · · /rL and t is the final entity of the
+random walk.
+</listItem>
+<figure confidence="0.9450288">
+13
+75,043
+Relations
+Entities
+11
+38,696
+Train
+Base
+Test
+112,581
+10,544
+316,232
+23,733
+2,129,539 6,266,058
+46,577 109,557
+</figure>
+<page confidence="0.990719">
+321
+</page>
+<bodyText confidence="0.9999706">
+In practice, we do not sample paths of length 1 and
+instead directly add all of the edges from ytrain to
+the path query dataset.
+To generate a path query test set, we repeat
+the above procedure except using the graph yfull,
+which is ytrain plus all of the test edges from the
+base dataset. Then we remove any queries from
+the test set that also appeared in the training set.
+The statistics for the path query datasets are pre-
+sented in Table 1.
+</bodyText>
+<sectionHeader confidence="0.988369" genericHeader="method">
+5 Main results
+</sectionHeader>
+<bodyText confidence="0.999980835294118">
+We evaluate the models derived in Section 3 on
+two tasks: path query answering and knowledge
+base completion. On both tasks, we show that the
+compositional training strategy proposed in Sec-
+tion 3.3 leads to substantial performance gains
+over standard single-edge training. We also com-
+pare directly against the KBC results of Socher et
+al. (2013), demonstrating that previously inferior
+models now match or outperform state-of-the-art
+models after compositional training.
+Evaluation metric. Numerous metrics have
+been used to evaluate knowledge base queries, in-
+cluding hits at 10 (percentage of correct answers
+ranked in the top 10) and mean rank. We evaluate
+on hits at 10, as well as a normalized version of
+mean rank, mean quantile, which better accounts
+for the total number of candidates. For a query q,
+the quantile of a correct answer t is the fraction of
+incorrect answers ranked after t:
+The quantile ranges from 0 to 1, with 1 being opti-
+mal. Mean quantile is then defined to be the aver-
+age quantile score over all examples in the dataset.
+To illustrate why normalization is important, con-
+sider a set of queries on the relation gender. A
+model that predicts the incorrect gender on ev-
+ery query would receive a mean rank of 2 (since
+there are only 2 candidate answers), which is fairly
+good in absolute terms, whereas the mean quantile
+would be 0, rightfully penalizing the model.
+As a final note, several of the queries in the
+Freebase path dataset are “type-match trivial” in
+the sense that all of the type matching candidates
+C(q) are correct answers to the query. In this case,
+mean quantile is undefined and we exclude such
+queries from evaluation.
+Overview. The upper half of Table 2 shows
+that compositional training improves path query-
+ing performance across all models and metrics on
+both datasets, reducing error by up to 76.2%.
+The lower half of Table 2 shows that surpris-
+ingly, compositional training also improves per-
+formance on knowledge base completion across
+almost all models, metrics and datasets. On Word-
+Net, TransE benefits the most, with a 43.3% re-
+duction in error. On Freebase, Bilinear benefits
+the most, with a 38.8% reduction in error.
+In terms of mean quantile, the best overall
+model is TransE (COMP). In terms of hits at 10, the
+best model on WordNet is Bilinear (COMP), while
+the best model on Freebase is TransE (COMP).
+Deduction and Induction. Table 3 takes a
+deeper look at performance on path query answer-
+ing. We divided path queries into two subsets: de-
+duction and induction. The deduction subset con-
+sists of queries q = s/p where the source and tar-
+get entities Qq� are connected via relations p in the
+training graph ytrain, but the specific query q was
+never seen during training. Such queries can be
+answered by performing explicit traversal on the
+training graph, so this subset tests a model’s abil-
+ity to approximate the underlying training graph
+and predict the existence of a path from a collec-
+tion of single edges. The induction subset consists
+of all other queries. This means that at least one
+edge was missing on all paths following p from
+source to target in the training graph. Hence, this
+subset tests a model’s generalization ability and its
+robustness to missing edges.
+Performance on the deduction subset of the
+dataset is disappointingly low for models trained
+with single-edge training: they struggle to answer
+path queries even when all edges in the path query
+have been seen at training time. Compositional
+training dramatically reduces these errors, some-
+times doubling mean quantile. In Section 6, we
+analyze how this might be possible. After com-
+positional training, performance on the harder in-
+duction subset is also much stronger. Even when
+edges are missing along a path, the models are able
+to infer them.
+Interpretable queries. Although our path
+datasets consists of random queries, both datasets
+contain a large number of useful, interpretable
+queries. Results on a few illustrative examples are
+shown in Table 4.
+</bodyText>
+<equation confidence="0.994876666666667">
+|{t&apos; E N (q) : score(q, t&apos;) &lt; score(q, t)}|
+(13)
+|N (q)|
+</equation>
+<page confidence="0.997097">
+322
+</page>
+<table confidence="0.999887230769231">
+Bilinear Bilinear-Diag TransE
+Path query task SINGLE COMP (%red) SINGLE COMP (%red) SINGLE COMP (%red)
+MQ 84.7 89.4 30.7 59.7 90.4 76.2 83.7 93.3 58.9
+WordNet 43.6 54.3 19.0 7.9 31.1 25.4 13.8 43.5 34.5
+H@10 58.0 83.5 60.7 57.9 84.8 63.9 86.2 88 13.0
+MQ 25.9 42.1 21.9 23.1 38.6 20.2 45.4 50.5 9.3
+Freebase
+H@10
+KBC task SINGLE COMP (%red) SINGLE COMP (%red) SINGLE COMP (%red)
+WordNet MQ 76.1 82.0 24.7 76.5 84.3 33.2 75.5 86.1 43.3
+Freebase H@10 19.2 27.3 10.0 12.9 14.4 1.72 4.6 16.5 12.5
+MQ 85.3 91.0 38.8 84.6 89.1 29.2 92.7 92.8 1.37
+H@10 70.2 76.4 20.8 63.2 67.0 10.3 78.8 78.6 -0.9
+</table>
+<tableCaption confidence="0.880070666666667">
+Table 2: Path query answering and knowledge base completion. We compare the performance of
+single-edge training (SINGLE) vs compositional training (COMP). MQ: mean quantile, H@10: hits at 10,
+%red: percentage reduction in error.
+</tableCaption>
+<figure confidence="0.998942333333333">
+Interpretable Queries
+X/institution/institution−1/profession
+X/parents/religion
+X/nationality/nationality−1/ethnicity−1
+X/has part/has instance−1
+X/type of/type of/type of
+Bilinear SINGLE Bilinear COMP
+50.0 93.6
+81.9 97.1
+68.0 87.0
+92.6 95.1
+72.8 79.4
+</figure>
+<tableCaption confidence="0.652554">
+Table 4: Path query performance (mean quantile) on a selection of interpretable queries. We compare
+</tableCaption>
+<bodyText confidence="0.864608166666667">
+Bilinear SINGLE and Bilinear COMP. Meanings of each query (descending): “What professions are there
+at X’s institution?”; “What is the religion of X’s parents?”; “What are the ethnicities of people from the
+same country as X?”; “What types of parts does X have?”; and the transitive “What is X a type of?”.
+(Note that a relation r and its inverse r−1 do not necessarily cancel out if r is not a one-to-one mapping.
+For example, X/institution/institution−1 denotes the set of all people who work at the institution X
+works at, which is not just X.)
+</bodyText>
+<figure confidence="0.89764875">
+Path query task WordNet Freebase
+Ded. Ind.
+96.9 66.0
+98.9 75.6
+56.3 51.6
+98.5 78.2
+TransE SINGLE
+COMP
+</figure>
+<tableCaption confidence="0.58896775">
+Table 3: Deduction and induction. We compare
+mean quantile performance of single-edge training
+(SINGLE) vs compositional training (COMP). Length
+1 queries are excluded.
+</tableCaption>
+<bodyText confidence="0.993180428571428">
+Comparison with Socher et al. (2013). Here,
+we measure performance on the KBC task in terms
+of the accuracy metric of Socher et al. (2013).
+This evaluation involves sampled negatives, and is
+hence noisier than mean quantile, but makes our
+results directly comparable to Socher et al. (2013).
+Our results show that previously inferior models
+such as the bilinear model can outperform state-
+of-the-art models after compositional training.
+Socher et al. (2013) proposed parametrizing
+each entity vector as the average of vectors of
+words in the entity (wtad lincoln= 12(wtad +
+wlincoln), and pretraining these word vectors us-
+ing the method of Turian et al. (2010). Table 5
+reports results when using this approach in con-
+junction with compositional training. We initial-
+ized all models with word vectors from Penning-
+ton et al. (2014). We found that composition-
+ally trained models outperform the neural tensor
+network (NTN) on WordNet, while being only
+slightly behind on Freebase. (We did not use word
+vectors in any of our other experiments.)
+When the strategy of averaging word vectors to
+form entity vectors is not applied, our composi-
+tional models are significantly better on WordNet
+and slightly better on Freebase. It is worth noting
+that in many domains, entity names are not lexi-
+cally meaningful, so word vector averaging is not
+</bodyText>
+<figure confidence="0.986760333333333">
+SINGLE
+Bilinear
+COMP
+SINGLE
+Bi-Diag
+COMP
+92.6 71.7
+99.0 87.4
+Ded. Ind.
+49.3 49.4
+82.1 70.6
+49.3 50.2
+84.5 72.8
+85.3 72.4
+87.5 76.3
+</figure>
+<page confidence="0.996886">
+323
+</page>
+<table confidence="0.9994516">
+Accuracy WordNet Freebase
+EV WV EV WV
+NTN 70.6 86.2 87.2 90.0
+Bilinear COMP 77.6 87.6 86.1 89.4
+TransE COMP 80.3 84.9 87.6 89.6
+</table>
+<tableCaption confidence="0.8635828">
+Table 5: Model performance in terms of accu-
+racy. EV: entity vectors are separate (initialized
+randomly); WV: entity vectors are average of word
+vectors (initialized with pretrained word vectors).
+always meaningful.
+</tableCaption>
+<sectionHeader confidence="0.986011" genericHeader="method">
+6 Analysis
+</sectionHeader>
+<bodyText confidence="0.999315666666667">
+In this section, we try to understand why com-
+positional training is effective. For concrete-
+ness, everything is described in terms of the bi-
+linear model. We will refer to the compositionally
+trained model as COMP, and the model trained with
+single-edge training as SINGLE.
+</bodyText>
+<subsectionHeader confidence="0.902331">
+6.1 Why does compositional training
+improve path query answering?
+</subsectionHeader>
+<bodyText confidence="0.999964409090909">
+It is tempting to think that if SINGLE has accurately
+modeled individual edges in a graph, it should ac-
+curately model the paths that result from those
+edges. This intuition turns out to be incorrect, as
+revealed by SINGLE’s relatively weak performance
+on the path query dataset. We hypothesize that this
+is due to cascading errors along the path. For a
+given edge (s, r, t) on the path, single-edge train-
+ing encourages xt to be closer to xTs Wr than any
+other incorrect xt�. However, once this is achieved
+by a margin of 1, it does not push xt any closer to
+xs Wr. The remaining discrepancy is noise which
+gets added at each step of path traversal. This is
+illustrated schematically in Figure 2.
+To observe this phenomenon empirically, we
+examine how well a model handles each interme-
+diate step of a path query. We can do this by
+measuring the reconstruction quality (RQ) of the
+set vector produced after each traversal operation.
+Since each intermediate stage is itself a valid path
+query, we define RQ to be the average quantile
+over all entities that belong in Qq�:
+</bodyText>
+<equation confidence="0.979140333333333">
+RQ (q) =  |Qq�  |1: quantile (q, t) (14)
+t
+Qq➢
+</equation>
+<bodyText confidence="0.973213888888889">
+When all entities in Qq� are ranked above all in-
+correct entities, RQ is 1. In Figure 3, we illustrate
+how RQ changes over the course of a query.
+Figure 2: Cascading errors visualized for
+TransE. Each node represents the position of an
+entity in vector space. The relation parent is
+ideally a simple horizontal translation, but each
+traversal introduces noise. The red circle is where
+we expect Tad’s parent to be. The red square is
+where we expect Tad’s grandparent to be. Dotted
+red lines show that error grows larger as we tra-
+verse farther away from Tad. Compositional train-
+ing pulls the entity vectors closer to the ideal ar-
+rangement.
+Given the nature of cascading errors, it might
+seem reasonable to address the problem by adding
+a term to our objective which explicitly encour-
+ages xTs Wr to be as close as possible to xt. With
+this motivation, we tried adding A Ixs Wr − xt I22
+term to the objective of the bilinear model and a
+A Ixs + wr − xt I22term to the objective of TransE.
+We experimented with different settings of A over
+the range [0.001, 100]. In no case did this addi-
+tional E2 term improve SINGLE’s performance on
+the path query or single edge dataset. These re-
+sults suggest that compositional training is a more
+effective way to combat cascading errors.
+</bodyText>
+<subsectionHeader confidence="0.8899575">
+6.2 Why does compositional training
+improve knowledge base completion?
+</subsectionHeader>
+<bodyText confidence="0.963609933333333">
+Table 2 reveals that COMP also performs better on
+the single-edge task of knowledge base comple-
+tion. This is somewhat surprising, since SINGLE
+is trained on a training set which distributionally
+matches the test set, whereas COMP is not. How-
+ever, COMP’s better performance on path queries
+suggests that there must be another factor at play.
+At a high level, training on paths must be provid-
+ing some form of structural regularization which
+reduces cascading errors. Indeed, paths in a
+knowledge graph have proven to be important fea-
+tures for predicting the existence of single edges
+(Lao et al., 2011; Neelakantan et al., 2015). For
+example, consider the following Horn clause:
+parents (x, y) ∧ location (y, z) ==&gt;- place of birth (x, z) ,
+</bodyText>
+<page confidence="0.997982">
+324
+</page>
+<figureCaption confidence="0.996525">
+Figure 3: Reconstruction quality (RQ) at each step
+</figureCaption>
+<bodyText confidence="0.967508705882353">
+of the query tad lincoln/parents/place of birth/
+place of birth−1/profession. COMP experiences
+significantly less degradation in RQ as path length
+increases. Correspondingly, the set of 5 highest
+scoring entities computed at each step using COMP
+(green) is significiantly more accurate than the set
+given by SINGLE (blue). Correct entities are bolded.
+which states that if x has a parent with location
+z, then x has place of birth z. The body of the
+Horn clause expresses a path from x to z. If COMP
+models the path better, then it should be better able
+to use that knowledge to infer the head of the Horn
+clause.
+More generally, consider Horn clauses of the
+form p ⇒ r, where p = r1/ ... /rk is a path type
+and r is the relation being predicted. Let us focus
+on Horn clauses with high precision as defined by:
+</bodyText>
+<equation confidence="0.999013">
+prec(p) = |JpK ∩ JrK ||JpK |,(15)
+</equation>
+<bodyText confidence="0.9996074">
+where JpK is the set of entity pairs connected by p,
+and similarly for JrK.
+Intuitively, one way for the model to implicitly
+learn and exploit such a Horn clause would be to
+satisfy the following two criteria:
+</bodyText>
+<listItem confidence="0.9679664">
+1. The model should ensure a consistent spa-
+tial relationship between entity pairs that are
+related by the path type p; that is, keeping
+xs Wr1 ... Wrk close to xt for all valid (s, t)
+pairs.
+2. The model’s representation of the path type p
+and relation r should capture that spatial re-
+lationship; that is, xs Wr1 ... Wrk ≈ xt im-
+plies xs Wr ≈ xt, or simply Wr1 ... Wrk ≈
+Wr.
+</listItem>
+<bodyText confidence="0.99711947826087">
+We have already seen empirically that SINGLE does
+not meet criterion 1, because cascading errors
+cause it to put incorrect entity vectors xt, closer
+to xs Wr1 ... Wrk than the correct entity. COMP
+mitigates these errors.
+To empirically verify that COMP also does a bet-
+ter job of meeting criterion 2, we perform the
+following: for a path type p and relation r, de-
+fine dist(p, r) to be the angle between their corre-
+sponding matrices (treated as vectors in Rd2). This
+is a natural measure because xs Wrxt computes
+the matrix inner product between Wr and xsxt .
+Hence, any matrix with small distance from Wr
+will produce nearly the same scores as Wr for the
+same entity pairs.
+If COMP is better at capturing the correlation be-
+tween p and r, then we would expect that when
+prec(p) is high, compositional training should
+shrink dist(p, r) more. To confirm this hypothe-
+sis, we enumerated over all 676 possible paths of
+length 2 (including inverted relations), and exam-
+ined the proportional reduction in dist(p, r) caused
+by compositional training,
+</bodyText>
+<equation confidence="0.806263">
+distCOMP(p, r) − distSINGLE(p, r)
+Odist(p, r) =
+(16)
+</equation>
+<figureCaption confidence="0.6399965">
+Figure 4 shows that higher precision paths indeed
+correspond to larger reductions in dist(p, r).
+</figureCaption>
+<sectionHeader confidence="0.99994" genericHeader="method">
+7 Related work
+</sectionHeader>
+<bodyText confidence="0.9982349">
+Knowledge base completion with vector space
+models. Many models have been proposed for
+knowledge base completion, including those re-
+viewed in Section 3.4 (Nickel et al., 2011; Bor-
+des et al., 2013; Yang et al., 2015; Socher et al.,
+2013). Dong et al. (2014) demonstrated that KBC
+models can improve the quality of relation extrac-
+tion by serving as graph-based priors. Riedel et
+al. (2013) showed that such models can be also be
+directly used for open-domain relation extraction.
+Our compositional training technique is an orthog-
+onal improvement that could help any composable
+model.
+Distributional compositional semantics. Pre-
+vious works have explored compositional vector
+space representations in the context of logic and
+sentence interpretation. In Socher et al. (2012), a
+matrix is associated with each word of a sentence,
+and can be used to recursively modify the mean-
+ing of nearby constituents. Grefenstette (2013) ex-
+</bodyText>
+<equation confidence="0.650533">
+distSINGLE(p, r) .
+</equation>
+<page confidence="0.988032">
+325
+</page>
+<figureCaption confidence="0.879352">
+Figure 4: We divide paths of length 2 into high
+</figureCaption>
+<bodyText confidence="0.993332853658537">
+precision (&gt; 0.3), low precision (≤ 0.3), and not
+co-occuring with r. Here r = nationality. Each
+box plot shows the min, max, and first and third
+quartiles of Adist(p, r). As hypothesized, com-
+positional training results in large decreases in
+dist(p, r) for high precision paths p, modest de-
+creases for low precision paths, and little to no de-
+creases for irrelevant paths.
+plored the ability of tensors to simulate logical cal-
+culi. Bowman et al. (2014) showed that recursive
+neural networks can learn to distinguish impor-
+tant semantic relations. Socher et al. (2014) found
+that compositional models were powerful enough
+to describe and retrieve images.
+We demonstrate that compositional representa-
+tions are also useful in the context of knowledge
+base querying and completion. In the aforemen-
+tioned work, compositional models produce vec-
+tors which represent truth values, sentiment or im-
+age features. In our approach, vectors represent
+sets of entities constituting the denotation of a
+knowledge base query.
+Path modeling. Numerous methods have been
+proposed to leverage path information for knowl-
+edge base completion and question answering.
+Nickel et al. (2014) proposed combining low-rank
+models with sparse path features. Lao and Cohen
+(2010) used random walks as features and Gard-
+ner et al. (2014) extended this approach by us-
+ing vector space similarity to govern random walk
+probabilities. Neelakantan et al. (2015) addressed
+the problem of path sparsity by embedding paths
+using a recurrent neural network. Perozzi et al.
+(2014) sampled random walks on social networks
+as training examples, with a different goal to clas-
+sify nodes in the network. Bordes et al. (2014) em-
+bed paths as a sum of relation vectors for question
+answering. Our approach is unique in modeling
+the denotation of each intermediate step of a path
+query, and using this information to regularize the
+spatial arrangement of entity vectors.
+</bodyText>
+<sectionHeader confidence="0.999271" genericHeader="conclusions">
+8 Discussion
+</sectionHeader>
+<bodyText confidence="0.99994537037037">
+We introduced the task of answering path queries
+on an incomplete knowledge base, and presented a
+general technique for compositionalizing a broad
+class of vector space models. Our experiments
+show that compositional training leads to state-of-
+the-art performance on both path query answering
+and knowledge base completion.
+There are several key ideas from this paper: reg-
+ularization by augmenting the dataset with paths,
+representing sets as low-dimensional vectors in
+a context-sensitive way, and performing function
+composition using vectors. We believe these three
+could all have greater applicability in the develop-
+ment of vector space models for knowledge repre-
+sentation and inference.
+Reproducibility Our code, data, and exper-
+iments are available on the CodaLab platform
+at https://www.codalab.org/worksheets/
+0xfcace41fdeec45f3bc6ddf31107b829f.
+Acknowledgments We would like to thank Ga-
+bor Angeli for fruitful discussions and the anony-
+mous reviewers for their valuable feedback. We
+gratefully acknowledge the support of the Google
+Natural Language Understanding Focused Pro-
+gram and the National Science Foundation Grad-
+uate Research Fellowship under Grant No. DGE-
+114747.
+</bodyText>
+<sectionHeader confidence="0.999017" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999395">
+F. Bastien, P. Lamblin, R. Pascanu, J. Bergstra, I. J.
+Goodfellow, A. Bergeron, N. Bouchard, and Y. Ben-
+gio. 2012. Theano: new features and speed im-
+provements. Deep Learning and Unsupervised Fea-
+ture Learning NIPS 2012 Workshop.
+J. Bergstra, O. Breuleux, F. Bastien, P. Lamblin, R. Pas-
+canu, G. Desjardins, J. Turian, D. Warde-Farley, and
+Y. Bengio. 2010. Theano: a CPU and GPU math
+expression compiler. In Proceedings of the Python
+for Scientific Computing Conference (SciPy).
+K. Bollacker, C. Evans, P. Paritosh, T. Sturge, and
+J. Taylor. 2008. Freebase: a collaboratively created
+graph database for structuring human knowledge. In
+</reference>
+<page confidence="0.988428">
+326
+</page>
+<reference confidence="0.9997445">
+International Conference on Management of Data
+(SIGMOD), pages 1247–1250.
+A. Bordes, N. Usunier, A. Garcia-Duran, J. Weston,
+and O. Yakhnenko. 2013. Translating embeddings
+for modeling multi-relational data. In Advances
+in Neural Information Processing Systems (NIPS),
+pages 2787–2795.
+A. Bordes, S. Chopra, and J. Weston. 2014. Ques-
+tion answering with subgraph embeddings. In Em-
+pirical Methods in Natural Language Processing
+(EMNLP).
+S. R. Bowman, C. Potts, and C. D. Manning. 2014.
+Can recursive neural tensor networks learn logical
+reasoning? In International Conference on Learn-
+ing Representations (ICLR).
+X. Dong, E. Gabrilovich, G. Heitz, W. Horn, N. Lao,
+K. Murphy, T. Strohmann, S. Sun, and W. Zhang.
+2014. Knowledge vault: A web-scale approach
+to probabilistic knowledge fusion. In International
+Conference on Knowledge Discovery and Data Min-
+ing (KDD), pages 601–610.
+J. Duchi, E. Hazan, and Y. Singer. 2010. Adaptive sub-
+gradient methods for online learning and stochastic
+optimization. In Conference on Learning Theory
+(COLT).
+M. Gardner, P. Talukdar, J. Krishnamurthy, and
+T. Mitchell. 2014. Incorporating vector space sim-
+ilarity in random walk inference over knowledge
+bases. In Empirical Methods in Natural Language
+Processing (EMNLP).
+E. Grefenstette. 2013. Towards a formal distributional
+semantics: Simulating logical calculi with tensors.
+arXiv preprint arXiv:1304.5823.
+N. Lao and W. W. Cohen. 2010. Relational re-
+trieval using a combination of path-constrained ran-
+dom walks. Machine learning, 81(1):53–67.
+N. Lao, T. Mitchell, and W. W. Cohen. 2011. Random
+walk inference and learning in a large scale knowl-
+edge base. In Empirical Methods in Natural Lan-
+guage Processing (EMNLP), pages 529–539.
+B. Min, R. Grishman, L. Wan, C. Wang, and
+D. Gondek. 2013. Distant supervision for relation
+extraction with an incomplete knowledge base. In
+North American Association for Computational Lin-
+guistics (NAACL), pages 777–782.
+A. Neelakantan, B. Roth, and A. McCallum. 2015.
+Compositional vector space models for knowledge
+base completion. In Association for Computational
+Linguistics (ACL).
+M. Nickel, V. Tresp, and H. Kriegel. 2011. A
+three-way model for collective learning on multi-
+relational data. In International Conference on Ma-
+chine Learning (ICML), pages 809–816.
+M. Nickel, V. Tresp, and H. Kriegel. 2012. Factorizing
+YAGO. In World Wide Web (WWW).
+M. Nickel, X. Jiang, and V. Tresp. 2014. Reducing the
+rank in relational factorization models by including
+observable patterns. In Advances in Neural Informa-
+tion Processing Systems (NIPS), pages 1179–1187.
+J. Pennington, R. Socher, and C. D. Manning. 2014.
+Glove: Global vectors for word representation. In
+Empirical Methods in Natural Language Processing
+(EMNLP).
+B. Perozzi, R. Al-Rfou, and S. Skiena. 2014. Deep-
+walk: Online learning of social representations. In
+International Conference on Knowledge Discovery
+and Data Mining (KDD), pages 701–710.
+S. Riedel, L. Yao, and A. McCallum. 2013. Re-
+lation extraction with matrix factorization and uni-
+versal schemas. In North American Association for
+Computational Linguistics (NAACL).
+R. Socher, B. Huval, C. D. Manning, and A. Y. Ng.
+2012. Semantic compositionality through recursive
+matrix-vector spaces. In Empirical Methods in Nat-
+ural Language Processing and Computational Nat-
+ural Language Learning (EMNLP/CoNLL), pages
+1201–1211.
+R. Socher, D. Chen, C. D. Manning, and A. Ng. 2013.
+Reasoning with neural tensor networks for knowl-
+edge base completion. In Advances in Neural Infor-
+mation Processing Systems (NIPS), pages 926–934.
+R. Socher, A. Karpathy, Q. V. Le, C. D. Manning, and
+A. Y. Ng. 2014. Grounded compositional semantics
+for finding and describing images with sentences.
+Transactions of the Association for Computational
+Linguistics (TACL), 2:207–218.
+J. Turian, L. Ratinov, and Y. Bengio. 2010. Word rep-
+resentations: a simple and general method for semi-
+supervised learning. In Proceedings of the 48th an-
+nual meeting of the association for computational
+linguistics, pages 384–394.
+J. D. Ullman. 1985. Implementation of logical query
+languages for databases. ACM Transactions on
+Database Systems (TODS), 10(3):289–321.
+B. Yang, W. Yih, X. He, J. Gao, and L. Deng.
+2015. Embedding entities and relations for learning
+and inference in knowledge bases. arXiv preprint
+arXiv:1412.6575.
+</reference>
+<page confidence="0.99841">
+327
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.986389">
+<title confidence="0.999836">Traversing Knowledge Graphs in Vector Space</title>
+<author confidence="0.997622">Kelvin Guu John Miller Percy Liang</author>
+<affiliation confidence="0.999764">Stanford University Stanford University Stanford</affiliation>
+<email confidence="0.999733">kguu@stanford.edumillerjp@stanford.edupliang@cs.stanford.edu</email>
+<abstract confidence="0.999537875">Path queries on a knowledge graph can be used to answer compositional quessuch as languages are spoken people living in However, knowledge graphs often have missing facts (edges) which disrupts path queries. Recent models for knowledge base completion impute missing facts by embedding knowledge graphs in vector spaces. We show that these models can be recursively applied to answer path queries, but that they suffer from cascading errors. This motivates a new “compositional” training objective, which dramatically improves all models’ ability to answer path queries, in some cases more than doubling accuracy. On a standard knowledge base completion task, we also demonstrate that compositional training acts as a novel form of structural regularization, reliably improving performance across all base models (reducing errors by up to 43%) and achieving new state-of-the-art results.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>F Bastien</author>
+<author>P Lamblin</author>
+<author>R Pascanu</author>
+<author>J Bergstra</author>
+<author>I J Goodfellow</author>
+<author>A Bergeron</author>
+<author>N Bouchard</author>
+<author>Y Bengio</author>
+</authors>
+<title>Theano: new features and speed improvements. Deep Learning and Unsupervised Feature Learning NIPS</title>
+<date>2012</date>
+<note>Workshop.</note>
+<contexts>
+<context position="12512" citStr="Bastien et al., 2012" startWordPosition="2167" endWordPosition="2170">masters basic edges before composing them to form paths. When training on path queries, we explicitly parameterize inverse relations. For the bilinear model, we initialize Wr−1 with Wr�. For TransE, we initialize wr−1 with −wr. For Bilinear-Diag, we found initializing wr−1 with the exact inverse 1/wr is numerically unstable, so we instead randomly initialize wr−1 with i.i.d Gaussians of variance 0.1 in every entry. Additionally, for the bilinear model, we replaced the sum over N(qz) in the objective with a max since it yielded slightly higher accuracy. Our models are implemented using Theano (Bastien et al., 2012; Bergstra et al., 2010). 4 Datasets In Section 4.1, we describe two standard knowledge base completion datasets. These consist of single-edge queries, so we call them base datasets. In Section 4.2, we generate path query datasets from these base datasets. 4.1 Base datasets Our experiments are conducted using the subsets of WordNet and Freebase from Socher et al. (2013). The statistics of these datasets and their splits are given in Table 1. The WordNet and Freebase subsets exhibit substantial differences that can influence model performance. The Freebase subset is almost bipartite with most o</context>
+</contexts>
+<marker>Bastien, Lamblin, Pascanu, Bergstra, Goodfellow, Bergeron, Bouchard, Bengio, 2012</marker>
+<rawString>F. Bastien, P. Lamblin, R. Pascanu, J. Bergstra, I. J. Goodfellow, A. Bergeron, N. Bouchard, and Y. Bengio. 2012. Theano: new features and speed improvements. Deep Learning and Unsupervised Feature Learning NIPS 2012 Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Bergstra</author>
+<author>O Breuleux</author>
+<author>F Bastien</author>
+<author>P Lamblin</author>
+<author>R Pascanu</author>
+<author>G Desjardins</author>
+<author>J Turian</author>
+<author>D Warde-Farley</author>
+<author>Y Bengio</author>
+</authors>
+<title>Theano: a CPU and GPU math expression compiler.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Python for Scientific Computing Conference (SciPy).</booktitle>
+<contexts>
+<context position="12536" citStr="Bergstra et al., 2010" startWordPosition="2171" endWordPosition="2174">fore composing them to form paths. When training on path queries, we explicitly parameterize inverse relations. For the bilinear model, we initialize Wr−1 with Wr�. For TransE, we initialize wr−1 with −wr. For Bilinear-Diag, we found initializing wr−1 with the exact inverse 1/wr is numerically unstable, so we instead randomly initialize wr−1 with i.i.d Gaussians of variance 0.1 in every entry. Additionally, for the bilinear model, we replaced the sum over N(qz) in the objective with a max since it yielded slightly higher accuracy. Our models are implemented using Theano (Bastien et al., 2012; Bergstra et al., 2010). 4 Datasets In Section 4.1, we describe two standard knowledge base completion datasets. These consist of single-edge queries, so we call them base datasets. In Section 4.2, we generate path query datasets from these base datasets. 4.1 Base datasets Our experiments are conducted using the subsets of WordNet and Freebase from Socher et al. (2013). The statistics of these datasets and their splits are given in Table 1. The WordNet and Freebase subsets exhibit substantial differences that can influence model performance. The Freebase subset is almost bipartite with most of the edges taking the f</context>
+</contexts>
+<marker>Bergstra, Breuleux, Bastien, Lamblin, Pascanu, Desjardins, Turian, Warde-Farley, Bengio, 2010</marker>
+<rawString>J. Bergstra, O. Breuleux, F. Bastien, P. Lamblin, R. Pascanu, G. Desjardins, J. Turian, D. Warde-Farley, and Y. Bengio. 2010. Theano: a CPU and GPU math expression compiler. In Proceedings of the Python for Scientific Computing Conference (SciPy).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K Bollacker</author>
+<author>C Evans</author>
+<author>P Paritosh</author>
+<author>T Sturge</author>
+<author>J Taylor</author>
+</authors>
+<title>Freebase: a collaboratively created graph database for structuring human knowledge.</title>
+<date>2008</date>
+<booktitle>In International Conference on Management of Data (SIGMOD),</booktitle>
+<pages>1247--1250</pages>
+<contexts>
+<context position="1211" citStr="Bollacker et al., 2008" startWordPosition="173" endWordPosition="176">e recursively applied to answer path queries, but that they suffer from cascading errors. This motivates a new “compositional” training objective, which dramatically improves all models’ ability to answer path queries, in some cases more than doubling accuracy. On a standard knowledge base completion task, we also demonstrate that compositional training acts as a novel form of structural regularization, reliably improving performance across all base models (reducing errors by up to 43%) and achieving new state-of-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity fr</context>
+</contexts>
+<marker>Bollacker, Evans, Paritosh, Sturge, Taylor, 2008</marker>
+<rawString>K. Bollacker, C. Evans, P. Paritosh, T. Sturge, and J. Taylor. 2008. Freebase: a collaboratively created graph database for structuring human knowledge. In International Conference on Management of Data (SIGMOD), pages 1247–1250.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Bordes</author>
+<author>N Usunier</author>
+<author>A Garcia-Duran</author>
+<author>J Weston</author>
+<author>O Yakhnenko</author>
+</authors>
+<title>Translating embeddings for modeling multi-relational data.</title>
+<date>2013</date>
+<booktitle>In Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<pages>2787--2795</pages>
+<contexts>
+<context position="3505" citStr="Bordes et al., 2013" startWordPosition="539" endWordPosition="542"> level, we interpret the base vector space model as implementing a soft edge traversal operator. This operator can then be recursively applied to predict paths. Our interpretation suggests a new compositional training objective that encourages better modeling of 318 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 318–327, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. paths. Our technique is applicable to a broad class of composable models that includes the bilinear model (Nickel et al., 2011) and TransE (Bordes et al., 2013). We have two key empirical findings: First, we show that compositional training enables us to answer path queries up to at least length 5 by substantially reducing cascading errors present in the base vector space model. Second, we find that somewhat surprisingly, compositional training also improves upon state-of-the-art performance for knowledge base completion, which is a special case of answering unit length path queries. Therefore, compositional training can also be seen as a new form of structural regularization for existing models. 2 Task We now give a formal definition of the task of </context>
+<context position="9733" citStr="Bordes et al. (2013)" startWordPosition="1679" endWordPosition="1682"> queries of path length 1. We will refer to this special case as single-edge training. In Section 5, we show that compositional training leads to substantially better results for both path query answering and knowledge base completion. In Section 6, we provide insight into why. 3.4 Other composable models There are many possible candidates for T and M. For example, T could be one’s favorite neural network mapping from Rd to Rd. Here, we focus on two composable models that were both recently shown to achieve state-of-the-art performance on knowledge base completion. TransE. The TransE model of Bordes et al. (2013) uses the scoring function score(s/r, t) = −kxs + wr − xtk22. (11) where xs, wr and xt are all d-dimensional vectors. In this case, the model can be expressed using membership operator M(v, xt) = −kv − xtk2 (12) 2 and traversal operator Tr(xs) = xs + wr. Hence, TransE can handle a path query q = s/r1/r2/ ··· /rk using score(q, t) = −kxs + wr1 + · · · + wrk − xtk22. We visualize the compositional TransE model in Figure 2. Bilinear-Diag. The Bilinear-Diag model of Yang et al. (2015) is a special case of the bilinear model with the relation matrices constrained to be diagonal. Alternatively, the </context>
+<context position="29548" citStr="Bordes et al., 2013" startWordPosition="5097" endWordPosition="5101">h, compositional training should shrink dist(p, r) more. To confirm this hypothesis, we enumerated over all 676 possible paths of length 2 (including inverted relations), and examined the proportional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated </context>
+</contexts>
+<marker>Bordes, Usunier, Garcia-Duran, Weston, Yakhnenko, 2013</marker>
+<rawString>A. Bordes, N. Usunier, A. Garcia-Duran, J. Weston, and O. Yakhnenko. 2013. Translating embeddings for modeling multi-relational data. In Advances in Neural Information Processing Systems (NIPS), pages 2787–2795.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Bordes</author>
+<author>S Chopra</author>
+<author>J Weston</author>
+</authors>
+<title>Question answering with subgraph embeddings.</title>
+<date>2014</date>
+<booktitle>In Empirical Methods in Natural Language Processing (EMNLP).</booktitle>
+<contexts>
+<context position="32017" citStr="Bordes et al. (2014)" startWordPosition="5491" endWordPosition="5494">posed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique in modeling the denotation of each intermediate step of a path query, and using this information to regularize the spatial arrangement of entity vectors. 8 Discussion We introduced the task of answering path queries on an incomplete knowledge base, and presented a general technique for compositionalizing a broad class of vector space models. Our experiments show that compositional training leads to state-ofthe-art performance on both path query answering and knowledge base completion. There are several key</context>
+</contexts>
+<marker>Bordes, Chopra, Weston, 2014</marker>
+<rawString>A. Bordes, S. Chopra, and J. Weston. 2014. Question answering with subgraph embeddings. In Empirical Methods in Natural Language Processing (EMNLP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S R Bowman</author>
+<author>C Potts</author>
+<author>C D Manning</author>
+</authors>
+<title>Can recursive neural tensor networks learn logical reasoning?</title>
+<date>2014</date>
+<booktitle>In International Conference on Learning Representations (ICLR).</booktitle>
+<contexts>
+<context position="30796" citStr="Bowman et al. (2014)" startWordPosition="5303" endWordPosition="5306">, and can be used to recursively modify the meaning of nearby constituents. Grefenstette (2013) exdistSINGLE(p, r) . 325 Figure 4: We divide paths of length 2 into high precision (&gt; 0.3), low precision (≤ 0.3), and not co-occuring with r. Here r = nationality. Each box plot shows the min, max, and first and third quartiles of Adist(p, r). As hypothesized, compositional training results in large decreases in dist(p, r) for high precision paths p, modest decreases for low precision paths, and little to no decreases for irrelevant paths. plored the ability of tensors to simulate logical calculi. Bowman et al. (2014) showed that recursive neural networks can learn to distinguish important semantic relations. Socher et al. (2014) found that compositional models were powerful enough to describe and retrieve images. We demonstrate that compositional representations are also useful in the context of knowledge base querying and completion. In the aforementioned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been pr</context>
+</contexts>
+<marker>Bowman, Potts, Manning, 2014</marker>
+<rawString>S. R. Bowman, C. Potts, and C. D. Manning. 2014. Can recursive neural tensor networks learn logical reasoning? In International Conference on Learning Representations (ICLR).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>X Dong</author>
+<author>E Gabrilovich</author>
+<author>G Heitz</author>
+<author>W Horn</author>
+<author>N Lao</author>
+<author>K Murphy</author>
+<author>T Strohmann</author>
+<author>S Sun</author>
+<author>W Zhang</author>
+</authors>
+<title>Knowledge vault: A web-scale approach to probabilistic knowledge fusion.</title>
+<date>2014</date>
+<booktitle>In International Conference on Knowledge Discovery and Data Mining (KDD),</booktitle>
+<pages>601--610</pages>
+<contexts>
+<context position="29609" citStr="Dong et al. (2014)" startWordPosition="5110" endWordPosition="5113">nfirm this hypothesis, we enumerated over all 676 possible paths of length 2 (including inverted relations), and examined the proportional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a sentence, and can be used to recursively </context>
+</contexts>
+<marker>Dong, Gabrilovich, Heitz, Horn, Lao, Murphy, Strohmann, Sun, Zhang, 2014</marker>
+<rawString>X. Dong, E. Gabrilovich, G. Heitz, W. Horn, N. Lao, K. Murphy, T. Strohmann, S. Sun, and W. Zhang. 2014. Knowledge vault: A web-scale approach to probabilistic knowledge fusion. In International Conference on Knowledge Discovery and Data Mining (KDD), pages 601–610.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Duchi</author>
+<author>E Hazan</author>
+<author>Y Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2010</date>
+<booktitle>In Conference on Learning Theory (COLT).</booktitle>
+<contexts>
+<context position="11142" citStr="Duchi et al., 2010" startWordPosition="1933" endWordPosition="1936">me models are not naturally composable—for example, the latent feature model of Riedel et al. (2013) and the neural tensor network of Socher et al. (2013). These approaches have scoring functions which combine s, r and t in a way that does not involve an intermediate vector representing s/r alone without t, so they do not decompose according to (7). J(Θ) = N � [1 − margin(qi, ti, t&apos;)] + , i=1 t&apos;∈N(qi) margin(q, t, t&apos;) = score(q, t) − score(q, t&apos;), 320 WordNet Freebase Train Paths Test Table 1: WordNet and Freebase statistics for base and path query datasets. 3.5 Implementation We use AdaGrad (Duchi et al., 2010) to optimize J(Θ), which is in general non-convex. Initialization scale, mini-batch size and step size were cross-validated for all models. We initialize all parameters with i.i.d. Gaussians of variance 0.1 in every entry, use a mini-batch size of 300 examples, and a step size in [0.001, 0.1] (chosen via crossvalidation) for all of the models. For each example q, we sample 10 negative entities t&apos; E N(q). During training, all of the entity vectors are constrained to lie on the unit ball, and we clipped the gradients to the median of the observed gradients if the update exceeded 3 times the medi</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2010</marker>
+<rawString>J. Duchi, E. Hazan, and Y. Singer. 2010. Adaptive subgradient methods for online learning and stochastic optimization. In Conference on Learning Theory (COLT).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Gardner</author>
+<author>P Talukdar</author>
+<author>J Krishnamurthy</author>
+<author>T Mitchell</author>
+</authors>
+<title>Incorporating vector space similarity in random walk inference over knowledge bases.</title>
+<date>2014</date>
+<booktitle>In Empirical Methods in Natural Language Processing (EMNLP).</booktitle>
+<contexts>
+<context position="31645" citStr="Gardner et al. (2014)" startWordPosition="5430" endWordPosition="5434">tional representations are also useful in the context of knowledge base querying and completion. In the aforementioned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique in modeling the denotation of each intermediate step of a path query, and using this information to regularize the spatial arrangement of e</context>
+</contexts>
+<marker>Gardner, Talukdar, Krishnamurthy, Mitchell, 2014</marker>
+<rawString>M. Gardner, P. Talukdar, J. Krishnamurthy, and T. Mitchell. 2014. Incorporating vector space similarity in random walk inference over knowledge bases. In Empirical Methods in Natural Language Processing (EMNLP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>E Grefenstette</author>
+</authors>
+<title>Towards a formal distributional semantics: Simulating logical calculi with tensors. arXiv preprint arXiv:1304.5823.</title>
+<date>2013</date>
+<contexts>
+<context position="30271" citStr="Grefenstette (2013)" startWordPosition="5212" endWordPosition="5213">he quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a sentence, and can be used to recursively modify the meaning of nearby constituents. Grefenstette (2013) exdistSINGLE(p, r) . 325 Figure 4: We divide paths of length 2 into high precision (&gt; 0.3), low precision (≤ 0.3), and not co-occuring with r. Here r = nationality. Each box plot shows the min, max, and first and third quartiles of Adist(p, r). As hypothesized, compositional training results in large decreases in dist(p, r) for high precision paths p, modest decreases for low precision paths, and little to no decreases for irrelevant paths. plored the ability of tensors to simulate logical calculi. Bowman et al. (2014) showed that recursive neural networks can learn to distinguish important s</context>
+</contexts>
+<marker>Grefenstette, 2013</marker>
+<rawString>E. Grefenstette. 2013. Towards a formal distributional semantics: Simulating logical calculi with tensors. arXiv preprint arXiv:1304.5823.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>N Lao</author>
+<author>W W Cohen</author>
+</authors>
+<title>Relational retrieval using a combination of path-constrained random walks.</title>
+<date>2010</date>
+<booktitle>Machine learning,</booktitle>
+<pages>81--1</pages>
+<contexts>
+<context position="31589" citStr="Lao and Cohen (2010)" startWordPosition="5420" endWordPosition="5423">scribe and retrieve images. We demonstrate that compositional representations are also useful in the context of knowledge base querying and completion. In the aforementioned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique in modeling the denotation of each intermediate step of a path query, and using thi</context>
+</contexts>
+<marker>Lao, Cohen, 2010</marker>
+<rawString>N. Lao and W. W. Cohen. 2010. Relational retrieval using a combination of path-constrained random walks. Machine learning, 81(1):53–67.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>N Lao</author>
+<author>T Mitchell</author>
+<author>W W Cohen</author>
+</authors>
+<title>Random walk inference and learning in a large scale knowledge base.</title>
+<date>2011</date>
+<booktitle>In Empirical Methods in Natural Language Processing (EMNLP),</booktitle>
+<pages>529--539</pages>
+<contexts>
+<context position="26523" citStr="Lao et al., 2011" startWordPosition="4557" endWordPosition="4560">base completion? Table 2 reveals that COMP also performs better on the single-edge task of knowledge base completion. This is somewhat surprising, since SINGLE is trained on a training set which distributionally matches the test set, whereas COMP is not. However, COMP’s better performance on path queries suggests that there must be another factor at play. At a high level, training on paths must be providing some form of structural regularization which reduces cascading errors. Indeed, paths in a knowledge graph have proven to be important features for predicting the existence of single edges (Lao et al., 2011; Neelakantan et al., 2015). For example, consider the following Horn clause: parents (x, y) ∧ location (y, z) ==&gt;- place of birth (x, z) , 324 Figure 3: Reconstruction quality (RQ) at each step of the query tad lincoln/parents/place of birth/ place of birth−1/profession. COMP experiences significantly less degradation in RQ as path length increases. Correspondingly, the set of 5 highest scoring entities computed at each step using COMP (green) is significiantly more accurate than the set given by SINGLE (blue). Correct entities are bolded. which states that if x has a parent with location z, </context>
+</contexts>
+<marker>Lao, Mitchell, Cohen, 2011</marker>
+<rawString>N. Lao, T. Mitchell, and W. W. Cohen. 2011. Random walk inference and learning in a large scale knowledge base. In Empirical Methods in Natural Language Processing (EMNLP), pages 529–539.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Min</author>
+<author>R Grishman</author>
+<author>L Wan</author>
+<author>C Wang</author>
+<author>D Gondek</author>
+</authors>
+<title>Distant supervision for relation extraction with an incomplete knowledge base.</title>
+<date>2013</date>
+<booktitle>In North American Association for Computational Linguistics (NAACL),</booktitle>
+<pages>777--782</pages>
+<contexts>
+<context position="1355" citStr="Min et al., 2013" startWordPosition="197" endWordPosition="200">ch dramatically improves all models’ ability to answer path queries, in some cases more than doubling accuracy. On a standard knowledge base completion task, we also demonstrate that compositional training acts as a novel form of structural regularization, reliably improving performance across all base models (reducing errors by up to 43%) and achieving new state-of-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s par</context>
+</contexts>
+<marker>Min, Grishman, Wan, Wang, Gondek, 2013</marker>
+<rawString>B. Min, R. Grishman, L. Wan, C. Wang, and D. Gondek. 2013. Distant supervision for relation extraction with an incomplete knowledge base. In North American Association for Computational Linguistics (NAACL), pages 777–782.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Neelakantan</author>
+<author>B Roth</author>
+<author>A McCallum</author>
+</authors>
+<title>Compositional vector space models for knowledge base completion.</title>
+<date>2015</date>
+<booktitle>In Association for Computational Linguistics (ACL).</booktitle>
+<contexts>
+<context position="1752" citStr="Neelakantan et al., 2015" startWordPosition="264" endWordPosition="268">ntroduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledge bases: the ability to support compositional queries (Ullman, 1985). For example, we migh</context>
+<context position="26550" citStr="Neelakantan et al., 2015" startWordPosition="4561" endWordPosition="4564">able 2 reveals that COMP also performs better on the single-edge task of knowledge base completion. This is somewhat surprising, since SINGLE is trained on a training set which distributionally matches the test set, whereas COMP is not. However, COMP’s better performance on path queries suggests that there must be another factor at play. At a high level, training on paths must be providing some form of structural regularization which reduces cascading errors. Indeed, paths in a knowledge graph have proven to be important features for predicting the existence of single edges (Lao et al., 2011; Neelakantan et al., 2015). For example, consider the following Horn clause: parents (x, y) ∧ location (y, z) ==&gt;- place of birth (x, z) , 324 Figure 3: Reconstruction quality (RQ) at each step of the query tad lincoln/parents/place of birth/ place of birth−1/profession. COMP experiences significantly less degradation in RQ as path length increases. Correspondingly, the set of 5 highest scoring entities computed at each step using COMP (green) is significiantly more accurate than the set given by SINGLE (blue). Correct entities are bolded. which states that if x has a parent with location z, then x has place of birth z</context>
+<context position="31764" citStr="Neelakantan et al. (2015)" startWordPosition="5449" endWordPosition="5452">ned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique in modeling the denotation of each intermediate step of a path query, and using this information to regularize the spatial arrangement of entity vectors. 8 Discussion We introduced the task of answering path queries on an incomplete knowledge base, and prese</context>
+</contexts>
+<marker>Neelakantan, Roth, McCallum, 2015</marker>
+<rawString>A. Neelakantan, B. Roth, and A. McCallum. 2015. Compositional vector space models for knowledge base completion. In Association for Computational Linguistics (ACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Nickel</author>
+<author>V Tresp</author>
+<author>H Kriegel</author>
+</authors>
+<title>A three-way model for collective learning on multirelational data.</title>
+<date>2011</date>
+<booktitle>In International Conference on Machine Learning (ICML),</booktitle>
+<pages>809--816</pages>
+<contexts>
+<context position="1662" citStr="Nickel et al., 2011" startWordPosition="248" endWordPosition="251">odels (reducing errors by up to 43%) and achieving new state-of-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledg</context>
+<context position="3472" citStr="Nickel et al., 2011" startWordPosition="533" endWordPosition="536">pletion (see Figure 1). At a high level, we interpret the base vector space model as implementing a soft edge traversal operator. This operator can then be recursively applied to predict paths. Our interpretation suggests a new compositional training objective that encourages better modeling of 318 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 318–327, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. paths. Our technique is applicable to a broad class of composable models that includes the bilinear model (Nickel et al., 2011) and TransE (Bordes et al., 2013). We have two key empirical findings: First, we show that compositional training enables us to answer path queries up to at least length 5 by substantially reducing cascading errors present in the base vector space model. Second, we find that somewhat surprisingly, compositional training also improves upon state-of-the-art performance for knowledge base completion, which is a special case of answering unit length path queries. Therefore, compositional training can also be seen as a new form of structural regularization for existing models. 2 Task We now give a </context>
+<context position="5926" citStr="Nickel et al., 2011" startWordPosition="988" endWordPosition="991">longs in the graph or not. This can be formulated as a path query q = s/r with candidate answer t. 3 Compositionalization In this section, we show how to compositionalize existing KBC models to answer path queries. We start with a motivating example in Section 3.1, then present the general technique in Section 3.2. This suggests a new compositional training objective, described in Section 3.3. Finally, we illustrate the technique for several more models in Section 3.4, which we use in our experiments. 3.1 Example A common vector space model for knowledge base completion is the bilinear model (Nickel et al., 2011). In this model, we learn a vector xe ∈ Rd for each entity e ∈ E and a matrix Wr ∈ Rdxd for each relation r ∈ R. Given a query s/r (asking for the set of entities connected to s via relation r), the bilinear model scores how likely t ∈ Js/rK holds using score(s/r, t) = xTs Wrxt. (5) To motivate our compositionalization technique, take d = |E |and suppose Wr is the adjacency matrix for relation r and entity vector xe is the indicator vector with a 1 in the entry corresponding to entity e. Then, to answer a path query q = s/r1/ ... /rk, we would then compute score(q, t) = xTs Wrl ... Wrkxt. (6) </context>
+<context position="29527" citStr="Nickel et al., 2011" startWordPosition="5093" endWordPosition="5096">t when prec(p) is high, compositional training should shrink dist(p, r) more. To confirm this hypothesis, we enumerated over all 676 possible paths of length 2 (including inverted relations), and examined the proportional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a </context>
+</contexts>
+<marker>Nickel, Tresp, Kriegel, 2011</marker>
+<rawString>M. Nickel, V. Tresp, and H. Kriegel. 2011. A three-way model for collective learning on multirelational data. In International Conference on Machine Learning (ICML), pages 809–816.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Nickel</author>
+<author>V Tresp</author>
+<author>H Kriegel</author>
+</authors>
+<title>Factorizing YAGO. In World Wide Web (WWW).</title>
+<date>2012</date>
+<contexts>
+<context position="1683" citStr="Nickel et al., 2012" startWordPosition="252" endWordPosition="255">s by up to 43%) and achieving new state-of-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledge bases: the ability </context>
+</contexts>
+<marker>Nickel, Tresp, Kriegel, 2012</marker>
+<rawString>M. Nickel, V. Tresp, and H. Kriegel. 2012. Factorizing YAGO. In World Wide Web (WWW).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Nickel</author>
+<author>X Jiang</author>
+<author>V Tresp</author>
+</authors>
+<title>Reducing the rank in relational factorization models by including observable patterns.</title>
+<date>2014</date>
+<booktitle>In Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<pages>1179--1187</pages>
+<contexts>
+<context position="31506" citStr="Nickel et al. (2014)" startWordPosition="5408" endWordPosition="5411">ns. Socher et al. (2014) found that compositional models were powerful enough to describe and retrieve images. We demonstrate that compositional representations are also useful in the context of knowledge base querying and completion. In the aforementioned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique </context>
+</contexts>
+<marker>Nickel, Jiang, Tresp, 2014</marker>
+<rawString>M. Nickel, X. Jiang, and V. Tresp. 2014. Reducing the rank in relational factorization models by including observable patterns. In Advances in Neural Information Processing Systems (NIPS), pages 1179–1187.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Pennington</author>
+<author>R Socher</author>
+<author>C D Manning</author>
+</authors>
+<title>Glove: Global vectors for word representation.</title>
+<date>2014</date>
+<booktitle>In Empirical Methods in Natural Language Processing (EMNLP).</booktitle>
+<contexts>
+<context position="22137" citStr="Pennington et al. (2014)" startWordPosition="3798" endWordPosition="3802">r than mean quantile, but makes our results directly comparable to Socher et al. (2013). Our results show that previously inferior models such as the bilinear model can outperform stateof-the-art models after compositional training. Socher et al. (2013) proposed parametrizing each entity vector as the average of vectors of words in the entity (wtad lincoln= 12(wtad + wlincoln), and pretraining these word vectors using the method of Turian et al. (2010). Table 5 reports results when using this approach in conjunction with compositional training. We initialized all models with word vectors from Pennington et al. (2014). We found that compositionally trained models outperform the neural tensor network (NTN) on WordNet, while being only slightly behind on Freebase. (We did not use word vectors in any of our other experiments.) When the strategy of averaging word vectors to form entity vectors is not applied, our compositional models are significantly better on WordNet and slightly better on Freebase. It is worth noting that in many domains, entity names are not lexically meaningful, so word vector averaging is not SINGLE Bilinear COMP SINGLE Bi-Diag COMP 92.6 71.7 99.0 87.4 Ded. Ind. 49.3 49.4 82.1 70.6 49.3 </context>
+</contexts>
+<marker>Pennington, Socher, Manning, 2014</marker>
+<rawString>J. Pennington, R. Socher, and C. D. Manning. 2014. Glove: Global vectors for word representation. In Empirical Methods in Natural Language Processing (EMNLP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Perozzi</author>
+<author>R Al-Rfou</author>
+<author>S Skiena</author>
+</authors>
+<title>Deepwalk: Online learning of social representations.</title>
+<date>2014</date>
+<booktitle>In International Conference on Knowledge Discovery and Data Mining (KDD),</booktitle>
+<pages>701--710</pages>
+<contexts>
+<context position="31878" citStr="Perozzi et al. (2014)" startWordPosition="5467" endWordPosition="5470">ach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) proposed combining low-rank models with sparse path features. Lao and Cohen (2010) used random walks as features and Gardner et al. (2014) extended this approach by using vector space similarity to govern random walk probabilities. Neelakantan et al. (2015) addressed the problem of path sparsity by embedding paths using a recurrent neural network. Perozzi et al. (2014) sampled random walks on social networks as training examples, with a different goal to classify nodes in the network. Bordes et al. (2014) embed paths as a sum of relation vectors for question answering. Our approach is unique in modeling the denotation of each intermediate step of a path query, and using this information to regularize the spatial arrangement of entity vectors. 8 Discussion We introduced the task of answering path queries on an incomplete knowledge base, and presented a general technique for compositionalizing a broad class of vector space models. Our experiments show that co</context>
+</contexts>
+<marker>Perozzi, Al-Rfou, Skiena, 2014</marker>
+<rawString>B. Perozzi, R. Al-Rfou, and S. Skiena. 2014. Deepwalk: Online learning of social representations. In International Conference on Knowledge Discovery and Data Mining (KDD), pages 701–710.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Riedel</author>
+<author>L Yao</author>
+<author>A McCallum</author>
+</authors>
+<title>Relation extraction with matrix factorization and universal schemas.</title>
+<date>2013</date>
+<booktitle>In North American Association for Computational Linguistics (NAACL).</booktitle>
+<contexts>
+<context position="1725" citStr="Riedel et al., 2013" startWordPosition="260" endWordPosition="263">-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledge bases: the ability to support compositional queries (Ullman, </context>
+<context position="10623" citStr="Riedel et al. (2013)" startWordPosition="1838" endWordPosition="1841">an handle a path query q = s/r1/r2/ ··· /rk using score(q, t) = −kxs + wr1 + · · · + wrk − xtk22. We visualize the compositional TransE model in Figure 2. Bilinear-Diag. The Bilinear-Diag model of Yang et al. (2015) is a special case of the bilinear model with the relation matrices constrained to be diagonal. Alternatively, the model can be viewed as a variant of TransE with multiplicative interactions between entity and relation vectors. Not all models can be compositionalized. It is important to point out that some models are not naturally composable—for example, the latent feature model of Riedel et al. (2013) and the neural tensor network of Socher et al. (2013). These approaches have scoring functions which combine s, r and t in a way that does not involve an intermediate vector representing s/r alone without t, so they do not decompose according to (7). J(Θ) = N � [1 − margin(qi, ti, t&apos;)] + , i=1 t&apos;∈N(qi) margin(q, t, t&apos;) = score(q, t) − score(q, t&apos;), 320 WordNet Freebase Train Paths Test Table 1: WordNet and Freebase statistics for base and path query datasets. 3.5 Implementation We use AdaGrad (Duchi et al., 2010) to optimize J(Θ), which is in general non-convex. Initialization scale, mini-bat</context>
+<context position="29740" citStr="Riedel et al. (2013)" startWordPosition="5131" endWordPosition="5134">portional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a sentence, and can be used to recursively modify the meaning of nearby constituents. Grefenstette (2013) exdistSINGLE(p, r) . 325 Figure 4: We divide paths of length 2 into </context>
+</contexts>
+<marker>Riedel, Yao, McCallum, 2013</marker>
+<rawString>S. Riedel, L. Yao, and A. McCallum. 2013. Relation extraction with matrix factorization and universal schemas. In North American Association for Computational Linguistics (NAACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Socher</author>
+<author>B Huval</author>
+<author>C D Manning</author>
+<author>A Y Ng</author>
+</authors>
+<title>Semantic compositionality through recursive matrix-vector spaces.</title>
+<date>2012</date>
+<booktitle>In Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP/CoNLL),</booktitle>
+<pages>1201--1211</pages>
+<contexts>
+<context position="30123" citStr="Socher et al. (2012)" startWordPosition="5185" endWordPosition="5188">3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a sentence, and can be used to recursively modify the meaning of nearby constituents. Grefenstette (2013) exdistSINGLE(p, r) . 325 Figure 4: We divide paths of length 2 into high precision (&gt; 0.3), low precision (≤ 0.3), and not co-occuring with r. Here r = nationality. Each box plot shows the min, max, and first and third quartiles of Adist(p, r). As hypothesized, compositional training results in large decreases in dist(p, r) for high precision paths p, modest decreases for low precision paths, and little to no decreases for irrelevant paths. plored</context>
+</contexts>
+<marker>Socher, Huval, Manning, Ng, 2012</marker>
+<rawString>R. Socher, B. Huval, C. D. Manning, and A. Y. Ng. 2012. Semantic compositionality through recursive matrix-vector spaces. In Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP/CoNLL), pages 1201–1211.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Socher</author>
+<author>D Chen</author>
+<author>C D Manning</author>
+<author>A Ng</author>
+</authors>
+<title>Reasoning with neural tensor networks for knowledge base completion.</title>
+<date>2013</date>
+<booktitle>In Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<pages>926--934</pages>
+<contexts>
+<context position="1704" citStr="Socher et al., 2013" startWordPosition="256" endWordPosition="259">chieving new state-of-the-art results. 1 Introduction Broad-coverage knowledge bases such as Freebase (Bollacker et al., 2008) support a rich array of reasoning and question answering applications, but they are known to suffer from incomplete coverage (Min et al., 2013). For example, as of May 2015, Freebase has an entity Tad Lincoln (Abraham Lincoln’s son), but does not have his ethnicity. An elegant solution to incompleteness is using vector space representations: Controlling the dimensionality of the vector space forces generalization to new facts (Nickel et al., 2011; Nickel et al., 2012; Socher et al., 2013; Riedel et al., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledge bases: the ability to support compositio</context>
+<context position="10677" citStr="Socher et al. (2013)" startWordPosition="1849" endWordPosition="1852">e(q, t) = −kxs + wr1 + · · · + wrk − xtk22. We visualize the compositional TransE model in Figure 2. Bilinear-Diag. The Bilinear-Diag model of Yang et al. (2015) is a special case of the bilinear model with the relation matrices constrained to be diagonal. Alternatively, the model can be viewed as a variant of TransE with multiplicative interactions between entity and relation vectors. Not all models can be compositionalized. It is important to point out that some models are not naturally composable—for example, the latent feature model of Riedel et al. (2013) and the neural tensor network of Socher et al. (2013). These approaches have scoring functions which combine s, r and t in a way that does not involve an intermediate vector representing s/r alone without t, so they do not decompose according to (7). J(Θ) = N � [1 − margin(qi, ti, t&apos;)] + , i=1 t&apos;∈N(qi) margin(q, t, t&apos;) = score(q, t) − score(q, t&apos;), 320 WordNet Freebase Train Paths Test Table 1: WordNet and Freebase statistics for base and path query datasets. 3.5 Implementation We use AdaGrad (Duchi et al., 2010) to optimize J(Θ), which is in general non-convex. Initialization scale, mini-batch size and step size were cross-validated for all mod</context>
+<context position="12884" citStr="Socher et al. (2013)" startWordPosition="2228" endWordPosition="2231">.i.d Gaussians of variance 0.1 in every entry. Additionally, for the bilinear model, we replaced the sum over N(qz) in the objective with a max since it yielded slightly higher accuracy. Our models are implemented using Theano (Bastien et al., 2012; Bergstra et al., 2010). 4 Datasets In Section 4.1, we describe two standard knowledge base completion datasets. These consist of single-edge queries, so we call them base datasets. In Section 4.2, we generate path query datasets from these base datasets. 4.1 Base datasets Our experiments are conducted using the subsets of WordNet and Freebase from Socher et al. (2013). The statistics of these datasets and their splits are given in Table 1. The WordNet and Freebase subsets exhibit substantial differences that can influence model performance. The Freebase subset is almost bipartite with most of the edges taking the form (s, r, t) for some person s, relation r and property t. In WordNet, both the source and target entities are arbitrary words. Both the raw WordNet and Freebase contain many relations that are almost perfectly correlated with an inverse relation. For example, WordNet contains both has part and part of, and Freebase contains both parents and chi</context>
+<context position="15622" citStr="Socher et al. (2013)" startWordPosition="2719" endWordPosition="2722">procedure except using the graph yfull, which is ytrain plus all of the test edges from the base dataset. Then we remove any queries from the test set that also appeared in the training set. The statistics for the path query datasets are presented in Table 1. 5 Main results We evaluate the models derived in Section 3 on two tasks: path query answering and knowledge base completion. On both tasks, we show that the compositional training strategy proposed in Section 3.3 leads to substantial performance gains over standard single-edge training. We also compare directly against the KBC results of Socher et al. (2013), demonstrating that previously inferior models now match or outperform state-of-the-art models after compositional training. Evaluation metric. Numerous metrics have been used to evaluate knowledge base queries, including hits at 10 (percentage of correct answers ranked in the top 10) and mean rank. We evaluate on hits at 10, as well as a normalized version of mean rank, mean quantile, which better accounts for the total number of candidates. For a query q, the quantile of a correct answer t is the fraction of incorrect answers ranked after t: The quantile ranges from 0 to 1, with 1 being opt</context>
+<context position="21346" citStr="Socher et al. (2013)" startWordPosition="3671" endWordPosition="3674">ypes of parts does X have?”; and the transitive “What is X a type of?”. (Note that a relation r and its inverse r−1 do not necessarily cancel out if r is not a one-to-one mapping. For example, X/institution/institution−1 denotes the set of all people who work at the institution X works at, which is not just X.) Path query task WordNet Freebase Ded. Ind. 96.9 66.0 98.9 75.6 56.3 51.6 98.5 78.2 TransE SINGLE COMP Table 3: Deduction and induction. We compare mean quantile performance of single-edge training (SINGLE) vs compositional training (COMP). Length 1 queries are excluded. Comparison with Socher et al. (2013). Here, we measure performance on the KBC task in terms of the accuracy metric of Socher et al. (2013). This evaluation involves sampled negatives, and is hence noisier than mean quantile, but makes our results directly comparable to Socher et al. (2013). Our results show that previously inferior models such as the bilinear model can outperform stateof-the-art models after compositional training. Socher et al. (2013) proposed parametrizing each entity vector as the average of vectors of words in the entity (wtad lincoln= 12(wtad + wlincoln), and pretraining these word vectors using the method </context>
+<context position="29589" citStr="Socher et al., 2013" startWordPosition="5106" endWordPosition="5109">dist(p, r) more. To confirm this hypothesis, we enumerated over all 676 possible paths of length 2 (including inverted relations), and examined the proportional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a sentence, and can be </context>
+</contexts>
+<marker>Socher, Chen, Manning, Ng, 2013</marker>
+<rawString>R. Socher, D. Chen, C. D. Manning, and A. Ng. 2013. Reasoning with neural tensor networks for knowledge base completion. In Advances in Neural Information Processing Systems (NIPS), pages 926–934.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Socher</author>
+<author>A Karpathy</author>
+<author>Q V Le</author>
+<author>C D Manning</author>
+<author>A Y Ng</author>
+</authors>
+<title>Grounded compositional semantics for finding and describing images with sentences.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics (TACL),</journal>
+<pages>2--207</pages>
+<contexts>
+<context position="30910" citStr="Socher et al. (2014)" startWordPosition="5320" endWordPosition="5323"> . 325 Figure 4: We divide paths of length 2 into high precision (&gt; 0.3), low precision (≤ 0.3), and not co-occuring with r. Here r = nationality. Each box plot shows the min, max, and first and third quartiles of Adist(p, r). As hypothesized, compositional training results in large decreases in dist(p, r) for high precision paths p, modest decreases for low precision paths, and little to no decreases for irrelevant paths. plored the ability of tensors to simulate logical calculi. Bowman et al. (2014) showed that recursive neural networks can learn to distinguish important semantic relations. Socher et al. (2014) found that compositional models were powerful enough to describe and retrieve images. We demonstrate that compositional representations are also useful in the context of knowledge base querying and completion. In the aforementioned work, compositional models produce vectors which represent truth values, sentiment or image features. In our approach, vectors represent sets of entities constituting the denotation of a knowledge base query. Path modeling. Numerous methods have been proposed to leverage path information for knowledge base completion and question answering. Nickel et al. (2014) pro</context>
+</contexts>
+<marker>Socher, Karpathy, Le, Manning, Ng, 2014</marker>
+<rawString>R. Socher, A. Karpathy, Q. V. Le, C. D. Manning, and A. Y. Ng. 2014. Grounded compositional semantics for finding and describing images with sentences. Transactions of the Association for Computational Linguistics (TACL), 2:207–218.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Turian</author>
+<author>L Ratinov</author>
+<author>Y Bengio</author>
+</authors>
+<title>Word representations: a simple and general method for semisupervised learning.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 48th annual</booktitle>
+<pages>384--394</pages>
+<contexts>
+<context position="21969" citStr="Turian et al. (2010)" startWordPosition="3771" endWordPosition="3774">ere, we measure performance on the KBC task in terms of the accuracy metric of Socher et al. (2013). This evaluation involves sampled negatives, and is hence noisier than mean quantile, but makes our results directly comparable to Socher et al. (2013). Our results show that previously inferior models such as the bilinear model can outperform stateof-the-art models after compositional training. Socher et al. (2013) proposed parametrizing each entity vector as the average of vectors of words in the entity (wtad lincoln= 12(wtad + wlincoln), and pretraining these word vectors using the method of Turian et al. (2010). Table 5 reports results when using this approach in conjunction with compositional training. We initialized all models with word vectors from Pennington et al. (2014). We found that compositionally trained models outperform the neural tensor network (NTN) on WordNet, while being only slightly behind on Freebase. (We did not use word vectors in any of our other experiments.) When the strategy of averaging word vectors to form entity vectors is not applied, our compositional models are significantly better on WordNet and slightly better on Freebase. It is worth noting that in many domains, ent</context>
+</contexts>
+<marker>Turian, Ratinov, Bengio, 2010</marker>
+<rawString>J. Turian, L. Ratinov, and Y. Bengio. 2010. Word representations: a simple and general method for semisupervised learning. In Proceedings of the 48th annual meeting of the association for computational linguistics, pages 384–394.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J D Ullman</author>
+</authors>
+<title>Implementation of logical query languages for databases.</title>
+<date>1985</date>
+<journal>ACM Transactions on Database Systems (TODS),</journal>
+<volume>10</volume>
+<issue>3</issue>
+<contexts>
+<context position="2330" citStr="Ullman, 1985" startWordPosition="351" endWordPosition="352">l., 2013; Neelakantan et al., 2015). In the example, we would hope to infer Tad’s ethnicity from the ethnicity of his parents. Figure 1: We propose performing path queries such as tad lincoln/parents/location (“Where are Tad Lincoln’s parents located?”) in a parallel low-dimensional vector space. Here, entity sets (boxed) are represented as real vectors, and edge traversal is driven by vector-to-vector transformations (e.g., matrix multiplication). However, what is missing from these vector space models is the original strength of knowledge bases: the ability to support compositional queries (Ullman, 1985). For example, we might ask what the ethnicity of Abraham Lincoln’s daughter would be. This can be formulated as a path query on the knowledge graph, and we would like a method that can answer this efficiently, while generalizing over missing facts and even missing or hypothetical entities (Abraham Lincoln did not in fact have a daughter). In this paper, we present a scheme to answer path queries on knowledge bases by “compositionalizing” a broad class of vector space models that have been used for knowledge base completion (see Figure 1). At a high level, we interpret the base vector space mo</context>
+</contexts>
+<marker>Ullman, 1985</marker>
+<rawString>J. D. Ullman. 1985. Implementation of logical query languages for databases. ACM Transactions on Database Systems (TODS), 10(3):289–321.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Yang</author>
+<author>W Yih</author>
+<author>X He</author>
+<author>J Gao</author>
+<author>L Deng</author>
+</authors>
+<title>Embedding entities and relations for learning and inference in knowledge bases. arXiv preprint arXiv:1412.6575.</title>
+<date>2015</date>
+<contexts>
+<context position="10218" citStr="Yang et al. (2015)" startWordPosition="1773" endWordPosition="1776">recently shown to achieve state-of-the-art performance on knowledge base completion. TransE. The TransE model of Bordes et al. (2013) uses the scoring function score(s/r, t) = −kxs + wr − xtk22. (11) where xs, wr and xt are all d-dimensional vectors. In this case, the model can be expressed using membership operator M(v, xt) = −kv − xtk2 (12) 2 and traversal operator Tr(xs) = xs + wr. Hence, TransE can handle a path query q = s/r1/r2/ ··· /rk using score(q, t) = −kxs + wr1 + · · · + wrk − xtk22. We visualize the compositional TransE model in Figure 2. Bilinear-Diag. The Bilinear-Diag model of Yang et al. (2015) is a special case of the bilinear model with the relation matrices constrained to be diagonal. Alternatively, the model can be viewed as a variant of TransE with multiplicative interactions between entity and relation vectors. Not all models can be compositionalized. It is important to point out that some models are not naturally composable—for example, the latent feature model of Riedel et al. (2013) and the neural tensor network of Socher et al. (2013). These approaches have scoring functions which combine s, r and t in a way that does not involve an intermediate vector representing s/r alo</context>
+<context position="29567" citStr="Yang et al., 2015" startWordPosition="5102" endWordPosition="5105">ning should shrink dist(p, r) more. To confirm this hypothesis, we enumerated over all 676 possible paths of length 2 (including inverted relations), and examined the proportional reduction in dist(p, r) caused by compositional training, distCOMP(p, r) − distSINGLE(p, r) Odist(p, r) = (16) Figure 4 shows that higher precision paths indeed correspond to larger reductions in dist(p, r). 7 Related work Knowledge base completion with vector space models. Many models have been proposed for knowledge base completion, including those reviewed in Section 3.4 (Nickel et al., 2011; Bordes et al., 2013; Yang et al., 2015; Socher et al., 2013). Dong et al. (2014) demonstrated that KBC models can improve the quality of relation extraction by serving as graph-based priors. Riedel et al. (2013) showed that such models can be also be directly used for open-domain relation extraction. Our compositional training technique is an orthogonal improvement that could help any composable model. Distributional compositional semantics. Previous works have explored compositional vector space representations in the context of logic and sentence interpretation. In Socher et al. (2012), a matrix is associated with each word of a</context>
+</contexts>
+<marker>Yang, Yih, He, Gao, Deng, 2015</marker>
+<rawString>B. Yang, W. Yih, X. He, J. Gao, and L. Deng. 2015. Embedding entities and relations for learning and inference in knowledge bases. arXiv preprint arXiv:1412.6575.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

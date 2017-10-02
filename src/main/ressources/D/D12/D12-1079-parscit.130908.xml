@@ -1,0 +1,1568 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000246">
+<title confidence="0.838263">
+Transforming Trees to Improve Syntactic Convergence
+</title>
+<author confidence="0.994589">
+David Burkett and Dan Klein
+</author>
+<affiliation confidence="0.998345">
+Computer Science Division
+University of California, Berkeley
+</affiliation>
+<email confidence="0.996013">
+{dburkett,klein}@cs.berkeley.edu
+</email>
+<sectionHeader confidence="0.994729" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9982834">
+We describe a transformation-based learning
+method for learning a sequence of mono-
+lingual tree transformations that improve the
+agreement between constituent trees and word
+alignments in bilingual corpora. Using the
+manually annotated English Chinese Transla-
+tion Treebank, we show how our method au-
+tomatically discovers transformations that ac-
+commodate differences in English and Chi-
+nese syntax. Furthermore, when transforma-
+tions are learned on automatically generated
+trees and alignments from the same domain as
+the training data for a syntactic MT system,
+the transformed trees achieve a 0.9 BLEU im-
+provement over baseline trees.
+</bodyText>
+<sectionHeader confidence="0.998777" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999906103448276">
+Monolingually, many Treebank conventions are
+more or less equally good. For example, the En-
+glish WSJ treebank (Marcus et al., 1993) attaches
+verbs to objects rather than to subjects, and it at-
+taches prepositional modifiers outside of all quan-
+tifiers and determiners. The former matches most
+linguistic theories while the latter does not, but to
+a monolingual parser, these conventions are equally
+learnable. However, once bilingual data is involved,
+such treebank conventions entail constraints on rule
+extraction that may not be borne out by semantic
+alignments. To the extent that there are simply di-
+vergences in the syntactic structure of the two lan-
+guages, it will often be impossible to construct syn-
+tax trees that are simultaneously in full agreement
+with monolingual linguistic theories and with the
+alignments between sentences in both languages.
+To see this, consider the English tree in Figure 1a,
+taken from the English side of the English Chi-
+nese Translation Treebank (Bies et al., 2007). The
+lowest VP in this tree is headed by ‘select,’ which
+aligns to the Chinese verb ‘ �A-.’ However, ‘ A
+A-’ also aligns to the other half of the English in-
+finitive, ‘to,’ which, following common English lin-
+guistic theory, is outside the VP. Because of this
+violating alignment, many syntactic machine trans-
+lation systems (Galley et al., 2004; Huang et al.,
+2006) won’t extract any translation rules for this
+constituent. However, by applying a simple trans-
+formation to the English tree to set up the infinitive
+as its own constituent, we get the tree in Figure 1b,
+which may be less well-motivated linguistically, but
+which corresponds better to the Chinese-mediated
+semantics and permits the extraction of many more
+syntactic MT rules.
+In this work, we develop a method based on
+transformation-based learning (Brill, 1995) for au-
+tomatically acquiring a sequence of tree transforma-
+tions of the sort in Figure 1. Once the transformation
+sequence has been learned, it can be deterministi-
+cally applied to any parsed sentences, yielding new
+parse trees with constituency structures that agree
+better with the bilingual alignments yet remain con-
+sistent across the corpus. In particular, we use this
+method to learn a transformation sequence for the
+English trees in a set of English to Chinese MT train-
+ing data. In experiments with a string-to-tree trans-
+lation system, we show resulting improvements of
+up to 0.9 BLEU.
+A great deal of research in syntactic machine
+translation has been devoted to handling the inher-
+ent syntactic divergence between source and target
+languages. Some systems attempt to model the dif-
+ferences directly (Yamada and Knight, 2001; Eis-
+ner, 2003), but most recent work focuses on reduc-
+ing the sensitivity of the rule-extraction procedure
+to the constituency decisions made by 1-best syn-
+tactic parsers, either by using forest-based methods
+</bodyText>
+<page confidence="0.985905">
+863
+</page>
+<note confidence="0.9914165">
+Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural
+Language Learning, pages 863–872, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics
+</note>
+<figureCaption confidence="0.986987333333333">
+Figure 1: An example tree transformation merging a VB node with the TO sibling of its parent VP. Before the trans-
+formation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly
+created TO+VB node are extractable.
+</figureCaption>
+<figure confidence="0.995976833333333">
+S
+S
+S
+VP
+VP
+NP
+NP
+S
+VBZ
+VBZ
+VP
+VB ADVP
+VP
+VP
+TO+VB
+TO VB ADVP
+VP
+The first step is to select team members
+M一 步 是 YKA
+(a) Before
+(b) After
+TO
+The first step is to select team members
+M一 步 是 YKA
+</figure>
+<bodyText confidence="0.999558205882353">
+for learning translation rules (Mi and Huang, 2008;
+Zhang et al., 2009), or by learning rules that en-
+code syntactic information but do not strictly ad-
+here to constituency boundaries (Zollmann et al.,
+2006; Marton and Resnik, 2008; Chiang, 2010). The
+most closely related MT system is that of Zhao et al.
+(2011), who train a rule extraction system to trans-
+form the subtrees that make up individual translation
+rules using a manually constructed set of transfor-
+mations similar to those learned by our system.
+Instead of modifying the MT system to work
+around the input annotations, our system modifies
+the input itself in order to improve downstream
+translation. Most systems of this sort learn how to
+modify word alignments to agree better with the syn-
+tactic parse trees (DeNero and Klein, 2007; Fossum
+et al., 2008), but there has also been other work di-
+rectly related to improving agreement by modifying
+the trees. Burkett et al. (2010) train a bilingual pars-
+ing model that uses bilingual agreement features to
+improve parsing accuracy. More closely related to
+the present work, Katz-Brown et al. (2011) retrain a
+parser to directly optimize a word reordering metric
+in order to improve a downstream machine transla-
+tion system that uses dependency parses in a prepro-
+cessing reordering step. Our system is in the same
+basic spirit, using a proxy evaluation metric (agree-
+ment with alignments; see Section 2 for details) to
+improve performance on a downstream translation
+task. However, we are concerned more generally
+with the goal of creating trees that are more com-
+patible with a wide range of syntactically-informed
+translation systems, particularly those that extract
+translation rules based on syntactic constituents.
+</bodyText>
+<sectionHeader confidence="0.972367" genericHeader="introduction">
+2 Agreement
+</sectionHeader>
+<bodyText confidence="0.996043384615385">
+Our primary goal in adapting parse trees is to im-
+prove their agreement with a set of external word
+alignments. Thus, our first step is to define an agree-
+ment score metric to operationalize this concept.
+Central to the definition of our agreement score
+is the notion of an extractable node. Intuitively, an
+extractable English1 tree node (also often called a
+“frontier node” in the literature), is one whose span
+aligns to a contiguous span in the foreign sentence.
+Formally, we assume a fixed word alignment a =
+{(i, j)l, where (i, j) E a means that English word
+i is aligned to foreign word j. For an English span
+[k, E] (inclusive), the set of aligned foreign words is:
+</bodyText>
+<equation confidence="0.870585">
+fset([k,E]) = {j I I i : k &lt; i &lt; E;(i, j)Eal
+</equation>
+<bodyText confidence="0.7362375">
+We then define the aligned foreign span as:
+fspan([k, E]) = [min(fset([k, E])), max(fset([k, E]))]
+</bodyText>
+<footnote confidence="0.993279666666667">
+1For expositional clarity, we will refer to “English” and “for-
+eign” sentences/trees, but our definitions are in no way language
+dependent and apply equally well to any language pair.
+</footnote>
+<page confidence="0.994962">
+864
+</page>
+<bodyText confidence="0.824736">
+The aligned English span for a given foreign span
+[s, t] is defined analogously:
+</bodyText>
+<equation confidence="0.666488">
+eset([s, t]) = {i I I j : s &lt; j &lt; t; (i, j) E a}
+espan([s, t]) = [min(eset([s, t])), max(eset([s, t]))]
+</equation>
+<bodyText confidence="0.9874015">
+Finally, we define [k, E] to be extractable if and
+only if it has at least one word alignment and its
+aligned foreign span aligns back to a subspan of
+[k, E]:
+</bodyText>
+<equation confidence="0.595358">
+fset([k, E]) =� 0 n espan(fspan([k, E])) C [k, E]
+</equation>
+<bodyText confidence="0.997936">
+With this definition of an extractable span, we can
+now define the agreement score ga(t) for an English
+tree t, conditioned on an alignment a:2
+</bodyText>
+<equation confidence="0.994756142857143">
+ga(t) = � sign([k, E]) (1)
+[k,t]Et:
+|[k,4|&gt;1
+Where
+� 1 [k, E] is extractable
+sign([k, E]) =
+−1 otherwise
+</equation>
+<bodyText confidence="0.999944615384615">
+Importantly, the sum in Equation 1 ranges over all
+unique spans in t. This is simply to make the met-
+ric less gameable, preventing degenerate solutions
+such as an arbitrarily long chain of unary produc-
+tions over an extractable span. Also, since all indi-
+vidual words are generated by preterminal part-of-
+speech nodes, the sum skips over all length 1 spans.
+As a concrete example of agreement score, we can
+return to Figure 1. The tree in Figure 1a has 6 unique
+spans, but only 5 are extractable, so the total agree-
+ment score is 5 - 1 = 4. After the transformation,
+though, the tree in Figure 1b has 6 extractable spans,
+so the agreement score is 6.
+</bodyText>
+<sectionHeader confidence="0.997161" genericHeader="method">
+3 Transformation-Based Learning
+</sectionHeader>
+<bodyText confidence="0.99957">
+Transformation-based learning (TBL) was origi-
+nally introduced via the Brill part-of-speech tag-
+ger (Brill, 1992) and has since been applied to a wide
+variety of NLP tasks, including binary phrase struc-
+ture bracketing (Brill, 1993), PP-attachment disam-
+biguation (Brill and Resnik, 1994), base NP chunk-
+ing (Ramshaw and Marcus, 1995), dialogue act tag-
+ging (Samuel et al., 1998), and named entity recog-
+nition (Black and Vasilakopoulos, 2002).
+</bodyText>
+<footnote confidence="0.92006">
+2Unextractable spans are penalized in order to ensure that
+space is saved for the formation of extractable ones.
+</footnote>
+<bodyText confidence="0.99990644117647">
+The generic procedure is simple, and requires
+only four basic inputs: a set of training sentences, an
+initial state annotator, an inventory of atomic trans-
+formations, and an evaluation metric. First, you ap-
+ply the initial state annotator (here, the source of
+original trees) to your training sentences to ensure
+that they all begin with a legal annotation. Then,
+you test each transformation in your inventory to see
+which one will yield the greatest improvement in the
+evaluation metric if applied to the training data. You
+greedily apply this transformation to the full training
+set and then repeat the procedure, applying transfor-
+mations until some stopping criterion is met (usu-
+ally either a maximum number of transformations,
+or a threshold on the marginal improvement in the
+evaluation metric).
+The output of the training procedure is an ordered
+set of transformations. To annotate new data, you
+simply label it with the same initial state annotator
+and then apply each of the learned transformations
+in order. This process has the advantage of being
+quite fast (usually linear in the number of transfor-
+mations and the length of the sentence; for parsing,
+the cost will typically be dominated by the cost of
+the initial state annotator), and, unlike the learned
+parameters of a statistical model, the set of learned
+transformations itself can often be of intrinsic lin-
+guistic interest.
+For our task, we have already defined the evalua-
+tion metric (Section 2) and the initial state annotator
+will either be the gold Treebank trees or a Treebank-
+trained PCFG parser. Thus, to fully describe our sys-
+tem, it only remains to define the set of possible tree
+transformations.
+</bodyText>
+<sectionHeader confidence="0.983909" genericHeader="method">
+4 Tree Transformations
+</sectionHeader>
+<bodyText confidence="0.999933181818182">
+The definition of an atomic transformation consists
+of two parts: a rewrite rule and the triggering envi-
+ronment (Brill, 1995). Tree transformations are best
+illustrated visually, and so for each of our transfor-
+mation types, both parts of the definition are repre-
+sented schematically in Figures 2-7. We have also
+included a real-world example of each type of trans-
+formation, taken from the English Chinese Transla-
+tion Treebank.
+Altogether, we define six types of tree transfor-
+mations. Each class of transformation takes be-
+</bodyText>
+<page confidence="0.9913485">
+865
+866
+</page>
+<figure confidence="0.999308636363636">
+Type: FLATTEN
+Args: A: PARENT, B: TARGET
+A
+... B ...
+C
+D E
+A
+... DE C...
+Type: FLATTENINCONTEXT
+Args: A: PARENT, B: TARGET,
+C: SIBLING, left: DIRECTION
+(a) Schematic
+Type: PROMOTE
+Args: A: GRANDPARENT, B: PARENT,
+C: CHILD, lei: DIRECTION
+(a) Schematic
+A
+... B
+C ...
+A
+... B
+...
+</figure>
+<figureCaption confidence="0.990035">
+Figure 4: PROMOTE transformations.
+</figureCaption>
+<figure confidence="0.999282736842105">
+VP
+VB PP PP
+IN NP IN NP
+fly to Beijing on the 2nd
+VP
+PP PP
+IN NP IN NP
+fly to Beijing on the 2nd
+VB
+A
+A
+B C
+Type: ARTICULATE
+Args: A: PARENT, B: LEFT, C: RIGHT
+(a) Schematic
+... B C ...
+... B+C ...
+A
+... B ...
+C D
+A
+... C D ...
+NP
+A(15 A-T
+A(15 A-
+14 3? A R Ali* �
+14 3? -9 ft OR*- �
+S
+NP+VP
+NP
+VP
+.
+NP VP
+.
+Other members will arrive in two groups .
+Other members will arrive in two groups .
+S
+(b) Example: ARTICULATE(S, NP, VP)
+</figure>
+<figureCaption confidence="0.899052">
+Figure 2: ARTICULATE transformations.
+</figureCaption>
+<figure confidence="0.999552576923077">
+PP
+PP
+法国
+法国
+NP NP
+NP
+by the French player N. Taugia
+by the French player N. Taugia
+(b) Example: PROMOTE(PP, NP, NP, left)
+NP
+IN
+NP
+NP
+IN
+DT NNP
+NML NNP
+中国
+中国
+NP
+NNP NNP
+the China Trade Promotion Council
+DT
+the China Trade Promotion Council
+NNP NNP NNP
+NNP
+(b) Example: FLATTENINCONTEXT(NP, NML, NNP, left)
+</figure>
+<figureCaption confidence="0.945005">
+Figure 3: FLATTEN transformations.
+</figureCaption>
+<figure confidence="0.998811176470588">
+...
+...
+A
+...BC
+...
+A
+... B
+... C
+Type: TRANSFER
+Args: A: GRANDPARENT, B: AUNT,
+C: PARENT, D: TARGET,
+left: DIRECTION
+(a) Schematic
+(b) Example: TRANSFER(NP, NP, SBAR, WHNP, left)
+...
+A
+C
+D ...
+... D
+A
+B C
+...
+NP
+NP
+NP SBAR
+NP SBAR
+serious consequences that cause losses
+serious consequences that cause losses
+造成 后果 造成 后果
+JJ NNS
+WINP
+S
+JJ NNS WHNP
+S
+</figure>
+<figureCaption confidence="0.998888">
+Figure 6: TRANSFER transformations.
+</figureCaption>
+<figure confidence="0.999873060606061">
+A
+B+D C
+B D
+A
+B C
+D ...
+...
+Type: ADOPT
+Args: A: GRANDPARENT, B: AUNT,
+C: PARENT, D: TARGET,
+left: DIRECTION
+(a) Schematic
+NP
+VP
+PP
+S
+VP
+NP ADVP
+VBD
+PP
+It
+It
+Imo- CIV
+Imo- CIV
+P9 V N*mq
+P9 V N*mq
+RB VBD
+Sabor also tied with Setangon
+Sabor also tied with Setangon
+S
+RB+VP
+RB
+(b) Example: ADOPT(S, VP, ADVP, RB, right)
+</figure>
+<figureCaption confidence="0.999996">
+Figure 7: ADOPT transformations.
+</figureCaption>
+<bodyText confidence="0.999881444444444">
+tween two and four syntactic category arguments,
+and most also take a DIRECTION argument that
+can have the value left or right.3 We refer to the
+nodes in the schematics whose categories are argu-
+ments of the transformation definition as participat-
+ing nodes. Basically, a particular transformation is
+triggered anywhere in a parse tree where all partici-
+pating nodes appear in the configuration shown. The
+exact rules for the triggering environment are:
+</bodyText>
+<listItem confidence="0.988697363636364">
+1. Each participating node must appear in the
+schematically illustrated relationship to the
+others. The non-participating nodes in the
+schematic do not have to appear. Similarly, any
+number of additional nodes can appear as sib-
+lings, parents, or children of the explicitly illus-
+trated nodes.
+2. Any node that will gain a new child as a re-
+sult of the transformation must already have at
+least one nonterminal child. We have drawn the
+schematics to reflect this, so this condition is
+</listItem>
+<footnote confidence="0.793297666666667">
+3To save space, the schematic for each of these transforma-
+tions is only shown for the left direction, but the right version is
+simply the mirror image.
+</footnote>
+<listItem confidence="0.876985">
+equivalent to saying that any participating node
+that is drawn with children must have a phrasal
+syntactic category (i.e. it cannot be a POS).
+3. Repeated mergings are not allowed. That is, the
+newly created nodes that result from an ARTIC-
+ULATE or ADOPT transformation cannot then
+participate as the LEFT or RIGHT argument of a
+subsequent ARTICULATE transformation or as
+the AUNT or TARGET argument of a subsequent
+ADOPT transformation. This is simply to pre-
+vent the unrestrained proliferation of new syn-
+tactic categories.
+</listItem>
+<bodyText confidence="0.999971363636364">
+The rewrite rule for a transformation is essentially
+captured in the corresponding schematic. Additional
+nodes that do not appear in the schematic are gener-
+ally handled in the obvious way: unillustrated chil-
+dren or parents of illustrated nodes remain in place,
+while unillustrated siblings of illustrated nodes are
+handled identically to their illustrated siblings. The
+only additional part of the rewrite that is not shown
+explicitly in the schematics is that if the node in the
+PARENT position of a TRANSFER or ADOPT trans-
+formation is left childless by the transformation (be-
+</bodyText>
+<page confidence="0.993909">
+867
+</page>
+<bodyText confidence="0.999937666666667">
+cause the TARGET node was its only child), then it is
+deleted from the parse tree. In the case of a transfor-
+mation whose triggering environment appears multi-
+ple times in a single tree, transformations are always
+applied leftmost/bottom-up and exhaustively.4
+In principle, our transformation inventory consists
+of all possible assignments of syntactic categories to
+the arguments of each of the transformation types
+(subject to the triggering environment constraints).
+In practice, though, we only ever consider trans-
+formations whose triggering environments appear in
+the training corpus (including new triggering envi-
+ronments that appear as the result of earlier trans-
+formations). While the theoretical space of possi-
+ble transformations is exponentially large, the set
+of transformations we actually have to consider is
+quite manageable, and empirically grows substan-
+tially sublinearly in the size of the training set.
+</bodyText>
+<sectionHeader confidence="0.999256" genericHeader="method">
+5 Results and Analysis
+</sectionHeader>
+<bodyText confidence="0.975077740740741">
+There are two ways to use this procedure. One is to
+apply it to the entire data set, with no separate train-
+ing phase. Given that the optimization has no notion
+of gold transformations, this procedure is roughly
+like an unsupervised learner that clusters its entire
+data. Another way is to learn annotations on a sub-
+set of data and apply it to new data. We choose the
+latter primarily for reasons of efficiency and simplic-
+ity: many common use cases are easiest to manage
+when annotation systems can be trained once offline
+and then applied to new data as it comes in.
+Since we intend for our system to be used as
+a pre-trained annotator, it is important to ensure
+that the learned transformation sequence achieves
+agreement score gains that generalize well to un-
+seen data. To minimize errors that might be intro-
+duced by the noise in automatically generated parses
+and word alignments, and to maximize reproducibil-
+ity, we conducted our initial experiments on the En-
+glish Chinese Translation Treebank. For this dataset,
+the initial state annotations (parse trees) were man-
+ually created by trained human annotators, as were
+the word alignments used to compute the agreement
+4The transformation is repeatedly applied at the lowest, left-
+most location of the parse tree where the triggering environment
+appears, until the triggering environment no longer appears any-
+where in the tree.
+</bodyText>
+<figure confidence="0.967399">
+0 500 1000 1500 2000 2500
+Number of Transformations
+</figure>
+<figureCaption confidence="0.99758625">
+Figure 8: Transformation results on the English Chinese
+Translation Treebank. The value plotted is the average
+(per-sentence) improvement in agreement score over the
+baseline trees.
+</figureCaption>
+<table confidence="0.99980875">
+Transfor- Total Extractable Agreement
+mations Spans Spans Score
+0 13.15 9.78 6.40
+10 12.57 10.36 8.15
+50 13.41 11.38 9.35
+200 14.03 11.96 9.89
+1584 14.58 12.36 10.15
+2471 14.65 12.35 10.06
+</table>
+<tableCaption confidence="0.984313">
+Table 1: Average span counts and agreement scores on
+</tableCaption>
+<figureCaption confidence="0.959687">
+the English Chinese Translation Treebank development
+set. The highest agreement score was attained at 1584
+transformations, but most of the improvement happened
+much earlier.
+</figureCaption>
+<bodyText confidence="0.999974153846154">
+score.5 The data was divided into training/dev/test
+using the standard Chinese parsing split; we trained
+the system on the training set (2261 sentences af-
+ter filtering out sentences with missing annotations),
+and evaluated on the development set (223 sentences
+after filtering).
+The improvements in agreement score are shown
+in Figure 8, with a slightly more detailed breakdown
+at a few fixed points in Table 1. While the system
+was able to find up to 2471 transformations that im-
+proved the training set agreement score, the major-
+ity of the improvement, and especially the majority
+of the improvement that generalized to the test set,
+</bodyText>
+<footnote confidence="0.564876333333333">
+5The annotation guidelines for the English side of this Tree-
+bank are similar, though not identical, to those for the WSJ
+Treebank.
+</footnote>
+<figure confidence="0.984716057142857">
+9
+8
+7
+6
+5
+4
+3
+2
+1
+0
+Training
+Dev
+Average Agreement Score
+Improvement
+868
+1 ARTICULATE(S,NP,VP)
+2 FLATTENINCONTEXT(PP,NP,IN,right)
+3 PROMOTE(VP,VP,VBN,left)
+4 ADOPT(VP,TO,VP,VB,left)
+5 ADOPT(PP,VBG,PP,IN,left)
+6 FLATTEN(VP,VP)
+7 ARTICULATE(VP,VBD,NP)
+8 FLATTENINCONTEXT(PP,NML,NNP,left)
+9 ARTICULATE(NP,NNP,NNS)
+10 ARTICULATE(S,NP,ADVP)
+11 TRANSFER(NP,NP,SBAR,WHNP,left)
+12 FLATTENINCONTEXT(NP,NML,NNP,left)
+13 ARTICULATE(NP,NN,NNS)
+14 TRANSFER(NP,NP+,,SBAR,WHNP,left)
+15 ADOPT(PP,IN,PP,IN,left)
+16 PROMOTE(S,VP,CC+VP,right)
+17 ARTICULATE(VP,VBZ,VBN)
+18 ARTICULATE(VP,VBD,PP)
+19 ARTICULATE(VP,MD,ADVP)
+20 ADOPT(PP,SYM,QP,CD,right)
+</figure>
+<tableCaption confidence="0.869562">
+Table 2: The first 20 learned transformations, excluding
+those that only merged punctuation or conjunctions with
+adjacent phrases. The first 5 are illustrated in Figure 9.
+</tableCaption>
+<bodyText confidence="0.999891931034483">
+was achieved within the first 200 or so transforma-
+tions. We also see from Table 1 that, though the first
+few transformations deleted many non-extractable
+spans, the overall trend was to produce more finely
+articulated trees, with the full transformation se-
+quence increasing the number of spans by more than
+10%.
+As discussed in Section 3, one advantage of TBL
+is that the learned transformations can themselves
+often be interesting. For this task, some of the high-
+est scoring transformations did uninteresting things
+like conjoining conjunctions or punctuation, which
+are often either unaligned or aligned monotonically
+with adjacent phrases. However, by filtering out
+all ARTICULATE transformations where either the
+LEFT or RIGHT argument is “CC”, “-RRB-”, “,”, or
+“.” and taking the top 20 remaining transformations,
+we get the list in Table 2, the first 5 of which are
+also illustrated in Figure 9. Some of these (e.g. #1,
+#7, #10) are additional ways of creating new spans
+when English and Chinese phrase structures roughly
+agree, but many others do recover known differences
+in English and Chinese syntax. For example, many
+of these transformations directly address compound
+verb forms in English, which tend to align to single
+words in Chinese: #3 (past participle constructions),
+#4 (infinitive), #6 (all), and #17 (present perfect).
+We also see differences between English and Chi-
+nese internal NP structure (e.g. #9, #12, #13).
+</bodyText>
+<sectionHeader confidence="0.985211" genericHeader="method">
+6 Machine Translation
+</sectionHeader>
+<bodyText confidence="0.9999944">
+The ultimate goal of our system is to improve
+the agreement between the automatically generated
+parse trees and word alignments that are used as
+training data for syntactic machine translation sys-
+tems. Given the amount of variability between the
+outputs of different parsers and word aligners (or
+even the same systems with different settings), the
+best way to improve agreement is to learn a trans-
+formation sequence that is specifically tuned for the
+same annotators (parsers and word aligners) we are
+evaluating with. In particular, we found that though
+training on the English Chinese Translation Tree-
+bank produces clean, interpretable rules, prelimi-
+nary experiments showed little to no improvement
+from using these rules for MT, primarily because
+actual alignments are not only noisier but also sys-
+tematically different from gold ones. Thus, all rules
+used for MT experiments were learned from auto-
+matically annotated text.
+For our Chinese to English translation experi-
+ments, we generated word alignments using the
+Berkeley Aligner (Liang et al., 2006) with default
+settings. We used an MT pipeline that conditions
+on target-side syntax, so our initial state annotator
+was the Berkeley Parser (Petrov and Klein, 2007),
+trained on a modified English treebank that has been
+adapted to match standard MT tokenization and cap-
+italization schemes.
+As mentioned in Section 5, we could, in principle
+train on all 500k sentences of our MT training data.
+However, this would be quite slow: each iteration of
+the training procedure requires iterating through all
+n training sentences6 once for each of the m can-
+didate transformations, for a total cost of O(nm)
+where m grows (albeit sublinearly) with n. Since the
+</bodyText>
+<footnote confidence="0.998829">
+6By using a simple hashing scheme to keep track of trigger-
+ing environments, this cost can be reduced greatly but is still
+linear in the number of training sentences.
+</footnote>
+<page confidence="0.99742">
+869
+</page>
+<figure confidence="0.995441333333333">
+(c) PROMOTE(VP,VP,VBN,left)
+VP
+TO VP
+VB...
+(d) ADOPT(VP,TO,VP,VB,left)
+(e) ADOPT(PP,VBG,PP,IN,left)
+</figure>
+<figureCaption confidence="0.997368">
+Figure 9: Illustrations of the top 5 transformations from
+</figureCaption>
+<tableCaption confidence="0.698139">
+Table 2.
+</tableCaption>
+<bodyText confidence="0.999934675">
+most useful transformations almost by definition are
+ones that are triggered the most frequently, any rea-
+sonably sized training set is likely to contain them,
+and so it is not actually likely that dramatically in-
+creasing the size of the training set will yield partic-
+ularly large gains.
+Thus, to train our TBL system, we extracted a ran-
+dom subset of 3000 sentences to serve as a train-
+ing set.7 We also extracted an additional 1000 sen-
+tence test set to use for rapidly evaluating agreement
+score generalization. Figure 10 illustrates the im-
+provements in agreement score for the automatically
+annotated data, analogous to Figure 8. The same
+general patterns hold, although we do see that the
+automatically annotated data is more idiosyncratic
+and so more than twice as many transformations are
+learned before training set agreement stops improv-
+ing, even though the training set sizes are roughly
+the same.8 Furthermore, test set generalization in
+the automatic annotation setting is a little bit worse,
+with later transformations tending to actually hurt
+test set agreement.
+For our machine translation experiments, we used
+the string-to-tree syntactic pipeline included in the
+current version of Moses (Koehn et al., 2007).
+Our training bitext was approximately 21.8 mil-
+lion words, and the sentences and word alignments
+were the same for all experiments; the only differ-
+ence between each experiment was the English trees,
+for which we tested a range of transformation se-
+quence prefixes (including a 0-length prefix, which
+just yields the original trees, as a baseline). Since
+the transformed trees tended to be more finely artic-
+ulated, and increasing the number of unique spans
+often helps with rule extraction (Wang et al., 2007),
+we equalized the span count by also testing bina-
+rized versions of each set of trees, using the left-
+branching and right-branching binarization scripts
+included with Moses.9
+We tuned on 1000 sentence pairs and tested on
+</bodyText>
+<footnote confidence="0.553328444444445">
+7The sentences were shorter on average than those in the En-
+glish Chinese Translation Treebank, so this training set contains
+roughly the same number of words as that used in the experi-
+ments from Section 5.
+8Note that the training set improvement curves don’t actu-
+ally flatten out because training halts once no improving trans-
+formation exists.
+9Binarized trees are guaranteed to have k − 1 unique spans
+for sentences of length k.
+</footnote>
+<figure confidence="0.994020392857143">
+S S
+PP PP
+A B
+(b) FLATTENINCONTEXT(PP,NP,IN,right)
+... IN NP... ... INA B ...
+... ...
+NP+VP
+NP VP
+(a) ARTICULATE(S,NP,VP)
+VP
+... VP
+VBN ...
+VP
+... VBN VP
+...
+... NP VP ...
+TO VB ...
+VP
+TO+VB VP
+PP
+VBG PP
+IN ...
+VP
+VBG+IN PP
+VBG IN ...
+870
+0 1000 2000 3000 4000 5000
+Number of Transformations
+</figure>
+<figureCaption confidence="0.964150625">
+Figure 10: Transformation results on a subset of the MT
+training data. The training and test sets are disjoint in
+order to measure how well the learned transformation se-
+quence generalizes. Once again, we plot the average im-
+provement over the baseline trees. Though 5151 transfor-
+mations were learned from the training set, the maximum
+test set agreement was achieved at 630 transformations,
+with an average improvement of 2.60.
+</figureCaption>
+<bodyText confidence="0.999924235294118">
+642 sentence pairs from the NIST MT04 and MT05
+data sets, using the BLEU metric (Papineni et al.,
+2001). As discussed by Clark et al. (2011), the op-
+timizer included with Moses (MERT, Och, 2003) is
+not always particularly stable, and results (even on
+the tuning set) can vary dramatically across tuning
+runs. To mitigate this effect, we first used the Moses
+training scripts to extract a table of translation rules
+for each set of English trees. Then, for each rule
+table, we ran MERT 11 times and selected the pa-
+rameters that achieved the maximum tuning BLEU
+to use for decoding the test set.
+Table 3 shows the results of our translation exper-
+iments. The best translation results are achieved by
+using the first 139 transformations, giving a BLEU
+improvement of more than 0.9 over the strongest
+baseline.
+</bodyText>
+<sectionHeader confidence="0.99819" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999952375">
+We have demonstrated a simple but effective pro-
+cedure for learning a tree transformation sequence
+that improves agreement between parse trees and
+word alignments. This method yields clear improve-
+ments in the quality of Chinese to English trans-
+lation, showing that by manipulating English syn-
+tax to converge with Chinese phrasal structure, we
+improve our ability to explicitly model the types of
+</bodyText>
+<table confidence="0.999774555555555">
+Transfor- Agrmnt BLEU
+mations Score
+None Left Right
+0 5.36 31.66 31.81 31.84
+32 7.17 32.41 32.17 32.06
+58 7.42 32.18 32.68* 32.37
+139 7.81 32.20 32.60* 32.77*
+630 7.96 32.48 32.06 32.22
+5151 7.89 32.13 31.84 32.12
+</table>
+<tableCaption confidence="0.999307">
+Table 3: Machine translation results. Agreement scores
+</tableCaption>
+<bodyText confidence="0.948707705882353">
+are taken from the test data used to generate Figure 10.
+Note that using 0 transformations just yields the original
+baseline trees. The transformation sequence cutoffs at 32,
+58, and 139 were chosen to correspond to marginal train-
+ing (total) agreement gain thresholds of 50, 25, and 10,
+respectively. The cutoff at 630 was chosen to maximize
+test agreement score and the cutoff at 5151 maximized
+training agreement score. Column headings for BLEU
+scores (“None,” “Left,” “Right”) refer to the type of bina-
+rization used after transformations. Entries marked with
+a ‘*’ show a statistically significant difference (p &lt; 0.05)
+from the strongest (right-binarized) baseline, according
+to the paired bootstrap (Efron and Tibshirani, 1994).
+structural relationships between languages that syn-
+tactic MT systems are designed to exploit, even if we
+lose some fidelity to the original monolingual anno-
+tation standards in the process.
+</bodyText>
+<sectionHeader confidence="0.995135" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.999362">
+This project is funded by an NSF graduate research
+fellowship to the first author and by BBN under
+DARPA contract HR0011-12-C-0014.
+</bodyText>
+<sectionHeader confidence="0.998988" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.998923615384615">
+Ann Bies, Martha Palmer, Justin Mott, and Colin Warner.
+2007. English Chinese translation treebank v 1.0.
+Web download. LDC2007T02.
+William J. Black and Argyrios Vasilakopoulos. 2002.
+Language independent named entity classification by
+modified transformation-based learning and by deci-
+sion tree induction. In COLING.
+Eric Brill and Philip Resnik. 1994. A transformation-
+based approach to prepositional phrase attachment dis-
+ambiguation. In COLING.
+Eric Brill. 1992. A simple rule-based part of speech tag-
+ger. In Proceedings of the workshop on Speech and
+Natural Language.
+</reference>
+<figure confidence="0.956654166666667">
+7
+6
+5
+Training
+Test
+4
+3
+2
+1
+0
+Average Agreement Score
+Improvement
+</figure>
+<page confidence="0.981682">
+871
+</page>
+<reference confidence="0.999789435294118">
+Eric Brill. 1993. Automatic grammar induction and pars-
+ing free text: A transformation-based approach. In
+ACL.
+Eric Brill. 1995. Transformation-based error-driven
+learning and natural language processing: a case study
+in part-of-speech tagging. Computational Linguistics,
+21(4):543–565.
+David Burkett, John Blitzer, and Dan Klein. 2010.
+Joint parsing and alignment with weakly synchronized
+grammars. In NAACL:HLT.
+David Chiang. 2010. Learning to translate with source
+and target syntax. In ACL.
+Jonathan H. Clark, Chris Dyer, Alon Lavie, and Noah A.
+Smith. 2011. Better hypothesis testing for statistical
+machine translation: controlling for optimizer instabil-
+ity. In ACL:HLT.
+John DeNero and Dan Klein. 2007. Tailoring word
+alignments to syntactic machine translation. In ACL.
+Bradley Efron and R. J. Tibshirani. 1994. An Introduc-
+tion to the Bootstrap (Chapman &amp; Hall/CRC Mono-
+graphs on Statistics &amp; Applied Probability). Chapman
+and Hall/CRC.
+Jason Eisner. 2003. Learning non-isomorphic tree map-
+pings for machine translation. In ACL.
+Victoria Fossum, Kevin Knight, and Steven Abney. 2008.
+Using syntax to improve word alignment for syntax-
+based statistical machine translation. In ACL MT
+Workshop.
+Michel Galley, Mark Hopkins, Kevin Knight, and Daniel
+Marcu. 2004. What’s in a translation rule? In HLT-
+NAACL.
+Liang Huang, Kevin Knight, and Aravind Joshi. 2006.
+Statistical syntax-directed translation with extended
+domain of locality. In HLT-NAACL.
+Jason Katz-Brown, Slav Petrov, Ryan McDonald, Franz
+Och, David Talbot, Hiroshi Ichikawa, Masakazu Seno,
+and Hideto Kazawa. 2011. Training a parser for ma-
+chine translation reordering. In EMNLP.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran, Richard
+Zens, Chris Dyer, Ondrej Bojar, Alexandra Con-
+stantin, and Evan Herbst. 2007. Moses: Open source
+toolkit for statistical machine translation. In ACL.
+Percy Liang, Ben Taskar, and Dan Klein. 2006. Align-
+ment by agreement. In HLT-NAACL.
+Mitchell P. Marcus, Mary Ann Marcinkiewicz, and Beat-
+rice Santorini. 1993. Building a large annotated cor-
+pus of English: The Penn Treebank. Computational
+Linguistics, 19(2):313–330.
+Yuval Marton and Philip Resnik. 2008. Soft syntactic
+constraints for hierarchical phrase-based translation.
+In ACL:HLT.
+Haitao Mi and Liang Huang. 2008. Forest-based transla-
+tion rule extraction. In EMNLP.
+Franz Josef Och. 2003. Miminal error rate training in
+statistical machine translation. In ACL.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2001. Bleu: a method for automatic eval-
+uation of machine translation. Research report, IBM.
+RC22176.
+Slav Petrov and Dan Klein. 2007. Improved inference
+for unlexicalized parsing. In HLT-NAACL.
+Lance A. Ramshaw and Mitchell P. Marcus. 1995.
+Text chunking using transformation-based learning. In
+ACL Workshop on Very Large Corpora.
+Ken Samuel, Sandra Carberry, and K. Vijay-Shanker.
+1998. Dialogue act tagging with transformation-based
+learning. In COLING.
+Wei Wang, Kevin Knight, and Daniel Marcu. 2007. Bi-
+narizing syntax trees to improve syntax-based machine
+translation accuracy. In EMNLP.
+Kenji Yamada and Kevin Knight. 2001. A syntax-based
+statistical translation model. In ACL.
+Hui Zhang, Min Zhang, Haizhou Li, Aiti Aw, and
+Chew Lim Tan. 2009. Forest-based tree sequence to
+string translation model. In ACL-IJCNLP.
+Bing Zhao, Young-Suk Lee, Xiaoqiang Luo, and Liu Li.
+2011. Learning to transform and select elementary
+trees for improved syntax-based machine translations.
+In ACL:HLT.
+Andreas Zollmann, Ashish Venugopal, Stephan Vogel,
+and Alex Waibel. 2006. The CMU-AKA syntax aug-
+mented machine translation system for IWSLT-06. In
+IWSLT.
+</reference>
+<page confidence="0.998065">
+872
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.954932">
+<title confidence="0.998155">Transforming Trees to Improve Syntactic Convergence</title>
+<author confidence="0.99247">Burkett</author>
+<affiliation confidence="0.999897">Computer Science University of California,</affiliation>
+<abstract confidence="0.99664825">We describe a transformation-based learning method for learning a sequence of monolingual tree transformations that improve the agreement between constituent trees and word alignments in bilingual corpora. Using the manually annotated English Chinese Translation Treebank, we show how our method automatically discovers transformations that accommodate differences in English and Chinese syntax. Furthermore, when transformations are learned on automatically generated trees and alignments from the same domain as the training data for a syntactic MT system, the transformed trees achieve a 0.9 BLEU improvement over baseline trees.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Ann Bies</author>
+<author>Martha Palmer</author>
+<author>Justin Mott</author>
+<author>Colin Warner</author>
+</authors>
+<title>English Chinese translation treebank v 1.0. Web download.</title>
+<date>2007</date>
+<pages>2007--02</pages>
+<contexts>
+<context position="1830" citStr="Bies et al., 2007" startWordPosition="270" endWordPosition="273">ons are equally learnable. However, once bilingual data is involved, such treebank conventions entail constraints on rule extraction that may not be borne out by semantic alignments. To the extent that there are simply divergences in the syntactic structure of the two languages, it will often be impossible to construct syntax trees that are simultaneously in full agreement with monolingual linguistic theories and with the alignments between sentences in both languages. To see this, consider the English tree in Figure 1a, taken from the English side of the English Chinese Translation Treebank (Bies et al., 2007). The lowest VP in this tree is headed by ‘select,’ which aligns to the Chinese verb ‘ �A-.’ However, ‘ A A-’ also aligns to the other half of the English infinitive, ‘to,’ which, following common English linguistic theory, is outside the VP. Because of this violating alignment, many syntactic machine translation systems (Galley et al., 2004; Huang et al., 2006) won’t extract any translation rules for this constituent. However, by applying a simple transformation to the English tree to set up the infinitive as its own constituent, we get the tree in Figure 1b, which may be less well-motivated </context>
+</contexts>
+<marker>Bies, Palmer, Mott, Warner, 2007</marker>
+<rawString>Ann Bies, Martha Palmer, Justin Mott, and Colin Warner. 2007. English Chinese translation treebank v 1.0. Web download. LDC2007T02.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>William J Black</author>
+<author>Argyrios Vasilakopoulos</author>
+</authors>
+<title>Language independent named entity classification by modified transformation-based learning and by decision tree induction.</title>
+<date>2002</date>
+<booktitle>In COLING.</booktitle>
+<contexts>
+<context position="8889" citStr="Black and Vasilakopoulos, 2002" startWordPosition="1473" endWordPosition="1476">ractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transformations, and an evaluation metric. First, you apply the initial state annotator (here, the source of original trees) to your training sentences to ensure that they all begin with a legal annotation. Then, you test each transformation in your inventory to see which one will yield the greatest improvement in the evaluation metr</context>
+</contexts>
+<marker>Black, Vasilakopoulos, 2002</marker>
+<rawString>William J. Black and Argyrios Vasilakopoulos. 2002. Language independent named entity classification by modified transformation-based learning and by decision tree induction. In COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brill</author>
+<author>Philip Resnik</author>
+</authors>
+<title>A transformationbased approach to prepositional phrase attachment disambiguation.</title>
+<date>1994</date>
+<booktitle>In COLING.</booktitle>
+<contexts>
+<context position="8737" citStr="Brill and Resnik, 1994" startWordPosition="1448" endWordPosition="1451">ength 1 spans. As a concrete example of agreement score, we can return to Figure 1. The tree in Figure 1a has 6 unique spans, but only 5 are extractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transformations, and an evaluation metric. First, you apply the initial state annotator (here, the source of original trees) to your training sentences to ensure that they all begin w</context>
+</contexts>
+<marker>Brill, Resnik, 1994</marker>
+<rawString>Eric Brill and Philip Resnik. 1994. A transformationbased approach to prepositional phrase attachment disambiguation. In COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brill</author>
+</authors>
+<title>A simple rule-based part of speech tagger.</title>
+<date>1992</date>
+<booktitle>In Proceedings of the workshop on Speech and Natural Language.</booktitle>
+<contexts>
+<context position="8564" citStr="Brill, 1992" startWordPosition="1423" endWordPosition="1424">g chain of unary productions over an extractable span. Also, since all individual words are generated by preterminal part-ofspeech nodes, the sum skips over all length 1 spans. As a concrete example of agreement score, we can return to Figure 1. The tree in Figure 1a has 6 unique spans, but only 5 are extractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transforma</context>
+</contexts>
+<marker>Brill, 1992</marker>
+<rawString>Eric Brill. 1992. A simple rule-based part of speech tagger. In Proceedings of the workshop on Speech and Natural Language.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brill</author>
+</authors>
+<title>Automatic grammar induction and parsing free text: A transformation-based approach.</title>
+<date>1993</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="8682" citStr="Brill, 1993" startWordPosition="1443" endWordPosition="1444">art-ofspeech nodes, the sum skips over all length 1 spans. As a concrete example of agreement score, we can return to Figure 1. The tree in Figure 1a has 6 unique spans, but only 5 are extractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transformations, and an evaluation metric. First, you apply the initial state annotator (here, the source of original trees) to </context>
+</contexts>
+<marker>Brill, 1993</marker>
+<rawString>Eric Brill. 1993. Automatic grammar induction and parsing free text: A transformation-based approach. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brill</author>
+</authors>
+<title>Transformation-based error-driven learning and natural language processing: a case study in part-of-speech tagging.</title>
+<date>1995</date>
+<journal>Computational Linguistics,</journal>
+<volume>21</volume>
+<issue>4</issue>
+<contexts>
+<context position="2655" citStr="Brill, 1995" startWordPosition="408" endWordPosition="409">ic theory, is outside the VP. Because of this violating alignment, many syntactic machine translation systems (Galley et al., 2004; Huang et al., 2006) won’t extract any translation rules for this constituent. However, by applying a simple transformation to the English tree to set up the infinitive as its own constituent, we get the tree in Figure 1b, which may be less well-motivated linguistically, but which corresponds better to the Chinese-mediated semantics and permits the extraction of many more syntactic MT rules. In this work, we develop a method based on transformation-based learning (Brill, 1995) for automatically acquiring a sequence of tree transformations of the sort in Figure 1. Once the transformation sequence has been learned, it can be deterministically applied to any parsed sentences, yielding new parse trees with constituency structures that agree better with the bilingual alignments yet remain consistent across the corpus. In particular, we use this method to learn a transformation sequence for the English trees in a set of English to Chinese MT training data. In experiments with a string-to-tree translation system, we show resulting improvements of up to 0.9 BLEU. A great d</context>
+<context position="10825" citStr="Brill, 1995" startWordPosition="1791" endWordPosition="1792">t of the initial state annotator), and, unlike the learned parameters of a statistical model, the set of learned transformations itself can often be of intrinsic linguistic interest. For our task, we have already defined the evaluation metric (Section 2) and the initial state annotator will either be the gold Treebank trees or a Treebanktrained PCFG parser. Thus, to fully describe our system, it only remains to define the set of possible tree transformations. 4 Tree Transformations The definition of an atomic transformation consists of two parts: a rewrite rule and the triggering environment (Brill, 1995). Tree transformations are best illustrated visually, and so for each of our transformation types, both parts of the definition are represented schematically in Figures 2-7. We have also included a real-world example of each type of transformation, taken from the English Chinese Translation Treebank. Altogether, we define six types of tree transformations. Each class of transformation takes be865 866 Type: FLATTEN Args: A: PARENT, B: TARGET A ... B ... C D E A ... DE C... Type: FLATTENINCONTEXT Args: A: PARENT, B: TARGET, C: SIBLING, left: DIRECTION (a) Schematic Type: PROMOTE Args: A: GRANDPA</context>
+</contexts>
+<marker>Brill, 1995</marker>
+<rawString>Eric Brill. 1995. Transformation-based error-driven learning and natural language processing: a case study in part-of-speech tagging. Computational Linguistics, 21(4):543–565.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Burkett</author>
+<author>John Blitzer</author>
+<author>Dan Klein</author>
+</authors>
+<title>Joint parsing and alignment with weakly synchronized grammars.</title>
+<date>2010</date>
+<booktitle>In NAACL:HLT.</booktitle>
+<contexts>
+<context position="5332" citStr="Burkett et al. (2010)" startWordPosition="858" endWordPosition="861">train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been other work directly related to improving agreement by modifying the trees. Burkett et al. (2010) train a bilingual parsing model that uses bilingual agreement features to improve parsing accuracy. More closely related to the present work, Katz-Brown et al. (2011) retrain a parser to directly optimize a word reordering metric in order to improve a downstream machine translation system that uses dependency parses in a preprocessing reordering step. Our system is in the same basic spirit, using a proxy evaluation metric (agreement with alignments; see Section 2 for details) to improve performance on a downstream translation task. However, we are concerned more generally with the goal of cre</context>
+</contexts>
+<marker>Burkett, Blitzer, Klein, 2010</marker>
+<rawString>David Burkett, John Blitzer, and Dan Klein. 2010. Joint parsing and alignment with weakly synchronized grammars. In NAACL:HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Learning to translate with source and target syntax.</title>
+<date>2010</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="4639" citStr="Chiang, 2010" startWordPosition="742" endWordPosition="743"> VP. Before the transformation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been oth</context>
+</contexts>
+<marker>Chiang, 2010</marker>
+<rawString>David Chiang. 2010. Learning to translate with source and target syntax. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan H Clark</author>
+<author>Chris Dyer</author>
+<author>Alon Lavie</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Better hypothesis testing for statistical machine translation: controlling for optimizer instability.</title>
+<date>2011</date>
+<booktitle>In ACL:HLT.</booktitle>
+<contexts>
+<context position="26552" citStr="Clark et al. (2011)" startWordPosition="4371" endWordPosition="4374"> 1000 2000 3000 4000 5000 Number of Transformations Figure 10: Transformation results on a subset of the MT training data. The training and test sets are disjoint in order to measure how well the learned transformation sequence generalizes. Once again, we plot the average improvement over the baseline trees. Though 5151 transformations were learned from the training set, the maximum test set agreement was achieved at 630 transformations, with an average improvement of 2.60. 642 sentence pairs from the NIST MT04 and MT05 data sets, using the BLEU metric (Papineni et al., 2001). As discussed by Clark et al. (2011), the optimizer included with Moses (MERT, Och, 2003) is not always particularly stable, and results (even on the tuning set) can vary dramatically across tuning runs. To mitigate this effect, we first used the Moses training scripts to extract a table of translation rules for each set of English trees. Then, for each rule table, we ran MERT 11 times and selected the parameters that achieved the maximum tuning BLEU to use for decoding the test set. Table 3 shows the results of our translation experiments. The best translation results are achieved by using the first 139 transformations, giving </context>
+</contexts>
+<marker>Clark, Dyer, Lavie, Smith, 2011</marker>
+<rawString>Jonathan H. Clark, Chris Dyer, Alon Lavie, and Noah A. Smith. 2011. Better hypothesis testing for statistical machine translation: controlling for optimizer instability. In ACL:HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John DeNero</author>
+<author>Dan Klein</author>
+</authors>
+<title>Tailoring word alignments to syntactic machine translation.</title>
+<date>2007</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="5188" citStr="DeNero and Klein, 2007" startWordPosition="833" endWordPosition="836">boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been other work directly related to improving agreement by modifying the trees. Burkett et al. (2010) train a bilingual parsing model that uses bilingual agreement features to improve parsing accuracy. More closely related to the present work, Katz-Brown et al. (2011) retrain a parser to directly optimize a word reordering metric in order to improve a downstream machine translation system that uses dependency parses in a preprocessing reordering step. Our system is in the same basic spirit, using a proxy evaluation metric (agreement with alignments; s</context>
+</contexts>
+<marker>DeNero, Klein, 2007</marker>
+<rawString>John DeNero and Dan Klein. 2007. Tailoring word alignments to syntactic machine translation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bradley Efron</author>
+<author>R J Tibshirani</author>
+</authors>
+<title>An Introduction to the Bootstrap (Chapman</title>
+<date>1994</date>
+<booktitle>Hall/CRC Monographs on Statistics &amp; Applied Probability). Chapman and Hall/CRC.</booktitle>
+<marker>Efron, Tibshirani, 1994</marker>
+<rawString>Bradley Efron and R. J. Tibshirani. 1994. An Introduction to the Bootstrap (Chapman &amp; Hall/CRC Monographs on Statistics &amp; Applied Probability). Chapman and Hall/CRC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Eisner</author>
+</authors>
+<title>Learning non-isomorphic tree mappings for machine translation.</title>
+<date>2003</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="3498" citStr="Eisner, 2003" startWordPosition="544" endWordPosition="546"> constituency structures that agree better with the bilingual alignments yet remain consistent across the corpus. In particular, we use this method to learn a transformation sequence for the English trees in a set of English to Chinese MT training data. In experiments with a string-to-tree translation system, we show resulting improvements of up to 0.9 BLEU. A great deal of research in syntactic machine translation has been devoted to handling the inherent syntactic divergence between source and target languages. Some systems attempt to model the differences directly (Yamada and Knight, 2001; Eisner, 2003), but most recent work focuses on reducing the sensitivity of the rule-extraction procedure to the constituency decisions made by 1-best syntactic parsers, either by using forest-based methods 863 Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 863–872, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics Figure 1: An example tree transformation merging a VB node with the TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot be extracted as</context>
+</contexts>
+<marker>Eisner, 2003</marker>
+<rawString>Jason Eisner. 2003. Learning non-isomorphic tree mappings for machine translation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Victoria Fossum</author>
+<author>Kevin Knight</author>
+<author>Steven Abney</author>
+</authors>
+<title>Using syntax to improve word alignment for syntaxbased statistical machine translation.</title>
+<date>2008</date>
+<booktitle>In ACL MT Workshop.</booktitle>
+<contexts>
+<context position="5210" citStr="Fossum et al., 2008" startWordPosition="837" endWordPosition="840">al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been other work directly related to improving agreement by modifying the trees. Burkett et al. (2010) train a bilingual parsing model that uses bilingual agreement features to improve parsing accuracy. More closely related to the present work, Katz-Brown et al. (2011) retrain a parser to directly optimize a word reordering metric in order to improve a downstream machine translation system that uses dependency parses in a preprocessing reordering step. Our system is in the same basic spirit, using a proxy evaluation metric (agreement with alignments; see Section 2 for detai</context>
+</contexts>
+<marker>Fossum, Knight, Abney, 2008</marker>
+<rawString>Victoria Fossum, Kevin Knight, and Steven Abney. 2008. Using syntax to improve word alignment for syntaxbased statistical machine translation. In ACL MT Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Mark Hopkins</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>What’s in a translation rule?</title>
+<date>2004</date>
+<booktitle>In HLTNAACL.</booktitle>
+<contexts>
+<context position="2173" citStr="Galley et al., 2004" startWordPosition="330" endWordPosition="333"> simultaneously in full agreement with monolingual linguistic theories and with the alignments between sentences in both languages. To see this, consider the English tree in Figure 1a, taken from the English side of the English Chinese Translation Treebank (Bies et al., 2007). The lowest VP in this tree is headed by ‘select,’ which aligns to the Chinese verb ‘ �A-.’ However, ‘ A A-’ also aligns to the other half of the English infinitive, ‘to,’ which, following common English linguistic theory, is outside the VP. Because of this violating alignment, many syntactic machine translation systems (Galley et al., 2004; Huang et al., 2006) won’t extract any translation rules for this constituent. However, by applying a simple transformation to the English tree to set up the infinitive as its own constituent, we get the tree in Figure 1b, which may be less well-motivated linguistically, but which corresponds better to the Chinese-mediated semantics and permits the extraction of many more syntactic MT rules. In this work, we develop a method based on transformation-based learning (Brill, 1995) for automatically acquiring a sequence of tree transformations of the sort in Figure 1. Once the transformation seque</context>
+</contexts>
+<marker>Galley, Hopkins, Knight, Marcu, 2004</marker>
+<rawString>Michel Galley, Mark Hopkins, Kevin Knight, and Daniel Marcu. 2004. What’s in a translation rule? In HLTNAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Kevin Knight</author>
+<author>Aravind Joshi</author>
+</authors>
+<title>Statistical syntax-directed translation with extended domain of locality.</title>
+<date>2006</date>
+<booktitle>In HLT-NAACL.</booktitle>
+<contexts>
+<context position="2194" citStr="Huang et al., 2006" startWordPosition="334" endWordPosition="337">ll agreement with monolingual linguistic theories and with the alignments between sentences in both languages. To see this, consider the English tree in Figure 1a, taken from the English side of the English Chinese Translation Treebank (Bies et al., 2007). The lowest VP in this tree is headed by ‘select,’ which aligns to the Chinese verb ‘ �A-.’ However, ‘ A A-’ also aligns to the other half of the English infinitive, ‘to,’ which, following common English linguistic theory, is outside the VP. Because of this violating alignment, many syntactic machine translation systems (Galley et al., 2004; Huang et al., 2006) won’t extract any translation rules for this constituent. However, by applying a simple transformation to the English tree to set up the infinitive as its own constituent, we get the tree in Figure 1b, which may be less well-motivated linguistically, but which corresponds better to the Chinese-mediated semantics and permits the extraction of many more syntactic MT rules. In this work, we develop a method based on transformation-based learning (Brill, 1995) for automatically acquiring a sequence of tree transformations of the sort in Figure 1. Once the transformation sequence has been learned,</context>
+</contexts>
+<marker>Huang, Knight, Joshi, 2006</marker>
+<rawString>Liang Huang, Kevin Knight, and Aravind Joshi. 2006. Statistical syntax-directed translation with extended domain of locality. In HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Katz-Brown</author>
+<author>Slav Petrov</author>
+<author>Ryan McDonald</author>
+<author>Franz Och</author>
+<author>David Talbot</author>
+<author>Hiroshi Ichikawa</author>
+<author>Masakazu Seno</author>
+<author>Hideto Kazawa</author>
+</authors>
+<title>Training a parser for machine translation reordering.</title>
+<date>2011</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="5499" citStr="Katz-Brown et al. (2011)" startWordPosition="884" endWordPosition="887">ose learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been other work directly related to improving agreement by modifying the trees. Burkett et al. (2010) train a bilingual parsing model that uses bilingual agreement features to improve parsing accuracy. More closely related to the present work, Katz-Brown et al. (2011) retrain a parser to directly optimize a word reordering metric in order to improve a downstream machine translation system that uses dependency parses in a preprocessing reordering step. Our system is in the same basic spirit, using a proxy evaluation metric (agreement with alignments; see Section 2 for details) to improve performance on a downstream translation task. However, we are concerned more generally with the goal of creating trees that are more compatible with a wide range of syntactically-informed translation systems, particularly those that extract translation rules based on syntac</context>
+</contexts>
+<marker>Katz-Brown, Petrov, McDonald, Och, Talbot, Ichikawa, Seno, Kazawa, 2011</marker>
+<rawString>Jason Katz-Brown, Slav Petrov, Ryan McDonald, Franz Och, David Talbot, Hiroshi Ichikawa, Masakazu Seno, and Hideto Kazawa. 2011. Training a parser for machine translation reordering. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+</authors>
+<title>Moses: Open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In ACL.</booktitle>
+<location>Christine Moran, Richard Zens, Chris Dyer, Ondrej Bojar, Alexandra</location>
+<contexts>
+<context position="24535" citStr="Koehn et al., 2007" startWordPosition="4021" endWordPosition="4024">ata, analogous to Figure 8. The same general patterns hold, although we do see that the automatically annotated data is more idiosyncratic and so more than twice as many transformations are learned before training set agreement stops improving, even though the training set sizes are roughly the same.8 Furthermore, test set generalization in the automatic annotation setting is a little bit worse, with later transformations tending to actually hurt test set agreement. For our machine translation experiments, we used the string-to-tree syntactic pipeline included in the current version of Moses (Koehn et al., 2007). Our training bitext was approximately 21.8 million words, and the sentences and word alignments were the same for all experiments; the only difference between each experiment was the English trees, for which we tested a range of transformation sequence prefixes (including a 0-length prefix, which just yields the original trees, as a baseline). Since the transformed trees tended to be more finely articulated, and increasing the number of unique spans often helps with rule extraction (Wang et al., 2007), we equalized the span count by also testing binarized versions of each set of trees, using</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: Open source toolkit for statistical machine translation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Ben Taskar</author>
+<author>Dan Klein</author>
+</authors>
+<title>Alignment by agreement.</title>
+<date>2006</date>
+<booktitle>In HLT-NAACL.</booktitle>
+<contexts>
+<context position="22326" citStr="Liang et al., 2006" startWordPosition="3667" endWordPosition="3670"> tuned for the same annotators (parsers and word aligners) we are evaluating with. In particular, we found that though training on the English Chinese Translation Treebank produces clean, interpretable rules, preliminary experiments showed little to no improvement from using these rules for MT, primarily because actual alignments are not only noisier but also systematically different from gold ones. Thus, all rules used for MT experiments were learned from automatically annotated text. For our Chinese to English translation experiments, we generated word alignments using the Berkeley Aligner (Liang et al., 2006) with default settings. We used an MT pipeline that conditions on target-side syntax, so our initial state annotator was the Berkeley Parser (Petrov and Klein, 2007), trained on a modified English treebank that has been adapted to match standard MT tokenization and capitalization schemes. As mentioned in Section 5, we could, in principle train on all 500k sentences of our MT training data. However, this would be quite slow: each iteration of the training procedure requires iterating through all n training sentences6 once for each of the m candidate transformations, for a total cost of O(nm) wh</context>
+</contexts>
+<marker>Liang, Taskar, Klein, 2006</marker>
+<rawString>Percy Liang, Ben Taskar, and Dan Klein. 2006. Alignment by agreement. In HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Mary Ann Marcinkiewicz</author>
+<author>Beatrice Santorini</author>
+</authors>
+<title>Building a large annotated corpus of English: The Penn Treebank. Computational Linguistics,</title>
+<date>1993</date>
+<contexts>
+<context position="962" citStr="Marcus et al., 1993" startWordPosition="132" endWordPosition="135">rees and word alignments in bilingual corpora. Using the manually annotated English Chinese Translation Treebank, we show how our method automatically discovers transformations that accommodate differences in English and Chinese syntax. Furthermore, when transformations are learned on automatically generated trees and alignments from the same domain as the training data for a syntactic MT system, the transformed trees achieve a 0.9 BLEU improvement over baseline trees. 1 Introduction Monolingually, many Treebank conventions are more or less equally good. For example, the English WSJ treebank (Marcus et al., 1993) attaches verbs to objects rather than to subjects, and it attaches prepositional modifiers outside of all quantifiers and determiners. The former matches most linguistic theories while the latter does not, but to a monolingual parser, these conventions are equally learnable. However, once bilingual data is involved, such treebank conventions entail constraints on rule extraction that may not be borne out by semantic alignments. To the extent that there are simply divergences in the syntactic structure of the two languages, it will often be impossible to construct syntax trees that are simulta</context>
+</contexts>
+<marker>Marcus, Marcinkiewicz, Santorini, 1993</marker>
+<rawString>Mitchell P. Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. 1993. Building a large annotated corpus of English: The Penn Treebank. Computational Linguistics, 19(2):313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuval Marton</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Soft syntactic constraints for hierarchical phrase-based translation.</title>
+<date>2008</date>
+<booktitle>In ACL:HLT.</booktitle>
+<contexts>
+<context position="4624" citStr="Marton and Resnik, 2008" startWordPosition="738" endWordPosition="741"> TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there ha</context>
+</contexts>
+<marker>Marton, Resnik, 2008</marker>
+<rawString>Yuval Marton and Philip Resnik. 2008. Soft syntactic constraints for hierarchical phrase-based translation. In ACL:HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+</authors>
+<title>Forest-based translation rule extraction.</title>
+<date>2008</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="4445" citStr="Mi and Huang, 2008" startWordPosition="708" endWordPosition="711">ning, pages 863–872, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics Figure 1: An example tree transformation merging a VB node with the TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream tr</context>
+</contexts>
+<marker>Mi, Huang, 2008</marker>
+<rawString>Haitao Mi and Liang Huang. 2008. Forest-based translation rule extraction. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+</authors>
+<title>Miminal error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="26605" citStr="Och, 2003" startWordPosition="4382" endWordPosition="4383"> Transformation results on a subset of the MT training data. The training and test sets are disjoint in order to measure how well the learned transformation sequence generalizes. Once again, we plot the average improvement over the baseline trees. Though 5151 transformations were learned from the training set, the maximum test set agreement was achieved at 630 transformations, with an average improvement of 2.60. 642 sentence pairs from the NIST MT04 and MT05 data sets, using the BLEU metric (Papineni et al., 2001). As discussed by Clark et al. (2011), the optimizer included with Moses (MERT, Och, 2003) is not always particularly stable, and results (even on the tuning set) can vary dramatically across tuning runs. To mitigate this effect, we first used the Moses training scripts to extract a table of translation rules for each set of English trees. Then, for each rule table, we ran MERT 11 times and selected the parameters that achieved the maximum tuning BLEU to use for decoding the test set. Table 3 shows the results of our translation experiments. The best translation results are achieved by using the first 139 transformations, giving a BLEU improvement of more than 0.9 over the stronges</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Josef Och. 2003. Miminal error rate training in statistical machine translation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>Bleu: a method for automatic evaluation of machine translation.</title>
+<date>2001</date>
+<tech>Research report, IBM. RC22176.</tech>
+<contexts>
+<context position="26515" citStr="Papineni et al., 2001" startWordPosition="4364" endWordPosition="4367"> PP IN ... VP VBG+IN PP VBG IN ... 870 0 1000 2000 3000 4000 5000 Number of Transformations Figure 10: Transformation results on a subset of the MT training data. The training and test sets are disjoint in order to measure how well the learned transformation sequence generalizes. Once again, we plot the average improvement over the baseline trees. Though 5151 transformations were learned from the training set, the maximum test set agreement was achieved at 630 transformations, with an average improvement of 2.60. 642 sentence pairs from the NIST MT04 and MT05 data sets, using the BLEU metric (Papineni et al., 2001). As discussed by Clark et al. (2011), the optimizer included with Moses (MERT, Och, 2003) is not always particularly stable, and results (even on the tuning set) can vary dramatically across tuning runs. To mitigate this effect, we first used the Moses training scripts to extract a table of translation rules for each set of English trees. Then, for each rule table, we ran MERT 11 times and selected the parameters that achieved the maximum tuning BLEU to use for decoding the test set. Table 3 shows the results of our translation experiments. The best translation results are achieved by using t</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2001</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2001. Bleu: a method for automatic evaluation of machine translation. Research report, IBM. RC22176.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Dan Klein</author>
+</authors>
+<title>Improved inference for unlexicalized parsing.</title>
+<date>2007</date>
+<booktitle>In HLT-NAACL.</booktitle>
+<contexts>
+<context position="22491" citStr="Petrov and Klein, 2007" startWordPosition="3693" endWordPosition="3696">n Treebank produces clean, interpretable rules, preliminary experiments showed little to no improvement from using these rules for MT, primarily because actual alignments are not only noisier but also systematically different from gold ones. Thus, all rules used for MT experiments were learned from automatically annotated text. For our Chinese to English translation experiments, we generated word alignments using the Berkeley Aligner (Liang et al., 2006) with default settings. We used an MT pipeline that conditions on target-side syntax, so our initial state annotator was the Berkeley Parser (Petrov and Klein, 2007), trained on a modified English treebank that has been adapted to match standard MT tokenization and capitalization schemes. As mentioned in Section 5, we could, in principle train on all 500k sentences of our MT training data. However, this would be quite slow: each iteration of the training procedure requires iterating through all n training sentences6 once for each of the m candidate transformations, for a total cost of O(nm) where m grows (albeit sublinearly) with n. Since the 6By using a simple hashing scheme to keep track of triggering environments, this cost can be reduced greatly but i</context>
+</contexts>
+<marker>Petrov, Klein, 2007</marker>
+<rawString>Slav Petrov and Dan Klein. 2007. Improved inference for unlexicalized parsing. In HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lance A Ramshaw</author>
+<author>Mitchell P Marcus</author>
+</authors>
+<title>Text chunking using transformation-based learning.</title>
+<date>1995</date>
+<booktitle>In ACL Workshop on Very Large Corpora.</booktitle>
+<contexts>
+<context position="8782" citStr="Ramshaw and Marcus, 1995" startWordPosition="1456" endWordPosition="1459">eement score, we can return to Figure 1. The tree in Figure 1a has 6 unique spans, but only 5 are extractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transformations, and an evaluation metric. First, you apply the initial state annotator (here, the source of original trees) to your training sentences to ensure that they all begin with a legal annotation. Then, you test each t</context>
+</contexts>
+<marker>Ramshaw, Marcus, 1995</marker>
+<rawString>Lance A. Ramshaw and Mitchell P. Marcus. 1995. Text chunking using transformation-based learning. In ACL Workshop on Very Large Corpora.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ken Samuel</author>
+<author>Sandra Carberry</author>
+<author>K Vijay-Shanker</author>
+</authors>
+<title>Dialogue act tagging with transformation-based learning.</title>
+<date>1998</date>
+<booktitle>In COLING.</booktitle>
+<contexts>
+<context position="8826" citStr="Samuel et al., 1998" startWordPosition="1464" endWordPosition="1467"> in Figure 1a has 6 unique spans, but only 5 are extractable, so the total agreement score is 5 - 1 = 4. After the transformation, though, the tree in Figure 1b has 6 extractable spans, so the agreement score is 6. 3 Transformation-Based Learning Transformation-based learning (TBL) was originally introduced via the Brill part-of-speech tagger (Brill, 1992) and has since been applied to a wide variety of NLP tasks, including binary phrase structure bracketing (Brill, 1993), PP-attachment disambiguation (Brill and Resnik, 1994), base NP chunking (Ramshaw and Marcus, 1995), dialogue act tagging (Samuel et al., 1998), and named entity recognition (Black and Vasilakopoulos, 2002). 2Unextractable spans are penalized in order to ensure that space is saved for the formation of extractable ones. The generic procedure is simple, and requires only four basic inputs: a set of training sentences, an initial state annotator, an inventory of atomic transformations, and an evaluation metric. First, you apply the initial state annotator (here, the source of original trees) to your training sentences to ensure that they all begin with a legal annotation. Then, you test each transformation in your inventory to see which</context>
+</contexts>
+<marker>Samuel, Carberry, Vijay-Shanker, 1998</marker>
+<rawString>Ken Samuel, Sandra Carberry, and K. Vijay-Shanker. 1998. Dialogue act tagging with transformation-based learning. In COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wei Wang</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Binarizing syntax trees to improve syntax-based machine translation accuracy.</title>
+<date>2007</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="25043" citStr="Wang et al., 2007" startWordPosition="4104" endWordPosition="4107">s, we used the string-to-tree syntactic pipeline included in the current version of Moses (Koehn et al., 2007). Our training bitext was approximately 21.8 million words, and the sentences and word alignments were the same for all experiments; the only difference between each experiment was the English trees, for which we tested a range of transformation sequence prefixes (including a 0-length prefix, which just yields the original trees, as a baseline). Since the transformed trees tended to be more finely articulated, and increasing the number of unique spans often helps with rule extraction (Wang et al., 2007), we equalized the span count by also testing binarized versions of each set of trees, using the leftbranching and right-branching binarization scripts included with Moses.9 We tuned on 1000 sentence pairs and tested on 7The sentences were shorter on average than those in the English Chinese Translation Treebank, so this training set contains roughly the same number of words as that used in the experiments from Section 5. 8Note that the training set improvement curves don’t actually flatten out because training halts once no improving transformation exists. 9Binarized trees are guaranteed to h</context>
+</contexts>
+<marker>Wang, Knight, Marcu, 2007</marker>
+<rawString>Wei Wang, Kevin Knight, and Daniel Marcu. 2007. Binarizing syntax trees to improve syntax-based machine translation accuracy. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenji Yamada</author>
+<author>Kevin Knight</author>
+</authors>
+<title>A syntax-based statistical translation model.</title>
+<date>2001</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="3483" citStr="Yamada and Knight, 2001" startWordPosition="540" endWordPosition="543">ding new parse trees with constituency structures that agree better with the bilingual alignments yet remain consistent across the corpus. In particular, we use this method to learn a transformation sequence for the English trees in a set of English to Chinese MT training data. In experiments with a string-to-tree translation system, we show resulting improvements of up to 0.9 BLEU. A great deal of research in syntactic machine translation has been devoted to handling the inherent syntactic divergence between source and target languages. Some systems attempt to model the differences directly (Yamada and Knight, 2001; Eisner, 2003), but most recent work focuses on reducing the sensitivity of the rule-extraction procedure to the constituency decisions made by 1-best syntactic parsers, either by using forest-based methods 863 Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 863–872, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics Figure 1: An example tree transformation merging a VB node with the TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot </context>
+</contexts>
+<marker>Yamada, Knight, 2001</marker>
+<rawString>Kenji Yamada and Kevin Knight. 2001. A syntax-based statistical translation model. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hui Zhang</author>
+<author>Min Zhang</author>
+<author>Haizhou Li</author>
+<author>Aiti Aw</author>
+<author>Chew Lim Tan</author>
+</authors>
+<title>Forest-based tree sequence to string translation model.</title>
+<date>2009</date>
+<booktitle>In ACL-IJCNLP.</booktitle>
+<contexts>
+<context position="4466" citStr="Zhang et al., 2009" startWordPosition="712" endWordPosition="715"> Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics Figure 1: An example tree transformation merging a VB node with the TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most syste</context>
+</contexts>
+<marker>Zhang, Zhang, Li, Aw, Tan, 2009</marker>
+<rawString>Hui Zhang, Min Zhang, Haizhou Li, Aiti Aw, and Chew Lim Tan. 2009. Forest-based tree sequence to string translation model. In ACL-IJCNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bing Zhao</author>
+<author>Young-Suk Lee</author>
+<author>Xiaoqiang Luo</author>
+<author>Liu Li</author>
+</authors>
+<title>Learning to transform and select elementary trees for improved syntax-based machine translations.</title>
+<date>2011</date>
+<booktitle>In ACL:HLT.</booktitle>
+<contexts>
+<context position="4705" citStr="Zhao et al. (2011)" startWordPosition="753" endWordPosition="756">xtracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et al., 2008), but there has also been other work directly related to improving agreement by modifying the t</context>
+</contexts>
+<marker>Zhao, Lee, Luo, Li, 2011</marker>
+<rawString>Bing Zhao, Young-Suk Lee, Xiaoqiang Luo, and Liu Li. 2011. Learning to transform and select elementary trees for improved syntax-based machine translations. In ACL:HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Zollmann</author>
+<author>Ashish Venugopal</author>
+<author>Stephan Vogel</author>
+<author>Alex Waibel</author>
+</authors>
+<title>The CMU-AKA syntax augmented machine translation system for IWSLT-06.</title>
+<date>2006</date>
+<booktitle>In IWSLT.</booktitle>
+<contexts>
+<context position="4599" citStr="Zollmann et al., 2006" startWordPosition="734" endWordPosition="737">ging a VB node with the TO sibling of its parent VP. Before the transformation (a), the bolded VP cannot be extracted as a translation rule, but afterwards (b), both this VP and the newly created TO+VB node are extractable. S S S VP VP NP NP S VBZ VBZ VP VB ADVP VP VP TO+VB TO VB ADVP VP The first step is to select team members M一 步 是 YKA (a) Before (b) After TO The first step is to select team members M一 步 是 YKA for learning translation rules (Mi and Huang, 2008; Zhang et al., 2009), or by learning rules that encode syntactic information but do not strictly adhere to constituency boundaries (Zollmann et al., 2006; Marton and Resnik, 2008; Chiang, 2010). The most closely related MT system is that of Zhao et al. (2011), who train a rule extraction system to transform the subtrees that make up individual translation rules using a manually constructed set of transformations similar to those learned by our system. Instead of modifying the MT system to work around the input annotations, our system modifies the input itself in order to improve downstream translation. Most systems of this sort learn how to modify word alignments to agree better with the syntactic parse trees (DeNero and Klein, 2007; Fossum et</context>
+</contexts>
+<marker>Zollmann, Venugopal, Vogel, Waibel, 2006</marker>
+<rawString>Andreas Zollmann, Ashish Venugopal, Stephan Vogel, and Alex Waibel. 2006. The CMU-AKA syntax augmented machine translation system for IWSLT-06. In IWSLT.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

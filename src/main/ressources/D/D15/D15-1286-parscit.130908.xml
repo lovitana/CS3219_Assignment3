@@ -1,0 +1,1342 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000110">
+<title confidence="0.9989205">
+A Dynamic Programming Algorithm for Computing N-gram Posteriors
+from Lattices
+</title>
+<author confidence="0.998071">
+Do˘gan Can
+</author>
+<affiliation confidence="0.9990625">
+Department of Computer Science
+University of Southern California
+</affiliation>
+<address confidence="0.572584">
+Los Angeles, CA, USA
+</address>
+<email confidence="0.999048">
+dogancan@usc.edu
+</email>
+<sectionHeader confidence="0.993952" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999468275862069">
+Efficient computation of n-gram posterior
+probabilities from lattices has applications
+in lattice-based minimum Bayes-risk de-
+coding in statistical machine translation
+and the estimation of expected document
+frequencies from spoken corpora. In this
+paper, we present an algorithm for com-
+puting the posterior probabilities of all n-
+grams in a lattice and constructing a mini-
+mal deterministic weighted finite-state au-
+tomaton associating each n-gram with its
+posterior for efficient storage and retrieval.
+Our algorithm builds upon the best known
+algorithm in literature for computing n-
+gram posteriors from lattices and lever-
+ages the following observations to signifi-
+cantly improve the time and space require-
+ments: i) the n-grams for which the poste-
+riors will be computed typically comprises
+all n-grams in the lattice up to a certain
+length, ii) posterior is equivalent to ex-
+pected count for an n-gram that do not re-
+peat on any path, iii) there are efficient al-
+gorithms for computing n-gram expected
+counts from lattices. We present exper-
+imental results comparing our algorithm
+with the best known algorithm in literature
+as well as a baseline algorithm based on
+weighted finite-state automata operations.
+</bodyText>
+<sectionHeader confidence="0.999133" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999625222222222">
+Many complex speech and natural language
+processing (NLP) pipelines such as Automatic
+Speech Recognition (ASR) and Statistical Ma-
+chine Translation (SMT) systems store alternative
+hypotheses produced at various stages of process-
+ing as weighted acyclic automata, also known as
+lattices. Each lattice stores a large number of
+hypotheses along with the raw system scores as-
+signed to them. While single-best hypothesis is
+</bodyText>
+<note confidence="0.562337">
+Shrikanth S. Narayanan
+</note>
+<affiliation confidence="0.870077333333333">
+Department of Electrical Engineering
+University of Southern California
+Los Angeles, CA, USA
+</affiliation>
+<email confidence="0.992337">
+shri@sipi.usc.edu
+</email>
+<bodyText confidence="0.999721594594595">
+typically what is desired at the end of the pro-
+cessing, it is often beneficial to consider a large
+number of weighted hypotheses at earlier stages of
+the pipeline to hedge against errors introduced by
+various subcomponents. Standard ASR and SMT
+techniques like discriminative training, rescoring
+with complex models and Minimum Bayes-Risk
+(MBR) decoding rely on lattices to represent in-
+termediate system hypotheses that will be fur-
+ther processed to improve models or system out-
+put. For instance, lattice based MBR decoding has
+been shown to give moderate yet consistent gains
+in performance over conventional MAP decoding
+in a number of speech and NLP applications in-
+cluding ASR (Goel and Byrne, 2000) and SMT
+(Tromble et al., 2008; Blackwood et al., 2010; de
+Gispert et al., 2013).
+Most lattice-based techniques employed by
+speech and NLP systems make use of posterior
+quantities computed from probabilistic lattices. In
+this paper, we are interested in two such posterior
+quantities: i) n-gram expected count, the expected
+number of occurrences of a particular n-gram in
+a lattice, and ii) n-gram posterior probability, the
+total probability of accepting paths that include a
+particular n-gram. Expected counts have applica-
+tions in the estimation of language model statis-
+tics from probabilistic input such as ASR lattices
+(Allauzen et al., 2003) and the estimation term
+frequencies from spoken corpora while posterior
+probabilities come up in MBR decoding of SMT
+lattices (Tromble et al., 2008), relevance ranking
+of spoken utterances and the estimation of docu-
+ment frequencies from spoken corpora (Karakos
+et al., 2011; Can and Narayanan, 2013).
+The expected count c(xlA) of n-gram x given
+lattice A is defined as
+</bodyText>
+<equation confidence="0.910298">
+c(xlA) = � #y(x)p(ylA) (1)
+y∈Σ∗
+</equation>
+<bodyText confidence="0.965261">
+where #y(x) is the number of occurrences of n-
+</bodyText>
+<page confidence="0.907735">
+2388
+</page>
+<note confidence="0.98449">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2388–2397,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.99541375">
+gram x in hypothesis y and p(y|A) is the posterior
+probability of hypothesis y given lattice A. Simi-
+larly, the posterior probability p(x|A) of n-gram x
+given lattice A is defined as
+</bodyText>
+<equation confidence="0.979873">
+p(x|A) = 1: 1y(x)p(y|A) (2)
+y∈Σ∗
+</equation>
+<bodyText confidence="0.999304196428571">
+where 1y(x) is an indicator function taking the
+value 1 when hypothesis y includes n-gram x and
+0 otherwise. While it is straightforward to com-
+pute these posterior quantities from weighted n-
+best lists by examining each hypothesis separately
+and keeping a separate accumulator for each ob-
+served n-gram type, it is infeasible to do the same
+with lattices due to the sheer number of hypothe-
+ses stored. There are efficient algorithms in lit-
+erature (Allauzen et al., 2003; Allauzen et al.,
+2004) for computing n-gram expected counts from
+weighted automata that rely on weighted finite
+state transducer operations to reduce the compu-
+tation to a sum over n-gram occurrences elimi-
+nating the need for an explicit sum over accept-
+ing paths. The rather innocent looking difference
+between Equations 1 and 2, #y(x) vs. 1y(x),
+makes it hard to develop similar algorithms for
+computing n-gram posteriors from weighted au-
+tomata since the summation of probabilities has to
+be carried out over paths rather than n-gram oc-
+currences (Blackwood et al., 2010; de Gispert et
+al., 2013).
+The problem of computing n-gram posteriors
+from lattices has been addressed by a number of
+recent works (Tromble et al., 2008; Allauzen et
+al., 2010; Blackwood et al., 2010; de Gispert et
+al., 2013) in the context of lattice-based MBR for
+SMT. In these works, it has been reported that the
+time required for lattice MBR decoding is domi-
+nated by the time required for computing n-gram
+posteriors. Our interest in computing n-gram pos-
+teriors from lattices stems from its potential appli-
+cations in spoken content retrieval (Chelba et al.,
+2008; Karakos et al., 2011; Can and Narayanan,
+2013). Computation of document frequency statis-
+tics from spoken corpora relies on estimating n-
+gram posteriors from ASR lattices. In this con-
+text, a spoken document is simply a collection of
+ASR lattices. The n-grams of interest can be word,
+syllable, morph or phoneme sequences. Unlike in
+the case of lattice-based MBR for SMT where the
+n-grams of interest are relatively short – typically
+up to 4-grams –, the n-grams we are interested in
+are in many instances relatively long sequences of
+subword units.
+In this paper, we present an efficient algorithm
+for computing the posterior probabilities of all n-
+grams in a lattice and constructing a minimal de-
+terministic weighted finite-state automaton asso-
+ciating each n-gram with its posterior for efficient
+storage and retrieval. Our n-gram posterior com-
+putation algorithm builds upon the custom forward
+procedure described in (de Gispert et al., 2013)
+and introduces a number of refinements to signifi-
+cantly improve the time and space requirements:
+</bodyText>
+<listItem confidence="0.935439272727273">
+• The custom forward procedure described in
+(de Gispert et al., 2013) computes unigram
+posteriors from an input lattice. Higher or-
+der n-gram posteriors are computed by first
+transducing the input lattice to an n-gram lat-
+tice using an order mapping transducer and
+then running the custom forward procedure
+on this higher order lattice. We reformulate
+the custom forward procedure as a dynamic
+programming algorithm that computes pos-
+teriors for successively longer n-grams and
+reuses the forward scores computed for the
+previous order. This reformulation subsumes
+the transduction of input lattices to n-gram
+lattices and obviates the need for construct-
+ing and applying order mapping transducers.
+• Comparing Eq. 1 with Eq. 2, we can observe
+that posterior probability and expected count
+are equivalent for an n-gram that do not re-
+peat on any path of the input lattice. The
+key idea behind our algorithm is to limit the
+costly posterior computation to only those n-
+</listItem>
+<bodyText confidence="0.94118225">
+grams that can potentially repeat on some
+path of the input lattice. We keep track of
+repeating n-grams of order n and use a sim-
+ple impossibility argument to significantly re-
+duce the number of n-grams of order n + 1
+for which posterior computation will be per-
+formed. The posteriors for the remaining
+n-grams are replaced with expected counts.
+This filtering of n-grams introduces a slight
+bookkeeping overhead but in return dramat-
+ically reduces the runtime and memory re-
+quirements for long n-grams.
+</bodyText>
+<listItem confidence="0.96459325">
+• We store the posteriors for n-grams that can
+potentially repeat on some path of the input
+lattice in a weighted prefix tree that we con-
+struct on the fly. Once that is done, we com-
+</listItem>
+<page confidence="0.998546">
+2389
+</page>
+<tableCaption confidence="0.999918">
+Table 1: Common semirings.
+</tableCaption>
+<table confidence="0.9982178">
+SEMIRING SET ® ® 0 1
+Boolean {0,1} V n 0 1
+Probability R+ U {+oo} + x 0 1
+Log R U {−oo, +oo} ®log + +oo 0
+Tropical R U {−oo, +oo} min + +oo 0
+</table>
+<tableCaption confidence="0.772123">
+a ⊕log b = − log(e−a + e−b)
+</tableCaption>
+<bodyText confidence="0.999858923076923">
+pute the expected counts for all n-grams in
+the input lattice and represent them as a min-
+imal deterministic weighted finite-state au-
+tomaton, known as a factor automaton (Al-
+lauzen et al., 2004; Mohri et al., 2007), us-
+ing the approach described in (Allauzen et al.,
+2004). Finally we use general weighted au-
+tomata algorithms to merge the weighted fac-
+tor automaton representing expected counts
+with the weighted prefix tree representing
+posteriors to obtain a weighted factor au-
+tomaton representing posteriors that can be
+used for efficient storage and retrieval.
+</bodyText>
+<sectionHeader confidence="0.961194" genericHeader="introduction">
+2 Preliminaries
+</sectionHeader>
+<bodyText confidence="0.999624">
+This section introduces the definitions and nota-
+tion related to weighted finite state automata and
+transducers (Mohri, 2009).
+</bodyText>
+<subsectionHeader confidence="0.927439">
+2.1 Semirings
+</subsectionHeader>
+<construct confidence="0.445389">
+Definition 1 A semiring is a 5-tuple
+</construct>
+<bodyText confidence="0.999729083333333">
+(K, ®, ®, 0,1) where (K, ®, 0) is a commutative
+monoid, (K, ®,1) is a monoid, ® distributes over
+® and 0 is an annihilator for ®.
+Table 1 lists common semirings. In speech and
+language processing, two semirings are of particu-
+lar importance. The log semiring is isomorphic to
+the probability semiring via the negative-log mor-
+phism and can be used to combine probabilities in
+the log domain. The tropical semiring, provides
+the algebraic structure necessary for shortest-path
+algorithms and can be derived from the log semir-
+ing using the Viterbi approximation.
+</bodyText>
+<subsectionHeader confidence="0.995763">
+2.2 Weighted Finite-State Automata
+</subsectionHeader>
+<construct confidence="0.9248406">
+Definition 2 A weighted finite-state automaton
+(WFSA) A over a semiring (K, ®, ®, 0,1) is a 7-
+tuple A = (E, Q, I, F, E, λ, p) where: E is the
+finite input alphabet; Q is a finite set of states;
+I, F C Q are respectively the set of initial and
+</construct>
+<bodyText confidence="0.9949310625">
+final states; E C Q x (E U {ε}) x K x Q is a
+finite set of arcs; λ : I —* K, p : F —* K are
+respectively the initial and final weight functions.
+Given an arc e E E, we denote by i[e] its in-
+put label, w[e] its weight, s[e] its source or origin
+state and t[e] its target or destination state. A path
+7r = e1 · · · ek is an element of E* with consecutive
+arcs satisfying t[ez_1] = s[ez], i = 2, ... , k. We
+extend t and s to paths by setting t[7r] = s[ek] and
+s[7r] = t[e1]. The labeling and the weight func-
+tions can also be extended to paths by defining
+i[7r] = i[e1] ... i[ek] and w[7r] = w[e1] ® ... �
+w[ek]. We denote by II(q, q&apos;) the set of paths from
+q to q&apos; and by II(q, x, q&apos;) the set of paths from q to
+q&apos; with input string x E E*. These definitions can
+also be extended to subsets S, S&apos; C Q, e.g.
+</bodyText>
+<equation confidence="0.4674865">
+II(S, x, S&apos;) = � II(q, x, q&apos;).
+qES,q&apos;ES1
+</equation>
+<bodyText confidence="0.999841571428571">
+An accepting path in an automaton A is a path in
+II(I, F). A string x is accepted by A if there exists
+an accepting path 7r labeled with x. A is determin-
+istic if it has at most one initial state and at any
+state no two outgoing transitions share the same
+input label. The weight associated by an automa-
+ton A to a string x E E* is given by
+</bodyText>
+<equation confidence="0.9972865">
+JAK(x) = � λ(s[7r]) ® w[7r] ® p(t[7r])
+7rEII(I,x,F)
+</equation>
+<bodyText confidence="0.993290166666667">
+and JAK(x) °= 0 when II(I, x, F) = 0.
+A weighted automaton A defined over the prob-
+ability semiring (R+, +, x, 0,1) is said to be
+probabilistic if for any state q E Q, the sum of
+the weights of all cycles at q, ®7rEII(q,q)w[7r], is
+well-defined and in R+ and ExEE∗JAK(x) = 1.
+</bodyText>
+<subsectionHeader confidence="0.99125">
+2.3 N-gram Mapping Transducer
+</subsectionHeader>
+<bodyText confidence="0.9987475">
+We denote by Φn the n-gram mapping transducer
+(Blackwood et al., 2010; de Gispert et al., 2013)
+</bodyText>
+<page confidence="0.893829">
+2390
+</page>
+<bodyText confidence="0.999983714285714">
+of order n. This transducer maps label sequences
+to n-gram sequences of order n. Φn is similar in
+form to the weighted finite-state transducer rep-
+resentation of a backoff n-gram language model
+(Allauzen et al., 2003). We denote by An the n-
+gram lattice of order n obtained by composing lat-
+tice A with Φn, projecting the resulting transducer
+onto its output labels, i.e. n-grams, to obtain an
+automaton, removing ε-transitions, determinizing
+and minimizing (Mohri, 2009). An is a compact
+lattice of n-gram sequences of order n consistent
+with the labels and scores of lattice A. An typi-
+cally has more states than A due to the association
+of distinct n-gram histories with states.
+</bodyText>
+<subsectionHeader confidence="0.988861">
+2.4 Factor Automata
+</subsectionHeader>
+<bodyText confidence="0.9983569">
+Definition 3 Given two strings x, y ∈ E*, x is
+a factor (substring) of y if y = uxv for some
+u, v ∈ E*. More generally, x is a factor of a
+language L ⊆ E* if x is a factor of some string
+y ∈ L. The factor automaton 5(y) of a string
+y is the minimal deterministic finite-state automa-
+ton recognizing exactly the set offactors of y. The
+factor automaton 5(A) of an automaton A is the
+minimal deterministic finite-state automaton rec-
+ognizing exactly the set offactors of A, that is the
+set offactors of the strings accepted by A.
+Factor automaton (Mohri et al., 2007) is an ef-
+ficient and compact data structure for representing
+a full index of a set of strings, i.e. an automaton. It
+can be used to determine if a string x is a factor in
+time linear in its length O(|x|). By associating a
+weight with each factor, we can generalize the fac-
+tor automaton structure to weighted automata and
+use it for efficient storage and retrieval of n-gram
+posteriors and expected counts.
+</bodyText>
+<sectionHeader confidence="0.711461" genericHeader="method">
+3 Computation of N-gram Posteriors
+</sectionHeader>
+<bodyText confidence="0.999728454545454">
+In this section we present an efficient algorithm
+based on the n-gram posterior computation algo-
+rithm described in (de Gispert et al., 2013) for
+computing the posterior probabilities of all n-
+grams in a lattice and constructing a weighted fac-
+tor automaton for efficient storage and retrieval of
+these posteriors. We assume that the input lattice
+is an ε-free acyclic probabilistic automaton. If that
+is not the case, we can use general weighted au-
+tomata ε-removal and weight-pushing algorithms
+(Mohri, 2009) to preprocess the input automaton.
+Algorithm 1 reproduces the original algo-
+rithm of (de Gispert et al., 2013) in our no-
+tation. Each iteration of the outermost loop
+starting at line 1 computes posterior probabili-
+ties of all unigrams in the n-gram lattice An =
+(En, Qn, In, Fn, En, λn, pn), or equivalently all
+n-grams of order n in the lattice A. The inner
+loop starting at line 6 is essentially a custom for-
+ward procedure computing not only the standard
+forward probabilities α[q], the marginal probabil-
+ity of paths that lead to state q,
+</bodyText>
+<equation confidence="0.99994">
+α[q] = � λ(s[7r]) ⊗ w[7r] (3)
+π E H(I,q)
+�= α[s[e]] ⊗ w[e] (4)
+eEE
+t[e] = q
+</equation>
+<bodyText confidence="0.999624666666667">
+but also the label specific forward probabilities
+˜α[q][x], the marginal probability of paths that lead
+to state q and include label x.
+</bodyText>
+<equation confidence="0.999961363636364">
+˜α[q][x] = � λ(s[7r]) ⊗ w[7r] (5)
+π E H(I,q)
+� u,v E E∗: i[π] = uxv
+�= α[s[e]] ⊗ w[e]
+eEE
+t[e] = q
+i[e] = x
+⊕ � ˜α[s[e]][x] ⊗ w[e] (6)
+eEE
+t[e] = q
+i[e] =� x
+</equation>
+<bodyText confidence="0.999950454545455">
+Just like in the case of the standard forward al-
+gorithm, visiting states in topological order en-
+sures that forward probabilities associated with a
+state has already been computed when that state is
+visited. At each state s, the algorithm examines
+each arc e = (s, x, w, q) and updates the forward
+probabilities for state q in accordance with the re-
+cursions in Equations 4 and 6 by propagating the
+forward probabilities computed for s (lines 8-12).
+The conditional on line 11 ensures that the label
+specific forward probability ˜α[s][y] is propagated
+to state q only if label y is different from label x,
+the label on the current arc. In other words, if a
+label y repeats on some path 7r leading to state
+q, then 7r contributes to ˜α[q][y] only once. This
+is exactly what is required by the indicator func-
+tion in Equation 2 when computing unigram pos-
+teriors. Whenever a final state is processed, the
+posterior probability accumulator for each label
+observed on paths reaching that state is updated
+by multiplying the label specific forward probabil-
+ity and the final weight associated with that state
+</bodyText>
+<page confidence="0.965389">
+2391
+</page>
+<figure confidence="0.994664647058823">
+Algorithm 1 Compute N-gram Posteriors
+1 for n +— 1,...,N do
+2 An +— Min(Det(RmEps(ProjOut(A o &apos;bn))))
+3 α[q] +— λn(q), b state q E Qn
+4 ˜α[q][x] +— 0, b state q E Qn, b label x E Σn
+5 p(x|A) +— 0, b label x E Σn
+6 for each state s E Qn do &gt; In topological order
+7 for each arc (s, x, w, q) E En do
+8 α[q] +— α[q] ® α[s] ® w
+9 ˜α[q][x] +— ˜α[q][x] ® α[s] ® w
+10 for each label y E ˜α[s] do
+11 if y =� x then
+12 ˜α[q][y] +— ˜α[q][y] ® ˜α[s][y] ® w
+13 if s E Fn then
+14 for each label x E ˜α[s] do
+15 p(x|A) +— p(x|A) ® ˜α[s][x] ® ρn(s)
+16 P +— Min(ConstructPrefixTree(p))
+</figure>
+<bodyText confidence="0.997806705882353">
+and adding the resulting value to the accumulator
+(lines 13-15). It should be noted that this algo-
+rithm is a form of marginalization (de Gispert et
+al., 2013), rather than a counting procedure, due
+to the conditional on line 11. If that conditional
+were to be removed, this algorithm would com-
+pute n-gram expected counts instead of posterior
+probabilities.
+The key idea behind our algorithm is to re-
+strict the computation of posteriors to only those
+n-grams that may potentially repeat on some path
+of the input lattice and exploit the equivalence of
+expected counts and posterior probabilities for the
+remaining n-grams. It is possible to extend Algo-
+rithm 1 to implement this restriction by keeping
+track of repeating n-grams of order n and replac-
+ing the output labels of appropriate arcs in &apos;bn+1
+with ε labels. Alternatively we can reformulate
+Algorithm 1 as in Algorithm 2. In this formulation
+we compute n-gram posteriors directly on the in-
+put lattice A without constructing the n-gram lat-
+tice An. We explicitly associate states in the orig-
+inal lattice with distinct n-gram histories which is
+implicitly done in Algorithm 1 by constructing the
+n-gram lattice An. This explicit association lets
+us reuse forward probabilities computed at order
+n while computing the forward probabilities at or-
+der n + 1. Further, we can directly restrict the
+n-grams for which posterior computation will be
+performed.
+In Algorithm 2, ´α[n][q][h] represents the his-
+tory specific forward probability of state q, the
+marginal probability of paths that lead to state q
+and include length n string h as a suffix.
+</bodyText>
+<equation confidence="0.994929">
+�
+´α[n][q][h] = λ(s
+π E H(I,q)
+� z E E∗: i[π] = zh
+ED= ´α[n — 1][s[e]][g] ® w[e]
+e E E
+t[e] = q
+g E ´α[n−1][s[e]]
+gi[e] = h
+(8)
+</equation>
+<bodyText confidence="0.999948">
+´α[n][q][h] is the analogue of α[q] in Algorithm 1.
+It splits the forward probability of state q (Equa-
+tion 3), among length n suffixes (or histories)
+of paths that lead to state q. We can interpret
+´α[n][q][h] as the forward probability of state (q, h)
+in the n-gram lattice An+1. Here (q, h) E Qn+1
+denotes the unique state corresponding to state q
+in the original lattice A and state h in the mapping
+transducer &apos;bn+1. ˆα[q][h][x] represents the history
+and n-gram specific forward probability of state q,
+the marginal probability of paths that lead to state
+q, include length n — 1 string h as a suffix and
+</bodyText>
+<equation confidence="0.973052">
+[π]) ® w[π] (7)
+</equation>
+<page confidence="0.977696">
+2392
+</page>
+<figure confidence="0.995448607142857">
+Algorithm 2 Compute N-gram Posteriors (Reformulation)
+1 R[0] ← {E}
+2 ´α[0][q][E] ← α[q], ∀ state q ∈ Q
+3 for n ← 1,...,N do
+4 R[n] ← ∅
+5 ´α[n][q][x] ← 0, ∀ state q ∈ Q, ∀ ngram x ∈ Σn
+6 ˆα[q][h][x] ← 0, ∀ state q ∈ Q, ∀ history h ∈ Σn−1, ∀ ngram x ∈ Σn
+7 p(x|A) ← 0, ∀ ngram x ∈ Σn
+8 for each state s ∈ Q do &gt; In topological order
+9 for each history g ∈ ´α[n − 1][s] where g ∈ R[n − 1] do
+10 for each arc (s, i, w, q) ∈ E do
+11 x ← gi &gt; Concatenate history and label
+12 h ← x[1 : n] &gt; Drop first label
+13 if h ∈ R[n − 1] then
+14 ´α[n][q][x] ← ´α[n][q][x] ⊕ ´α[n − 1][s][g] ⊗ w
+15 ˆα[q][h][x] ← ˆα[q][h][x] ⊕ ´α[n − 1][s][g] ⊗ w
+16 for each ngram y ∈ ˆα[s][g] do
+17 if y =6 x then
+18 ˆα[q][h][y] ← ˆα[q][h][y] ⊕ ˆα[s][g][y] ⊗ w
+19 else
+20 R[n] ← R[n] ∪ {y}
+21 if s ∈ F then
+22 for each history g ∈ ˆα[s] do
+23 for each ngram x ∈ ˆα[s][g] do
+24 p(x|A) ← p(x|A) ⊕ ˆα[s][g][x] ⊗ ρ(s)
+25 P&apos; ← ConstructPrefixTree(p)
+26 C ← ComputeExpectedCounts(A, N)
+27 P ← Min(Det(RmEps((C − RmWeight(P&apos;)) ⊕ P&apos;)))
+</figure>
+<bodyText confidence="0.478606">
+include n-gram x as a substring.
+</bodyText>
+<equation confidence="0.999740285714286">
+ˆα[q][h][x] = � λ(s[7r]) ⊗ w[7r]
+π E H(I,q)
+� z E E*: i[π] = zh
+� u,v E E*: i[π] = uxv
+�= ´α[|h|][s[e]][g] ⊗ w[e]
+eEE
+t[e] = q
+g E ´α[jhj][s[e]]
+gi[e] = x
+⊕ � ˆα[s[e]][g][x] ⊗ w[e]
+eEE
+t[e] = q
+g E ˆα[s[e]]
+gi[e] =� x
+</equation>
+<bodyText confidence="0.935409636363636">
+ˆα[q][h][x] is the analogue of ˜α[q][x] in Algorithm
+1. R[n] represents the set of n-grams of order n
+that repeat on some path of A. We start by defin-
+ing R[0] °_ {E}, i.e. the only repeating n-gram
+of order 0 is the empty string E, and computing
+´α[0][q][E] ≡ α[q] using the standard forward algo-
+rithm. Each iteration of the outermost loop start-
+ing at line 3 computes posterior probabilities of all
+n-grams of order n directly on the lattice A. At
+iteration n, we visit the states in topological order
+and examine each length n−1 history g associated
+with s, the state we are in. For each history g, we
+go over the set of arcs leaving state s, construct the
+current n-gram x by concatenating g with the cur-
+rent arc label i (line 11), construct the length n−1
+history h of the target state q (line 12), and update
+the forward probabilities for the target state his-
+tory pair (q, h) in accordance with the recursions
+in Equations 8 and 10 by propagating the forward
+probabilities computed for the state history pair
+(s, g) (lines 14-18). Whenever a final state is pro-
+cessed, the posterior probability accumulator for
+</bodyText>
+<page confidence="0.9447">
+2393
+</page>
+<bodyText confidence="0.99993687804878">
+each n-gram of order n observed on paths reach-
+ing that state is updated by multiplying the n-gram
+specific forward probability and the final weight
+associated with that state and adding the resulting
+value to the accumulator (lines 21-24).
+We track repeating n-grams of order n to re-
+strict the costly posterior computation operation to
+only those n-grams of order n + 1 that can poten-
+tially repeat on some path of the input lattice. The
+conditional on line 17 checks if any of the n-grams
+observed on paths reaching state history pair (s, g)
+is the same as the current n-gram x, and if so adds
+it to the set of repeating n-grams. At each iteration
+n, we check if the current length n − 1 history g
+of the state we are in is in R[n − 1], the set of re-
+peating n-grams of order n−1 (line 9). If it is not,
+then no n-gram x = gi can repeat on some path of
+A since that would require g to repeat as well. If g
+is in R[n−1], then for each arc e = (s, i, w, q) we
+check if the length n − 1 history h = g[1 : n − 1]i
+of the next state q is in R[n − 1] (line 13). If it
+is not, then the n-gram x = g[0]h can not repeat
+either.
+We keep the posteriors p(x|A) for n-grams that
+can potentially repeat on some path of the input
+lattice in a deterministic WFSA P0 that we con-
+struct on the fly. P0 is a prefix tree where each
+path 7r corresponds to an n-gram posterior, i.e.
+i[7r] = x =⇒ w[7r] = ρ(t[7r]) = p(x|A).
+Once the computation of posteriors for possibly
+repeating n-grams is finished, we use the algo-
+rithm described in (Allauzen et al., 2004) to con-
+struct a weighted factor automaton C mapping all
+n-grams observed in A to their expected counts,
+i.e. ∀7r in C, i[7r] = x =⇒ w[7r] = c(x|A).
+We use P0 and C to construct another weighted
+factor automaton P mapping all n-grams observed
+in A to their posterior probabilities, i.e. ∀7r in P,
+i[7r] = x =⇒ w[7r] = p(x|A). First we remove
+the n-grams accepted by P0 from C using the dif-
+ference operation (Mohri, 2009),
+</bodyText>
+<equation confidence="0.985971">
+C0 = C − RmWeight(P0)
+</equation>
+<bodyText confidence="0.999615">
+then take the union of the remaining automaton C0
+and P0, and finally optimize the result by remov-
+ing ε-transitions, determinizing and minimizing
+</bodyText>
+<equation confidence="0.974676">
+P = Min(Det(RmEps(C0 ⊕ P0))).
+</equation>
+<sectionHeader confidence="0.984551" genericHeader="method">
+4 Experiments and Discussion
+</sectionHeader>
+<bodyText confidence="0.9836944">
+In this section we provide experiments comparing
+the performance of Algorithm 2 with Algorithm 1
+as well as a baseline algorithm based on the ap-
+proach of (Tromble et al., 2008). All algorithms
+were implemented in C++ using the OpenFst Li-
+brary (Allauzen et al., 2007). Algorithm 1 imple-
+mentation is a thin wrapper around the reference
+implementation. All experiments were conducted
+on the 88K ASR lattices (total size: #states + #arcs
+= 33M, disk size: 481MB) generated from the
+training subset of the IARPA Babel Turkish lan-
+guage pack, which includes 80 hours of conversa-
+tional telephone speech. Lattices were generated
+with a speaker dependent DNN ASR system that
+was trained on the same data set using IBM’s At-
+tila toolkit (Soltau et al., 2010). All lattices were
+pruned to a logarithmic beam width of 5.
+Figure 1 gives a scatter plot of the posterior
+probability computation time vs. the number of
+lattice n-grams (up to 5-grams) where each point
+</bodyText>
+<figureCaption confidence="0.999973">
+Figure 1: Runtime comparison
+Figure 2: Memory use comparison
+</figureCaption>
+<page confidence="0.993414">
+2394
+</page>
+<tableCaption confidence="0.974921">
+Table 2: Runtime Comparison
+</tableCaption>
+<table confidence="0.999169333333333">
+Max n-gram length 1 2 3 4 5 6 10 all
+logio(#n-grams) 3.0 3.8 4.2 4.5 4.8 5.1 6.3 11.2
+Baseline (sec) 5 15 32 69 147 311 5413 -
+Algorithm 1 (sec) 0.5 0.6 0.9 1.6 3.9 16 997 -
+Algorithm 2 (sec) 0.7 0.8 0.9 1.1 1.2 1.3 1.7 1.0
+Expected Count (sec) 0.3 0.4 0.5 0.6 0.7 0.8 1.0 0.5
+</table>
+<bodyText confidence="0.999950333333333">
+represents one of the 88K lattices in our data set.
+Similarly, Figure 2 gives a scatter plot of the max-
+imum memory used by the program (maximum
+resident set size) during the computation of pos-
+teriors vs. the number of lattice n-grams (up to
+5-grams). Algorithm 2 requires significantly less
+resources, particularly in the case of larger lattices
+with a large number of unique n-grams.
+To better understand the runtime characteris-
+tics of Algorithms 1 and 2, we conducted a small
+experiment where we randomly selected 100 lat-
+tices (total size: #states + #arcs = 81K, disk size:
+1.2MB) from our data set and analyzed the re-
+lation between the runtime and the maximum n-
+gram length N. Table 2 gives a runtime compari-
+son between the baseline posterior computation al-
+gorithm described in (Tromble et al., 2008), Algo-
+rithm 1, Algorithm 2 and the expected count com-
+putation algorithm of (Allauzen et al., 2004). The
+baseline method computes posteriors separately
+for each n-gram by intersecting the lattice with an
+automaton accepting only the paths including that
+n-gram and computing the total weight of the re-
+sulting automaton in log semiring. Runtime com-
+plexities of the baseline method and Algorithm
+1 are exponential in N due to the explicit enu-
+meration of n-grams and we can clearly see this
+trend in the 3rd and 4th rows of Table 2. Algo-
+rithm 2 (5th row) takes advantage of the WFSA
+based expected count computation algorithm (6th
+row) to do most of the work for long n-grams,
+hence does not suffer from the same exponential
+growth. Notice the drops in the runtimes of Algo-
+rithm 2 and the WFSA based expected count com-
+putation algorithm when all n-grams are included
+into the computation regardless of their length.
+These drops are due to the expected count compu-
+tation algorithm that processes all n-grams simul-
+taneously using WFSA operations. Limiting the
+maximum n-gram length requires pruning long n-
+grams, which in general can increase the sizes of
+intermediate WFSAs used in computation and re-
+sult in longer runtimes as well as larger outputs.
+When there is no limit on the maximum n-gram
+length, the output of Algorithm 2 is a weighted
+factor automaton mapping each factor to its pos-
+terior. Table 3 compares the construction and
+storage requirements for posterior factor automata
+with similar factor automata structures. We use
+the approach described in (Allauzen et al., 2004)
+for constructing both the unweighted and the ex-
+pected count factor automata. We construct the
+unweighted factor automata by first removing the
+weights on the input lattices and then applying the
+determinization operation on the tropical semir-
+ing so that path weights are not added together.
+The storage requirements of the posterior factor
+automata produced by Algorithm 2 is similar to
+those of the expected count factor automata. Un-
+weighted factor automata, on the other hand, are
+significantly more compact than their weighted
+counterparts even though they accept the same set
+of strings. This difference in size is due to ac-
+commodating path weights which in general can
+significantly impact the effectiveness of automata
+determinization and minimization.
+</bodyText>
+<sectionHeader confidence="0.999971" genericHeader="evaluation">
+5 Related Work
+</sectionHeader>
+<bodyText confidence="0.999424285714286">
+Efficient computation of n-gram expected counts
+from weighted automata was first addressed in
+(Allauzen et al., 2003) in the context of estimating
+n-gram language model statistics from ASR lat-
+tices. Expected counts for all n-grams of interest
+observed in the input automaton are computed by
+composing the input with a simple counting trans-
+ducer, projecting on the output side, and remov-
+ing ε-transitions. The weight associated by the re-
+sulting WFSA to each n-gram it accepts is simply
+the expected count of that n-gram in the input au-
+tomaton. Construction of such an automaton for
+all substrings (factors) of the input automaton was
+later explored in (Allauzen et al., 2004) in the con-
+</bodyText>
+<page confidence="0.995088">
+2395
+</page>
+<tableCaption confidence="0.996915">
+Table 3: Factor Automata Comparison
+</tableCaption>
+<table confidence="0.992391">
+FA Type Unweighted Expected Count Posterior
+#states + #arcs (M) 16 20 21
+On disk size (MB) 219 545 546
+Runtime (min) 5.5 11 22
+</table>
+<bodyText confidence="0.999857957446808">
+text of building an index for spoken utterance re-
+trieval (SUR) (Saraclar and Sproat, 2004). This is
+the approach used for constructing the weighted
+factor automaton C in Algorithm 2. While ex-
+pected count works well in practice for ranking
+spoken utterances containing a query term, poste-
+rior probability is in theory a better metric for this
+task. The weighted factor automaton P produced
+by Algorithm 2 can be used to construct an SUR
+index weighted with posterior probabilities.
+The problem of computing n-gram posteriors
+from lattices was first addressed in (Tromble et
+al., 2008) in the context of lattice-based MBR for
+SMT. This is the baseline approach used in our
+experiments and it consists of building a separate
+FSA for each n-gram of interest and intersecting
+this automaton with the input lattice to discard
+those paths that do not include that n-gram and
+summing up the weights of remaining paths. The
+fundamental shortcoming of this approach is that it
+requires separate intersection and shortest distance
+computations for each n-gram. This shortcoming
+was first tackled in (Allauzen et al., 2010) by in-
+troducing a counting transducer for simultaneous
+computation of posteriors for all n-grams of order
+n in a lattice. This transducer works well for un-
+igrams since there is a relatively small number of
+unique unigrams in a lattice. However, it is less
+efficient for n-grams of higher orders. This inef-
+ficiency was later addressed in (Blackwood et al.,
+2010) by employing n-gram mapping transducers
+to transduce the input lattices to n-gram lattices of
+order n and computing unigram posteriors on the
+higher order lattices. Algorithm 1 was described
+in (de Gispert et al., 2013) as a fast alternative to
+counting transducers. It is a lattice specialization
+of a more general algorithm for computing n-gram
+posteriors from a hypergraph in a single inside
+pass (DeNero et al., 2010). While this algorithm
+works really well for relatively short n-grams, its
+time and space requirements scale exponentially
+with the maximum n-gram length. Algorithm 2
+builds upon this algorithm by exploiting the equiv-
+alence of expected counts and posteriors for non-
+repeating n-grams and eliminating the costly pos-
+terior computation operation for most n-grams in
+the input lattice.
+</bodyText>
+<sectionHeader confidence="0.999173" genericHeader="conclusions">
+6 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999991529411765">
+We have described an efficient algorithm for com-
+puting n-gram posteriors from an input lattice and
+constructing an efficient and compact data struc-
+ture for storing and retrieving them. The runtime
+and memory requirements of the proposed algo-
+rithm grow linearly with the length of the n-grams
+as opposed to the exponential growth observed
+with the original algorithm we are building upon.
+This is achieved by limiting the posterior compu-
+tation to only those n-grams that may repeat on
+some path of the input lattice and using the rela-
+tively cheaper expected count computation algo-
+rithm for the rest. This filtering of n-grams in-
+troduces a slight bookkeeping overhead over the
+baseline algorithm but in return dramatically re-
+duces the runtime and memory requirements for
+long n-grams.
+</bodyText>
+<sectionHeader confidence="0.997639" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999920411764706">
+The authors would like to thank Cyril Allauzen
+and Graeme W. Blackwood for helpful discus-
+sions. This work uses IARPA-babel105b-v0.4
+Turkish full language pack from the IARPA Babel
+Program language collection and is supported by
+the Intelligence Advanced Research Projects Ac-
+tivity (IARPA) via Department of Defense U.S.
+Army Research Laboratory (DoD/ARL) contract
+number W911NF-12-C-0012. The U.S. Govern-
+ment is authorized to reproduce and distribute
+reprints for Governmental purposes notwithstand-
+ing any copyright annotation thereon. Disclaimer:
+The views and conclusions contained herein are
+those of the authors and should not be interpreted
+as necessarily representing the official policies
+or endorsements, either expressed or implied, of
+IARPA, DoD/ARL, or the U.S. Government.
+</bodyText>
+<page confidence="0.97828">
+2396
+</page>
+<sectionHeader confidence="0.995876" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999937022988506">
+Cyril Allauzen, Mehryar Mohri, and Brian Roark.
+2003. Generalized algorithms for constructing sta-
+tistical language models. In Proceedings of the
+41st Annual Meeting on Association for Computa-
+tional Linguistics - Volume 1, ACL ’03, pages 40–
+47, Stroudsburg, PA, USA. Association for Compu-
+tational Linguistics.
+Cyril Allauzen, Mehryar Mohri, and Murat Saraclar.
+2004. General indexation of weighted automata:
+Application to spoken utterance retrieval. In HLT-
+NAACL Workshop on Interdisciplinary Approaches
+to Speech Indexing and Retrieval, pages 33–40,
+Boston, MA, USA.
+Cyril Allauzen, Michael Riley, Johan Schalkwyk, Wo-
+jciech Skut, and Mehryar Mohri. 2007. OpenFst: A
+general and efficient weighted finite-state transducer
+library. In Proceedings of the Ninth International
+Conference on Implementation and Application of
+Automata, (CIAA 2007), volume 4783 of Lecture
+Notes in Computer Science, pages 11–23. Springer.
+http://www.openfst.org.
+Cyril Allauzen, Shankar Kumar, Wolfgang Macherey,
+Mehryar Mohri, and Michael Riley. 2010. Expected
+sequence similarity maximization. In HLT-NAACL,
+pages 957–965. The Association for Computational
+Linguistics.
+Graeme Blackwood, Adri`a de Gispert, and William
+Byrne. 2010. Efficient path counting transducers
+for minimum bayes-risk decoding of statistical ma-
+chine translation lattices. In Proceedings of the ACL
+2010 Conference Short Papers, pages 27–32, Upp-
+sala, Sweden, July. Association for Computational
+Linguistics.
+Dogan Can and Shrikanth Narayanan. 2013. On the
+computation of document frequency statistics from
+spoken corpora using factor automata. In INTER-
+SPEECH 2013, 14th Annual Conference of the Inter-
+national Speech Communication Association, pages
+6–10, Lyon, France.
+Ciprian Chelba, Timothy J. Hazen, and Murat Sar-
+aclar. 2008. Retrieval and browsing of spoken con-
+tent. Signal Processing Magazine, IEEE, 25(3):39–
+49, May.
+Adri`a de Gispert, Graeme Blackwood, Gonzalo Igle-
+sias, and William Byrne. 2013. N-gram poste-
+rior probability confidence measures for statistical
+machine translation: an empirical study. Machine
+Translation, 27(2):85–114.
+John DeNero, Shankar Kumar, Ciprian Chelba, and
+Franz Och. 2010. Model combination for machine
+translation. In Human Language Technologies: The
+2010 Annual Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics, HLT ’10, pages 975–983, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+Vaibhava Goel and William J Byrne. 2000. Minimum
+bayes-risk automatic speech recognition. Computer
+Speech &amp; Language, 14(2):115–135.
+Damianos Karakos, Mark Dredze, Ken Ward Church,
+Aren Jansen, and Sanjeev Khudanpur. 2011. Es-
+timating document frequencies in a speech corpus.
+In David Nahamoo and Michael Picheny, editors,
+ASRU, pages 407–412. IEEE.
+Mehryar Mohri, Pedro Moreno, and Eugene Weinstein.
+2007. Factor automata of automata and applica-
+tions. In Implementation and Application of Au-
+tomata, pages 168–179. Springer.
+Mehryar Mohri. 2009. Weighted automata algo-
+rithms. In Manfred Droste, Werner Kuich, and
+Heiko Vogler, editors, Handbook of Weighted Au-
+tomata, Monographs in Theoretical Computer Sci-
+ence. An EATCS Series, pages 213–254. Springer
+Berlin Heidelberg.
+Murat Saraclar and Richard Sproat. 2004. Lattice-
+based search for spoken utterance retrieval. In Proc.
+HLT-NAACL, pages 129–136, Boston, MA, USA.
+Hagen Soltau, George Saon, and Brian Kingsbury.
+2010. The ibm attila speech recognition toolkit.
+In Spoken Language Technology Workshop (SLT),
+2010 IEEE, pages 97–102, Dec.
+Roy W Tromble, Shankar Kumar, Franz Och, and
+Wolfgang Macherey. 2008. Lattice minimum
+bayes-risk decoding for statistical machine transla-
+tion. In Proceedings of the Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+620–629. Association for Computational Linguis-
+tics.
+</reference>
+<page confidence="0.990859">
+2397
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.972155">
+<title confidence="0.998386">A Dynamic Programming Algorithm for Computing N-gram Posteriors from Lattices</title>
+<author confidence="0.999936">Do˘gan Can</author>
+<affiliation confidence="0.9999295">Department of Computer Science University of Southern California</affiliation>
+<address confidence="0.99971">Los Angeles, CA, USA</address>
+<email confidence="0.999853">dogancan@usc.edu</email>
+<abstract confidence="0.9991831">computation of posterior probabilities from lattices has applications in lattice-based minimum Bayes-risk decoding in statistical machine translation and the estimation of expected document frequencies from spoken corpora. In this paper, we present an algorithm for comthe posterior probabilities of all grams in a lattice and constructing a minimal deterministic weighted finite-state auassociating each with its posterior for efficient storage and retrieval. Our algorithm builds upon the best known in literature for computing gram posteriors from lattices and leverages the following observations to significantly improve the time and space requirei) the for which the posteriors will be computed typically comprises in the lattice up to a certain length, ii) posterior is equivalent to excount for an that do not repeat on any path, iii) there are efficient alfor computing expected counts from lattices. We present experimental results comparing our algorithm with the best known algorithm in literature as well as a baseline algorithm based on weighted finite-state automata operations.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Mehryar Mohri</author>
+<author>Brian Roark</author>
+</authors>
+<title>Generalized algorithms for constructing statistical language models.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics - Volume 1, ACL ’03,</booktitle>
+<pages>40--47</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="3315" citStr="Allauzen et al., 2003" startWordPosition="500" endWordPosition="503">, 2008; Blackwood et al., 2010; de Gispert et al., 2013). Most lattice-based techniques employed by speech and NLP systems make use of posterior quantities computed from probabilistic lattices. In this paper, we are interested in two such posterior quantities: i) n-gram expected count, the expected number of occurrences of a particular n-gram in a lattice, and ii) n-gram posterior probability, the total probability of accepting paths that include a particular n-gram. Expected counts have applications in the estimation of language model statistics from probabilistic input such as ASR lattices (Allauzen et al., 2003) and the estimation term frequencies from spoken corpora while posterior probabilities come up in MBR decoding of SMT lattices (Tromble et al., 2008), relevance ranking of spoken utterances and the estimation of document frequencies from spoken corpora (Karakos et al., 2011; Can and Narayanan, 2013). The expected count c(xlA) of n-gram x given lattice A is defined as c(xlA) = � #y(x)p(ylA) (1) y∈Σ∗ where #y(x) is the number of occurrences of n2388 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2388–2397, Lisbon, Portugal, 17-21 September 2015. c�2</context>
+<context position="4643" citStr="Allauzen et al., 2003" startWordPosition="716" endWordPosition="719">ty of hypothesis y given lattice A. Similarly, the posterior probability p(x|A) of n-gram x given lattice A is defined as p(x|A) = 1: 1y(x)p(y|A) (2) y∈Σ∗ where 1y(x) is an indicator function taking the value 1 when hypothesis y includes n-gram x and 0 otherwise. While it is straightforward to compute these posterior quantities from weighted nbest lists by examining each hypothesis separately and keeping a separate accumulator for each observed n-gram type, it is infeasible to do the same with lattices due to the sheer number of hypotheses stored. There are efficient algorithms in literature (Allauzen et al., 2003; Allauzen et al., 2004) for computing n-gram expected counts from weighted automata that rely on weighted finite state transducer operations to reduce the computation to a sum over n-gram occurrences eliminating the need for an explicit sum over accepting paths. The rather innocent looking difference between Equations 1 and 2, #y(x) vs. 1y(x), makes it hard to develop similar algorithms for computing n-gram posteriors from weighted automata since the summation of probabilities has to be carried out over paths rather than n-gram occurrences (Blackwood et al., 2010; de Gispert et al., 2013). Th</context>
+<context position="12115" citStr="Allauzen et al., 2003" startWordPosition="2054" endWordPosition="2057">and JAK(x) °= 0 when II(I, x, F) = 0. A weighted automaton A defined over the probability semiring (R+, +, x, 0,1) is said to be probabilistic if for any state q E Q, the sum of the weights of all cycles at q, ®7rEII(q,q)w[7r], is well-defined and in R+ and ExEE∗JAK(x) = 1. 2.3 N-gram Mapping Transducer We denote by Φn the n-gram mapping transducer (Blackwood et al., 2010; de Gispert et al., 2013) 2390 of order n. This transducer maps label sequences to n-gram sequences of order n. Φn is similar in form to the weighted finite-state transducer representation of a backoff n-gram language model (Allauzen et al., 2003). We denote by An the ngram lattice of order n obtained by composing lattice A with Φn, projecting the resulting transducer onto its output labels, i.e. n-grams, to obtain an automaton, removing ε-transitions, determinizing and minimizing (Mohri, 2009). An is a compact lattice of n-gram sequences of order n consistent with the labels and scores of lattice A. An typically has more states than A due to the association of distinct n-gram histories with states. 2.4 Factor Automata Definition 3 Given two strings x, y ∈ E*, x is a factor (substring) of y if y = uxv for some u, v ∈ E*. More generally</context>
+<context position="28185" citStr="Allauzen et al., 2003" startWordPosition="5019" endWordPosition="5022">e not added together. The storage requirements of the posterior factor automata produced by Algorithm 2 is similar to those of the expected count factor automata. Unweighted factor automata, on the other hand, are significantly more compact than their weighted counterparts even though they accept the same set of strings. This difference in size is due to accommodating path weights which in general can significantly impact the effectiveness of automata determinization and minimization. 5 Related Work Efficient computation of n-gram expected counts from weighted automata was first addressed in (Allauzen et al., 2003) in the context of estimating n-gram language model statistics from ASR lattices. Expected counts for all n-grams of interest observed in the input automaton are computed by composing the input with a simple counting transducer, projecting on the output side, and removing ε-transitions. The weight associated by the resulting WFSA to each n-gram it accepts is simply the expected count of that n-gram in the input automaton. Construction of such an automaton for all substrings (factors) of the input automaton was later explored in (Allauzen et al., 2004) in the con2395 Table 3: Factor Automata Co</context>
+</contexts>
+<marker>Allauzen, Mohri, Roark, 2003</marker>
+<rawString>Cyril Allauzen, Mehryar Mohri, and Brian Roark. 2003. Generalized algorithms for constructing statistical language models. In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics - Volume 1, ACL ’03, pages 40– 47, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Mehryar Mohri</author>
+<author>Murat Saraclar</author>
+</authors>
+<title>General indexation of weighted automata: Application to spoken utterance retrieval.</title>
+<date>2004</date>
+<booktitle>In HLTNAACL Workshop on Interdisciplinary Approaches to Speech Indexing and Retrieval,</booktitle>
+<pages>33--40</pages>
+<location>Boston, MA, USA.</location>
+<contexts>
+<context position="4667" citStr="Allauzen et al., 2004" startWordPosition="720" endWordPosition="723">n lattice A. Similarly, the posterior probability p(x|A) of n-gram x given lattice A is defined as p(x|A) = 1: 1y(x)p(y|A) (2) y∈Σ∗ where 1y(x) is an indicator function taking the value 1 when hypothesis y includes n-gram x and 0 otherwise. While it is straightforward to compute these posterior quantities from weighted nbest lists by examining each hypothesis separately and keeping a separate accumulator for each observed n-gram type, it is infeasible to do the same with lattices due to the sheer number of hypotheses stored. There are efficient algorithms in literature (Allauzen et al., 2003; Allauzen et al., 2004) for computing n-gram expected counts from weighted automata that rely on weighted finite state transducer operations to reduce the computation to a sum over n-gram occurrences eliminating the need for an explicit sum over accepting paths. The rather innocent looking difference between Equations 1 and 2, #y(x) vs. 1y(x), makes it hard to develop similar algorithms for computing n-gram posteriors from weighted automata since the summation of probabilities has to be carried out over paths rather than n-gram occurrences (Blackwood et al., 2010; de Gispert et al., 2013). The problem of computing n</context>
+<context position="8856" citStr="Allauzen et al., 2004" startWordPosition="1429" endWordPosition="1433">time and memory requirements for long n-grams. • We store the posteriors for n-grams that can potentially repeat on some path of the input lattice in a weighted prefix tree that we construct on the fly. Once that is done, we com2389 Table 1: Common semirings. SEMIRING SET ® ® 0 1 Boolean {0,1} V n 0 1 Probability R+ U {+oo} + x 0 1 Log R U {−oo, +oo} ®log + +oo 0 Tropical R U {−oo, +oo} min + +oo 0 a ⊕log b = − log(e−a + e−b) pute the expected counts for all n-grams in the input lattice and represent them as a minimal deterministic weighted finite-state automaton, known as a factor automaton (Allauzen et al., 2004; Mohri et al., 2007), using the approach described in (Allauzen et al., 2004). Finally we use general weighted automata algorithms to merge the weighted factor automaton representing expected counts with the weighted prefix tree representing posteriors to obtain a weighted factor automaton representing posteriors that can be used for efficient storage and retrieval. 2 Preliminaries This section introduces the definitions and notation related to weighted finite state automata and transducers (Mohri, 2009). 2.1 Semirings Definition 1 A semiring is a 5-tuple (K, ®, ®, 0,1) where (K, ®, 0) is a c</context>
+<context position="22943" citStr="Allauzen et al., 2004" startWordPosition="4125" endWordPosition="4128">n−1], then for each arc e = (s, i, w, q) we check if the length n − 1 history h = g[1 : n − 1]i of the next state q is in R[n − 1] (line 13). If it is not, then the n-gram x = g[0]h can not repeat either. We keep the posteriors p(x|A) for n-grams that can potentially repeat on some path of the input lattice in a deterministic WFSA P0 that we construct on the fly. P0 is a prefix tree where each path 7r corresponds to an n-gram posterior, i.e. i[7r] = x =⇒ w[7r] = ρ(t[7r]) = p(x|A). Once the computation of posteriors for possibly repeating n-grams is finished, we use the algorithm described in (Allauzen et al., 2004) to construct a weighted factor automaton C mapping all n-grams observed in A to their expected counts, i.e. ∀7r in C, i[7r] = x =⇒ w[7r] = c(x|A). We use P0 and C to construct another weighted factor automaton P mapping all n-grams observed in A to their posterior probabilities, i.e. ∀7r in P, i[7r] = x =⇒ w[7r] = p(x|A). First we remove the n-grams accepted by P0 from C using the difference operation (Mohri, 2009), C0 = C − RmWeight(P0) then take the union of the remaining automaton C0 and P0, and finally optimize the result by removing ε-transitions, determinizing and minimizing P = Min(Det</context>
+<context position="25812" citStr="Allauzen et al., 2004" startWordPosition="4634" endWordPosition="4637">icantly less resources, particularly in the case of larger lattices with a large number of unique n-grams. To better understand the runtime characteristics of Algorithms 1 and 2, we conducted a small experiment where we randomly selected 100 lattices (total size: #states + #arcs = 81K, disk size: 1.2MB) from our data set and analyzed the relation between the runtime and the maximum ngram length N. Table 2 gives a runtime comparison between the baseline posterior computation algorithm described in (Tromble et al., 2008), Algorithm 1, Algorithm 2 and the expected count computation algorithm of (Allauzen et al., 2004). The baseline method computes posteriors separately for each n-gram by intersecting the lattice with an automaton accepting only the paths including that n-gram and computing the total weight of the resulting automaton in log semiring. Runtime complexities of the baseline method and Algorithm 1 are exponential in N due to the explicit enumeration of n-grams and we can clearly see this trend in the 3rd and 4th rows of Table 2. Algorithm 2 (5th row) takes advantage of the WFSA based expected count computation algorithm (6th row) to do most of the work for long n-grams, hence does not suffer fro</context>
+<context position="27293" citStr="Allauzen et al., 2004" startWordPosition="4882" endWordPosition="4885">putation algorithm that processes all n-grams simultaneously using WFSA operations. Limiting the maximum n-gram length requires pruning long ngrams, which in general can increase the sizes of intermediate WFSAs used in computation and result in longer runtimes as well as larger outputs. When there is no limit on the maximum n-gram length, the output of Algorithm 2 is a weighted factor automaton mapping each factor to its posterior. Table 3 compares the construction and storage requirements for posterior factor automata with similar factor automata structures. We use the approach described in (Allauzen et al., 2004) for constructing both the unweighted and the expected count factor automata. We construct the unweighted factor automata by first removing the weights on the input lattices and then applying the determinization operation on the tropical semiring so that path weights are not added together. The storage requirements of the posterior factor automata produced by Algorithm 2 is similar to those of the expected count factor automata. Unweighted factor automata, on the other hand, are significantly more compact than their weighted counterparts even though they accept the same set of strings. This di</context>
+<context position="28742" citStr="Allauzen et al., 2004" startWordPosition="5112" endWordPosition="5115"> weighted automata was first addressed in (Allauzen et al., 2003) in the context of estimating n-gram language model statistics from ASR lattices. Expected counts for all n-grams of interest observed in the input automaton are computed by composing the input with a simple counting transducer, projecting on the output side, and removing ε-transitions. The weight associated by the resulting WFSA to each n-gram it accepts is simply the expected count of that n-gram in the input automaton. Construction of such an automaton for all substrings (factors) of the input automaton was later explored in (Allauzen et al., 2004) in the con2395 Table 3: Factor Automata Comparison FA Type Unweighted Expected Count Posterior #states + #arcs (M) 16 20 21 On disk size (MB) 219 545 546 Runtime (min) 5.5 11 22 text of building an index for spoken utterance retrieval (SUR) (Saraclar and Sproat, 2004). This is the approach used for constructing the weighted factor automaton C in Algorithm 2. While expected count works well in practice for ranking spoken utterances containing a query term, posterior probability is in theory a better metric for this task. The weighted factor automaton P produced by Algorithm 2 can be used to co</context>
+</contexts>
+<marker>Allauzen, Mohri, Saraclar, 2004</marker>
+<rawString>Cyril Allauzen, Mehryar Mohri, and Murat Saraclar. 2004. General indexation of weighted automata: Application to spoken utterance retrieval. In HLTNAACL Workshop on Interdisciplinary Approaches to Speech Indexing and Retrieval, pages 33–40, Boston, MA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Michael Riley</author>
+<author>Johan Schalkwyk</author>
+<author>Wojciech Skut</author>
+<author>Mehryar Mohri</author>
+</authors>
+<title>OpenFst: A general and efficient weighted finite-state transducer library.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Ninth International Conference on Implementation and Application of Automata, (CIAA</booktitle>
+<volume>4783</volume>
+<pages>11--23</pages>
+<publisher>Springer. http://www.openfst.org.</publisher>
+<contexts>
+<context position="23857" citStr="Allauzen et al., 2007" startWordPosition="4287" endWordPosition="4290"> P, i[7r] = x =⇒ w[7r] = p(x|A). First we remove the n-grams accepted by P0 from C using the difference operation (Mohri, 2009), C0 = C − RmWeight(P0) then take the union of the remaining automaton C0 and P0, and finally optimize the result by removing ε-transitions, determinizing and minimizing P = Min(Det(RmEps(C0 ⊕ P0))). 4 Experiments and Discussion In this section we provide experiments comparing the performance of Algorithm 2 with Algorithm 1 as well as a baseline algorithm based on the approach of (Tromble et al., 2008). All algorithms were implemented in C++ using the OpenFst Library (Allauzen et al., 2007). Algorithm 1 implementation is a thin wrapper around the reference implementation. All experiments were conducted on the 88K ASR lattices (total size: #states + #arcs = 33M, disk size: 481MB) generated from the training subset of the IARPA Babel Turkish language pack, which includes 80 hours of conversational telephone speech. Lattices were generated with a speaker dependent DNN ASR system that was trained on the same data set using IBM’s Attila toolkit (Soltau et al., 2010). All lattices were pruned to a logarithmic beam width of 5. Figure 1 gives a scatter plot of the posterior probability </context>
+</contexts>
+<marker>Allauzen, Riley, Schalkwyk, Skut, Mohri, 2007</marker>
+<rawString>Cyril Allauzen, Michael Riley, Johan Schalkwyk, Wojciech Skut, and Mehryar Mohri. 2007. OpenFst: A general and efficient weighted finite-state transducer library. In Proceedings of the Ninth International Conference on Implementation and Application of Automata, (CIAA 2007), volume 4783 of Lecture Notes in Computer Science, pages 11–23. Springer. http://www.openfst.org.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Shankar Kumar</author>
+<author>Wolfgang Macherey</author>
+<author>Mehryar Mohri</author>
+<author>Michael Riley</author>
+</authors>
+<title>Expected sequence similarity maximization.</title>
+<date>2010</date>
+<booktitle>In HLT-NAACL,</booktitle>
+<pages>957--965</pages>
+<contexts>
+<context position="5389" citStr="Allauzen et al., 2010" startWordPosition="838" endWordPosition="841">ducer operations to reduce the computation to a sum over n-gram occurrences eliminating the need for an explicit sum over accepting paths. The rather innocent looking difference between Equations 1 and 2, #y(x) vs. 1y(x), makes it hard to develop similar algorithms for computing n-gram posteriors from weighted automata since the summation of probabilities has to be carried out over paths rather than n-gram occurrences (Blackwood et al., 2010; de Gispert et al., 2013). The problem of computing n-gram posteriors from lattices has been addressed by a number of recent works (Tromble et al., 2008; Allauzen et al., 2010; Blackwood et al., 2010; de Gispert et al., 2013) in the context of lattice-based MBR for SMT. In these works, it has been reported that the time required for lattice MBR decoding is dominated by the time required for computing n-gram posteriors. Our interest in computing n-gram posteriors from lattices stems from its potential applications in spoken content retrieval (Chelba et al., 2008; Karakos et al., 2011; Can and Narayanan, 2013). Computation of document frequency statistics from spoken corpora relies on estimating ngram posteriors from ASR lattices. In this context, a spoken document i</context>
+<context position="30032" citStr="Allauzen et al., 2010" startWordPosition="5326" endWordPosition="5329">lem of computing n-gram posteriors from lattices was first addressed in (Tromble et al., 2008) in the context of lattice-based MBR for SMT. This is the baseline approach used in our experiments and it consists of building a separate FSA for each n-gram of interest and intersecting this automaton with the input lattice to discard those paths that do not include that n-gram and summing up the weights of remaining paths. The fundamental shortcoming of this approach is that it requires separate intersection and shortest distance computations for each n-gram. This shortcoming was first tackled in (Allauzen et al., 2010) by introducing a counting transducer for simultaneous computation of posteriors for all n-grams of order n in a lattice. This transducer works well for unigrams since there is a relatively small number of unique unigrams in a lattice. However, it is less efficient for n-grams of higher orders. This inefficiency was later addressed in (Blackwood et al., 2010) by employing n-gram mapping transducers to transduce the input lattices to n-gram lattices of order n and computing unigram posteriors on the higher order lattices. Algorithm 1 was described in (de Gispert et al., 2013) as a fast alternat</context>
+</contexts>
+<marker>Allauzen, Kumar, Macherey, Mohri, Riley, 2010</marker>
+<rawString>Cyril Allauzen, Shankar Kumar, Wolfgang Macherey, Mehryar Mohri, and Michael Riley. 2010. Expected sequence similarity maximization. In HLT-NAACL, pages 957–965. The Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Graeme Blackwood</author>
+<author>Adri`a de Gispert</author>
+<author>William Byrne</author>
+</authors>
+<title>Efficient path counting transducers for minimum bayes-risk decoding of statistical machine translation lattices.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the ACL 2010 Conference Short Papers,</booktitle>
+<pages>27--32</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Uppsala, Sweden,</location>
+<marker>Blackwood, de Gispert, Byrne, 2010</marker>
+<rawString>Graeme Blackwood, Adri`a de Gispert, and William Byrne. 2010. Efficient path counting transducers for minimum bayes-risk decoding of statistical machine translation lattices. In Proceedings of the ACL 2010 Conference Short Papers, pages 27–32, Uppsala, Sweden, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dogan Can</author>
+<author>Shrikanth Narayanan</author>
+</authors>
+<title>On the computation of document frequency statistics from spoken corpora using factor automata.</title>
+<date>2013</date>
+<booktitle>In INTERSPEECH 2013, 14th Annual Conference of the International Speech Communication Association,</booktitle>
+<pages>6--10</pages>
+<location>Lyon, France.</location>
+<contexts>
+<context position="3615" citStr="Can and Narayanan, 2013" startWordPosition="546" endWordPosition="549">d number of occurrences of a particular n-gram in a lattice, and ii) n-gram posterior probability, the total probability of accepting paths that include a particular n-gram. Expected counts have applications in the estimation of language model statistics from probabilistic input such as ASR lattices (Allauzen et al., 2003) and the estimation term frequencies from spoken corpora while posterior probabilities come up in MBR decoding of SMT lattices (Tromble et al., 2008), relevance ranking of spoken utterances and the estimation of document frequencies from spoken corpora (Karakos et al., 2011; Can and Narayanan, 2013). The expected count c(xlA) of n-gram x given lattice A is defined as c(xlA) = � #y(x)p(ylA) (1) y∈Σ∗ where #y(x) is the number of occurrences of n2388 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2388–2397, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. gram x in hypothesis y and p(y|A) is the posterior probability of hypothesis y given lattice A. Similarly, the posterior probability p(x|A) of n-gram x given lattice A is defined as p(x|A) = 1: 1y(x)p(y|A) (2) y∈Σ∗ where 1y(x) is an indicator function t</context>
+<context position="5829" citStr="Can and Narayanan, 2013" startWordPosition="912" endWordPosition="915">l., 2010; de Gispert et al., 2013). The problem of computing n-gram posteriors from lattices has been addressed by a number of recent works (Tromble et al., 2008; Allauzen et al., 2010; Blackwood et al., 2010; de Gispert et al., 2013) in the context of lattice-based MBR for SMT. In these works, it has been reported that the time required for lattice MBR decoding is dominated by the time required for computing n-gram posteriors. Our interest in computing n-gram posteriors from lattices stems from its potential applications in spoken content retrieval (Chelba et al., 2008; Karakos et al., 2011; Can and Narayanan, 2013). Computation of document frequency statistics from spoken corpora relies on estimating ngram posteriors from ASR lattices. In this context, a spoken document is simply a collection of ASR lattices. The n-grams of interest can be word, syllable, morph or phoneme sequences. Unlike in the case of lattice-based MBR for SMT where the n-grams of interest are relatively short – typically up to 4-grams –, the n-grams we are interested in are in many instances relatively long sequences of subword units. In this paper, we present an efficient algorithm for computing the posterior probabilities of all n</context>
+</contexts>
+<marker>Can, Narayanan, 2013</marker>
+<rawString>Dogan Can and Shrikanth Narayanan. 2013. On the computation of document frequency statistics from spoken corpora using factor automata. In INTERSPEECH 2013, 14th Annual Conference of the International Speech Communication Association, pages 6–10, Lyon, France.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ciprian Chelba</author>
+<author>Timothy J Hazen</author>
+<author>Murat Saraclar</author>
+</authors>
+<title>Retrieval and browsing of spoken content.</title>
+<date>2008</date>
+<booktitle>Signal Processing Magazine, IEEE, 25(3):39– 49,</booktitle>
+<contexts>
+<context position="5781" citStr="Chelba et al., 2008" startWordPosition="904" endWordPosition="907">her than n-gram occurrences (Blackwood et al., 2010; de Gispert et al., 2013). The problem of computing n-gram posteriors from lattices has been addressed by a number of recent works (Tromble et al., 2008; Allauzen et al., 2010; Blackwood et al., 2010; de Gispert et al., 2013) in the context of lattice-based MBR for SMT. In these works, it has been reported that the time required for lattice MBR decoding is dominated by the time required for computing n-gram posteriors. Our interest in computing n-gram posteriors from lattices stems from its potential applications in spoken content retrieval (Chelba et al., 2008; Karakos et al., 2011; Can and Narayanan, 2013). Computation of document frequency statistics from spoken corpora relies on estimating ngram posteriors from ASR lattices. In this context, a spoken document is simply a collection of ASR lattices. The n-grams of interest can be word, syllable, morph or phoneme sequences. Unlike in the case of lattice-based MBR for SMT where the n-grams of interest are relatively short – typically up to 4-grams –, the n-grams we are interested in are in many instances relatively long sequences of subword units. In this paper, we present an efficient algorithm fo</context>
+</contexts>
+<marker>Chelba, Hazen, Saraclar, 2008</marker>
+<rawString>Ciprian Chelba, Timothy J. Hazen, and Murat Saraclar. 2008. Retrieval and browsing of spoken content. Signal Processing Magazine, IEEE, 25(3):39– 49, May.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adri`a de Gispert</author>
+<author>Graeme Blackwood</author>
+<author>Gonzalo Iglesias</author>
+<author>William Byrne</author>
+</authors>
+<title>N-gram posterior probability confidence measures for statistical machine translation: an empirical study.</title>
+<date>2013</date>
+<journal>Machine Translation,</journal>
+<volume>27</volume>
+<issue>2</issue>
+<marker>de Gispert, Blackwood, Iglesias, Byrne, 2013</marker>
+<rawString>Adri`a de Gispert, Graeme Blackwood, Gonzalo Iglesias, and William Byrne. 2013. N-gram posterior probability confidence measures for statistical machine translation: an empirical study. Machine Translation, 27(2):85–114.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John DeNero</author>
+<author>Shankar Kumar</author>
+<author>Ciprian Chelba</author>
+<author>Franz Och</author>
+</authors>
+<title>Model combination for machine translation. In Human Language Technologies: The</title>
+<date>2010</date>
+<booktitle>Annual Conference of the North American Chapter of the Association for Computational Linguistics, HLT ’10,</booktitle>
+<pages>975--983</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="30815" citStr="DeNero et al., 2010" startWordPosition="5455" endWordPosition="5458">ince there is a relatively small number of unique unigrams in a lattice. However, it is less efficient for n-grams of higher orders. This inefficiency was later addressed in (Blackwood et al., 2010) by employing n-gram mapping transducers to transduce the input lattices to n-gram lattices of order n and computing unigram posteriors on the higher order lattices. Algorithm 1 was described in (de Gispert et al., 2013) as a fast alternative to counting transducers. It is a lattice specialization of a more general algorithm for computing n-gram posteriors from a hypergraph in a single inside pass (DeNero et al., 2010). While this algorithm works really well for relatively short n-grams, its time and space requirements scale exponentially with the maximum n-gram length. Algorithm 2 builds upon this algorithm by exploiting the equivalence of expected counts and posteriors for nonrepeating n-grams and eliminating the costly posterior computation operation for most n-grams in the input lattice. 6 Conclusion We have described an efficient algorithm for computing n-gram posteriors from an input lattice and constructing an efficient and compact data structure for storing and retrieving them. The runtime and memor</context>
+</contexts>
+<marker>DeNero, Kumar, Chelba, Och, 2010</marker>
+<rawString>John DeNero, Shankar Kumar, Ciprian Chelba, and Franz Och. 2010. Model combination for machine translation. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, HLT ’10, pages 975–983, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Vaibhava Goel</author>
+<author>William J Byrne</author>
+</authors>
+<title>Minimum bayes-risk automatic speech recognition.</title>
+<date>2000</date>
+<journal>Computer Speech &amp; Language,</journal>
+<volume>14</volume>
+<issue>2</issue>
+<contexts>
+<context position="2669" citStr="Goel and Byrne, 2000" startWordPosition="400" endWordPosition="403">o consider a large number of weighted hypotheses at earlier stages of the pipeline to hedge against errors introduced by various subcomponents. Standard ASR and SMT techniques like discriminative training, rescoring with complex models and Minimum Bayes-Risk (MBR) decoding rely on lattices to represent intermediate system hypotheses that will be further processed to improve models or system output. For instance, lattice based MBR decoding has been shown to give moderate yet consistent gains in performance over conventional MAP decoding in a number of speech and NLP applications including ASR (Goel and Byrne, 2000) and SMT (Tromble et al., 2008; Blackwood et al., 2010; de Gispert et al., 2013). Most lattice-based techniques employed by speech and NLP systems make use of posterior quantities computed from probabilistic lattices. In this paper, we are interested in two such posterior quantities: i) n-gram expected count, the expected number of occurrences of a particular n-gram in a lattice, and ii) n-gram posterior probability, the total probability of accepting paths that include a particular n-gram. Expected counts have applications in the estimation of language model statistics from probabilistic inpu</context>
+</contexts>
+<marker>Goel, Byrne, 2000</marker>
+<rawString>Vaibhava Goel and William J Byrne. 2000. Minimum bayes-risk automatic speech recognition. Computer Speech &amp; Language, 14(2):115–135.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Khudanpur</author>
+</authors>
+<title>Estimating document frequencies in a speech corpus.</title>
+<date>2011</date>
+<booktitle>In David Nahamoo and</booktitle>
+<pages>407--412</pages>
+<editor>Damianos Karakos, Mark Dredze, Ken Ward Church, Aren Jansen, and Sanjeev</editor>
+<publisher>IEEE.</publisher>
+<marker>Khudanpur, 2011</marker>
+<rawString>Damianos Karakos, Mark Dredze, Ken Ward Church, Aren Jansen, and Sanjeev Khudanpur. 2011. Estimating document frequencies in a speech corpus. In David Nahamoo and Michael Picheny, editors, ASRU, pages 407–412. IEEE.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mehryar Mohri</author>
+<author>Pedro Moreno</author>
+<author>Eugene Weinstein</author>
+</authors>
+<title>Factor automata of automata and applications.</title>
+<date>2007</date>
+<booktitle>In Implementation and Application of Automata,</booktitle>
+<pages>168--179</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="8877" citStr="Mohri et al., 2007" startWordPosition="1434" endWordPosition="1437">ments for long n-grams. • We store the posteriors for n-grams that can potentially repeat on some path of the input lattice in a weighted prefix tree that we construct on the fly. Once that is done, we com2389 Table 1: Common semirings. SEMIRING SET ® ® 0 1 Boolean {0,1} V n 0 1 Probability R+ U {+oo} + x 0 1 Log R U {−oo, +oo} ®log + +oo 0 Tropical R U {−oo, +oo} min + +oo 0 a ⊕log b = − log(e−a + e−b) pute the expected counts for all n-grams in the input lattice and represent them as a minimal deterministic weighted finite-state automaton, known as a factor automaton (Allauzen et al., 2004; Mohri et al., 2007), using the approach described in (Allauzen et al., 2004). Finally we use general weighted automata algorithms to merge the weighted factor automaton representing expected counts with the weighted prefix tree representing posteriors to obtain a weighted factor automaton representing posteriors that can be used for efficient storage and retrieval. 2 Preliminaries This section introduces the definitions and notation related to weighted finite state automata and transducers (Mohri, 2009). 2.1 Semirings Definition 1 A semiring is a 5-tuple (K, ®, ®, 0,1) where (K, ®, 0) is a commutative monoid, (K</context>
+<context position="13160" citStr="Mohri et al., 2007" startWordPosition="2245" endWordPosition="2248">tinct n-gram histories with states. 2.4 Factor Automata Definition 3 Given two strings x, y ∈ E*, x is a factor (substring) of y if y = uxv for some u, v ∈ E*. More generally, x is a factor of a language L ⊆ E* if x is a factor of some string y ∈ L. The factor automaton 5(y) of a string y is the minimal deterministic finite-state automaton recognizing exactly the set offactors of y. The factor automaton 5(A) of an automaton A is the minimal deterministic finite-state automaton recognizing exactly the set offactors of A, that is the set offactors of the strings accepted by A. Factor automaton (Mohri et al., 2007) is an efficient and compact data structure for representing a full index of a set of strings, i.e. an automaton. It can be used to determine if a string x is a factor in time linear in its length O(|x|). By associating a weight with each factor, we can generalize the factor automaton structure to weighted automata and use it for efficient storage and retrieval of n-gram posteriors and expected counts. 3 Computation of N-gram Posteriors In this section we present an efficient algorithm based on the n-gram posterior computation algorithm described in (de Gispert et al., 2013) for computing the </context>
+</contexts>
+<marker>Mohri, Moreno, Weinstein, 2007</marker>
+<rawString>Mehryar Mohri, Pedro Moreno, and Eugene Weinstein. 2007. Factor automata of automata and applications. In Implementation and Application of Automata, pages 168–179. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mehryar Mohri</author>
+</authors>
+<title>Weighted automata algorithms.</title>
+<date>2009</date>
+<booktitle>Handbook of Weighted Automata, Monographs in Theoretical Computer Science. An EATCS Series,</booktitle>
+<pages>213--254</pages>
+<editor>In Manfred Droste, Werner Kuich, and Heiko Vogler, editors,</editor>
+<publisher>Springer</publisher>
+<location>Berlin Heidelberg.</location>
+<contexts>
+<context position="9366" citStr="Mohri, 2009" startWordPosition="1509" endWordPosition="1510">imal deterministic weighted finite-state automaton, known as a factor automaton (Allauzen et al., 2004; Mohri et al., 2007), using the approach described in (Allauzen et al., 2004). Finally we use general weighted automata algorithms to merge the weighted factor automaton representing expected counts with the weighted prefix tree representing posteriors to obtain a weighted factor automaton representing posteriors that can be used for efficient storage and retrieval. 2 Preliminaries This section introduces the definitions and notation related to weighted finite state automata and transducers (Mohri, 2009). 2.1 Semirings Definition 1 A semiring is a 5-tuple (K, ®, ®, 0,1) where (K, ®, 0) is a commutative monoid, (K, ®,1) is a monoid, ® distributes over ® and 0 is an annihilator for ®. Table 1 lists common semirings. In speech and language processing, two semirings are of particular importance. The log semiring is isomorphic to the probability semiring via the negative-log morphism and can be used to combine probabilities in the log domain. The tropical semiring, provides the algebraic structure necessary for shortest-path algorithms and can be derived from the log semiring using the Viterbi app</context>
+<context position="12367" citStr="Mohri, 2009" startWordPosition="2096" endWordPosition="2097">∗JAK(x) = 1. 2.3 N-gram Mapping Transducer We denote by Φn the n-gram mapping transducer (Blackwood et al., 2010; de Gispert et al., 2013) 2390 of order n. This transducer maps label sequences to n-gram sequences of order n. Φn is similar in form to the weighted finite-state transducer representation of a backoff n-gram language model (Allauzen et al., 2003). We denote by An the ngram lattice of order n obtained by composing lattice A with Φn, projecting the resulting transducer onto its output labels, i.e. n-grams, to obtain an automaton, removing ε-transitions, determinizing and minimizing (Mohri, 2009). An is a compact lattice of n-gram sequences of order n consistent with the labels and scores of lattice A. An typically has more states than A due to the association of distinct n-gram histories with states. 2.4 Factor Automata Definition 3 Given two strings x, y ∈ E*, x is a factor (substring) of y if y = uxv for some u, v ∈ E*. More generally, x is a factor of a language L ⊆ E* if x is a factor of some string y ∈ L. The factor automaton 5(y) of a string y is the minimal deterministic finite-state automaton recognizing exactly the set offactors of y. The factor automaton 5(A) of an automato</context>
+<context position="14107" citStr="Mohri, 2009" startWordPosition="2406" endWordPosition="2407">icient storage and retrieval of n-gram posteriors and expected counts. 3 Computation of N-gram Posteriors In this section we present an efficient algorithm based on the n-gram posterior computation algorithm described in (de Gispert et al., 2013) for computing the posterior probabilities of all ngrams in a lattice and constructing a weighted factor automaton for efficient storage and retrieval of these posteriors. We assume that the input lattice is an ε-free acyclic probabilistic automaton. If that is not the case, we can use general weighted automata ε-removal and weight-pushing algorithms (Mohri, 2009) to preprocess the input automaton. Algorithm 1 reproduces the original algorithm of (de Gispert et al., 2013) in our notation. Each iteration of the outermost loop starting at line 1 computes posterior probabilities of all unigrams in the n-gram lattice An = (En, Qn, In, Fn, En, λn, pn), or equivalently all n-grams of order n in the lattice A. The inner loop starting at line 6 is essentially a custom forward procedure computing not only the standard forward probabilities α[q], the marginal probability of paths that lead to state q, α[q] = � λ(s[7r]) ⊗ w[7r] (3) π E H(I,q) �= α[s[e]] ⊗ w[e] (4</context>
+<context position="23362" citStr="Mohri, 2009" startWordPosition="4206" endWordPosition="4207"> posterior, i.e. i[7r] = x =⇒ w[7r] = ρ(t[7r]) = p(x|A). Once the computation of posteriors for possibly repeating n-grams is finished, we use the algorithm described in (Allauzen et al., 2004) to construct a weighted factor automaton C mapping all n-grams observed in A to their expected counts, i.e. ∀7r in C, i[7r] = x =⇒ w[7r] = c(x|A). We use P0 and C to construct another weighted factor automaton P mapping all n-grams observed in A to their posterior probabilities, i.e. ∀7r in P, i[7r] = x =⇒ w[7r] = p(x|A). First we remove the n-grams accepted by P0 from C using the difference operation (Mohri, 2009), C0 = C − RmWeight(P0) then take the union of the remaining automaton C0 and P0, and finally optimize the result by removing ε-transitions, determinizing and minimizing P = Min(Det(RmEps(C0 ⊕ P0))). 4 Experiments and Discussion In this section we provide experiments comparing the performance of Algorithm 2 with Algorithm 1 as well as a baseline algorithm based on the approach of (Tromble et al., 2008). All algorithms were implemented in C++ using the OpenFst Library (Allauzen et al., 2007). Algorithm 1 implementation is a thin wrapper around the reference implementation. All experiments were </context>
+</contexts>
+<marker>Mohri, 2009</marker>
+<rawString>Mehryar Mohri. 2009. Weighted automata algorithms. In Manfred Droste, Werner Kuich, and Heiko Vogler, editors, Handbook of Weighted Automata, Monographs in Theoretical Computer Science. An EATCS Series, pages 213–254. Springer Berlin Heidelberg.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Murat Saraclar</author>
+<author>Richard Sproat</author>
+</authors>
+<title>Latticebased search for spoken utterance retrieval.</title>
+<date>2004</date>
+<booktitle>In Proc. HLT-NAACL,</booktitle>
+<pages>129--136</pages>
+<location>Boston, MA, USA.</location>
+<contexts>
+<context position="29011" citStr="Saraclar and Sproat, 2004" startWordPosition="5161" endWordPosition="5164"> simple counting transducer, projecting on the output side, and removing ε-transitions. The weight associated by the resulting WFSA to each n-gram it accepts is simply the expected count of that n-gram in the input automaton. Construction of such an automaton for all substrings (factors) of the input automaton was later explored in (Allauzen et al., 2004) in the con2395 Table 3: Factor Automata Comparison FA Type Unweighted Expected Count Posterior #states + #arcs (M) 16 20 21 On disk size (MB) 219 545 546 Runtime (min) 5.5 11 22 text of building an index for spoken utterance retrieval (SUR) (Saraclar and Sproat, 2004). This is the approach used for constructing the weighted factor automaton C in Algorithm 2. While expected count works well in practice for ranking spoken utterances containing a query term, posterior probability is in theory a better metric for this task. The weighted factor automaton P produced by Algorithm 2 can be used to construct an SUR index weighted with posterior probabilities. The problem of computing n-gram posteriors from lattices was first addressed in (Tromble et al., 2008) in the context of lattice-based MBR for SMT. This is the baseline approach used in our experiments and it </context>
+</contexts>
+<marker>Saraclar, Sproat, 2004</marker>
+<rawString>Murat Saraclar and Richard Sproat. 2004. Latticebased search for spoken utterance retrieval. In Proc. HLT-NAACL, pages 129–136, Boston, MA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hagen Soltau</author>
+<author>George Saon</author>
+<author>Brian Kingsbury</author>
+</authors>
+<title>The ibm attila speech recognition toolkit.</title>
+<date>2010</date>
+<booktitle>In Spoken Language Technology Workshop (SLT), 2010 IEEE,</booktitle>
+<pages>97--102</pages>
+<contexts>
+<context position="24337" citStr="Soltau et al., 2010" startWordPosition="4367" endWordPosition="4370">hm based on the approach of (Tromble et al., 2008). All algorithms were implemented in C++ using the OpenFst Library (Allauzen et al., 2007). Algorithm 1 implementation is a thin wrapper around the reference implementation. All experiments were conducted on the 88K ASR lattices (total size: #states + #arcs = 33M, disk size: 481MB) generated from the training subset of the IARPA Babel Turkish language pack, which includes 80 hours of conversational telephone speech. Lattices were generated with a speaker dependent DNN ASR system that was trained on the same data set using IBM’s Attila toolkit (Soltau et al., 2010). All lattices were pruned to a logarithmic beam width of 5. Figure 1 gives a scatter plot of the posterior probability computation time vs. the number of lattice n-grams (up to 5-grams) where each point Figure 1: Runtime comparison Figure 2: Memory use comparison 2394 Table 2: Runtime Comparison Max n-gram length 1 2 3 4 5 6 10 all logio(#n-grams) 3.0 3.8 4.2 4.5 4.8 5.1 6.3 11.2 Baseline (sec) 5 15 32 69 147 311 5413 - Algorithm 1 (sec) 0.5 0.6 0.9 1.6 3.9 16 997 - Algorithm 2 (sec) 0.7 0.8 0.9 1.1 1.2 1.3 1.7 1.0 Expected Count (sec) 0.3 0.4 0.5 0.6 0.7 0.8 1.0 0.5 represents one of the 88K</context>
+</contexts>
+<marker>Soltau, Saon, Kingsbury, 2010</marker>
+<rawString>Hagen Soltau, George Saon, and Brian Kingsbury. 2010. The ibm attila speech recognition toolkit. In Spoken Language Technology Workshop (SLT), 2010 IEEE, pages 97–102, Dec.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Roy W Tromble</author>
+<author>Shankar Kumar</author>
+<author>Franz Och</author>
+<author>Wolfgang Macherey</author>
+</authors>
+<title>Lattice minimum bayes-risk decoding for statistical machine translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>620--629</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2699" citStr="Tromble et al., 2008" startWordPosition="406" endWordPosition="409">ighted hypotheses at earlier stages of the pipeline to hedge against errors introduced by various subcomponents. Standard ASR and SMT techniques like discriminative training, rescoring with complex models and Minimum Bayes-Risk (MBR) decoding rely on lattices to represent intermediate system hypotheses that will be further processed to improve models or system output. For instance, lattice based MBR decoding has been shown to give moderate yet consistent gains in performance over conventional MAP decoding in a number of speech and NLP applications including ASR (Goel and Byrne, 2000) and SMT (Tromble et al., 2008; Blackwood et al., 2010; de Gispert et al., 2013). Most lattice-based techniques employed by speech and NLP systems make use of posterior quantities computed from probabilistic lattices. In this paper, we are interested in two such posterior quantities: i) n-gram expected count, the expected number of occurrences of a particular n-gram in a lattice, and ii) n-gram posterior probability, the total probability of accepting paths that include a particular n-gram. Expected counts have applications in the estimation of language model statistics from probabilistic input such as ASR lattices (Allauz</context>
+<context position="5366" citStr="Tromble et al., 2008" startWordPosition="834" endWordPosition="837">ted finite state transducer operations to reduce the computation to a sum over n-gram occurrences eliminating the need for an explicit sum over accepting paths. The rather innocent looking difference between Equations 1 and 2, #y(x) vs. 1y(x), makes it hard to develop similar algorithms for computing n-gram posteriors from weighted automata since the summation of probabilities has to be carried out over paths rather than n-gram occurrences (Blackwood et al., 2010; de Gispert et al., 2013). The problem of computing n-gram posteriors from lattices has been addressed by a number of recent works (Tromble et al., 2008; Allauzen et al., 2010; Blackwood et al., 2010; de Gispert et al., 2013) in the context of lattice-based MBR for SMT. In these works, it has been reported that the time required for lattice MBR decoding is dominated by the time required for computing n-gram posteriors. Our interest in computing n-gram posteriors from lattices stems from its potential applications in spoken content retrieval (Chelba et al., 2008; Karakos et al., 2011; Can and Narayanan, 2013). Computation of document frequency statistics from spoken corpora relies on estimating ngram posteriors from ASR lattices. In this conte</context>
+<context position="23767" citStr="Tromble et al., 2008" startWordPosition="4272" endWordPosition="4275">tomaton P mapping all n-grams observed in A to their posterior probabilities, i.e. ∀7r in P, i[7r] = x =⇒ w[7r] = p(x|A). First we remove the n-grams accepted by P0 from C using the difference operation (Mohri, 2009), C0 = C − RmWeight(P0) then take the union of the remaining automaton C0 and P0, and finally optimize the result by removing ε-transitions, determinizing and minimizing P = Min(Det(RmEps(C0 ⊕ P0))). 4 Experiments and Discussion In this section we provide experiments comparing the performance of Algorithm 2 with Algorithm 1 as well as a baseline algorithm based on the approach of (Tromble et al., 2008). All algorithms were implemented in C++ using the OpenFst Library (Allauzen et al., 2007). Algorithm 1 implementation is a thin wrapper around the reference implementation. All experiments were conducted on the 88K ASR lattices (total size: #states + #arcs = 33M, disk size: 481MB) generated from the training subset of the IARPA Babel Turkish language pack, which includes 80 hours of conversational telephone speech. Lattices were generated with a speaker dependent DNN ASR system that was trained on the same data set using IBM’s Attila toolkit (Soltau et al., 2010). All lattices were pruned to </context>
+<context position="25714" citStr="Tromble et al., 2008" startWordPosition="4617" endWordPosition="4620">tion of posteriors vs. the number of lattice n-grams (up to 5-grams). Algorithm 2 requires significantly less resources, particularly in the case of larger lattices with a large number of unique n-grams. To better understand the runtime characteristics of Algorithms 1 and 2, we conducted a small experiment where we randomly selected 100 lattices (total size: #states + #arcs = 81K, disk size: 1.2MB) from our data set and analyzed the relation between the runtime and the maximum ngram length N. Table 2 gives a runtime comparison between the baseline posterior computation algorithm described in (Tromble et al., 2008), Algorithm 1, Algorithm 2 and the expected count computation algorithm of (Allauzen et al., 2004). The baseline method computes posteriors separately for each n-gram by intersecting the lattice with an automaton accepting only the paths including that n-gram and computing the total weight of the resulting automaton in log semiring. Runtime complexities of the baseline method and Algorithm 1 are exponential in N due to the explicit enumeration of n-grams and we can clearly see this trend in the 3rd and 4th rows of Table 2. Algorithm 2 (5th row) takes advantage of the WFSA based expected count </context>
+<context position="29504" citStr="Tromble et al., 2008" startWordPosition="5241" endWordPosition="5244">) 219 545 546 Runtime (min) 5.5 11 22 text of building an index for spoken utterance retrieval (SUR) (Saraclar and Sproat, 2004). This is the approach used for constructing the weighted factor automaton C in Algorithm 2. While expected count works well in practice for ranking spoken utterances containing a query term, posterior probability is in theory a better metric for this task. The weighted factor automaton P produced by Algorithm 2 can be used to construct an SUR index weighted with posterior probabilities. The problem of computing n-gram posteriors from lattices was first addressed in (Tromble et al., 2008) in the context of lattice-based MBR for SMT. This is the baseline approach used in our experiments and it consists of building a separate FSA for each n-gram of interest and intersecting this automaton with the input lattice to discard those paths that do not include that n-gram and summing up the weights of remaining paths. The fundamental shortcoming of this approach is that it requires separate intersection and shortest distance computations for each n-gram. This shortcoming was first tackled in (Allauzen et al., 2010) by introducing a counting transducer for simultaneous computation of po</context>
+</contexts>
+<marker>Tromble, Kumar, Och, Macherey, 2008</marker>
+<rawString>Roy W Tromble, Shankar Kumar, Franz Och, and Wolfgang Macherey. 2008. Lattice minimum bayes-risk decoding for statistical machine translation. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 620–629. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

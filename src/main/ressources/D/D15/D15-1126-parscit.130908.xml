@@ -1,0 +1,829 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000137">
+<title confidence="0.9984435">
+Supervised Phrase Table Triangulation with Neural Word Embeddings
+for Low-Resource Languages
+</title>
+<author confidence="0.995821">
+Tomer Levinboim and David Chiang
+</author>
+<affiliation confidence="0.998236">
+Department of Computer Science and Engineering
+University of Notre Dame
+</affiliation>
+<email confidence="0.996671">
+{levinboim.1,dchiang}@nd.edu
+</email>
+<sectionHeader confidence="0.997367" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999201157894737">
+In this paper, we develop a supervised
+learning technique that improves noisy
+phrase translation scores obtained by
+phrase table triangulation. In particular,
+we extract word translation distributions
+from small amounts of source-target bilin-
+gual data (a dictionary or a parallel corpus)
+with which we learn to assign better scores
+to translation candidates obtained by trian-
+gulation. Our method is able to gain im-
+provement in translation quality on two
+tasks: (1) On Malagasy-to-French transla-
+tion via English, we use only 1k dictionary
+entries to gain +0.5 B over triangula-
+tion. (2) On Spanish-to-French via English
+we use only 4k sentence pairs to gain +0.7
+B over triangulation interpolated with
+a phrase table extracted from the same 4k
+sentence pairs.
+</bodyText>
+<sectionHeader confidence="0.999511" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999816116666667">
+Phrase-based statistical machine translation sys-
+tems require considerable amounts of source-
+target parallel data to produce good quality trans-
+lation. However, large amounts of parallel data are
+available for only a fraction of language pairs, and
+mostly when one of the languages is English.
+Phrase table triangulation (Utiyama and Isa-
+hara, 2007; Cohn and Lapata, 2007; Wu and
+Wang, 2007) is a method for generating source-
+target phrase tables without having access to any
+source-target parallel data. The intuition behind
+triangulation (and pivoting techniques in general)
+is the transitivity of translation: if a source lan-
+guage phrase s translates to a pivot language
+phrase p which in turn translates to a target lan-
+guage phrase t, then s should likely translate to t.
+Following this intuition, a triangulated source-
+target phrase table Tˆ can be composed from a
+source-pivot and pivot-target phrase table (§2).
+However, the resulting triangulated phrase table
+Tˆ contains many spurious phrase pairs and noisy
+probability estimates. Therefore, early triangula-
+tion work (Wu and Wang, 2007) already realis-
+tically assumed access to a limited source-target
+parallel data from which a relatively high-quality
+source-target phrase table T can be directly esti-
+mated. The two phrase tables were then combined,
+resulting in a higher quality phrase table that pro-
+poses translations for many source phrases not
+found in T. Wu and Wang (2007) report that in-
+terpolation of the two phrase tables T and Tˆ leads
+to higher quality translations. However, the trian-
+gulated phrase table Tˆ is obtained without using
+the source-target bilingual data, which suggests
+that the source-target data is not used as fully as
+it could be.
+In this paper, we develop a supervised learning
+algorithm that corrects triangulated word transla-
+tion probabilities by relying on word translation
+distributions wsup derived from the limited source-
+target data. In particular, we represent source and
+target words using word embeddings (Mikolov
+et al., 2013) and learn a transformation between
+the two embedding spaces in order to approxi-
+mate wsup, thus down-weighting incorrect trans-
+lation candidates proposed by triangulation (§3).
+By representing words as embeddings, our model
+can generalize the information contained in the
+source-target data (as encoded in the distributions
+wsup) to a much larger vocabulary, and can as-
+sign lexical-weighting probabilities to most of the
+phrase pairs in ˆT.
+Fixing English as the pivot language (the
+most realistic pivot language choice), on a low-
+resource Spanish-to-French translation task our
+model gains +0.7 B on top of standard phrase
+table interpolation. On Malagasy-to-French trans-
+lation, our model gains +0.5 B on top of tri-
+angulation when using only 1k Malagasy-French
+dictionary entries (§4).
+</bodyText>
+<page confidence="0.978797">
+1079
+</page>
+<note confidence="0.8565185">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1079–1083,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<sectionHeader confidence="0.990807" genericHeader="introduction">
+2 Preliminaries
+</sectionHeader>
+<bodyText confidence="0.999847125">
+Let s, p, t denote words and s, p, t denote phrases
+in the source, pivot, and target languages, respec-
+tively. Also, let T denote a phrase table estimated
+over a parallel corpus and Tˆ denote a triangu-
+lated phrase table. We use similar notation for their
+respective phrase translation features φ, lexical-
+weighting features lex, and the word translation
+probabilities w.
+</bodyText>
+<subsectionHeader confidence="0.989284">
+2.1 Triangulation (weak baseline)
+</subsectionHeader>
+<bodyText confidence="0.999838785714286">
+In phrase table triangulation, a source-target
+phrase table Tst is constructed by combining a
+source-pivot and pivot-target phrase table Tsp, Tpt,
+each estimated on its respective parallel data. For
+each resulting phrase pair (s, t), we can also com-
+pute an alignment aˆ as the most frequent align-
+ment obtained by combining source-pivot and
+pivot-target alignments asp and apt across all pivot
+phrases p as follows: i(s, t)  |3p : (s, p) E asp n
+(p, t) E apt}.
+The triangulated source-to-target lexical
+weights, denoted lexst, are approximated in two
+steps: First, word translation scores ˆwst are ap-
+proximated by marginalizing over the pivot words:
+</bodyText>
+<equation confidence="0.9872705">
+Zˆwst(t  |s) = wsp(p  |s) · wpt(t  |p). (1)
+p
+</equation>
+<sectionHeader confidence="0.98554" genericHeader="method">
+3 Supervised Word Translations
+</sectionHeader>
+<bodyText confidence="0.999967888888889">
+While interpolation (Eq. 3) may help correct some
+of the noisy triangulated scores, its effect is lim-
+ited to phrase pairs appearing in both phrase ta-
+bles. Here, we suggest a discriminative supervised
+learning method that can affect all phrase pairs.
+Our idea is to regard word translation distri-
+butions derived from source-target bilingual data
+(through word alignments or dictionary entries)
+as the correct translation distributions, and use
+them to learn discriminately: correct target words
+should become likely translations, and incorrect
+ones should be down-weighted. To generalize be-
+yond the vocabulary of the source-target data, we
+appeal to word embeddings.
+We present our formulation in the source-to-
+target direction. The target-to-source direction is
+obtained simply by swapping the source and tar-
+get languages.
+</bodyText>
+<subsectionHeader confidence="0.991249">
+3.1 Model
+</subsectionHeader>
+<bodyText confidence="0.9434312">
+Let csup
+st denote the number of times source word
+s was aligned to target word t (in word alignment,
+or in the dictionary). We define the word transla-
+tion distributions wsup(t  |s) = csup
+</bodyText>
+<equation confidence="0.89797">
+st /csup
+s , where
+sup
+cs = �t csup
+st . Furthermore, let q(t  |s) denote the
+</equation>
+<bodyText confidence="0.9873962">
+word translation probabilities we wish to learn and
+consider maximizing the log-likelihood function:
+Next, given a (triangulated) phrase pair (s, t) with arg max L(q) = arg max csrp log q(t  |s).
+alignment ˆa, let ˆas,: = it  |(s, t) E ˆa}; the lexical- q q
+weighting probability is (Koehn et al., 2003): Z
+</bodyText>
+<equation confidence="0.987576">
+Z1 ˆwst(t  |s). (2)
+|ˆas,: |tEˆas,:
+</equation>
+<bodyText confidence="0.999862">
+The triangulated phrase translation scores, de-
+noted ˆφst, are computed by analogy with Eq. 1.
+We also compute these scores in the reverse
+direction by swapping the source and target lan-
+guages.
+</bodyText>
+<subsectionHeader confidence="0.991276">
+2.2 Interpolation (strong baseline)
+</subsectionHeader>
+<bodyText confidence="0.99996575">
+Given access to source-target data, an ordinary
+source-target phrase table Tst can be estimated di-
+rectly. Wu and Wang (2007) suggest interpolating
+phrase pairs entries that occur in both tables:
+</bodyText>
+<equation confidence="0.981188">
+Tinterp = αTst + (1 − α) ˆTst. (3)
+</equation>
+<bodyText confidence="0.973978384615385">
+Phrase pairs appearing in only one phrase table are
+added as-is. We refer to the resulting table as the
+interpolated phrase table.
+Clearly, the solution q(·  |s) := wsup(·  |s) maxi-
+mizes L. However, we would like a solution that
+generalizes to source words s beyond those ob-
+served in the source-target corpus – in particular,
+those source words that appear in the triangulated
+phrase table ˆT, but not in T.
+In order to generalize, we abstract from words
+to vector representations of words. Specifically,
+we constrain q to the following parameterization:
+( )
+</bodyText>
+<construct confidence="0.4359265">
+exp vT s Avt + f st T h
+vSAvt + f i h)
+</construct>
+<bodyText confidence="0.937451857142857">
+exp ( .
+Here, the vectors vs and vt represent monolingual
+features and the vector fst represents bilingual fea-
+tures. The parameters A and h are to be learned.
+In this work, we use monolingual word embed-
+dings for vs and vt, and set the vector fst to con-
+tain only the value of the triangulated score, such
+</bodyText>
+<equation confidence="0.971456833333333">
+H�lexst(t  |s, ˆa) =
+sEs
+1
+q(t  |s) = Zs
+ZZs =
+tET(s)
+</equation>
+<page confidence="0.813573">
+1080
+</page>
+<bodyText confidence="0.996875875">
+that fst := ˆwst. Therefore, the matrix A is a lin-
+ear transformation between the source and target
+embedding spaces, and h (now a scalar) quantifies
+how the triangulated scores wˆ are to be trusted.
+In the normalization factor Zs, we let t range
+only over possible translations of s suggested by
+either wsup or the triangulated word probabilities.
+That is:
+</bodyText>
+<equation confidence="0.984015">
+T(s) = it  |wsup(t  |s) &gt; 0 v ˆw(t  |s) &gt; 01.
+</equation>
+<bodyText confidence="0.999802833333333">
+This restriction makes efficient computation pos-
+sible, as otherwise the normalization term would
+have to be computed over the entire target vocab-
+ulary.
+Under this parameterization, our goal is to solve
+the following maximization problem:
+</bodyText>
+<equation confidence="0.9030375">
+csup
+st log q(t  |s). (4)
+</equation>
+<subsectionHeader confidence="0.98952">
+3.2 Optimization
+</subsectionHeader>
+<bodyText confidence="0.999932">
+The objective function in Eq. 4 is concave in both
+A and h. This is because after taking the log, we
+are left with a weighted sum of linear and concave
+(negative log-sum-exp) terms in A and h. We can
+therefore reach the global solution of the problem
+using gradient descent.
+Taking derivatives, the gradient is
+</bodyText>
+<equation confidence="0.827408">
+T ∂L=Z
+mstvsvt ∂h
+s,t
+</equation>
+<bodyText confidence="0.985446">
+where the scalar mst = csup
+</bodyText>
+<equation confidence="0.7480725">
+st − csup
+s q(t  |s) for the
+</equation>
+<bodyText confidence="0.9290512">
+current value of q.
+For quick results, we limited the number of gra-
+dient steps to 200 and selected the iteration that
+minimized the total variation distance to wsup over
+a held out dev set:
+</bodyText>
+<equation confidence="0.97002">
+Z ||q(·  |s) − wsup(·  |s)||1. (5)
+s
+</equation>
+<bodyText confidence="0.999719">
+We obtained better convergence rate by us-
+ing a batch version of the effective and easy-
+to-implement Adagrad technique (Duchi et al.,
+2011). See Figure 1.
+</bodyText>
+<subsectionHeader confidence="0.999839">
+3.3 Re-estimating lexical weights
+</subsectionHeader>
+<bodyText confidence="0.96745475">
+Having learned the model (A and h), we can now
+use q(t  |s) to estimate the lexical weights (Eq. 2)
+of any aligned phrase pairs (s, t, ˆa), assuming it is
+composed of embeddable words.
+</bodyText>
+<figureCaption confidence="0.961686333333333">
+Figure 1: The (target-to-source) objective function
+per iteration. Applying batch Adagrad (blue) sig-
+nificantly accelerates convergence.
+</figureCaption>
+<bodyText confidence="0.9991838">
+However, we found the supervised word trans-
+lation scores q to be too sharp, sometimes assign-
+ing all probability mass to a single target word. We
+therefore interpolated q with the triangulated word
+translation scores ˆw:
+</bodyText>
+<equation confidence="0.997358">
+qβ = βq + (1 − β) ˆw. (6)
+</equation>
+<bodyText confidence="0.9992902">
+To integrate the lexical weights induced by qβ
+(Eq. 2), we simply appended them as new features
+in the phrase table in addition to the existing lexi-
+cal weights. Following this, we can search for a β
+value that maximizes B on a tuning set.
+</bodyText>
+<subsectionHeader confidence="0.996936">
+3.4 Summary of method
+</subsectionHeader>
+<bodyText confidence="0.9989915">
+In summary, to improve upon a triangulated or in-
+terpolated phrase table, we:
+</bodyText>
+<listItem confidence="0.998970625">
+1. Learn word translation distributions q by super-
+vision against distributions wsup derived from
+the source-target bilingual data (§3.1).
+2. Smooth the learned distributions q by interpo-
+lating with triangulated word translation scores
+wˆ (§3.3).
+3. Compute new lexical weights and append them
+to the phrase table (§3.3).
+</listItem>
+<sectionHeader confidence="0.999387" genericHeader="method">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.998034">
+To test our method, we conducted two low-
+resource translation experiments using the
+phrase-based MT system Moses (Koehn et al.,
+2007).
+</bodyText>
+<note confidence="0.534899">
+French to Spanish
+</note>
+<figure confidence="0.99457875">
+80
+70
+60
+50
+40
+30
+20
+10
+0 50 100 150 200
+Iteration
+Error (Total Variation x 100)
+0
+</figure>
+<figureCaption confidence="0.996494">
+train, with adagrad
+dev, with adagrad
+train, no adagrad
+dev, no adagrad
+</figureCaption>
+<figure confidence="0.997744181818182">
+Z
+L(A, h) = max
+A,h
+max
+A,h
+s,t
+∂L
+∂A
+Z=
+s,t
+mstfst
+</figure>
+<page confidence="0.973904">
+1081
+</page>
+<subsectionHeader confidence="0.966238">
+4.1 Data
+</subsectionHeader>
+<bodyText confidence="0.9996005">
+Fixing the pivot language to English, we applied
+our method on two data scenarios:
+</bodyText>
+<listItem confidence="0.8479935">
+1. Spanish-to-French: two related languages
+used to simulate a low-resource setting. The
+baseline is phrase table interpolation (Eq. 3).
+2. Malagasy-to-French: two unrelated languages
+</listItem>
+<bodyText confidence="0.97470025">
+for which we have a small dictionary, but no
+parallel corpus (aside from tuning and testing
+data). The baseline is triangulation alone (there
+is no source-target model to interpolate with).
+Table 1 lists some statistics of the bilin-
+gual data we used. European-language bitexts
+were extracted from Europarl (Koehn, 2005). For
+Malagasy-English, we used the Global Voices par-
+allel data available online.1 The Malagasy-French
+dictionary was extracted from online resources2
+and the small Malagasy-French tune/test sets were
+extracted3 from Global Voices.
+</bodyText>
+<table confidence="0.996551142857143">
+lines of data
+language pair train tune test
+sp-fr 4k 1.5k 1.5k
+mg-fr 1.1k 1.2k 1.2k
+sp-en 50k – –
+mg-en 100k – –
+en-fr 50k – –
+</table>
+<tableCaption confidence="0.957077666666667">
+Table 1: Bilingual datasets. Legend: sp=Spanish,
+fr=French, en=English, mg=Malagasy.
+Table 2 lists token statistics of the monolin-
+</tableCaption>
+<bodyText confidence="0.977923727272727">
+gual data used. We used word2vec4 to generate
+French, Spanish and Malagasy word embeddings.
+The French and Spanish embeddings were (in-
+dependently) estimated over their combined to-
+kenized and lowercased Gigaword5 and Leipzig
+news corpora.6 The Malagasy embeddings were
+similarly estimated over data form Global Voices,7
+the Malagasy Wikipedia and the Malagasy Com-
+mon Crawl.8 In addition, we estimated a 5-gram
+French language model over the French monolin-
+gual data.
+</bodyText>
+<footnote confidence="0.99996625">
+1http://www.ark.cs.cmu.edu/global-voices
+2http://motmalgache.org/bins/homePage
+3https://github.com/vchahun/gv-crawl
+4https://radimrehurek.com/gensim/models/word2vec.html
+5http://catalog.ldc.upenn.edu
+6http://corpora.uni-leipzig.de/download.html
+7http://www.isi.edu/˜qdou/downloads.html
+8https://commoncrawl.org/the-data/
+</footnote>
+<table confidence="0.49864025">
+language words
+French 1.5G
+Spanish 1.4G
+Malagasy 58M
+</table>
+<tableCaption confidence="0.9180925">
+Table 2: Size of monolingual corpus per language
+as measured in number of tokens.
+</tableCaption>
+<subsectionHeader confidence="0.998157">
+4.2 Spanish-French Results
+</subsectionHeader>
+<bodyText confidence="0.959305625">
+To produce wsup, we aligned the small Spanish-
+French parallel corpus in both directions, and
+symmetrized using the intersection heuristic. This
+was done to obtain high precision alignments (the
+often-used grow-diag-final-and heuristic is opti-
+mized for phrase extraction, not precision).
+We used the skip-gram model to estimate the
+Spanish and French word embeddings and set the
+dimension to d = 200 and context window to
+w = 5 (default). Subsequently, to run our method,
+we filtered out source and target words that either
+did not appear in the triangulation, or, did not have
+an embedding. We took words that appeared more
+than 10 times in the parallel corpus for the training
+set (-690 words), and between 5–9 times for the
+held out dev set (-530 words). This was done in
+both source-target and target-source directions.
+In Table 3 we show that the distributions learned
+by our method are much better approximations of
+wsup compared to those obtained by triangulation.
+Method source target target source
+triangulation 71.6% 72.0%
+our scores 30.2% 33.8%
+Table 3: Average total variation distance (Eq. 5)
+to the dev set portion of wsup (computed only over
+words whose translations in wsup appear in the tri-
+angulation). Using word embeddings, our method
+is able to better generalize on the dev set.
+We then examined the effect of appending our
+supervised lexical weights. We fixed the word
+level interpolation β := 0.95 (effectively assigning
+very little mass to triangulated word translations
+ˆw) and searched for α E 10.9, 0.8, 0.7, 0.61 in Eq. 3
+to maximize B on the tuning set.
+Our MT results are reported in Table 4. While
+interpolation improves over triangulation alone by
++0.8 B , our method adds another +0.7 B on
+top of interpolation, a statistically significant gain
+(p &lt; 0.01) according to a bootstrap resampling
+significance test (Koehn, 2004).
+</bodyText>
+<page confidence="0.970545">
+1082
+</page>
+<table confidence="0.9957738">
+Method α tune test
+source-target – 26.8 25.3
+triangulation – 29.2 28.4
+interpolation 0.7 30.2 29.2
+interpolation+our scores 0.6 30.8 29.9
+</table>
+<tableCaption confidence="0.997998">
+Table 4: Spanish-French B scores. Append-
+</tableCaption>
+<bodyText confidence="0.780779">
+ing lexical weights obtained by supervision over
+a small source-target corpus significantly out-
+performs phrase table interpolation (Eq. 3) by
++0.7 B .
+</bodyText>
+<subsectionHeader confidence="0.998305">
+4.3 Malagasy-French Results
+</subsectionHeader>
+<bodyText confidence="0.9498712">
+For Malagasy-French, the wsup distributions used
+for supervision were taken to be uniform distri-
+butions over the dictionary translations. For each
+training direction, we used a 70%/30% split of the
+dictionary to form the train and dev sets.
+Having significantly less Malagasy monolin-
+gual data, we used d = 100 dimensional embed-
+dings and a w = 3 context window to estimate both
+Malagasy and French words.
+As before, we added our supervised lexical
+weights as new features in the phrase table. How-
+ever, instead of fixing /3 = 0.95 as above, we
+searched for /3 ∈ {0.9, 0.8, 0.7, 0.6} in Eq. 6 to max-
+imize B on a small tune set. We report our re-
+sults in Table 5. Using only a dictionary, we are
+able to improve over triangulation by +0.5 B , a
+statistically significant difference (p &lt; 0.01).
+Table 5: Malagasy-French B . Supervision with
+a dictionary significantly improves upon simple
+triangulation by +0.5 B .
+</bodyText>
+<sectionHeader confidence="0.999145" genericHeader="conclusions">
+5 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999966">
+In this paper, we argued that constructing a trian-
+gulated phrase table independently from even very
+limited source-target data (a small dictionary or
+parallel corpus) underutilizes that parallel data.
+Following this argument, we designed a super-
+vised learning algorithm that relies on word trans-
+lation distributions derived from the parallel data
+as well as a distributed representation of words
+(embeddings). The latter enables our algorithm to
+assign translation probabilities to word pairs that
+do not appear in the source-target bilingual data.
+We then used our model to generate new lexi-
+cal weights for phrase pairs appearing in a trian-
+gulated or interpolated phrase table and demon-
+strated improvements in MT quality on two tasks.
+This is despite the fact that the distributions (wsup)
+we fit our model to were estimated automatically,
+or even naively as uniform distributions.
+</bodyText>
+<sectionHeader confidence="0.997962" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.999158833333333">
+The authors would like to thank Daniel Marcu and
+Kevin Knight for initial discussions and a sup-
+portive research environment at ISI, as well as the
+anonymous reviewers for their helpful comments.
+This research was supported in part by a Google
+Faculty Research Award to Chiang.
+</bodyText>
+<sectionHeader confidence="0.999674" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999923361111111">
+Trevor Cohn and Mirella Lapata. 2007. Machine
+translation by triangulation: Making effective use of
+multi-parallel corpora. In Proc. ACL, pages 728–
+735.
+John Duchi, Elad Hazan, and Yoram Singer. 2011.
+Adaptive subgradient methods for online learning
+and stochastic optimization. J. Machine Learning
+Research, 12:2121–2159, July.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Proc.
+NAACL HLT, pages 48–54.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexan-
+dra Constantin, and Evan Herbst. 2007. Moses:
+Open source toolkit for statistical machine transla-
+tion. In Proc. ACL, Interactive Poster and Demon-
+stration Sessions, pages 177–180.
+Philipp Koehn. 2004. Statistical significance tests for
+machine translation evaluation. In Proc. EMNLP,
+pages 388–395.
+Philipp Koehn. 2005. Europarl: A parallel corpus for
+statistical machine translation. In Proc. MT Summit,
+pages 79–86.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey
+Dean. 2013. Efficient estimation of word represen-
+tations in vector space. In Proc. ICLR, Workshop
+Track.
+Masao Utiyama and Hitoshi Isahara. 2007. A com-
+parison of pivot methods for phrase-based statistical
+machine translation. In Proc. HLT-NAACL, pages
+484–491.
+Hua Wu and Haifeng Wang. 2007. Pivot language ap-
+proach for phrase-based statistical machine transla-
+tion. In Proc. ACL, pages 856–863.
+</reference>
+<figure confidence="0.996409833333333">
+Method /3
+tune test
+triangulation –
+12.2 11.1
+triangulation+our scores 0.6
+12.4 11.6
+</figure>
+<page confidence="0.919304">
+1083
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.630932">
+<title confidence="0.993473">Supervised Phrase Table Triangulation with Neural Word for Low-Resource Languages</title>
+<author confidence="0.665379">Levinboim</author>
+<affiliation confidence="0.9917135">Department of Computer Science and University of Notre</affiliation>
+<abstract confidence="0.9985016">In this paper, we develop a supervised learning technique that improves noisy phrase translation scores obtained by phrase table triangulation. In particular, we extract word translation distributions from small amounts of source-target bilingual data (a dictionary or a parallel corpus) with which we learn to assign better scores to translation candidates obtained by triangulation. Our method is able to gain improvement in translation quality on two tasks: (1) On Malagasy-to-French translation via English, we use only 1k dictionary to gain B over tion. (2) On Spanish-to-French via English use only 4k sentence pairs to gain B over triangulation interpolated a phrase table extracted from the same 4k sentence pairs.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Trevor Cohn</author>
+<author>Mirella Lapata</author>
+</authors>
+<title>Machine translation by triangulation: Making effective use of multi-parallel corpora.</title>
+<date>2007</date>
+<booktitle>In Proc. ACL,</booktitle>
+<pages>728--735</pages>
+<contexts>
+<context position="1376" citStr="Cohn and Lapata, 2007" startWordPosition="201" endWordPosition="204">only 1k dictionary entries to gain +0.5 B over triangulation. (2) On Spanish-to-French via English we use only 4k sentence pairs to gain +0.7 B over triangulation interpolated with a phrase table extracted from the same 4k sentence pairs. 1 Introduction Phrase-based statistical machine translation systems require considerable amounts of sourcetarget parallel data to produce good quality translation. However, large amounts of parallel data are available for only a fraction of language pairs, and mostly when one of the languages is English. Phrase table triangulation (Utiyama and Isahara, 2007; Cohn and Lapata, 2007; Wu and Wang, 2007) is a method for generating sourcetarget phrase tables without having access to any source-target parallel data. The intuition behind triangulation (and pivoting techniques in general) is the transitivity of translation: if a source language phrase s translates to a pivot language phrase p which in turn translates to a target language phrase t, then s should likely translate to t. Following this intuition, a triangulated sourcetarget phrase table Tˆ can be composed from a source-pivot and pivot-target phrase table (§2). However, the resulting triangulated phrase table Tˆ co</context>
+</contexts>
+<marker>Cohn, Lapata, 2007</marker>
+<rawString>Trevor Cohn and Mirella Lapata. 2007. Machine translation by triangulation: Making effective use of multi-parallel corpora. In Proc. ACL, pages 728– 735.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2011</date>
+<journal>J. Machine Learning Research,</journal>
+<pages>12--2121</pages>
+<contexts>
+<context position="9437" citStr="Duchi et al., 2011" startWordPosition="1542" endWordPosition="1545"> linear and concave (negative log-sum-exp) terms in A and h. We can therefore reach the global solution of the problem using gradient descent. Taking derivatives, the gradient is T ∂L=Z mstvsvt ∂h s,t where the scalar mst = csup st − csup s q(t |s) for the current value of q. For quick results, we limited the number of gradient steps to 200 and selected the iteration that minimized the total variation distance to wsup over a held out dev set: Z ||q(· |s) − wsup(· |s)||1. (5) s We obtained better convergence rate by using a batch version of the effective and easyto-implement Adagrad technique (Duchi et al., 2011). See Figure 1. 3.3 Re-estimating lexical weights Having learned the model (A and h), we can now use q(t |s) to estimate the lexical weights (Eq. 2) of any aligned phrase pairs (s, t, ˆa), assuming it is composed of embeddable words. Figure 1: The (target-to-source) objective function per iteration. Applying batch Adagrad (blue) significantly accelerates convergence. However, we found the supervised word translation scores q to be too sharp, sometimes assigning all probability mass to a single target word. We therefore interpolated q with the triangulated word translation scores ˆw: qβ = βq + </context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2011</marker>
+<rawString>John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. J. Machine Learning Research, 12:2121–2159, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proc. NAACL HLT,</booktitle>
+<pages>48--54</pages>
+<contexts>
+<context position="6551" citStr="Koehn et al., 2003" startWordPosition="1023" endWordPosition="1026"> swapping the source and target languages. 3.1 Model Let csup st denote the number of times source word s was aligned to target word t (in word alignment, or in the dictionary). We define the word translation distributions wsup(t |s) = csup st /csup s , where sup cs = �t csup st . Furthermore, let q(t |s) denote the word translation probabilities we wish to learn and consider maximizing the log-likelihood function: Next, given a (triangulated) phrase pair (s, t) with arg max L(q) = arg max csrp log q(t |s). alignment ˆa, let ˆas,: = it |(s, t) E ˆa}; the lexical- q q weighting probability is (Koehn et al., 2003): Z Z1 ˆwst(t |s). (2) |ˆas,: |tEˆas,: The triangulated phrase translation scores, denoted ˆφst, are computed by analogy with Eq. 1. We also compute these scores in the reverse direction by swapping the source and target languages. 2.2 Interpolation (strong baseline) Given access to source-target data, an ordinary source-target phrase table Tst can be estimated directly. Wu and Wang (2007) suggest interpolating phrase pairs entries that occur in both tables: Tinterp = αTst + (1 − α) ˆTst. (3) Phrase pairs appearing in only one phrase table are added as-is. We refer to the resulting table as th</context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proc. NAACL HLT, pages 48–54.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+</authors>
+<title>Moses: Open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proc. ACL, Interactive Poster and Demonstration Sessions,</booktitle>
+<pages>177--180</pages>
+<location>Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra</location>
+<contexts>
+<context position="10858" citStr="Koehn et al., 2007" startWordPosition="1778" endWordPosition="1781">arch for a β value that maximizes B on a tuning set. 3.4 Summary of method In summary, to improve upon a triangulated or interpolated phrase table, we: 1. Learn word translation distributions q by supervision against distributions wsup derived from the source-target bilingual data (§3.1). 2. Smooth the learned distributions q by interpolating with triangulated word translation scores wˆ (§3.3). 3. Compute new lexical weights and append them to the phrase table (§3.3). 4 Experiments To test our method, we conducted two lowresource translation experiments using the phrase-based MT system Moses (Koehn et al., 2007). French to Spanish 80 70 60 50 40 30 20 10 0 50 100 150 200 Iteration Error (Total Variation x 100) 0 train, with adagrad dev, with adagrad train, no adagrad dev, no adagrad Z L(A, h) = max A,h max A,h s,t ∂L ∂A Z= s,t mstfst 1081 4.1 Data Fixing the pivot language to English, we applied our method on two data scenarios: 1. Spanish-to-French: two related languages used to simulate a low-resource setting. The baseline is phrase table interpolation (Eq. 3). 2. Malagasy-to-French: two unrelated languages for which we have a small dictionary, but no parallel corpus (aside from tuning and testing </context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: Open source toolkit for statistical machine translation. In Proc. ACL, Interactive Poster and Demonstration Sessions, pages 177–180.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Statistical significance tests for machine translation evaluation.</title>
+<date>2004</date>
+<booktitle>In Proc. EMNLP,</booktitle>
+<pages>388--395</pages>
+<contexts>
+<context position="14975" citStr="Koehn, 2004" startWordPosition="2405" endWordPosition="2406">our method is able to better generalize on the dev set. We then examined the effect of appending our supervised lexical weights. We fixed the word level interpolation β := 0.95 (effectively assigning very little mass to triangulated word translations ˆw) and searched for α E 10.9, 0.8, 0.7, 0.61 in Eq. 3 to maximize B on the tuning set. Our MT results are reported in Table 4. While interpolation improves over triangulation alone by +0.8 B , our method adds another +0.7 B on top of interpolation, a statistically significant gain (p &lt; 0.01) according to a bootstrap resampling significance test (Koehn, 2004). 1082 Method α tune test source-target – 26.8 25.3 triangulation – 29.2 28.4 interpolation 0.7 30.2 29.2 interpolation+our scores 0.6 30.8 29.9 Table 4: Spanish-French B scores. Appending lexical weights obtained by supervision over a small source-target corpus significantly outperforms phrase table interpolation (Eq. 3) by +0.7 B . 4.3 Malagasy-French Results For Malagasy-French, the wsup distributions used for supervision were taken to be uniform distributions over the dictionary translations. For each training direction, we used a 70%/30% split of the dictionary to form the train and dev s</context>
+</contexts>
+<marker>Koehn, 2004</marker>
+<rawString>Philipp Koehn. 2004. Statistical significance tests for machine translation evaluation. In Proc. EMNLP, pages 388–395.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Europarl: A parallel corpus for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In Proc. MT Summit,</booktitle>
+<pages>79--86</pages>
+<contexts>
+<context position="11685" citStr="Koehn, 2005" startWordPosition="1920" endWordPosition="1921"> s,t mstfst 1081 4.1 Data Fixing the pivot language to English, we applied our method on two data scenarios: 1. Spanish-to-French: two related languages used to simulate a low-resource setting. The baseline is phrase table interpolation (Eq. 3). 2. Malagasy-to-French: two unrelated languages for which we have a small dictionary, but no parallel corpus (aside from tuning and testing data). The baseline is triangulation alone (there is no source-target model to interpolate with). Table 1 lists some statistics of the bilingual data we used. European-language bitexts were extracted from Europarl (Koehn, 2005). For Malagasy-English, we used the Global Voices parallel data available online.1 The Malagasy-French dictionary was extracted from online resources2 and the small Malagasy-French tune/test sets were extracted3 from Global Voices. lines of data language pair train tune test sp-fr 4k 1.5k 1.5k mg-fr 1.1k 1.2k 1.2k sp-en 50k – – mg-en 100k – – en-fr 50k – – Table 1: Bilingual datasets. Legend: sp=Spanish, fr=French, en=English, mg=Malagasy. Table 2 lists token statistics of the monolingual data used. We used word2vec4 to generate French, Spanish and Malagasy word embeddings. The French and Span</context>
+</contexts>
+<marker>Koehn, 2005</marker>
+<rawString>Philipp Koehn. 2005. Europarl: A parallel corpus for statistical machine translation. In Proc. MT Summit, pages 79–86.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Kai Chen</author>
+<author>Greg Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Efficient estimation of word representations in vector space.</title>
+<date>2013</date>
+<booktitle>In Proc. ICLR, Workshop Track.</booktitle>
+<contexts>
+<context position="3027" citStr="Mikolov et al., 2013" startWordPosition="461" endWordPosition="464">not found in T. Wu and Wang (2007) report that interpolation of the two phrase tables T and Tˆ leads to higher quality translations. However, the triangulated phrase table Tˆ is obtained without using the source-target bilingual data, which suggests that the source-target data is not used as fully as it could be. In this paper, we develop a supervised learning algorithm that corrects triangulated word translation probabilities by relying on word translation distributions wsup derived from the limited sourcetarget data. In particular, we represent source and target words using word embeddings (Mikolov et al., 2013) and learn a transformation between the two embedding spaces in order to approximate wsup, thus down-weighting incorrect translation candidates proposed by triangulation (§3). By representing words as embeddings, our model can generalize the information contained in the source-target data (as encoded in the distributions wsup) to a much larger vocabulary, and can assign lexical-weighting probabilities to most of the phrase pairs in ˆT. Fixing English as the pivot language (the most realistic pivot language choice), on a lowresource Spanish-to-French translation task our model gains +0.7 B on t</context>
+</contexts>
+<marker>Mikolov, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Efficient estimation of word representations in vector space. In Proc. ICLR, Workshop Track.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Masao Utiyama</author>
+<author>Hitoshi Isahara</author>
+</authors>
+<title>A comparison of pivot methods for phrase-based statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proc. HLT-NAACL,</booktitle>
+<pages>484--491</pages>
+<contexts>
+<context position="1353" citStr="Utiyama and Isahara, 2007" startWordPosition="196" endWordPosition="200">lation via English, we use only 1k dictionary entries to gain +0.5 B over triangulation. (2) On Spanish-to-French via English we use only 4k sentence pairs to gain +0.7 B over triangulation interpolated with a phrase table extracted from the same 4k sentence pairs. 1 Introduction Phrase-based statistical machine translation systems require considerable amounts of sourcetarget parallel data to produce good quality translation. However, large amounts of parallel data are available for only a fraction of language pairs, and mostly when one of the languages is English. Phrase table triangulation (Utiyama and Isahara, 2007; Cohn and Lapata, 2007; Wu and Wang, 2007) is a method for generating sourcetarget phrase tables without having access to any source-target parallel data. The intuition behind triangulation (and pivoting techniques in general) is the transitivity of translation: if a source language phrase s translates to a pivot language phrase p which in turn translates to a target language phrase t, then s should likely translate to t. Following this intuition, a triangulated sourcetarget phrase table Tˆ can be composed from a source-pivot and pivot-target phrase table (§2). However, the resulting triangul</context>
+</contexts>
+<marker>Utiyama, Isahara, 2007</marker>
+<rawString>Masao Utiyama and Hitoshi Isahara. 2007. A comparison of pivot methods for phrase-based statistical machine translation. In Proc. HLT-NAACL, pages 484–491.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hua Wu</author>
+<author>Haifeng Wang</author>
+</authors>
+<title>Pivot language approach for phrase-based statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proc. ACL,</booktitle>
+<pages>856--863</pages>
+<contexts>
+<context position="1396" citStr="Wu and Wang, 2007" startWordPosition="205" endWordPosition="208">ies to gain +0.5 B over triangulation. (2) On Spanish-to-French via English we use only 4k sentence pairs to gain +0.7 B over triangulation interpolated with a phrase table extracted from the same 4k sentence pairs. 1 Introduction Phrase-based statistical machine translation systems require considerable amounts of sourcetarget parallel data to produce good quality translation. However, large amounts of parallel data are available for only a fraction of language pairs, and mostly when one of the languages is English. Phrase table triangulation (Utiyama and Isahara, 2007; Cohn and Lapata, 2007; Wu and Wang, 2007) is a method for generating sourcetarget phrase tables without having access to any source-target parallel data. The intuition behind triangulation (and pivoting techniques in general) is the transitivity of translation: if a source language phrase s translates to a pivot language phrase p which in turn translates to a target language phrase t, then s should likely translate to t. Following this intuition, a triangulated sourcetarget phrase table Tˆ can be composed from a source-pivot and pivot-target phrase table (§2). However, the resulting triangulated phrase table Tˆ contains many spurious</context>
+<context position="6943" citStr="Wu and Wang (2007)" startWordPosition="1086" endWordPosition="1089"> log-likelihood function: Next, given a (triangulated) phrase pair (s, t) with arg max L(q) = arg max csrp log q(t |s). alignment ˆa, let ˆas,: = it |(s, t) E ˆa}; the lexical- q q weighting probability is (Koehn et al., 2003): Z Z1 ˆwst(t |s). (2) |ˆas,: |tEˆas,: The triangulated phrase translation scores, denoted ˆφst, are computed by analogy with Eq. 1. We also compute these scores in the reverse direction by swapping the source and target languages. 2.2 Interpolation (strong baseline) Given access to source-target data, an ordinary source-target phrase table Tst can be estimated directly. Wu and Wang (2007) suggest interpolating phrase pairs entries that occur in both tables: Tinterp = αTst + (1 − α) ˆTst. (3) Phrase pairs appearing in only one phrase table are added as-is. We refer to the resulting table as the interpolated phrase table. Clearly, the solution q(· |s) := wsup(· |s) maximizes L. However, we would like a solution that generalizes to source words s beyond those observed in the source-target corpus – in particular, those source words that appear in the triangulated phrase table ˆT, but not in T. In order to generalize, we abstract from words to vector representations of words. Speci</context>
+</contexts>
+<marker>Wu, Wang, 2007</marker>
+<rawString>Hua Wu and Haifeng Wang. 2007. Pivot language approach for phrase-based statistical machine translation. In Proc. ACL, pages 856–863.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

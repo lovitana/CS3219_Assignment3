@@ -1,0 +1,1136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.004144">
+<title confidence="0.982862">
+Joint Lemmatization and Morphological Tagging with LEMMING
+</title>
+<author confidence="0.997383">
+Thomas M¨uller1 Ryan Cotterell1,2 Alexander Fraser1 Hinrich Sch¨utze1
+</author>
+<affiliation confidence="0.92033">
+Center for Information and Language Processing1 Department of Computer Science2
+University of Munich, Germany Johns Hopkins University, USA
+</affiliation>
+<email confidence="0.994585">
+muellets@cis.lmu.de ryan.cotterell@jhu.edu
+</email>
+<sectionHeader confidence="0.993752" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9998136">
+We present LEMMING, a modular log-
+linear model that jointly models lemmati-
+zation and tagging and supports the inte-
+gration of arbitrary global features. It is
+trainable on corpora annotated with gold
+standard tags and lemmata and does not
+rely on morphological dictionaries or an-
+alyzers. LEMMING sets the new state of
+the art in token-based statistical lemmati-
+zation on six languages; e.g., for Czech
+lemmatization, we reduce the error by
+60%, from 4.05 to 1.58. We also give em-
+pirical evidence that jointly modeling mor-
+phological tags and lemmata is mutually
+beneficial.
+</bodyText>
+<sectionHeader confidence="0.998993" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.992322344262296">
+Lemmatization is important for many NLP tasks,
+including parsing (Bj¨orkelund et al., 2010; Seddah
+et al., 2010) and machine translation (Fraser et al.,
+2012). Lemmata are required whenever we want
+to map words to lexical resources and establish the
+relation between inflected forms, particularly crit-
+ical for morphologically rich languages to address
+the sparsity of unlemmatized forms. This strongly
+motivates work on language-independent token-
+based lemmatization, but until now there has been
+little work (Chrupała et al., 2008).
+Many regular transformations can be described
+by simple replacement rules, but lemmatization
+of unknown words requires more than this. For
+instance the Spanish paradigms for verbs end-
+ing in ir and er share the same 3rd person plu-
+ral ending en; this makes it hard to decide which
+paradigm a form belongs to.1 Solving these kinds
+of problems requires global features on the lemma.
+Global features of this kind were not supported
+1Compare admiten “they admit” → admitir “to admit”,
+but deben “they must” → deber “to must”.
+by previous work (Dreyer et al., 2008; Chrupała,
+2006; Toutanova and Cherry, 2009; Cotterell et al.,
+2014).
+There is a strong mutual dependency between
+(i) lemmatization of a form in context and (ii)
+disambiguating its part-of-speech (POS) and mor-
+phological attributes. Attributes often disam-
+biguate the lemma of a form, which explains
+why many NLP systems (Manning et al., 2014;
+Padr´o and Stanilovsky, 2012) apply a pipeline
+approach of tagging followed by lemmatization.
+Conversely, knowing the lemma of a form is of-
+ten beneficial for tagging, for instance in the pres-
+ence of syncretism; e.g., since German plural noun
+phrases do not mark gender, it is important to
+know the lemma (singular form) to correctly tag
+gender on the noun.
+We make the following contributions. (i) We
+present the first joint log-linear model of mor-
+phological analysis and lemmatization that oper-
+ates at the token level and is also able to lem-
+matize unknown forms; and release it as open-
+source (http://cistern.cis.lmu.de/lemming).
+It is trainable on corpora annotated with gold stan-
+dard tags and lemmata. Unlike other work (e.g.,
+(Smith et al., 2005)) it does not rely on morpho-
+logical dictionaries or analyzers. (ii) We describe
+a log-linear model for lemmatization that can eas-
+ily be incorporated into other models and supports
+arbitrary global features on the lemma. (iii) We
+set the new state of the art in token-based sta-
+tistical lemmatization on six languages (English,
+German, Czech, Hungarian, Latin and Spanish).
+(iv) We experimentally show that jointly model-
+ing morphological tags and lemmata is mutually
+beneficial and yields significant improvements in
+joint (tag+lemma) accuracy for four out of six lan-
+guages; e.g., Czech lemma errors are reduced by
+&gt;37% and tag+lemma errors by &gt;6%.
+</bodyText>
+<page confidence="0.925071">
+2268
+</page>
+<note confidence="0.841867">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2268–2274,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<figure confidence="0.9004185">
+umgeschaut
+schau
+</figure>
+<figureCaption confidence="0.998033">
+Figure 1: Edit tree for the inflected form umgeschaut “looked
+around” and its lemma umschauen “to look around”. The
+right tree is the actual edit tree we use in our model, the left
+tree visualizes what each node corresponds to. The root node
+stores the length of the prefix umge (4) and the suffix t (1).
+Figure 2: Our model is a 2nd-order linear-chain CRF aug-
+mented to predict lemmata. We heavily prune our model and
+can easily exploit higher-order (&gt;2) tag dependencies.
+</figureCaption>
+<figure confidence="0.999396761904762">
+Morph
+Tag
+Lemma
+Morph
+Tag
+Word
+Lemma
+Morph
+Tag
+Word
+Lemma
+Morph
+Tag
+Word
+um t/en
+⊥ ge/ɛ
+umschauen
+(0,2)
+⊥ ge/ɛ
+t/en
+(4,1)
+</figure>
+<sectionHeader confidence="0.984639" genericHeader="method">
+2 Log-Linear Lemmatization
+</sectionHeader>
+<bodyText confidence="0.9797535">
+Chrupała (2006) formalizes lemmatization as a
+classification task through the deterministic pre-
+extraction of edit operations transforming forms
+into lemmata. Our lemmatization model is in this
+vein, but allows the addition of external lexical in-
+formation, e.g., whether the candidate lemma is in
+a dictionary. Formally, lemmatization is a string-
+to-string transduction task. Given an alphabet E,
+it maps an inflected form w E E* to its lemma
+l E E* given its morphological attributes m. We
+model this process by a log-linear model:
+p(l  |w, m) a h,,,(l) · exp (f(l, w, m)T θ) ,
+where f represents hand-crafted feature functions,
+θ is a weight vector, and h,,, : E* —* 10, 11 deter-
+mines the support of the distribution, i.e., the set
+of candidates with non-zero probability.
+Candidate selection. A proper choice of the
+support function h(·) is crucial to the success of
+the model – too permissive a function and the
+computational cost will build up, too restrictive
+and the correct lemma may receive no probability
+mass. Following Chrupała (2008), we define h(·)
+through a deterministic pre-extraction of edit trees.
+To extract an edit tree e for a pair form-lemma
+(w, l), we first find the longest common substring
+(LCS) (Gusfield, 1997) between them and then re-
+cursively model the prefix and suffix pairs of the
+LCS. When no LCS can be found the string pair is
+represented as a substitution operation transform-
+ing the first string to the second. The resulting edit
+tree does not encode the LCSs but only the length
+of their prefixes and suffixes and the substitution
+nodes (cf. Figure 1); e.g., the same tree transforms
+worked into work and touched into touch.
+As a preprocessing step, we extract all edit trees
+that can be used for more than one pair (w, l). To
+generate the candidates of a word-form, we apply
+all edit trees and also add all lemmata this form
+was seen with in the training set (note that only
+a small subset of the edit trees is applicable for
+any given form because most require incompatible
+substitution operations).2
+Features. Our novel formalization lets us com-
+bine a wide variety of features that have been
+used in different previous models. All features are
+extracted given a form-lemma pair (w, l) created
+with an edit tree e.
+We use the following three edit tree features of
+Chrupała (2008). (i) The edit tree e. (ii) The pair
+(e, w). This feature is crucial for the model to
+memorize irregular forms, e.g., the lemma of was
+is be. (iii) For each form affix (of maximum length
+10): its conjunction with e. These features are use-
+ful in learning orthographic and phonological reg-
+ularities, e.g., the lemma of signalling is signal,
+not signall.
+We define the following alignment features.
+Similar to Toutanova and Cherry (2009) (TC), we
+define an alignment between w and l. Our align-
+ments can be read from an edit tree by aligning
+the characters in LCS nodes character by character
+and characters in substitution nodes block-wise.
+Thus the alignment of umgeschaut - umschauen
+is: u-u, m-m, ge-E, s-s, c-c, h-h, a-a, u-u, t-en.
+Each alignment pair constitutes a feature in our
+model. These features allow the model to learn
+that the substitution t/en is likely in German. We
+also concatenate each alignment pair with its form
+and lemma character context (of up to length 6) to
+learn, e.g., that ge is often deleted after um.
+We define two simple lemma features. (i) We
+use the lemma itself as a feature, allowing us to
+learn which lemmata are common in the language.
+(ii) Prefixes and suffixes of the lemma (of maxi-
+2Pseudo-code for edit tree creation and candidate
+lemma generation with examples can be found in the ap-
+pendix (http://cistern.cis.lmu.de/lemming/
+appendix.pdf).
+</bodyText>
+<page confidence="0.969041">
+2269
+</page>
+<bodyText confidence="0.999874125">
+mum length 10). This feature allows us to learn
+that the typical endings of Spanish verbs are ir, er,
+ar.
+We also use two dictionary features (on lem-
+mata): Whether l occurs &gt; 5 times in Wikipedia
+and whether it occurs in the dictionary ASPELL.3
+We use a similar feature for different capitaliza-
+tion variants of the lemma (lowercase, first letter
+uppercase, all uppercase, mixed). This differenti-
+ation is important for German, where nouns are
+capitalized and en is both a noun plural marker
+and a frequent verb ending. Ignoring capitaliza-
+tion would thus lead to confusion.
+POS &amp; morphological attributes. For each fea-
+ture listed previously, we create a conjunction with
+the POS and each morphological attribute.4
+</bodyText>
+<sectionHeader confidence="0.831426" genericHeader="method">
+3 Joint Tagging and Lemmatization
+</sectionHeader>
+<bodyText confidence="0.99992075">
+We model the sequence of morphological tags us-
+ing MARMOT (M¨uller et al., 2013), a pruned
+higher-order CRF. This model avoids the exponen-
+tial runtime of higher-order models by employing
+a pruning strategy. Its feature set consists of stan-
+dard tagging features: the current word, its affixes
+and shape (capitalization, digits, hyphens) and the
+immediate lexical context. We combine lemmati-
+zation and higher-order CRF components in a tree-
+structured CRF. Given a sequence of forms w with
+lemmata l and morphological+POS tags m, we
+define a globally normalized model:
+</bodyText>
+<construct confidence="0.866058">
+p(l, m  |w) ∝ Hi hwi(li) exp(f(li, wi, mi)T θ
++g(mi, mi−1, mi−2, w, i)TA),
+</construct>
+<bodyText confidence="0.999974">
+where f and g are the features associated with
+lemma and tag cliques respectively and θ and A
+are weight vectors. The graphical model is shown
+in Figure 2. We perform inference with belief
+propagation (Pearl, 1988) and estimate the pa-
+rameters with SGD (Tsuruoka et al., 2009). We
+greatly improved the results of the joint model by
+initializing it with the parameters of a pretrained
+tagging model.
+</bodyText>
+<sectionHeader confidence="0.999965" genericHeader="method">
+4 Related Work
+</sectionHeader>
+<bodyText confidence="0.988977">
+In functionality, our system resembles MORFETTE
+(Chrupała et al., 2008), which generates lemma
+</bodyText>
+<footnote confidence="0.9079566">
+3ftp://ftp.gnu.org/gnu/aspell/dict
+4Example: for the Spanish noun medidas “measures” with
+attributes NOUN, COMMON, PLURAL and FEMININE, we
+conjoin each feature above with NOUN, NOUN+COMMON,
+NOUN+PLURAL and NOUN+FEMININE.
+</footnote>
+<bodyText confidence="0.999574918367347">
+candidates by extracting edit operation sequences
+between lemmata and surface forms (Chrupała,
+2006), and then trains two maximum entropy
+Markov models (Ratnaparkhi, 1996) for mor-
+phological tagging and lemmatization, which are
+queried using a beam search decoder.
+In our experiments we use the latest version5 of
+MORFETTE. This version is based on structured
+perceptron learning (Collins, 2002) and edit trees
+(Chrupała, 2008). Models similar to MORFETTE
+include those of Bj¨orkelund et al. (2010) and Ges-
+mundo and Samardzic (2012) and have also been
+used for generation (Duˇsek and Jurˇciˇcek, 2013).
+Wicentowski (2002) similarly treats lemmatiza-
+tion as classification over a deterministically cho-
+sen candidate set, but uses distributional informa-
+tion extracted from large corpora as a key source
+of information.
+Toutanova and Cherry (2009)’s joint morpho-
+logical analyzer predicts the set of possible lem-
+mata and coarse-grained POS for a word type.
+This is different from our problem of lemmatiza-
+tion and fine-grained morphological tagging of to-
+kens in context. Despite the superficial similarity
+of the two problems, direct comparison is not pos-
+sible. TC’s model is best thought of as inducing a
+tagging dictionary for OOV types, mapping them
+to a set of tag and lemma pairs, whereas LEM-
+MING is a token-level, context-based morphologi-
+cal tagger.
+We do, however, use TC’s model of lemmati-
+zation, a string-to-string transduction model based
+on Jiampojamarn et al. (2008) (JCK), as a stand-
+alone baseline. Our tagging-in-context model is
+faced with higher complexity of learning and in-
+ference since it addresses a more difficult task;
+thus, while we could in principle use JCK as a re-
+placement for our candidate selection, the edit tree
+approach – which has high coverage at a low aver-
+age number of lemma candidates (cf. Section 5) –
+allows us to train and apply LEMMING efficiently.
+Smith et al. (2005) proposed a log-linear model
+for the context-based disambiguation of a morpho-
+logical dictionary. This has the effect of joint tag-
+ging, morphological segmentation and lemmatiza-
+tion, but, critically, is limited to the entries in the
+morphological dictionary (without which the ap-
+proach cannot be used), causing problems of re-
+call. In contrast, LEMMING can analyze any word,
+</bodyText>
+<footnote confidence="0.996217666666667">
+5https://github.com/
+gchrupala/morfette/commit/
+ca886556916b6cc1e808db4d32daf720664d17d6
+</footnote>
+<page confidence="0.924965">
+2270
+</page>
+<table confidence="0.96667575">
+cs de en es hu la
+all unk all unk all unk all unk all unk all unk
+1 MARMOT tag 89.75 76.83 82.81 61.60 96.45 90.68 97.05 90.07 93.64 84.65 82.37 53.73
+2 CK 3Jtag lemma 95.95 81.28 96.63 85.84 99.08 94.28 97.69 87.19 96.69 88.66 90.79 58.23
++lemma 87.85 67.00 81.60 55.97 96.17 87.32 95.44 80.62 92.15 78.89 79.51 39.07
+4 IN + lemma 97.46 89.14 97.70 91.27 99.21 95.59 98.48 92.98 97.53 92.10 93.07 69.83
+5 L tag+lemma 88.86 72.51 82.27 59.42 96.27 88.49 96.12 85.80 92.59 80.77 80.49 44.26
+6
+7
+EMrplemma 97.29 88.98 97.51 90.85 NA NA 98.68 94.32 97.53 92.15 92.54 67.81
++ tag+lemma 89.23 74.24 82.49 60.42 NA NA 96.35 87.25 93.11 82.56 80.67 45.21
+8 G-J ttag 90.34+ 78.47 83.10+ 62.36 96.32 89.70 97.11 90.13 93.64 84.78 82.89 54.69
+9 IN lemma 98.27 92.67 98.10+ 92.79 99.21 95.23 98.67 94.07 98.02 94.15 95.58+ 81.74+
+10 EM h tag+lemma 89.69 75.44 82.64 60.49 96.17 87.87 96.23 86.19 92.84 81.89 81.92 49.97
+11 Lrplemma
+12 +
+13
+tag 90.20 79.72+× 83.10+ 63.10+× NA NA 97.16 90.66 93.67 85.12 83.49+× 58.76+×
+tag+lemma 98.42+× 93.46+× 98.10+ 93.02+ NA NA 98.78+× 94.86+× 98.08+ 94.26+ 95.36 80.94
+89.90+× 78.34+× 82.84+× 62.10+× NA NA 96.41× 87.47× 93.40+× 84.15+× 82.57+ 54.63+
+</table>
+<tableCaption confidence="0.939642">
+Table 2: Test results for LEMMING-J, the joint model, and pipelines (lines 2–7) of MARMOT and (i) JCK and (ii) LEMMING-P.
+In each cell, overall token accuracy is left (all), accuracy on unknown forms is right (unk). Standalone MARMOT tagging
+accuracy (line 1) is not repeated for pipelines (lines 2–7). The best numbers are bold. LEMMING-J models significantly better
+than LEMMING-P (+), or LEMMING models not using morphology (+dict) (×) or both (+×) are marked. More baseline numbers
+in the appendix (Table A2).
+</tableCaption>
+<bodyText confidence="0.998788">
+including OOVs, and only requires the same train-
+ing corpus as a generic tagger (containing tags and
+lemmata), a resource that is available for many
+languages.
+</bodyText>
+<sectionHeader confidence="0.999354" genericHeader="evaluation">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.99986293220339">
+Datasets. We present experiments on the joint
+task of lemmatization and tagging in six diverse
+languages: English, German, Czech, Hungarian,
+Latin and Spanish. We use the same data sets as
+in M¨uller and Sch¨utze (2015), but do not use the
+out-of-domain test sets. The English data is from
+the Penn Treebank (Marcus et al., 1993), Latin
+from PROIEL (Haug and Jøhndal, 2008), Ger-
+man and Hungarian from SPMRL 2013 (Seddah
+et al., 2013), and Spanish and Czech from CoNLL
+2009 (Hajiˇc et al., 2009). For German, Hungar-
+ian, Spanish and Czech we use the splits from the
+shared tasks; for English the split from SANCL
+(Petrov and McDonald, 2012); and for Latin a
+8/1/1 split into train/dev/test. For all languages we
+limit our training data to the first 100,000 tokens.
+Dataset statistics can be found in Table A4 of the
+appendix. The lemma of Spanish se is set to be
+consistent.
+Baselines. We compare our model to three
+baselines. (i) MORFETTE (see Section 4). (ii)
+SIMPLE, a system that for each form-POS pair, re-
+turns the most frequent lemma in the training data
+or the form if the pair is unknown. (iii) JCK, our
+reimplementation of Jiampojamarn et al. (2008).
+Recall that JCK is TC’s lemmatization model and
+that the full TC model is a type-based model that
+cannot be applied to our task.
+As JCK struggles to memorize irregulars, we
+only use it for unknown form-POS pairs and use
+SIMPLE otherwise. For aligning the training data
+we use the edit-tree-based alignment described in
+the feature section. We only use output alpha-
+bet symbols that are used for ≥ 5 form-lemma
+pairs and also add a special output symbol that
+indicates that the aligned input should simply be
+copied. We train the model using a structured av-
+eraged perceptron and stop after 10 training itera-
+tions. In preliminary experiments we found type-
+based training to outperform token-based training.
+This is understandable as we only apply our model
+to unseen form-POS pairs. The feature set is an
+exact reimplementation of (Jiampojamarn et al.,
+2008), it consists of input-output pairs and their
+character context in a window of 6.
+Results. Our candidate selection strategy re-
+sults in an average number of lemma candidates
+between 7 (Hungarian) and 91 (Czech) and a cov-
+erage of the correct lemma on dev of &gt;99.4 (ex-
+cept 98.4 for Latin).6 We first compare the base-
+lines to LEMMING-P, a pipeline based on Sec-
+tion 2, that lemmatizes a word given a predicted
+tag and is trained using L-BFGS (Liu and No-
+cedal, 1989). We use the implementation of MAL-
+LET (McCallum, 2002). For these experiments we
+train all models on gold attributes and test on at-
+tributes predicted by MORFETTE. MORFETTE’s
+lemmatizer can only be used with its own tags. We
+thus use MORFETTE tags to have a uniform setup,
+</bodyText>
+<footnote confidence="0.971185">
+6Note that our definition of lemmatization accuracy and
+unknown forms ignores capitalization.
+</footnote>
+<page confidence="0.94442">
+2271
+</page>
+<table confidence="0.9616532">
+baselines
+LEMMING-P
+cs de en es hu la
+SIMPLE 87.22 93.27 97.60 92.92 86.09 85.19
+JCK 96.24 97.67 98.71 97.61 97.48 93.26
+MORFETTE 96.25 97.12 98.43 97.97 97.22 91.89
+edittree 96.29 97.84+ 98.71 97.91 97.31 93.00
++align,+lemma 96.74+ 98.17+ 98.76+ 98.05 97.70+ 93.76+
++dict 97.50+ 98.36+ 98.84+ 98.39+ 97.98+ 94.64+
++mrph 96.59+ 97.43+ NA 98.46+ 97.77+ 93.60
+</table>
+<tableCaption confidence="0.8833384">
+Table 1: Lemma accuracy on dev for the baselines and the
+different versions of LEMMING-P. POS and morphological
+attributes are predicted using MORFETTE. The best baseline
+numbers are underlined, the best numbers are bold. Models
+significantly better than the best baseline are marked (+).
+</tableCaption>
+<bodyText confidence="0.999944189189189">
+which isolates the effects of the different taggers.
+Numbers for MARMOT tags are in the appendix
+(Table A1). For the initial experiments, we only
+use POS and ignore additional morphological at-
+tributes. We use different feature sets to illustrate
+the utility of our templates.
+The first model uses the edit tree features (edit-
+tree). Table 1 shows that this version of LEM-
+MING outperforms the baselines on half of the lan-
+guages.7 In a second experiment we add the align-
+ment (+align) and lemma features (+lemma) and
+show that this consistently outperforms all base-
+lines and edittree. We then add the dictionary fea-
+ture (+dict). The resulting model outperforms all
+previous models and is significantly better than the
+best baselines for all languages.8 These experi-
+ments show that LEMMING-P yields state-of-the-
+art results and that all our features are needed to
+obtain optimal performance. The improvements
+over the baselines are &gt;1 for Czech and Latin and
+&gt;.5 for German and Hungarian.
+The last experiment also uses the additional
+morphological attributes predicted by MORFETTE
+(+mrph). This leads to a drop in lemmatization
+performance in all languages except Spanish (En-
+glish has no additional attributes). However, pre-
+liminary experiments showed that correct mor-
+phological attributes would substantially improve
+lemmatization as they help in cases of ambigu-
+ity. As an example, number helps to lemmatize
+the singular German noun Raps “canola”, which
+looks like the plural of Rap “rap”. Numbers can be
+found in Table A3 of the appendix. This motivates
+the necessity of joint tagging and lemmatization.
+For the final experiments, we run pipeline mod-
+els on tags predicted by MARMOT (M¨uller et
+al., 2013) and compare them to LEMMING-J, the
+</bodyText>
+<footnote confidence="0.9950885">
+7Unknown word accuracies in the appendix (Table A1).
+8We use the randomization test (Yeh, 2000) and P = .05.
+</footnote>
+<bodyText confidence="0.999923105263158">
+joint model described in Section 3. All LEMMING
+versions use exactly the same features. Table 2
+shows that LEMMING-J outperforms LEMMING-
+P in three measures (see bold tag, lemma &amp;
+joint (tag+lemma) accuracies) except for English,
+where we observe a tie in lemma accuracy and
+a small drop in tag and tag+lemma accuracy.
+Coupling morphological attributes and lemmatiza-
+tion (lines 8–10 vs 11–13) improves tag+lemma
+prediction for five languages. Improvements in
+lemma accuracy of the joint over the best pipeline
+systems range from .1 (Spanish), over &gt;.3 (Ger-
+man, Hungarian) to &gt;.96 (Czech, Latin).
+Lemma accuracy improvements for our best
+models (lines 4–13) over the best baseline (lines
+2–3) are &gt;1 (German, Spanish, Hungarian), &gt;2
+(Czech, Latin) and even more pronounced on un-
+known forms: &gt;1 (English), &gt;5 (German, Span-
+ish, Hungarian) and &gt;12 (Czech, Latin).
+</bodyText>
+<sectionHeader confidence="0.99956" genericHeader="conclusions">
+6 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999496727272727">
+LEMMING is a modular lemmatization model that
+supports arbitrary global lemma features and joint
+modeling of lemmata and morphological tags. It is
+trainable on corpora annotated with gold standard
+tags and lemmata, and does not rely on morpho-
+logical dictionaries or analyzers. We have shown
+that modeling lemmatization and tagging jointly
+benefits both tasks, and we set the new state of the
+art in token-based lemmatization on six languages.
+LEMMING is available under an open-source li-
+cence (http://cistern.cis.lmu.de/lemming).
+</bodyText>
+<sectionHeader confidence="0.997638" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999449125">
+We would like to thank the anonymous reviewers
+for their comments. The first author is a recipient
+of the Google Europe Fellowship in Natural Lan-
+guage Processing, and this research is supported
+by this Google fellowship. The second author
+is supported by a Fulbright fellowship awarded
+by the German-American Fulbright Commission
+and the National Science Foundation under Grant
+No. 1423276. This project has received funding
+from the European Union’s Horizon 2020 research
+and innovation programme under grant agreement
+No 644402 (HimL) and the DFG grant Models
+of Morphosyntax for Statistical Machine Transla-
+tion. The fourth author was partially supported by
+Deutsche Forschungsgemeinschaft (grant SCHU
+2246/10-1).
+</bodyText>
+<page confidence="0.980855">
+2272
+</page>
+<note confidence="0.7787217">
+Christopher D Manning, Mihai Surdeanu, John Bauer,
+Jenny Finkel, Steven J Bethard, and David Mc-
+Closky. 2014. The Stanford CoreNLP natural lan-
+guage processing toolkit. In Proceedings of ACL:
+Demonstrations.
+References
+Anders Bj¨orkelund, Bernd Bohnet, Love Hafdell, and
+Pierre Nugues. 2010. A high-performance syntactic
+and semantic dependency parser. In Proceedings of
+COLING: Demonstrations.
+</note>
+<reference confidence="0.997058914893617">
+Grzegorz Chrupała, Georgiana Dinu, and Josef
+Van Genabith. 2008. Learning morphology with
+Morfette. In Proceedings of LREC.
+Grzegorz Chrupała. 2006. Simple data-driven con-
+textsensitive lemmatization. Procesamiento del
+Lenguaje Natural.
+Grzegorz Chrupała. 2008. Towards a machine-
+learning architecture for lexical functional grammar
+parsing. Ph.D. thesis, Dublin City University.
+Michael Collins. 2002. Discriminative training meth-
+ods for hidden Markov models: Theory and exper-
+iments with perceptron algorithms. In Proceedings
+of EMNLP.
+Ryan Cotterell, Nanyun Peng, and Jason Eisner. 2014.
+Stochastic contextual edit distance and probabilistic
+FSTs. In Proceedings of ACL.
+Markus Dreyer, Jason R Smith, and Jason Eisner.
+2008. Latent-variable modeling of string transduc-
+tions with finite-state methods. In Proceedings of
+EMNLP.
+Ond&amp;quot;rej Du&amp;quot;sek and Filip Jur&amp;quot;c´ı&amp;quot;cek. 2013. Robust multi-
+lingual statistical morphological generation models.
+In Proceedings ofACL: Student Research Workshop.
+Alexander Fraser, Marion Weller, Aoife Cahill, and Fa-
+bienne Cap. 2012. Modeling inflection and word-
+formation in SMT. In Proceedings of EACL.
+Andrea Gesmundo and Tanja Samardzic. 2012. Lem-
+matisation as a tagging task. In Proceedings ofACL.
+Dan Gusfield. 1997. Algorithms on Strings, Trees, and
+Sequences - Computer Science and Computational
+Biology. Cambridge University Press.
+Jan Haji&amp;quot;c, Massimiliano Ciaramita, Richard Johans-
+son, Daisuke Kawahara, Maria Ant`onia Mart´ı, Llu´ıs
+M`arquez, Adam Meyers, Joakim Nivre, Sebastian
+Pad´o, Jan &amp;quot;St&amp;quot;ep´anek, et al. 2009. The CoNLL-2009
+shared task: Syntactic and semantic dependencies in
+multiple languages. In Proceedings of CoNLL.
+Dag TT Haug and Marius Jøhndal. 2008. Creating
+a parallel treebank of the old Indo-European bible
+translations. In Proceedings of LaTeCH.
+Sittichai Jiampojamarn, Colin Cherry, and Grzegorz
+Kondrak. 2008. Joint processing and discriminative
+training for letter-to-phoneme conversion. In Pro-
+ceedings of ACL.
+Dong C Liu and Jorge Nocedal. 1989. On the limited
+memory BFGS method for large scale optimization.
+Mathematical Programming.
+Mitchell P Marcus, Mary Ann Marcinkiewicz, and
+Beatrice Santorini. 1993. Building a large anno-
+tated corpus of English: The Penn treebank. Com-
+putational linguistics.
+Andrew K McCallum. 2002. MALLET: A machine
+learning for language toolkit.
+Thomas M¨uller and Hinrich Sch¨utze. 2015. Robust
+morphological tagging with word representations.
+In Proceedings of NAACL.
+Thomas M¨uller, Helmut Schmid, and Hinrich Sch¨utze.
+2013. Efficient higher-order CRFs for morphologi-
+cal tagging. In Proceedings of EMNLP.
+Llu´ıs Padr´o and Evgeny Stanilovsky. 2012. FreeLing
+3.0: Towards wider multilinguality. In Proceedings
+of LREC.
+Judea Pearl. 1988. Probabilistic Reasoning in In-
+telligent Systems: Networks of Plausible Inference.
+Morgan Kaufmann.
+Slav Petrov and Ryan McDonald. 2012. Overview of
+the 2012 shared task on parsing the web. In Pro-
+ceedings of SANCL.
+Adwait Ratnaparkhi. 1996. A maximum entropy
+model for part-of-speech tagging. In Proceedings
+of EMNLP.
+Djam´e Seddah, Grzegorz Chrupała, ¨Ozlem C¸etino˘glu,
+Josef Van Genabith, and Marie Candito. 2010.
+Lemmatization and lexicalized statistical parsing of
+morphologically rich languages: the case of French.
+In Proceedings of SPMRL.
+Djam´e Seddah, Reut Tsarfaty, Sandra K¨ubler, Marie
+Candito, Jinho D. Choi, Rich´ard Farkas, Jen-
+nifer Foster, Iakes Goenaga, Koldo Gojenola Gal-
+letebeitia, Yoav Goldberg, Spence Green, Nizar
+Habash, Marco Kuhlmann, Wolfgang Maier, Joakim
+Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang
+Seeker, Yannick Versley, Veronika Vincze, Marcin
+Woli´nski, Alina Wr´oblewska, and Eric Villemonte
+de la Clergerie. 2013. Overview of the SPMRL
+2013 shared task: Cross-Framework evaluation of
+parsing morphologically rich languages. In Proced-
+dings of SPMRL.
+Noah A. Smith, David A. Smith, and Roy W. Tromble.
+2005. Context-based morphological disambiguation
+with random fields. In Proceedings of HLT-EMNLP.
+Kristina Toutanova and Colin Cherry. 2009. A global
+model for joint lemmatization and part-of-speech
+prediction. In Proceedings of ACL-IJCNLP.
+</reference>
+<page confidence="0.594901">
+2273
+</page>
+<reference confidence="0.999534272727273">
+Yoshimasa Tsuruoka, Jun’ichi Tsujii, and Sophia Ana-
+niadou. 2009. Stochastic gradient descent training
+for l1-regularized log-linear models with cumulative
+penalty. In Proceedings of ACL-IJCNLP.
+Richard Wicentowski. 2002. Modeling and learning
+multilingual inflectional morphology in a minimally
+supervised framework. Ph.D. thesis, Johns Hopkins
+University.
+Alexander Yeh. 2000. More accurate tests for the
+statistical significance of result differences. In Pro-
+ceedings of COLING.
+</reference>
+<page confidence="0.994065">
+2274
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.876026">
+<title confidence="0.999849">Lemmatization and Morphological Tagging with</title>
+<author confidence="0.993841">Alexander</author>
+<affiliation confidence="0.9940905">for Information and Language of Computer University of Munich, Germany Johns Hopkins University, USA</affiliation>
+<email confidence="0.998491">muellets@cis.lmu.deryan.cotterell@jhu.edu</email>
+<abstract confidence="0.99296625">present a modular loglinear model that jointly models lemmatization and tagging and supports the integration of arbitrary global features. It is trainable on corpora annotated with gold standard tags and lemmata and does not rely on morphological dictionaries or anthe new state of the art in token-based statistical lemmatization on six languages; e.g., for Czech lemmatization, we reduce the error by 60%, from 4.05 to 1.58. We also give empirical evidence that jointly modeling morphological tags and lemmata is mutually beneficial.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Grzegorz Chrupała</author>
+<author>Georgiana Dinu</author>
+<author>Josef Van Genabith</author>
+</authors>
+<title>Learning morphology with Morfette.</title>
+<date>2008</date>
+<booktitle>In Proceedings of LREC.</booktitle>
+<marker>Chrupała, Dinu, Van Genabith, 2008</marker>
+<rawString>Grzegorz Chrupała, Georgiana Dinu, and Josef Van Genabith. 2008. Learning morphology with Morfette. In Proceedings of LREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Grzegorz Chrupała</author>
+</authors>
+<title>Simple data-driven contextsensitive lemmatization. Procesamiento del Lenguaje Natural.</title>
+<date>2006</date>
+<contexts>
+<context position="2012" citStr="Chrupała, 2006" startWordPosition="304" endWordPosition="305">een little work (Chrupała et al., 2008). Many regular transformations can be described by simple replacement rules, but lemmatization of unknown words requires more than this. For instance the Spanish paradigms for verbs ending in ir and er share the same 3rd person plural ending en; this makes it hard to decide which paradigm a form belongs to.1 Solving these kinds of problems requires global features on the lemma. Global features of this kind were not supported 1Compare admiten “they admit” → admitir “to admit”, but deben “they must” → deber “to must”. by previous work (Dreyer et al., 2008; Chrupała, 2006; Toutanova and Cherry, 2009; Cotterell et al., 2014). There is a strong mutual dependency between (i) lemmatization of a form in context and (ii) disambiguating its part-of-speech (POS) and morphological attributes. Attributes often disambiguate the lemma of a form, which explains why many NLP systems (Manning et al., 2014; Padr´o and Stanilovsky, 2012) apply a pipeline approach of tagging followed by lemmatization. Conversely, knowing the lemma of a form is often beneficial for tagging, for instance in the presence of syncretism; e.g., since German plural noun phrases do not mark gender, it </context>
+<context position="4589" citStr="Chrupała (2006)" startWordPosition="719" endWordPosition="720">r the inflected form umgeschaut “looked around” and its lemma umschauen “to look around”. The right tree is the actual edit tree we use in our model, the left tree visualizes what each node corresponds to. The root node stores the length of the prefix umge (4) and the suffix t (1). Figure 2: Our model is a 2nd-order linear-chain CRF augmented to predict lemmata. We heavily prune our model and can easily exploit higher-order (&gt;2) tag dependencies. Morph Tag Lemma Morph Tag Word Lemma Morph Tag Word Lemma Morph Tag Word um t/en ⊥ ge/ɛ umschauen (0,2) ⊥ ge/ɛ t/en (4,1) 2 Log-Linear Lemmatization Chrupała (2006) formalizes lemmatization as a classification task through the deterministic preextraction of edit operations transforming forms into lemmata. Our lemmatization model is in this vein, but allows the addition of external lexical information, e.g., whether the candidate lemma is in a dictionary. Formally, lemmatization is a stringto-string transduction task. Given an alphabet E, it maps an inflected form w E E* to its lemma l E E* given its morphological attributes m. We model this process by a log-linear model: p(l |w, m) a h,,,(l) · exp (f(l, w, m)T θ) , where f represents hand-crafted feature</context>
+<context position="10490" citStr="Chrupała, 2006" startWordPosition="1697" endWordPosition="1698"> and estimate the parameters with SGD (Tsuruoka et al., 2009). We greatly improved the results of the joint model by initializing it with the parameters of a pretrained tagging model. 4 Related Work In functionality, our system resembles MORFETTE (Chrupała et al., 2008), which generates lemma 3ftp://ftp.gnu.org/gnu/aspell/dict 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chose</context>
+</contexts>
+<marker>Chrupała, 2006</marker>
+<rawString>Grzegorz Chrupała. 2006. Simple data-driven contextsensitive lemmatization. Procesamiento del Lenguaje Natural.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Grzegorz Chrupała</author>
+</authors>
+<title>Towards a machinelearning architecture for lexical functional grammar parsing.</title>
+<date>2008</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Dublin City University.</institution>
+<contexts>
+<context position="5617" citStr="Chrupała (2008)" startWordPosition="890" endWordPosition="891">to its lemma l E E* given its morphological attributes m. We model this process by a log-linear model: p(l |w, m) a h,,,(l) · exp (f(l, w, m)T θ) , where f represents hand-crafted feature functions, θ is a weight vector, and h,,, : E* —* 10, 11 determines the support of the distribution, i.e., the set of candidates with non-zero probability. Candidate selection. A proper choice of the support function h(·) is crucial to the success of the model – too permissive a function and the computational cost will build up, too restrictive and the correct lemma may receive no probability mass. Following Chrupała (2008), we define h(·) through a deterministic pre-extraction of edit trees. To extract an edit tree e for a pair form-lemma (w, l), we first find the longest common substring (LCS) (Gusfield, 1997) between them and then recursively model the prefix and suffix pairs of the LCS. When no LCS can be found the string pair is represented as a substitution operation transforming the first string to the second. The resulting edit tree does not encode the LCSs but only the length of their prefixes and suffixes and the substitution nodes (cf. Figure 1); e.g., the same tree transforms worked into work and tou</context>
+<context position="6890" citStr="Chrupała (2008)" startWordPosition="1113" endWordPosition="1114">dit trees that can be used for more than one pair (w, l). To generate the candidates of a word-form, we apply all edit trees and also add all lemmata this form was seen with in the training set (note that only a small subset of the edit trees is applicable for any given form because most require incompatible substitution operations).2 Features. Our novel formalization lets us combine a wide variety of features that have been used in different previous models. All features are extracted given a form-lemma pair (w, l) created with an edit tree e. We use the following three edit tree features of Chrupała (2008). (i) The edit tree e. (ii) The pair (e, w). This feature is crucial for the model to memorize irregular forms, e.g., the lemma of was is be. (iii) For each form affix (of maximum length 10): its conjunction with e. These features are useful in learning orthographic and phonological regularities, e.g., the lemma of signalling is signal, not signall. We define the following alignment features. Similar to Toutanova and Cherry (2009) (TC), we define an alignment between w and l. Our alignments can be read from an edit tree by aligning the characters in LCS nodes character by character and charact</context>
+<context position="10816" citStr="Chrupała, 2008" startWordPosition="1746" endWordPosition="1747">ct 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from large corpora as a key source of information. Toutanova and Cherry (2009)’s joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmatization and fine-grained morphol</context>
+</contexts>
+<marker>Chrupała, 2008</marker>
+<rawString>Grzegorz Chrupała. 2008. Towards a machinelearning architecture for lexical functional grammar parsing. Ph.D. thesis, Dublin City University.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Discriminative training methods for hidden Markov models: Theory and experiments with perceptron algorithms.</title>
+<date>2002</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="10784" citStr="Collins, 2002" startWordPosition="1741" endWordPosition="1742">ftp://ftp.gnu.org/gnu/aspell/dict 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from large corpora as a key source of information. Toutanova and Cherry (2009)’s joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmat</context>
+</contexts>
+<marker>Collins, 2002</marker>
+<rawString>Michael Collins. 2002. Discriminative training methods for hidden Markov models: Theory and experiments with perceptron algorithms. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan Cotterell</author>
+<author>Nanyun Peng</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Stochastic contextual edit distance and probabilistic FSTs.</title>
+<date>2014</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="2065" citStr="Cotterell et al., 2014" startWordPosition="310" endWordPosition="313">y regular transformations can be described by simple replacement rules, but lemmatization of unknown words requires more than this. For instance the Spanish paradigms for verbs ending in ir and er share the same 3rd person plural ending en; this makes it hard to decide which paradigm a form belongs to.1 Solving these kinds of problems requires global features on the lemma. Global features of this kind were not supported 1Compare admiten “they admit” → admitir “to admit”, but deben “they must” → deber “to must”. by previous work (Dreyer et al., 2008; Chrupała, 2006; Toutanova and Cherry, 2009; Cotterell et al., 2014). There is a strong mutual dependency between (i) lemmatization of a form in context and (ii) disambiguating its part-of-speech (POS) and morphological attributes. Attributes often disambiguate the lemma of a form, which explains why many NLP systems (Manning et al., 2014; Padr´o and Stanilovsky, 2012) apply a pipeline approach of tagging followed by lemmatization. Conversely, knowing the lemma of a form is often beneficial for tagging, for instance in the presence of syncretism; e.g., since German plural noun phrases do not mark gender, it is important to know the lemma (singular form) to cor</context>
+</contexts>
+<marker>Cotterell, Peng, Eisner, 2014</marker>
+<rawString>Ryan Cotterell, Nanyun Peng, and Jason Eisner. 2014. Stochastic contextual edit distance and probabilistic FSTs. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Markus Dreyer</author>
+<author>Jason R Smith</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Latent-variable modeling of string transductions with finite-state methods.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="1996" citStr="Dreyer et al., 2008" startWordPosition="300" endWordPosition="303">until now there has been little work (Chrupała et al., 2008). Many regular transformations can be described by simple replacement rules, but lemmatization of unknown words requires more than this. For instance the Spanish paradigms for verbs ending in ir and er share the same 3rd person plural ending en; this makes it hard to decide which paradigm a form belongs to.1 Solving these kinds of problems requires global features on the lemma. Global features of this kind were not supported 1Compare admiten “they admit” → admitir “to admit”, but deben “they must” → deber “to must”. by previous work (Dreyer et al., 2008; Chrupała, 2006; Toutanova and Cherry, 2009; Cotterell et al., 2014). There is a strong mutual dependency between (i) lemmatization of a form in context and (ii) disambiguating its part-of-speech (POS) and morphological attributes. Attributes often disambiguate the lemma of a form, which explains why many NLP systems (Manning et al., 2014; Padr´o and Stanilovsky, 2012) apply a pipeline approach of tagging followed by lemmatization. Conversely, knowing the lemma of a form is often beneficial for tagging, for instance in the presence of syncretism; e.g., since German plural noun phrases do not </context>
+</contexts>
+<marker>Dreyer, Smith, Eisner, 2008</marker>
+<rawString>Markus Dreyer, Jason R Smith, and Jason Eisner. 2008. Latent-variable modeling of string transductions with finite-state methods. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ondrej Dusek</author>
+<author>Filip Jurc´ıcek</author>
+</authors>
+<title>Robust multilingual statistical morphological generation models.</title>
+<date>2013</date>
+<booktitle>In Proceedings ofACL: Student Research Workshop.</booktitle>
+<marker>Dusek, Jurc´ıcek, 2013</marker>
+<rawString>Ond&amp;quot;rej Du&amp;quot;sek and Filip Jur&amp;quot;c´ı&amp;quot;cek. 2013. Robust multilingual statistical morphological generation models. In Proceedings ofACL: Student Research Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander Fraser</author>
+<author>Marion Weller</author>
+<author>Aoife Cahill</author>
+<author>Fabienne Cap</author>
+</authors>
+<title>Modeling inflection and wordformation in SMT.</title>
+<date>2012</date>
+<booktitle>In Proceedings of EACL.</booktitle>
+<contexts>
+<context position="1064" citStr="Fraser et al., 2012" startWordPosition="151" endWordPosition="154"> arbitrary global features. It is trainable on corpora annotated with gold standard tags and lemmata and does not rely on morphological dictionaries or analyzers. LEMMING sets the new state of the art in token-based statistical lemmatization on six languages; e.g., for Czech lemmatization, we reduce the error by 60%, from 4.05 to 1.58. We also give empirical evidence that jointly modeling morphological tags and lemmata is mutually beneficial. 1 Introduction Lemmatization is important for many NLP tasks, including parsing (Bj¨orkelund et al., 2010; Seddah et al., 2010) and machine translation (Fraser et al., 2012). Lemmata are required whenever we want to map words to lexical resources and establish the relation between inflected forms, particularly critical for morphologically rich languages to address the sparsity of unlemmatized forms. This strongly motivates work on language-independent tokenbased lemmatization, but until now there has been little work (Chrupała et al., 2008). Many regular transformations can be described by simple replacement rules, but lemmatization of unknown words requires more than this. For instance the Spanish paradigms for verbs ending in ir and er share the same 3rd person</context>
+</contexts>
+<marker>Fraser, Weller, Cahill, Cap, 2012</marker>
+<rawString>Alexander Fraser, Marion Weller, Aoife Cahill, and Fabienne Cap. 2012. Modeling inflection and wordformation in SMT. In Proceedings of EACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrea Gesmundo</author>
+<author>Tanja Samardzic</author>
+</authors>
+<title>Lemmatisation as a tagging task.</title>
+<date>2012</date>
+<booktitle>In Proceedings ofACL.</booktitle>
+<contexts>
+<context position="10921" citStr="Gesmundo and Samardzic (2012)" startWordPosition="1760" endWordPosition="1764">nd FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from large corpora as a key source of information. Toutanova and Cherry (2009)’s joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmatization and fine-grained morphological tagging of tokens in context. Despite the superficial similarity of the two problems, direct compa</context>
+</contexts>
+<marker>Gesmundo, Samardzic, 2012</marker>
+<rawString>Andrea Gesmundo and Tanja Samardzic. 2012. Lemmatisation as a tagging task. In Proceedings ofACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Gusfield</author>
+</authors>
+<date>1997</date>
+<booktitle>Algorithms on Strings, Trees, and Sequences - Computer Science and Computational Biology.</booktitle>
+<publisher>Cambridge University Press.</publisher>
+<contexts>
+<context position="5809" citStr="Gusfield, 1997" startWordPosition="922" endWordPosition="923">tions, θ is a weight vector, and h,,, : E* —* 10, 11 determines the support of the distribution, i.e., the set of candidates with non-zero probability. Candidate selection. A proper choice of the support function h(·) is crucial to the success of the model – too permissive a function and the computational cost will build up, too restrictive and the correct lemma may receive no probability mass. Following Chrupała (2008), we define h(·) through a deterministic pre-extraction of edit trees. To extract an edit tree e for a pair form-lemma (w, l), we first find the longest common substring (LCS) (Gusfield, 1997) between them and then recursively model the prefix and suffix pairs of the LCS. When no LCS can be found the string pair is represented as a substitution operation transforming the first string to the second. The resulting edit tree does not encode the LCSs but only the length of their prefixes and suffixes and the substitution nodes (cf. Figure 1); e.g., the same tree transforms worked into work and touched into touch. As a preprocessing step, we extract all edit trees that can be used for more than one pair (w, l). To generate the candidates of a word-form, we apply all edit trees and also </context>
+</contexts>
+<marker>Gusfield, 1997</marker>
+<rawString>Dan Gusfield. 1997. Algorithms on Strings, Trees, and Sequences - Computer Science and Computational Biology. Cambridge University Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jan Hajic</author>
+<author>Massimiliano Ciaramita</author>
+<author>Richard Johansson</author>
+<author>Daisuke Kawahara</author>
+<author>Maria Ant`onia Mart´ı</author>
+<author>Llu´ıs M`arquez</author>
+<author>Adam Meyers</author>
+<author>Joakim Nivre</author>
+<author>Sebastian Pad´o</author>
+<author>Jan Step´anek</author>
+</authors>
+<title>The CoNLL-2009 shared task: Syntactic and semantic dependencies in multiple languages.</title>
+<date>2009</date>
+<booktitle>In Proceedings of CoNLL.</booktitle>
+<marker>Hajic, Ciaramita, Johansson, Kawahara, Mart´ı, M`arquez, Meyers, Nivre, Pad´o, Step´anek, 2009</marker>
+<rawString>Jan Haji&amp;quot;c, Massimiliano Ciaramita, Richard Johansson, Daisuke Kawahara, Maria Ant`onia Mart´ı, Llu´ıs M`arquez, Adam Meyers, Joakim Nivre, Sebastian Pad´o, Jan &amp;quot;St&amp;quot;ep´anek, et al. 2009. The CoNLL-2009 shared task: Syntactic and semantic dependencies in multiple languages. In Proceedings of CoNLL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dag TT Haug</author>
+<author>Marius Jøhndal</author>
+</authors>
+<title>Creating a parallel treebank of the old Indo-European bible translations.</title>
+<date>2008</date>
+<booktitle>In Proceedings of LaTeCH.</booktitle>
+<contexts>
+<context position="14995" citStr="Haug and Jøhndal, 2008" startWordPosition="2430" endWordPosition="2433">) or both (+×) are marked. More baseline numbers in the appendix (Table A2). including OOVs, and only requires the same training corpus as a generic tagger (containing tags and lemmata), a resource that is available for many languages. 5 Experiments Datasets. We present experiments on the joint task of lemmatization and tagging in six diverse languages: English, German, Czech, Hungarian, Latin and Spanish. We use the same data sets as in M¨uller and Sch¨utze (2015), but do not use the out-of-domain test sets. The English data is from the Penn Treebank (Marcus et al., 1993), Latin from PROIEL (Haug and Jøhndal, 2008), German and Hungarian from SPMRL 2013 (Seddah et al., 2013), and Spanish and Czech from CoNLL 2009 (Hajiˇc et al., 2009). For German, Hungarian, Spanish and Czech we use the splits from the shared tasks; for English the split from SANCL (Petrov and McDonald, 2012); and for Latin a 8/1/1 split into train/dev/test. For all languages we limit our training data to the first 100,000 tokens. Dataset statistics can be found in Table A4 of the appendix. The lemma of Spanish se is set to be consistent. Baselines. We compare our model to three baselines. (i) MORFETTE (see Section 4). (ii) SIMPLE, a sys</context>
+</contexts>
+<marker>Haug, Jøhndal, 2008</marker>
+<rawString>Dag TT Haug and Marius Jøhndal. 2008. Creating a parallel treebank of the old Indo-European bible translations. In Proceedings of LaTeCH.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sittichai Jiampojamarn</author>
+<author>Colin Cherry</author>
+<author>Grzegorz Kondrak</author>
+</authors>
+<title>Joint processing and discriminative training for letter-to-phoneme conversion.</title>
+<date>2008</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="11860" citStr="Jiampojamarn et al. (2008)" startWordPosition="1909" endWordPosition="1912">joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmatization and fine-grained morphological tagging of tokens in context. Despite the superficial similarity of the two problems, direct comparison is not possible. TC’s model is best thought of as inducing a tagging dictionary for OOV types, mapping them to a set of tag and lemma pairs, whereas LEMMING is a token-level, context-based morphological tagger. We do, however, use TC’s model of lemmatization, a string-to-string transduction model based on Jiampojamarn et al. (2008) (JCK), as a standalone baseline. Our tagging-in-context model is faced with higher complexity of learning and inference since it addresses a more difficult task; thus, while we could in principle use JCK as a replacement for our candidate selection, the edit tree approach – which has high coverage at a low average number of lemma candidates (cf. Section 5) – allows us to train and apply LEMMING efficiently. Smith et al. (2005) proposed a log-linear model for the context-based disambiguation of a morphological dictionary. This has the effect of joint tagging, morphological segmentation and lem</context>
+<context position="15778" citStr="Jiampojamarn et al. (2008)" startWordPosition="2568" endWordPosition="2571"> Czech we use the splits from the shared tasks; for English the split from SANCL (Petrov and McDonald, 2012); and for Latin a 8/1/1 split into train/dev/test. For all languages we limit our training data to the first 100,000 tokens. Dataset statistics can be found in Table A4 of the appendix. The lemma of Spanish se is set to be consistent. Baselines. We compare our model to three baselines. (i) MORFETTE (see Section 4). (ii) SIMPLE, a system that for each form-POS pair, returns the most frequent lemma in the training data or the form if the pair is unknown. (iii) JCK, our reimplementation of Jiampojamarn et al. (2008). Recall that JCK is TC’s lemmatization model and that the full TC model is a type-based model that cannot be applied to our task. As JCK struggles to memorize irregulars, we only use it for unknown form-POS pairs and use SIMPLE otherwise. For aligning the training data we use the edit-tree-based alignment described in the feature section. We only use output alphabet symbols that are used for ≥ 5 form-lemma pairs and also add a special output symbol that indicates that the aligned input should simply be copied. We train the model using a structured averaged perceptron and stop after 10 trainin</context>
+</contexts>
+<marker>Jiampojamarn, Cherry, Kondrak, 2008</marker>
+<rawString>Sittichai Jiampojamarn, Colin Cherry, and Grzegorz Kondrak. 2008. Joint processing and discriminative training for letter-to-phoneme conversion. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dong C Liu</author>
+<author>Jorge Nocedal</author>
+</authors>
+<title>On the limited memory BFGS method for large scale optimization.</title>
+<date>1989</date>
+<booktitle>Mathematical Programming.</booktitle>
+<contexts>
+<context position="17094" citStr="Liu and Nocedal, 1989" startWordPosition="2794" endWordPosition="2798"> training. This is understandable as we only apply our model to unseen form-POS pairs. The feature set is an exact reimplementation of (Jiampojamarn et al., 2008), it consists of input-output pairs and their character context in a window of 6. Results. Our candidate selection strategy results in an average number of lemma candidates between 7 (Hungarian) and 91 (Czech) and a coverage of the correct lemma on dev of &gt;99.4 (except 98.4 for Latin).6 We first compare the baselines to LEMMING-P, a pipeline based on Section 2, that lemmatizes a word given a predicted tag and is trained using L-BFGS (Liu and Nocedal, 1989). We use the implementation of MALLET (McCallum, 2002). For these experiments we train all models on gold attributes and test on attributes predicted by MORFETTE. MORFETTE’s lemmatizer can only be used with its own tags. We thus use MORFETTE tags to have a uniform setup, 6Note that our definition of lemmatization accuracy and unknown forms ignores capitalization. 2271 baselines LEMMING-P cs de en es hu la SIMPLE 87.22 93.27 97.60 92.92 86.09 85.19 JCK 96.24 97.67 98.71 97.61 97.48 93.26 MORFETTE 96.25 97.12 98.43 97.97 97.22 91.89 edittree 96.29 97.84+ 98.71 97.91 97.31 93.00 +align,+lemma 96.</context>
+</contexts>
+<marker>Liu, Nocedal, 1989</marker>
+<rawString>Dong C Liu and Jorge Nocedal. 1989. On the limited memory BFGS method for large scale optimization. Mathematical Programming.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Mary Ann Marcinkiewicz</author>
+<author>Beatrice Santorini</author>
+</authors>
+<title>Building a large annotated corpus of English: The Penn treebank. Computational linguistics.</title>
+<date>1993</date>
+<contexts>
+<context position="14951" citStr="Marcus et al., 1993" startWordPosition="2423" endWordPosition="2426">NG models not using morphology (+dict) (×) or both (+×) are marked. More baseline numbers in the appendix (Table A2). including OOVs, and only requires the same training corpus as a generic tagger (containing tags and lemmata), a resource that is available for many languages. 5 Experiments Datasets. We present experiments on the joint task of lemmatization and tagging in six diverse languages: English, German, Czech, Hungarian, Latin and Spanish. We use the same data sets as in M¨uller and Sch¨utze (2015), but do not use the out-of-domain test sets. The English data is from the Penn Treebank (Marcus et al., 1993), Latin from PROIEL (Haug and Jøhndal, 2008), German and Hungarian from SPMRL 2013 (Seddah et al., 2013), and Spanish and Czech from CoNLL 2009 (Hajiˇc et al., 2009). For German, Hungarian, Spanish and Czech we use the splits from the shared tasks; for English the split from SANCL (Petrov and McDonald, 2012); and for Latin a 8/1/1 split into train/dev/test. For all languages we limit our training data to the first 100,000 tokens. Dataset statistics can be found in Table A4 of the appendix. The lemma of Spanish se is set to be consistent. Baselines. We compare our model to three baselines. (i) </context>
+</contexts>
+<marker>Marcus, Marcinkiewicz, Santorini, 1993</marker>
+<rawString>Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. 1993. Building a large annotated corpus of English: The Penn treebank. Computational linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew K McCallum</author>
+</authors>
+<title>MALLET: A machine learning for language toolkit.</title>
+<date>2002</date>
+<contexts>
+<context position="17148" citStr="McCallum, 2002" startWordPosition="2806" endWordPosition="2807">to unseen form-POS pairs. The feature set is an exact reimplementation of (Jiampojamarn et al., 2008), it consists of input-output pairs and their character context in a window of 6. Results. Our candidate selection strategy results in an average number of lemma candidates between 7 (Hungarian) and 91 (Czech) and a coverage of the correct lemma on dev of &gt;99.4 (except 98.4 for Latin).6 We first compare the baselines to LEMMING-P, a pipeline based on Section 2, that lemmatizes a word given a predicted tag and is trained using L-BFGS (Liu and Nocedal, 1989). We use the implementation of MALLET (McCallum, 2002). For these experiments we train all models on gold attributes and test on attributes predicted by MORFETTE. MORFETTE’s lemmatizer can only be used with its own tags. We thus use MORFETTE tags to have a uniform setup, 6Note that our definition of lemmatization accuracy and unknown forms ignores capitalization. 2271 baselines LEMMING-P cs de en es hu la SIMPLE 87.22 93.27 97.60 92.92 86.09 85.19 JCK 96.24 97.67 98.71 97.61 97.48 93.26 MORFETTE 96.25 97.12 98.43 97.97 97.22 91.89 edittree 96.29 97.84+ 98.71 97.91 97.31 93.00 +align,+lemma 96.74+ 98.17+ 98.76+ 98.05 97.70+ 93.76+ +dict 97.50+ 98.</context>
+</contexts>
+<marker>McCallum, 2002</marker>
+<rawString>Andrew K McCallum. 2002. MALLET: A machine learning for language toolkit.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas M¨uller</author>
+<author>Hinrich Sch¨utze</author>
+</authors>
+<title>Robust morphological tagging with word representations.</title>
+<date>2015</date>
+<booktitle>In Proceedings of NAACL.</booktitle>
+<marker>M¨uller, Sch¨utze, 2015</marker>
+<rawString>Thomas M¨uller and Hinrich Sch¨utze. 2015. Robust morphological tagging with word representations. In Proceedings of NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas M¨uller</author>
+<author>Helmut Schmid</author>
+<author>Hinrich Sch¨utze</author>
+</authors>
+<title>Efficient higher-order CRFs for morphological tagging.</title>
+<date>2013</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<marker>M¨uller, Schmid, Sch¨utze, 2013</marker>
+<rawString>Thomas M¨uller, Helmut Schmid, and Hinrich Sch¨utze. 2013. Efficient higher-order CRFs for morphological tagging. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Llu´ıs Padr´o</author>
+<author>Evgeny Stanilovsky</author>
+</authors>
+<title>FreeLing 3.0: Towards wider multilinguality.</title>
+<date>2012</date>
+<booktitle>In Proceedings of LREC.</booktitle>
+<marker>Padr´o, Stanilovsky, 2012</marker>
+<rawString>Llu´ıs Padr´o and Evgeny Stanilovsky. 2012. FreeLing 3.0: Towards wider multilinguality. In Proceedings of LREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Judea Pearl</author>
+</authors>
+<title>Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference.</title>
+<date>1988</date>
+<publisher>Morgan Kaufmann.</publisher>
+<contexts>
+<context position="9875" citStr="Pearl, 1988" startWordPosition="1611" endWordPosition="1612">rd tagging features: the current word, its affixes and shape (capitalization, digits, hyphens) and the immediate lexical context. We combine lemmatization and higher-order CRF components in a treestructured CRF. Given a sequence of forms w with lemmata l and morphological+POS tags m, we define a globally normalized model: p(l, m |w) ∝ Hi hwi(li) exp(f(li, wi, mi)T θ +g(mi, mi−1, mi−2, w, i)TA), where f and g are the features associated with lemma and tag cliques respectively and θ and A are weight vectors. The graphical model is shown in Figure 2. We perform inference with belief propagation (Pearl, 1988) and estimate the parameters with SGD (Tsuruoka et al., 2009). We greatly improved the results of the joint model by initializing it with the parameters of a pretrained tagging model. 4 Related Work In functionality, our system resembles MORFETTE (Chrupała et al., 2008), which generates lemma 3ftp://ftp.gnu.org/gnu/aspell/dict 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (</context>
+</contexts>
+<marker>Pearl, 1988</marker>
+<rawString>Judea Pearl. 1988. Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference. Morgan Kaufmann.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Ryan McDonald</author>
+</authors>
+<title>Overview of the 2012 shared task on parsing the web.</title>
+<date>2012</date>
+<booktitle>In Proceedings of SANCL.</booktitle>
+<contexts>
+<context position="15260" citStr="Petrov and McDonald, 2012" startWordPosition="2477" endWordPosition="2480"> present experiments on the joint task of lemmatization and tagging in six diverse languages: English, German, Czech, Hungarian, Latin and Spanish. We use the same data sets as in M¨uller and Sch¨utze (2015), but do not use the out-of-domain test sets. The English data is from the Penn Treebank (Marcus et al., 1993), Latin from PROIEL (Haug and Jøhndal, 2008), German and Hungarian from SPMRL 2013 (Seddah et al., 2013), and Spanish and Czech from CoNLL 2009 (Hajiˇc et al., 2009). For German, Hungarian, Spanish and Czech we use the splits from the shared tasks; for English the split from SANCL (Petrov and McDonald, 2012); and for Latin a 8/1/1 split into train/dev/test. For all languages we limit our training data to the first 100,000 tokens. Dataset statistics can be found in Table A4 of the appendix. The lemma of Spanish se is set to be consistent. Baselines. We compare our model to three baselines. (i) MORFETTE (see Section 4). (ii) SIMPLE, a system that for each form-POS pair, returns the most frequent lemma in the training data or the form if the pair is unknown. (iii) JCK, our reimplementation of Jiampojamarn et al. (2008). Recall that JCK is TC’s lemmatization model and that the full TC model is a type</context>
+</contexts>
+<marker>Petrov, McDonald, 2012</marker>
+<rawString>Slav Petrov and Ryan McDonald. 2012. Overview of the 2012 shared task on parsing the web. In Proceedings of SANCL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adwait Ratnaparkhi</author>
+</authors>
+<title>A maximum entropy model for part-of-speech tagging.</title>
+<date>1996</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="10561" citStr="Ratnaparkhi, 1996" startWordPosition="1707" endWordPosition="1708">eatly improved the results of the joint model by initializing it with the parameters of a pretrained tagging model. 4 Related Work In functionality, our system resembles MORFETTE (Chrupała et al., 2008), which generates lemma 3ftp://ftp.gnu.org/gnu/aspell/dict 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from lar</context>
+</contexts>
+<marker>Ratnaparkhi, 1996</marker>
+<rawString>Adwait Ratnaparkhi. 1996. A maximum entropy model for part-of-speech tagging. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Djam´e Seddah</author>
+<author>Grzegorz Chrupała</author>
+<author>¨Ozlem C¸etino˘glu</author>
+<author>Josef Van Genabith</author>
+<author>Marie Candito</author>
+</authors>
+<title>Lemmatization and lexicalized statistical parsing of morphologically rich languages: the case of French.</title>
+<date>2010</date>
+<booktitle>In Proceedings of SPMRL.</booktitle>
+<marker>Seddah, Chrupała, C¸etino˘glu, Van Genabith, Candito, 2010</marker>
+<rawString>Djam´e Seddah, Grzegorz Chrupała, ¨Ozlem C¸etino˘glu, Josef Van Genabith, and Marie Candito. 2010. Lemmatization and lexicalized statistical parsing of morphologically rich languages: the case of French. In Proceedings of SPMRL.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Djam´e Seddah</author>
+<author>Reut Tsarfaty</author>
+<author>Sandra K¨ubler</author>
+<author>Marie Candito</author>
+<author>Jinho D Choi</author>
+<author>Rich´ard Farkas</author>
+<author>Jennifer Foster</author>
+</authors>
+<title>Iakes Goenaga, Koldo Gojenola Galletebeitia, Yoav Goldberg, Spence Green,</title>
+<date>2013</date>
+<booktitle>Wr´oblewska, and Eric Villemonte de la Clergerie. 2013. Overview of the SPMRL</booktitle>
+<institution>Seeker, Yannick Versley, Veronika Vincze, Marcin Woli´nski, Alina</institution>
+<location>Nizar Habash, Marco Kuhlmann, Wolfgang Maier, Joakim Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang</location>
+<marker>Seddah, Tsarfaty, K¨ubler, Candito, Choi, Farkas, Foster, 2013</marker>
+<rawString>Djam´e Seddah, Reut Tsarfaty, Sandra K¨ubler, Marie Candito, Jinho D. Choi, Rich´ard Farkas, Jennifer Foster, Iakes Goenaga, Koldo Gojenola Galletebeitia, Yoav Goldberg, Spence Green, Nizar Habash, Marco Kuhlmann, Wolfgang Maier, Joakim Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang Seeker, Yannick Versley, Veronika Vincze, Marcin Woli´nski, Alina Wr´oblewska, and Eric Villemonte de la Clergerie. 2013. Overview of the SPMRL 2013 shared task: Cross-Framework evaluation of parsing morphologically rich languages. In Proceddings of SPMRL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Noah A Smith</author>
+<author>David A Smith</author>
+<author>Roy W Tromble</author>
+</authors>
+<title>Context-based morphological disambiguation with random fields.</title>
+<date>2005</date>
+<booktitle>In Proceedings of HLT-EMNLP.</booktitle>
+<contexts>
+<context position="3088" citStr="Smith et al., 2005" startWordPosition="476" endWordPosition="479">orm is often beneficial for tagging, for instance in the presence of syncretism; e.g., since German plural noun phrases do not mark gender, it is important to know the lemma (singular form) to correctly tag gender on the noun. We make the following contributions. (i) We present the first joint log-linear model of morphological analysis and lemmatization that operates at the token level and is also able to lemmatize unknown forms; and release it as opensource (http://cistern.cis.lmu.de/lemming). It is trainable on corpora annotated with gold standard tags and lemmata. Unlike other work (e.g., (Smith et al., 2005)) it does not rely on morphological dictionaries or analyzers. (ii) We describe a log-linear model for lemmatization that can easily be incorporated into other models and supports arbitrary global features on the lemma. (iii) We set the new state of the art in token-based statistical lemmatization on six languages (English, German, Czech, Hungarian, Latin and Spanish). (iv) We experimentally show that jointly modeling morphological tags and lemmata is mutually beneficial and yields significant improvements in joint (tag+lemma) accuracy for four out of six languages; e.g., Czech lemma errors ar</context>
+<context position="12291" citStr="Smith et al. (2005)" startWordPosition="1985" endWordPosition="1988">eas LEMMING is a token-level, context-based morphological tagger. We do, however, use TC’s model of lemmatization, a string-to-string transduction model based on Jiampojamarn et al. (2008) (JCK), as a standalone baseline. Our tagging-in-context model is faced with higher complexity of learning and inference since it addresses a more difficult task; thus, while we could in principle use JCK as a replacement for our candidate selection, the edit tree approach – which has high coverage at a low average number of lemma candidates (cf. Section 5) – allows us to train and apply LEMMING efficiently. Smith et al. (2005) proposed a log-linear model for the context-based disambiguation of a morphological dictionary. This has the effect of joint tagging, morphological segmentation and lemmatization, but, critically, is limited to the entries in the morphological dictionary (without which the approach cannot be used), causing problems of recall. In contrast, LEMMING can analyze any word, 5https://github.com/ gchrupala/morfette/commit/ ca886556916b6cc1e808db4d32daf720664d17d6 2270 cs de en es hu la all unk all unk all unk all unk all unk all unk 1 MARMOT tag 89.75 76.83 82.81 61.60 96.45 90.68 97.05 90.07 93.64 8</context>
+</contexts>
+<marker>Smith, Smith, Tromble, 2005</marker>
+<rawString>Noah A. Smith, David A. Smith, and Roy W. Tromble. 2005. Context-based morphological disambiguation with random fields. In Proceedings of HLT-EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Colin Cherry</author>
+</authors>
+<title>A global model for joint lemmatization and part-of-speech prediction.</title>
+<date>2009</date>
+<booktitle>In Proceedings of ACL-IJCNLP.</booktitle>
+<contexts>
+<context position="2040" citStr="Toutanova and Cherry, 2009" startWordPosition="306" endWordPosition="309">(Chrupała et al., 2008). Many regular transformations can be described by simple replacement rules, but lemmatization of unknown words requires more than this. For instance the Spanish paradigms for verbs ending in ir and er share the same 3rd person plural ending en; this makes it hard to decide which paradigm a form belongs to.1 Solving these kinds of problems requires global features on the lemma. Global features of this kind were not supported 1Compare admiten “they admit” → admitir “to admit”, but deben “they must” → deber “to must”. by previous work (Dreyer et al., 2008; Chrupała, 2006; Toutanova and Cherry, 2009; Cotterell et al., 2014). There is a strong mutual dependency between (i) lemmatization of a form in context and (ii) disambiguating its part-of-speech (POS) and morphological attributes. Attributes often disambiguate the lemma of a form, which explains why many NLP systems (Manning et al., 2014; Padr´o and Stanilovsky, 2012) apply a pipeline approach of tagging followed by lemmatization. Conversely, knowing the lemma of a form is often beneficial for tagging, for instance in the presence of syncretism; e.g., since German plural noun phrases do not mark gender, it is important to know the lem</context>
+<context position="7324" citStr="Toutanova and Cherry (2009)" startWordPosition="1185" endWordPosition="1188">e been used in different previous models. All features are extracted given a form-lemma pair (w, l) created with an edit tree e. We use the following three edit tree features of Chrupała (2008). (i) The edit tree e. (ii) The pair (e, w). This feature is crucial for the model to memorize irregular forms, e.g., the lemma of was is be. (iii) For each form affix (of maximum length 10): its conjunction with e. These features are useful in learning orthographic and phonological regularities, e.g., the lemma of signalling is signal, not signall. We define the following alignment features. Similar to Toutanova and Cherry (2009) (TC), we define an alignment between w and l. Our alignments can be read from an edit tree by aligning the characters in LCS nodes character by character and characters in substitution nodes block-wise. Thus the alignment of umgeschaut - umschauen is: u-u, m-m, ge-E, s-s, c-c, h-h, a-a, u-u, t-en. Each alignment pair constitutes a feature in our model. These features allow the model to learn that the substitution t/en is likely in German. We also concatenate each alignment pair with its form and lemma character context (of up to length 6) to learn, e.g., that ge is often deleted after um. We </context>
+<context position="11231" citStr="Toutanova and Cherry (2009)" startWordPosition="1806" endWordPosition="1809">n, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from large corpora as a key source of information. Toutanova and Cherry (2009)’s joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmatization and fine-grained morphological tagging of tokens in context. Despite the superficial similarity of the two problems, direct comparison is not possible. TC’s model is best thought of as inducing a tagging dictionary for OOV types, mapping them to a set of tag and lemma pairs, whereas LEMMING is a token-level, context-based morphological tagger. We do, however, use TC’s model of lemmatization, a string-to-string transduction model based </context>
+</contexts>
+<marker>Toutanova, Cherry, 2009</marker>
+<rawString>Kristina Toutanova and Colin Cherry. 2009. A global model for joint lemmatization and part-of-speech prediction. In Proceedings of ACL-IJCNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoshimasa Tsuruoka</author>
+<author>Jun’ichi Tsujii</author>
+<author>Sophia Ananiadou</author>
+</authors>
+<title>Stochastic gradient descent training for l1-regularized log-linear models with cumulative penalty.</title>
+<date>2009</date>
+<booktitle>In Proceedings of ACL-IJCNLP.</booktitle>
+<contexts>
+<context position="9936" citStr="Tsuruoka et al., 2009" startWordPosition="1620" endWordPosition="1623">and shape (capitalization, digits, hyphens) and the immediate lexical context. We combine lemmatization and higher-order CRF components in a treestructured CRF. Given a sequence of forms w with lemmata l and morphological+POS tags m, we define a globally normalized model: p(l, m |w) ∝ Hi hwi(li) exp(f(li, wi, mi)T θ +g(mi, mi−1, mi−2, w, i)TA), where f and g are the features associated with lemma and tag cliques respectively and θ and A are weight vectors. The graphical model is shown in Figure 2. We perform inference with belief propagation (Pearl, 1988) and estimate the parameters with SGD (Tsuruoka et al., 2009). We greatly improved the results of the joint model by initializing it with the parameters of a pretrained tagging model. 4 Related Work In functionality, our system resembles MORFETTE (Chrupała et al., 2008), which generates lemma 3ftp://ftp.gnu.org/gnu/aspell/dict 4Example: for the Spanish noun medidas “measures” with attributes NOUN, COMMON, PLURAL and FEMININE, we conjoin each feature above with NOUN, NOUN+COMMON, NOUN+PLURAL and NOUN+FEMININE. candidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov m</context>
+</contexts>
+<marker>Tsuruoka, Tsujii, Ananiadou, 2009</marker>
+<rawString>Yoshimasa Tsuruoka, Jun’ichi Tsujii, and Sophia Ananiadou. 2009. Stochastic gradient descent training for l1-regularized log-linear models with cumulative penalty. In Proceedings of ACL-IJCNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Wicentowski</author>
+</authors>
+<title>Modeling and learning multilingual inflectional morphology in a minimally supervised framework.</title>
+<date>2002</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Johns Hopkins University.</institution>
+<contexts>
+<context position="11010" citStr="Wicentowski (2002)" startWordPosition="1776" endWordPosition="1777">ndidates by extracting edit operation sequences between lemmata and surface forms (Chrupała, 2006), and then trains two maximum entropy Markov models (Ratnaparkhi, 1996) for morphological tagging and lemmatization, which are queried using a beam search decoder. In our experiments we use the latest version5 of MORFETTE. This version is based on structured perceptron learning (Collins, 2002) and edit trees (Chrupała, 2008). Models similar to MORFETTE include those of Bj¨orkelund et al. (2010) and Gesmundo and Samardzic (2012) and have also been used for generation (Duˇsek and Jurˇciˇcek, 2013). Wicentowski (2002) similarly treats lemmatization as classification over a deterministically chosen candidate set, but uses distributional information extracted from large corpora as a key source of information. Toutanova and Cherry (2009)’s joint morphological analyzer predicts the set of possible lemmata and coarse-grained POS for a word type. This is different from our problem of lemmatization and fine-grained morphological tagging of tokens in context. Despite the superficial similarity of the two problems, direct comparison is not possible. TC’s model is best thought of as inducing a tagging dictionary for</context>
+</contexts>
+<marker>Wicentowski, 2002</marker>
+<rawString>Richard Wicentowski. 2002. Modeling and learning multilingual inflectional morphology in a minimally supervised framework. Ph.D. thesis, Johns Hopkins University.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander Yeh</author>
+</authors>
+<title>More accurate tests for the statistical significance of result differences.</title>
+<date>2000</date>
+<booktitle>In Proceedings of COLING.</booktitle>
+<contexts>
+<context position="19943" citStr="Yeh, 2000" startWordPosition="3252" endWordPosition="3253">inary experiments showed that correct morphological attributes would substantially improve lemmatization as they help in cases of ambiguity. As an example, number helps to lemmatize the singular German noun Raps “canola”, which looks like the plural of Rap “rap”. Numbers can be found in Table A3 of the appendix. This motivates the necessity of joint tagging and lemmatization. For the final experiments, we run pipeline models on tags predicted by MARMOT (M¨uller et al., 2013) and compare them to LEMMING-J, the 7Unknown word accuracies in the appendix (Table A1). 8We use the randomization test (Yeh, 2000) and P = .05. joint model described in Section 3. All LEMMING versions use exactly the same features. Table 2 shows that LEMMING-J outperforms LEMMINGP in three measures (see bold tag, lemma &amp; joint (tag+lemma) accuracies) except for English, where we observe a tie in lemma accuracy and a small drop in tag and tag+lemma accuracy. Coupling morphological attributes and lemmatization (lines 8–10 vs 11–13) improves tag+lemma prediction for five languages. Improvements in lemma accuracy of the joint over the best pipeline systems range from .1 (Spanish), over &gt;.3 (German, Hungarian) to &gt;.96 (Czech,</context>
+</contexts>
+<marker>Yeh, 2000</marker>
+<rawString>Alexander Yeh. 2000. More accurate tests for the statistical significance of result differences. In Proceedings of COLING.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

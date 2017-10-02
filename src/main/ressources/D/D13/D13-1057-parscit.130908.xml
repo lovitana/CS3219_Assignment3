@@ -1,0 +1,2007 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000123">
+<title confidence="0.983596">
+A Constrained Latent Variable Model for Coreference Resolution
+</title>
+<author confidence="0.994301">
+Kai-Wei Chang Rajhans Samdani Dan Roth
+</author>
+<affiliation confidence="0.998156">
+University of Illinois at Urbana-Champaign
+</affiliation>
+<email confidence="0.996019">
+{kchang10|rsamdan2|danr}@illinois.edu
+</email>
+<sectionHeader confidence="0.997344" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.996688333333333">
+Coreference resolution is a well known clus-
+tering task in Natural Language Processing. In
+this paper, we describe the Latent Left Linking
+model (L3M), a novel, principled, and linguis-
+tically motivated latent structured prediction
+approach to coreference resolution. We show
+that L3M admits efficient inference and can be
+augmented with knowledge-based constraints;
+we also present a fast stochastic gradient based
+learning. Experiments on ACE and Ontonotes
+data show that L3M and its constrained ver-
+sion, CL3M, are more accurate than several
+state-of-the-art approaches as well as some
+structured prediction models proposed in the
+literature.
+</bodyText>
+<sectionHeader confidence="0.999518" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999961685185185">
+Coreference resolution is a challenging task, that in-
+volves identification and clustering of noun phrases
+mentions that refer to the same real-world entity.
+Most machine learning approaches to coreference
+resolution learn a scoring function to estimate the
+compatibility between two mentions or two sets of
+previously clustered mentions. Then, a decoding al-
+gorithm is designed to aggregate these scores and
+find an optimal clustering assignment.
+The most popular of these frameworks is the pair-
+wise mention model (Soon et al., 2001; Ng and
+Cardie, 2002; Bengtson and Roth, 2008), which
+learns a compatibility score of mention-pairs and
+uses these pairwise scores to obtain a global cluster-
+ing. Recently, efforts have been made (Haghighi and
+Klein, 2010; Rahman and Ng, 2011b; Rahman and
+Ng, 2011c) to consider models that capture higher
+order interactions, in particular, between mentions
+and previously identified entities (that is, between
+mentions and clusters). While such models are po-
+tentially more expressive, they are largely based on
+heuristics to achieve computational tractability.
+This paper focuses on a novel and principled ma-
+chine learning framework that pushes the state-of-
+the-art while operating at a mention-pair granularity.
+We present two models — the Latent Left-Linking
+Model (L3M), and a version of that is augmented
+with domain knowledge-based constraints, the Con-
+strained Latent Left-Linking Model (CL3M). L3M
+admits efficient inference, linking each mention to a
+previously occurring mention to its left, much like
+the existing best-left-link inference models (Ng and
+Cardie, 2002; Bengtson and Roth, 2008). How-
+ever, unlike previous best-link techniques, learning
+in our case is performed jointly with decoding — we
+present a novel latent structural SVM approach, op-
+timized using a fast stochastic gradient-based tech-
+nique. Furthermore, we present a probabilistic gen-
+eralization of L3M that is more expressive in that
+it is capable of considering mention-entity interac-
+tions using scores at the mention-pair granularity.
+We augment this model with a temperature-like pa-
+rameter (Samdani et al., 2012) to provide additional
+flexibility.
+CL3M augments L3M with knowledge-based
+constraints following (Roth and Yih, 2004; Denis
+and Baldridge, 2007). This capability is very de-
+sirable as shown by the success of the rule-based de-
+terministic approach of Raghunathan et al. (2010)
+in the CoNLL shared task 2011 (Pradhan et al.,
+2011). In L3M, domain-specific constraints are in-
+corporated into learning and inference in a straight-
+forward way. CL3M scores a mention’s contribution
+to its cluster by combining the corresponding score
+</bodyText>
+<page confidence="0.977612">
+601
+</page>
+<note confidence="0.73366">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 601–612,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.998536785714286">
+of the underlying L3M model with that from a set of
+constraints.
+Most importantly, in our experiments on bench-
+mark coreference datasets, we show that CL3M,
+with just five constraints, compares favorably with
+other, more complicated, state-of-the-art algorithms
+on a variety of evaluation metrics. Over-
+all, the main contribution of this paper is a
+principled machine learning model operating at
+mention-pair granularity, using easy to implement
+constraint-augmented inference and learning, that
+yields competitive results on coreference resolution
+on Ontonotes-5.0 (Pradhan et al., 2012) and ACE
+2004 (NIST, 2004).
+</bodyText>
+<sectionHeader confidence="0.999943" genericHeader="related work">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.99995217721519">
+The idea of Latent Left-linking Model (L3M) is in-
+spired by a popular inference approach to corefer-
+ence which we call the Best-Left-Link approach (Ng
+and Cardie, 2002; Bengtson and Roth, 2008). In the
+best-left-link strategy, each mention i is connected
+to the best antecedent mention j with j &lt; i (i.e. a
+mention occurring to the left of i, assuming a left-
+to-right reading order), thereby creating a left-link.
+The “best” antecedent mention is the one with the
+highest pairwise score, wzj; furthermore, if wzj is
+below some threshold, say 0, then i is not connected
+to any antecedent mention. The final clustering is
+a transitive closure of these “best” links. The intu-
+ition behind best-left-link strategy is based on how
+humans read and decipher coreference links – they
+mostly rely on information to the left of the men-
+tion when deciding whether to add it to a previously
+constructed cluster or not. This strategy has been
+successful and commonly used in coreference res-
+olution (Ng and Cardie, 2002; Bengtson and Roth,
+2008; Stoyanov et al., 2009). However, most works
+have developed ad-hoc approaches to implement this
+idea. For instance, Bengtson and Roth (2008) train
+a model w on binary training data generated by tak-
+ing for each mention, the closest antecedent corefer-
+ent mention as a positive example, and all the other
+mentions as negative examples. Similar approaches
+to training and, additionally, decoupling the training
+stage from the clustering stage were used by other
+systems. In this paper, we formalize the learning
+problem of the best-left-link model as a structured
+prediction problem and analyze our system with de-
+tailed experiments. Furthermore, we generalize this
+approach by considering multiple pairwise left-links
+instead of just the best link, efficiently capturing the
+notion of a mention-to-cluster link.
+Many techniques in the coreference literature
+break away from the mention pair-based, best-left-
+link paradigm. Denis and Baldridge (2008) and Ng
+(2005) learn a local ranker to rank the mention
+pairs based on their compatibility. While these ap-
+proaches achieve decent empirical performance, it
+is unclear why these are the right ways to train the
+model. Some techniques consider a more expres-
+sive model by using features defined over mention-
+cluster or cluster-cluster (Rahman and Ng, 2011c;
+Stoyanov and Eisner, 2012; Haghighi and Klein,
+2010). For these models, the inference and learn-
+ing algorithms are usually complicated. Very re-
+cently, Durrett et al. (2013) propose a probabilis-
+tic model which enforces structural agreement con-
+straints between specified properties of mention
+cluster when using a mention-pair model. This ap-
+proach is very related to the probabilistic extension
+of our method as both models attempt to leverage
+entity-level information from mention-pair features.
+However, our approach is simpler because it directly
+considers the probabilities of multiple links. Fur-
+thermore, while their model performs only slightly
+better than the Stanford rule-based system (Lee et
+al., 2011), we significantly outperform this system.
+Most importantly, our model obtains state-of-the-art
+performance on OntoNotes-5.0 while still operating
+at the mention-pair granularity. We believe that this
+is due to our novel and principled structured predic-
+tion framework which results in accurate (and effi-
+cient) training.
+Several structured prediction techniques have
+been applied to coreference resolution in the ma-
+chine learning literature. For example, McCallum
+and Wellner (2003) and Finley and Joachims (2005)
+model coreference as a correlational clustering prob-
+lem (Bansal et al., 2002) on a complete graph over
+the mentions with edge weights given by the pair-
+wise classifier. However, correlational clustering is
+known to be NP Hard (Bansal et al., 2002); nonethe-
+less, an ILP solver or an approximate inference algo-
+rithm can be used to solve this problem. Another ap-
+proach proposed by Yu and Joachims (2009) formu-
+</bodyText>
+<page confidence="0.997769">
+602
+</page>
+<bodyText confidence="0.999899037037037">
+lates coreference with latent spanning trees. How-
+ever, their approach has no directionality between
+mentions, whereas our latent structure captures the
+natural left-to-right ordering of mentions. In our
+experiments (Sec. 5), we show that our technique
+vastly outperforms both the spanning tree and the
+correlational clustering techniques. We also com-
+pare with (Fernandes et al., 2012) and the pub-
+licly available Stanford coreference system (Raghu-
+nathan et al., 2010; Lee et al., 2011), a state-of-the-
+art rule-based system.
+Finally, some research (Ratinov and Roth, 2012;
+Bansal and Klein, 2012; Rahman and Ng, 2011a)
+has tried to integrate world knowledge from web-
+based statistics or knowledge bases into a corefer-
+ence system. World knowledge is potentially use-
+ful for resolving coreference and can be injected
+into our system in a straightforward way via the
+constraints framework. We will show an example
+of incorporating our system with name-entity and
+WordNet-based similarity metric (Q. Do, 2009) in
+Sec. 5. Including massive amount of information
+from knowledge resources is not the focus of this
+paper and may distort the comparison with other
+relevant models but our results indicate that this is
+doable in our model, and may provide significant
+improvements.
+</bodyText>
+<sectionHeader confidence="0.98725" genericHeader="method">
+3 Latent Left-Linking Model with
+Constraints
+</sectionHeader>
+<bodyText confidence="0.99757862962963">
+In this section, we describe our Constrained Latent
+Left-Linking Model (CL�M). CL�M is inspired by
+a few ideas from the literature: (a) the popular Best-
+Left-Link inference approach to coreference (Ng and
+Cardie, 2002; Bengtson and Roth, 2008), and (b) the
+injection of domain knowledge-based constraints for
+structured prediction (Roth and Yih, 2004; Clarke
+and Lapata, 2006; Chang et al., 2012b; Ganchev et
+al., 2010; Koo et al., 2010; Pascal and Baldridge,
+2009).
+We first introduce the notion of a pairwise
+mention-scorer, then introduce our Left-Linking
+Model (L�M), and finally describe how to inject con-
+straints into our model.
+Let d be a document with md mentions. Mentions
+are denoted solely using their indices, ranging from
+1 to md. A coreference clustering C for document
+d is a collection of disjoint sets partitioning the set
+{1, ... ,md}. We represent C as a binary function
+with C(i, j) = 1 if mentions i and j are coreferent,
+otherwise C(i, j) = 0. Let s(C; w, d) be the score
+of a given clustering C for a given document and a
+given pairwise weight vector w. Then, during infer-
+ence, a clustering C is predicted by maximizing the
+scoring function s(C; w, d), over all valid (i.e. sat-
+isfying symmetry and transitivity) clustering binary
+functions C : {1, ... , md} x {1, ... , md} → {0,1}.
+</bodyText>
+<subsectionHeader confidence="0.999739">
+3.1 Mention Pair Scorer
+</subsectionHeader>
+<bodyText confidence="0.999319875">
+We model the task of coreference resolution using a
+pairwise scorer which indicates the compatibility of
+a pair of mentions. The inference routine then pre-
+dicts the final clustering — a structured prediction
+problem — using these pairwise scores.
+Specifically, for any two mentions i and j (w.l.o.g.
+j &lt; i), we produce a pairwise compatibility score
+wji using extracted features φ(j, i) as
+</bodyText>
+<equation confidence="0.982011">
+wji = w - φ(j, i) , (1)
+</equation>
+<bodyText confidence="0.968155">
+where w is a weight parameter that is learned.
+</bodyText>
+<subsectionHeader confidence="0.99961">
+3.2 Latent Left-Linking Model
+</subsectionHeader>
+<bodyText confidence="0.999455166666667">
+Our inference algorithm is inspired by the best-left-
+link approach. In particular, the score s(C; d, w) is
+defined so that each mention links to the antecedent
+mention (to its left) with the highest score (as long
+as the score is above some threshold, say, 0). Specif-
+ically:
+</bodyText>
+<equation confidence="0.989965">
+w - φ(j,i) . (2)
+</equation>
+<bodyText confidence="0.999983923076923">
+In order to simplify the notation, we introduce a
+dummy mention with index 0, which is to the left
+(i.e. appears before) of all other mentions and has
+w0i = 0 for all actual mentions i &gt; 0. For a given
+clustering C, if a mention i is not co-clustered with
+any previous actual mention j, 0 &lt; j &lt; i, then we
+assume that i links to 0 and C(i, 0) = 1. In other
+words, C(i, 0) = 1 iff i is the first actual item of a
+cluster in C. However, such an item i is not consid-
+ered to be co-clustered with 0 and for any valid clus-
+tering, item 0 is always in a singleton dummy clus-
+ter, which is eventually discarded. The important
+property of the score s is that it is exactly maximized
+</bodyText>
+<equation confidence="0.993536">
+s(C; d, w) = Md max
+i=1 0≤j&lt;i,C(i,j)=1
+</equation>
+<page confidence="0.987594">
+603
+</page>
+<bodyText confidence="0.999792333333333">
+by the best-left-link inference, as it maximizes indi-
+vidual left link scores and the creation of one left-
+link does not affect the creation of other left-links.
+</bodyText>
+<subsectionHeader confidence="0.999266">
+3.3 Learning
+</subsectionHeader>
+<bodyText confidence="0.9999597">
+We use a max-margin approach to learn w. We are
+given a training set D of documents where for each
+document d E D, Cd refers to the annotated ground
+truth clustering. Then we learn w by minimizing
+sub-gradient descent (SGD) approach. Since L(w)
+in Eq. (3) decomposes not only over training doc-
+uments, but also over individual mentions in each
+document, we can perform SGD on a per-mention
+basis. The stochastic sub-gradient w.r.t. mention i
+in document d is given by
+</bodyText>
+<equation confidence="0.984873666666667">
+∇L(w)id a φ(j′, i) − φ(j′′, i) + λw, where (4)
+j′ =arg max (w · φ(j, i) + 1 − Cd(i, j))
+0≤j&lt;i
+L(w) = 2 11w112 +|D |dE md (max (s d, w) j′′ =arg max w · φ(j, i)
+0≤j&lt;i,C(i,j)=1
++ Δ(C,Cd)) − s(Cd; d, w)) ,
+</equation>
+<bodyText confidence="0.998458692307692">
+where Δ(C, Cd) is a loss function used in corefer-
+ence. In order to achieve tractable loss-augmented
+minimization — something not possible with stan-
+dard loss functions used in coreference (e.g.
+B3 (Bagga and Baldwin, 1998)) — we use a de-
+composable loss function that just counts the num-
+ber of mention pairs on which C and Cd disagree:
+Δ(C,Cd) = E�di��=0J&lt;i IC(iJ)=Cd(iJ), where I is
+a binary indicator function. This loss function
+is equivalent to the numerator of the Rand index
+loss (Rand, 1971). With this form of loss function
+and using the scoring function in Eq. (2), we can
+write L(w) as
+</bodyText>
+<equation confidence="0.9282002">
+2 an d
+211w11 + |D |d� md E(m� (w · φ(j, i) i=1
+�
++ δ(Cd, i, j)� − max (w · φ(j, i)) ,
+0≤j&lt;i,C(i,j)=1
+</equation>
+<bodyText confidence="0.999953">
+where δ(Cd, i, j) = 1 − Cd(i, j) is the loss-based
+margin that is 1 if i and j are not coreferent in Cd,
+and is 0 otherwise. In the above objective function,
+the left-links remain latent while we get to observe
+the clustering. This objective function is related to
+latent structural SVMs (Yu and Joachims, 2009).
+However Yu and Joachims (2009) use a spanning
+tree based latent structure which does not have the
+left-to-right directionality we exploit. We can mini-
+mize the above function using Concave Convex Pro-
+cedure (Yuille and Rangarajan, 2003), which is guar-
+anteed to reach the local minima. However, such a
+procedure is costly as it requires doing inference on
+all the documents to compute a single gradient up-
+date. Consequently, we choose a faster stochastic
+While SGD has no theoretically convergence guar-
+antee, it works excellently in our experiments.
+Specifically, we observe that SGD achieves similar
+training performance to CCCP with a speed-up of
+around 10,000.
+</bodyText>
+<subsectionHeader confidence="0.96543">
+3.4 Incorporating Constraints
+</subsectionHeader>
+<bodyText confidence="0.999977">
+Next, we show how to incorporate domain
+knowledge-based constraints into L3M and gener-
+alize it to CL3M. In CL3M, we obtain a cluster-
+ing by maximizing a constraint-augmented scoring
+function f given by
+</bodyText>
+<equation confidence="0.980233333333333">
+n.
+s(C; d, w) + E ρpψp(d, C),
+p=1
+</equation>
+<bodyText confidence="0.99997535">
+where the second term on the R.H.S. is the
+score contributed by domain specific constraints
+ψ1, ... , ψn. with their respective scores ρ1,... , ρn�.
+In particular, ψp(d, C) measures the extent to which
+a given clustering C satisfies the pth constraint. Note
+that this framework is general and can be applied to
+inject mention-to-cluster or cluster-to-cluster level
+constraints too. However, for simplicity, we con-
+sider here only constraints between mention pairs.
+This allows us derive fast greedy algorithm to solve
+the inference problem. The details of our constraints
+are presented in Sec. 5.
+All of our constraints can be categorized into two
+groups: “must-link” and “cannot-link”.“Must-link”
+constraints encourage a pair of mentions to connect,
+while “cannot-link” constraints discourage mention
+pairs from being linked. Consequently, the coeffi-
+cients ρp associated with “must-link” constraints are
+positive while ρp for “cannot-link” constraints are
+negative. In the following, we briefly discuss how to
+</bodyText>
+<equation confidence="0.368133">
+(3)
+</equation>
+<page confidence="0.986236">
+604
+</page>
+<bodyText confidence="0.998003666666667">
+solve the inference problem with these two types of
+constraints.
+We slightly abuse notations and use ψp(j, i) to in-
+dicate the pth constraint on a pair of mentions (i, j).
+ψp(j, i) is a binary function that is 1 iff two mentions
+i and j satisfy the conditions specified in constraint
+p. Chang et al. (2011) shows that best-left-link in-
+ference can be formulated as an ILP problem. When
+we add constraints, the ILP becomes:
+</bodyText>
+<equation confidence="0.990398142857143">
+X X
+arg max i,j:j&lt;i wjiBji + i,j ρpψp(j, i)Cij
+B,CE{0,1}
+s.t Ckj &gt;_ Cij + Cki − 1, Vi, j, k,
+i−1
+Xj=0 Bji = 1, Vi
+Bji &lt; Cji,Cji = Cji, Vi, j,
+</equation>
+<bodyText confidence="0.9962604">
+where Cij - C(i, j) is a binary variable indicating
+whether i and j are in the same cluster or not and
+Bji is an auxiliary variable indicating the best-left-
+link for mention i. The first set of inequality con-
+straints in (5) enforces the transitive closure of the
+clustering. The constraints Bji &lt; Cji, Vi, j enforce
+the consistency between these two sets of variables.
+One can use an off-the-shelf solver to solve Eq.
+(5). However, when the absolute values of the con-
+straint scores (|ρp|) are high (the hard constraint
+case), then the following greedy algorithm approxi-
+mately solves the inference efficiently. We scan the
+document from left-to-right (or in any other arbitrary
+order). When processing mention i, we find
+�
+wji +Xk: C(k,j)=1 p ρp P (k, i),
+where Cˆ is the current clustering obtained from the
+previous inference steps. Then, we add a link be-
+tween mention i and j*. The rest of the infer-
+ence process is the same as in the original best-left-
+link inference. Specifically, this inference procedure
+combines the classifier score for mention pair i, j,
+with the constraints score of all mentions currently
+co-clustered with j. We discuss this further in Sec-
+tion 5.
+</bodyText>
+<sectionHeader confidence="0.997059" genericHeader="method">
+4 Probabilistic Latent Left-Linking Model
+</sectionHeader>
+<bodyText confidence="0.999664">
+In this section, we extend and generalize our left-
+linking model approach to a probabilistic model,
+Probabilistic Latent Left-Linking Model (PL3M),
+that allows us to naturally consider mention-to-
+entity (or mention-to-cluster) links. While in L3M,
+we assumed that each mention links determinis-
+tically to the max-scoring mention on its left, in
+PL3M, we assume that mention i links to mention
+j, j &lt; i, with probability given by
+</bodyText>
+<equation confidence="0.962290333333333">
+e � (w·φ(i,j))
+Pr[j +— i; d, w] = 1
+Zi(w, γ) . (7)
+</equation>
+<bodyText confidence="0.976729181818182">
+Here Zi(w, γ) = P0&lt;k&lt;i e f (w·φ(i,k)) is a normal-
+izing constant and γ E (0, 1] is a constant tem-
+perature parameter that is tuned on a development
+set (Samdani et al., 2012). We assume that the event
+that mention i links to a mention j is independent of
+the event that mention i′ links to j′ for i =� i′.
+Inference with PL3M: Given the probability of a
+link as in Eq. (7), the probability that mention i joins
+an existing cluster c, Pr[c O i; d, w], is simply the
+sum of the probabilities of i linking to the mentions
+inside c:
+</bodyText>
+<equation confidence="0.9981342">
+Pr[c O i; d, w] = X Pr[j +— i; d, w]
+jEc,0&lt;j&lt;i
+e�(w·φ(i,j))
+1
+Zi(d, w, γ) . (8)
+</equation>
+<bodyText confidence="0.999752684210527">
+Based on Eq. (8) and making use of the indepen-
+dence assumption of left-links, we follow a simple
+greedy clustering (or inference) algorithm: sequen-
+tially add each mention i to a previously formed
+cluster c*, where c* = arg maxc Pr[c O i; d, w].
+If the arg max cluster is the singleton cluster with
+the dummy mention 0 (i.e. the score of all other
+clusters is below the threshold of 0), then i starts a
+new cluster and is not included in the dummy clus-
+ter. Note that we link a mention to a cluster tak-
+ing into account all the mentions inside that cluster,
+mimicking the notion of a mention-to-cluster link.
+This provides more expressiveness than the Best-
+Left-Link inference, where a mention connects to
+a cluster solely based on a single pairwise link to
+some antecedent mention (the best-link mention) in
+that cluster.
+The case of γ = 0: As γ approaches zero, it is
+easy to show that the probability P[j +— i; d, w]
+</bodyText>
+<equation confidence="0.9848755">
+j∗ = arg max
+j&lt;i
+X=
+jEc,0&lt;j&lt;i
+</equation>
+<page confidence="0.973558">
+605
+</page>
+<bodyText confidence="0.99963847826087">
+in Eq. (7) approaches a Kronecker delta function
+that puts probability 1 on the max-scoring mention
+j = arg max0≤k&lt;i w·φ(i, j) (assuming no ties), and
+0 everywhere else (Pletscher et al., 2010; Samdani et
+al., 2012). Consequently, as γ —* 0, Pr[c O i; d, w]
+in Eq. 8 approaches a Kronecker delta function cen-
+tered on the cluster containing the max-scoring men-
+tion, thus reducing to the best-link case of L3M.
+Thus, PL3M, when tuning the value of γ, is a strictly
+more general model than L3M.
+Learning with PL3M We use a likelihood-based
+approach to learning with PL3M, and first compute
+the probability Pr[C; d, w] of generating a cluster-
+ing C, given w. We then learn w by minimizing
+the regularized negative log-likelihood of the data,
+augmenting the partition function with a loss-based
+margin (Gimpel and Smith, 2010). We omit the de-
+tails of likelihood computation due to lack of space.
+With PL3M, we again follow a stochastic gradi-
+ent descent technique instead of CCCP for the same
+reasons mentioned in Sec. 3.3. The stochastic gra-
+dient (subgradient when γ = 0) w.r.t. mention i in
+document d is given by
+</bodyText>
+<equation confidence="0.8288355">
+VLL(w)id a � pjφ(i, j) − � p′jφ(i, j) + λw,
+0≤j&lt;i 0≤j&lt;i
+</equation>
+<bodyText confidence="0.999976">
+where pj and p′j, j = 0, ... , i − 1, are non-negative
+weights that sum to one and are given by
+</bodyText>
+<equation confidence="0.978498">
+, (w·φ(i,k)+δ(Cd,i,k)) and
+E0≤k&lt;i e
+C, (i j)Zi(d �&apos;�&apos;&apos;
+_ &apos; &apos; PrU +— i; d, w]
+p′j Zi (Cd; d, w, γ) W .
+</equation>
+<bodyText confidence="0.999914428571429">
+Interestingly, the above update rule generalizes the
+one for L3M, as we are incorporating a weighted
+sum of all previous mentions in the update rule.
+With γ —* 0, the SGD in Eq. (4) converges to the
+SGD update in L3M (Eq. (4)). Finally, in the pres-
+ence of constraints, we can fold them inside the pair-
+wise link probabilities as in Eq. (6).
+</bodyText>
+<sectionHeader confidence="0.999107" genericHeader="evaluation">
+5 Experiments and Results
+</sectionHeader>
+<bodyText confidence="0.999948352941176">
+In this section, we present our experiments on the
+two commonly used benchmarks for coreference
+— Ontonotes-5.0 (Pradhan et al., 2012) and ACE
+2004 (NIST, 2004). Table 1 exhibits our bottom line
+results: CL3M achieves the best result reported on
+Ontonotes-5.0 development set and essentially ties
+with (Fernandes et al., 2012) on the test set. As
+shown in Table 3, CL3M is also the best algorithm
+on ACE and when evaluated on the gold mentions
+of Ontonotes. We show that CL3M performs partic-
+ularly well on clusters containing named entity men-
+tions, which are more important for many informa-
+tion extraction applications. In the rest of this sec-
+tion, after describing our experimental setting, we
+provide careful analysis of our algorithms and com-
+pare them to competitive coreference approaches in
+the literature.
+</bodyText>
+<subsectionHeader confidence="0.887692">
+5.1 Experimental Setup
+</subsectionHeader>
+<bodyText confidence="0.998091375">
+Datasets: ACE 2004 contains 443 documents —
+we used a standard split of these documents into
+268 training, 68 development, and 106 testing doc-
+uments used by Culotta et al. (2007) and Bengt-
+son and Roth (2008). OntoNotes-5.0 dataset, re-
+leased for the CoNLL 2012 Shared Task (Pradhan et
+al., 2012), is by far the largest annotated corpus on
+coreference. It contains 3,145 annotated documents
+drawn from a wide variety of sources — newswire,
+bible, broadcast transcripts, magazine articles, and
+web blogs. We report results on both development
+set and test set. To test on the development set, we
+further split the training data into training and devel-
+opment sets.
+Classifier details: For each of the pairwise ap-
+proaches, we assume the pairwise score is given by
+w·φ(·, ·)+t where φ are the features, w is the weight
+vector learned by the approach, and t is a threshold
+which we set to 0 during learning (as in Eq. (1)), but
+use a tuned value (tuned on a development set) dur-
+ing testing. For learning with L3M, we do stochastic
+gradient descent with 5 passes over the data. Empir-
+ically, we observe that this is enough to generate a
+stable model. For PL3M (Sec. 4), we tune the value
+of γ using the development set picking the best γ
+from 10.0, 0.2, ... ,1.0}. Recall that when γ = 0,
+PL3M is the same as L3M. We refer to L3M and
+PL3M with incorporating constraints during infer-
+ence as CL3M and CPL3M (Sec. 3.4), respectively.
+Metrics: We compare the systems using three
+popular metrics for coreference — MUC (Vilain et
+al., 1995), BCUB (Bagga and Baldwin, 1998), and
+</bodyText>
+<equation confidence="0.977511666666667">
+e, (w·φ(i,j)+δ(Cd,i,j))
+1
+pj =
+</equation>
+<page confidence="0.985369">
+606
+</page>
+<bodyText confidence="0.999012461538461">
+Entity-based CEAF (CEAF,) (Luo, 2005). Follow-
+ing, the CoNLL shared tasks (Pradhan et al., 2012),
+we use the average F1 scores of these three metrics
+as the main metric of comparison.
+Features: We build our system on the publicly
+available Illinois-Coref system1 primarily because it
+contains a rich set of features presented in Bengtson
+and Roth (2008) and Chang et al. (2012a) (the latter
+adds features for pronominal anaphora resolution).
+We also compare with the Best-Left-Link approach
+described by Bengtson and Roth (2008).
+Constraints: We consider the following con-
+straints in CL3M and CPL3M.
+</bodyText>
+<listItem confidence="0.912551258064516">
+• SameSpan: two mentions must be linked to
+each other if they share the same surface text
+span and the number of words in the text span
+is larger than a threshold (set as 5 in our imple-
+mentation).
+• SameDetNom: two mentions must be linked
+to each other if both mentions start with a de-
+terminer and the [0,1] wordnet-based similarity
+score between the mention head words is above
+a threshold (set to 0.8).
+• SameProperName: two mentions must be
+linked if they are both proper names and the
+similarity score measured by a named entity-
+based similarity metric, Illinois NESim2, are
+higher than a threshold (set to 0.8). For a per-
+son entity we add additional rules to extract the
+first name, last name and professional title as
+properties.
+• ModifierMismatch: the constraint prevents two
+mentions to be linked if the head modifiers
+conflict. For example, the constraint prevents
+“northern Taiwan” from linking to “southern
+Taiwan”. We gather a list of mutual exclusive
+modifiers from the training data.
+• PropertyMismatch: the constraint prevents two
+mentions to be linked if their properties con-
+flict. For example, it prevents male pronouns
+to link to female pronouns and “Mr. Clinton”
+to link to “Mrs. Clinton” by checking the gen-
+der property. The properties we consider are
+gender, number, professional title and the na-
+</listItem>
+<footnote confidence="0.98485175">
+1The system is available at http://cogcomp.cs.
+illinois.edu/page/software_view/Coref/
+2http://cogcomp.cs.illinois.edu/page/
+software_view/NESim
+</footnote>
+<table confidence="0.999936526315789">
+MUC BCUB CEAF, AVG
+Dev Set
+Stanford 64.30 70.46 46.35 60.37
+(Chang et al., 2012a) 65.75 70.25 45.30 60.43
+(Martschat et al., 2012) 66.76 71.91 47.52 62.06
+(Bj¨orkelund and Farkas, ) 67.12 71.18 46.84 61.71
+(Chen and Ng, 2012) 66.4 71.8 48.8 62.3
+(Fernandes et al., 2012) 69.46 71.93 48.66 63.35
+L3M 67.88 71.88 47.16 62.30
+CL3M 69.20 72.89 48.67 63.59
+Test Set
+Stanford 63.83 68.52 45.36 59.23
+(Chang et al., 2012a) 66.38 69.34 44.81 60.18
+(Martschat et al., 2012) 66.97 70.36 46.60 61.31
+(Bj¨orkelund and Farkas, ) 67.58 70.26 45.87 61.24
+(Chen and Ng, 2012) 63.7 69.0 46.4 59.7
+(Fernandes et al., 2012) 70.51 71.24 48.37 63.37
+L3M 68.31 70.81 46.73 61.95
+CL3M 69.64 71.93 48.32 63.30
+</table>
+<tableCaption confidence="0.998913">
+Table 1: Performance on OntoNotes-5.0 with predicted
+</tableCaption>
+<bodyText confidence="0.8383360625">
+mentions. We report the F1 scores (%) on various coref-
+erence metrics (MUC, BCUB, CEAF). The column AVG
+shows the average scores of the three. We observe that
+PL3M and CPL3M (see Sec. 4) yields the same perfor-
+mance as L3M and CL3M, respectively as the tuned y for
+all the datasets turned out to be 0.
+tionality.
+While the “must-link” constraints described in the
+paper can be treated as features, due to their high
+precision, treating them as hard constraints (set p to
+a high value) is a safe and direct way to inject hu-
+man knowledge into the learning model. Moreover,
+our framework allows a constraint to use informa-
+tion from previous decisions (such as “cannot-link”
+constraints). Treating such constraints as features
+will complicate the learning model.
+</bodyText>
+<subsectionHeader confidence="0.99946">
+5.2 Performance of the End-to-End System
+</subsectionHeader>
+<bodyText confidence="0.99989825">
+We compare our system with the top systems re-
+ported in the CoNLL shared task 2012 as well as
+with the Stanford’s publicly released rule-based sys-
+tem (Lee et al., 2013; Lee et al., 2011), which won
+the CoNLL 2011 Shared Task (Pradhan et al., 2011).
+Note that all the systems use the same annotations
+(e.g., gender prediction, part-of-speech tags, name
+entity tags) provided by the shared task organizers.
+</bodyText>
+<page confidence="0.996533">
+607
+</page>
+<bodyText confidence="0.999732125">
+However, each system implements its own mention
+detector and pipelines the identified mentions into
+the coreference clustering component. Moreover,
+different systems use a different set of features. In
+order to partially control for errors on mention de-
+tection and better evaluate the clustering component
+in our coreference system, we will also present re-
+sults on correct (gold) mentions in the next section.
+Table 1 shows the end-to-end results. On the
+development set, only the best performing system
+of Fernandes et al. (2012) is better than L3M, but this
+difference disappears when we use our system with
+constraints, CL3M. Although our system is much
+simple, it achieves the best B3 score on the test set
+and is competitive with the best system participated
+in the CoNLL shared task 2012.
+Performance on named entities: The corefer-
+ence annotation in Ontonotes 5.0 includes various
+types of mentions. However, not all mention types
+are equally interesting. In particular, clusters which
+contain at least one proper name or a named entity
+mention are more important for information extrac-
+tion tasks like Wikification (Mihalcea and Csomai,
+2007; Ratinov et al., 2011), cross-document coref-
+erence resolution (Bagga and Baldwin, 1998), and
+entity linking and knowledge based population (Ji
+and Grishman, 2011).
+Inspired by this, we compare our system to the
+best systems in the CoNLL shared task of 2011
+(Stanford (Lee et al., 2011)) and 2012 (Fernan-
+des (Fernandes et al., 2012)) on the following spe-
+cific tasks on Ontonotes-5.0.
+</bodyText>
+<listItem confidence="0.99638275">
+• ENT-C: Evaluate the system on clusters that
+contain at least one proper name mention. We
+generate the gold annotation and system out-
+puts by using the gold and predicted name en-
+tity tag annotations provided by the CoNLL
+shard task 2012. That is, if a cluster does not
+include any name entity mention, then it will
+be removed from the final clustering.
+• PER-C: As in the construction of ENT-C, but
+here we only consider clusters which contain at
+least one “Person (PER)” entity.
+• ORG-C: As in the construction of Entity-C, but
+</listItem>
+<bodyText confidence="0.78457425">
+here we only consider clusters which contain at
+least one “Organization (ORG)” entity.
+Typically, the clusters that get ignored in the above
+definitions contain only first and second person
+</bodyText>
+<table confidence="0.99885925">
+Task Stanford Fernandes L3M CL3M
+ENT-C 44.06 47.05 46.63 48.02
+PER-C 34.04 36.43 37.01 37.57
+ORG-C 25.02 26.23 26.22 27.01
+</table>
+<tableCaption confidence="0.794289">
+Table 2: Performance on named entities for OntoNotes-
+5.0 data. We compare our system to Fernandes (Fernan-
+des et al., 2012) and Stanford (Lee et al., 2013) systems.
+</tableCaption>
+<bodyText confidence="0.999776863636364">
+pronouns (which often happens in transcribed dis-
+course.) Also note that all the systems are trained
+with the same name entity tags, provided by the
+shared task organizers, and we use the same name
+entity tags to construct the specific clustering. Also,
+in order to further ensure fairness, we do not tune
+our system to favor the evaluation of these specific
+types of clusters. We chose to do so because we only
+have access to the system output of Fernandes et al.
+(2012).
+Table 2 shows the results. The performance of
+all systems degrades when considering only clusters
+that contain name entities, indicating that ENT-C is
+actually a harder task than the original coreference
+resolution problem. In particular, resolving ORG
+coreferent clusters is hard, because names of organi-
+zations are sometimes confused with person names,
+and they can be referred to using a range of pronouns
+(including “we” and “it”). Overall, CL3M outper-
+forms all the competing systems on the clusters that
+contain at least one specific type of entity by a mar-
+gin larger than that for the overall coreference.
+</bodyText>
+<subsectionHeader confidence="0.999581">
+5.3 Analysis on Gold Mentions
+</subsectionHeader>
+<bodyText confidence="0.9998524">
+To better understand the contribution of our joint
+learning and clustering model, we present experi-
+ments assuming that gold mentions are given. The
+definitions of gold mentions in ACE and Ontonotes
+are different because Ontonotes-5.0 excludes single-
+ton clusters in the annotation. In addition, Ontonotes
+includes longer mentions; for example, it includes
+NP and appositives in the same mention. We com-
+pare with the publicly available Stanford (Lee et al.,
+2011) and IllinoisCoref (Chang et al., 2012a) sys-
+tems; the system of Fernandes et al. (2012) is not
+publicly available. In addition, we also compare
+with the following two structured prediction base-
+lines that use the same set of features as L3M and
+PL3M.
+</bodyText>
+<page confidence="0.995642">
+608
+</page>
+<table confidence="0.999936">
+MUC BCUB CEAFe AVG
+ACE 2004 Gold Ment.
+All-Link-Red. 77.45 81.10 77.57 78.71
+Spanning 73.31 79.25 74.66 75.74
+IllinoisCoref 76.02 81.04 77.6 78.22
+Stanford 75.04 80.45 76.75 77.41
+(Stoyanov and Eisner, 2012) 80.1 81.8 - -
+L3M 77.57 81.77 78.15 79.16
+PL3M 78.18 82.09 79.21 79.83
+CL3M 78.17 81.64 78.45 79.42
+CPL3M 78.29 82.20 79.26 79.91
+Ontonotes 5.0 Gold Ment.
+All-Link-Red. 83.72 75.59 64.00 74.44
+Spanning 83.64 74.83 61.07 73.18
+IllinoisCoref 80.84 74.29 65.96 73.70
+Stanford 82.26 76.82 61.69 73.59
+L3M 83.44 78.12 64.56 75.37
+PL3M 83.97 78.25 65.69 75.97
+CL3M 84.10 78.30 68.74 77.05
+CPL3M 84.80 78.74 68.75 77.43
+</table>
+<tableCaption confidence="0.8163175">
+Table 3: Performance on ACE 2004 and OntoNotes-5.0.
+All-Link-Red. is based on correlational clustering; Span-
+</tableCaption>
+<bodyText confidence="0.4776725">
+ning is based on latent spanning forest based clustering
+(see Sec. 2). Our proposed approach is L3M (Sec. 3) and
+PL3M (sec. 4). CL3M and CPL3M are the version with
+incorporating constraints.
+</bodyText>
+<listItem confidence="0.999499909090909">
+1. All-Link-Red: a reduced and faster alterna-
+tive to the correlational clustering based ap-
+proach (Finley and Joachims, 2005). We im-
+plemented this algorithm as an ILP and droped
+one of the three transitivity constraints for each
+triplet of mention variables. Following Pascal
+and Baldridge (2009) and Chang et al. (2011)
+we observe that this slightly improves the ac-
+curacy over a pure correlation clustering ap-
+proach, in addition to speeding up inference.
+2. Spanning: the latent spanning forest based ap-
+</listItem>
+<bodyText confidence="0.860459285714286">
+proach presented by Yu and Joachims (2009).
+We use the publicly available implementation
+provided by the authors3 for the ACE data;
+since their CCCP implementation is slow, we
+implemented our own stochastic gradient de-
+scent version to scale it to the much larger
+Ontonotes data.
+</bodyText>
+<footnote confidence="0.982638">
+3Available at http://www.cs.cornell.edu/ cnyu/latentssvm/
+</footnote>
+<bodyText confidence="0.999857666666667">
+Table 3 lists the results. Although L3M is simple
+and use only the features defined on pairwise men-
+tions, it compares favorably with all recently pub-
+lished results. Moreover, the probabilistic general-
+ization of L3M, PL3M, achieves even better perfor-
+mance. For example, L3M with -y = 0.2 improves
+L3M with -y = 0 by 0.7 points in ACE 2004. In par-
+ticular, This shows that considering more than a one
+left-links is helpful. This is in contrast with the pre-
+dicted mentions where -y = 0 performed best. We
+suspect that this is because noisy mentions can hurt
+the performance of PL3M that takes into account
+not just the best scoring links, but also weaker links
+which are likely to be less reliable (more false pos-
+itives). Also, as opposed to what is reported by Yu
+and Joachims (2009), the correlation clustering ap-
+proach performs better than the spanning forest ap-
+proach. We think that this is because we compare
+the systems on different metrics than they did and
+also because we use exact ILP inference for corre-
+lational clustering whereas Yu and Joachims (2009)
+used approximate greedy inference.
+Both L3M and PL3M can be benefit from using
+constraints. However, The constraints improve only
+marginally on the ACE 2004 data because ACE uses
+shorter phrases as mentions. Consequently, con-
+straints designed for leveraging information from
+long mention spans are less effective. Overall, the
+experiments show that L3M and PL3M perform well
+on modeling coreference clustering.
+</bodyText>
+<subsectionHeader confidence="0.995728">
+5.4 Ablation Study of Constrains
+</subsectionHeader>
+<bodyText confidence="0.999993">
+Finally, we study the value of individual constraints
+by adding one constraint at a time to the corefer-
+ence system starting with the simple L3M model.
+The system with all the constraints added is the
+CL3M model introduced in Table 1. We then re-
+move individual constraints from CL3M to assess
+its contribution. Table 4 shows the results on the
+Ontonotes dataset with predicted mentions. Overall,
+it is shown that each one of the constraints has a con-
+tribution, and that using all the constraints improves
+the performance of the system by 1.29% in the AVG
+F1 score. In particular, most of this improvement
+(1.19%) is due to the must-link constraints (the first
+four constraints in the table). The must-link con-
+straints are more useful for L3M as L3M achieves
+higher precision than recall (e.g., the precision and
+</bodyText>
+<page confidence="0.996532">
+609
+</page>
+<table confidence="0.999784461538462">
+MUC BCUB CEAF, AVG
+L3M 67.88 71.88 47.16 62.30
++SameSpan 68.27 72.27 47.73 62.75
++SameDetNom 68.79 72.57 48.30 63.22
++SameProperName 69.11 72.81 48.56 63.49
++ModifierMismatch 69.11 72.81 48.58 63.50
++PropertyMismatch 69.20 72.89 48.67 63.59
+(i.e. CL3M)
+-SameSpan 68.91 72.66 48.36 63.31
+-SameDetNom 68.62 72.51 48.06 63.06
+-SameProperName 68.97 72.69 48.50 63.39
+-ModifierMismatch 69.12 72.80 48.63 63.52
+-PropertyMismatch 69.11 72.81 48.58 63.50
+</table>
+<tableCaption confidence="0.845542">
+Table 4: Ablation study on constraints. We first show
+cumulative performance on OntoNotes-5.0 data with pre-
+dicted mentions as constraints are added one at a time into
+</tableCaption>
+<bodyText confidence="0.851999714285714">
+the coreference system. Then we demonstrate the value
+of individual constraints by leaving out one constraint at
+each time.
+recall of L3M are 78.38% and 67.96%, respectively
+in B3). As a result, the must-link constraints, which
+aim at improving the recall, do better when optimiz-
+ing F1.
+</bodyText>
+<sectionHeader confidence="0.999603" genericHeader="conclusions">
+6 Conclusions
+</sectionHeader>
+<bodyText confidence="0.993802130434782">
+We presented a principled yet simple framework for
+coreference resolution. Furthermore, we showed
+that our model can be augmented in a straightfor-
+ward way with knowledge based constraints, to im-
+prove performance. We also presented a probabilis-
+tic generalization of this model that can take into
+account entity-mention links by considering mul-
+tiple possible coreference links. We proposed a
+fast stochastic gradient-based learning technique for
+our model. Our model, while operating at men-
+tion pair granularity, obtains state-of-the-art results
+on OntoNotes-5.0, and performs especially well on
+mention clusters containing named entities. We pro-
+vided a detailed analysis of our experimental results.
+Acknowledgments Supported by the Intelligence Advanced
+Research Projects Activity (IARPA) via Department of Interior National
+Business Center contract number D11PC20155. The U.S. Government
+is authorized to reproduce and distribute reprints for Governmental pur-
+poses notwithstanding any copyright annotation thereon. Disclaimer:
+The views and conclusions contained herein are those of the authors and
+should not be interpreted as necessarily representing the official policies
+or endorsements, either expressed or implied, of IARPA, DoI/NBC, or
+the U.S. Government.
+</bodyText>
+<sectionHeader confidence="0.995577" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.99976904347826">
+A. Bagga and B. Baldwin. 1998. Algorithms for scoring
+coreference chains. In In The First International Con-
+ference on Language Resources and Evaluation Work-
+shop on Linguistics Coreference.
+M. Bansal and D. Klein. 2012. Coreference semantics
+from web features. In Proceedings ofACL, Jeju Island,
+South Korea, July.
+N. Bansal, A. Blum, and S. Chawla. 2002. Correlation
+clustering. In Proceedings of the 43rd Symposium on
+Foundations of Computer Science.
+E. Bengtson and D. Roth. 2008. Understanding the value
+of features for coreference resolution. In EMNLP, 10.
+A. Bj¨orkelund and R. Farkas.
+K.-W. Chang, R. Samdani, A. Rozovskaya, N. Rizzolo,
+M. Sammons, and D. Roth. 2011. Inference protocols
+for coreference resolution. In CoNLL Shared Task.
+K.-W. Chang, R. Samdani, A. Rozovskaya, M. Sammons,
+and D. Roth. 2012a. Illinois-coref: The UI system
+in the CoNLL-2012 Shared Task. In CoNLL Shared
+Task.
+M. Chang, L. Ratinov, and D. Roth. 2012b. Structured
+learning with constrained conditional models. Ma-
+chine Learning, 88(3):399–431, 6.
+C. Chen and V. Ng. 2012. Combining the best of two
+worlds: A hybrid approach to multilingual corefer-
+ence resolution. In Joint Conference on EMNLP and
+CoNLL - Shared Task.
+J. Clarke and M. Lapata. 2006. Constraint-based
+sentence compression: An integer programming ap-
+proach. In Proceedings of the Annual Meeting of
+the Association for Computational Linguistics (ACL),
+pages 144–151, Sydney, Australia, July. ACL.
+A. Culotta, M. Wick, R. Hall, and A. McCallum. 2007.
+First-order probabilistic models for coreference reso-
+lution. In HLT/NAACL.
+P. Denis and J. Baldridge. 2007. Joint determination of
+anaphoricity and coreference resolution using integer
+programming. In Proceedings of the Annual Meeting
+of the North American Association of Computational
+Linguistics (NAACL).
+P. Denis and J. Baldridge. 2008. Specialized models and
+ranking for coreference resolution. In EMNLP, pages
+660–669.
+G. Durrett, D. Hall, and D. Klein. 2013. Decentral-
+ized entity-level modeling for coreference resolution.
+In Proceedings ofACL, August.
+</reference>
+<page confidence="0.967652">
+610
+</page>
+<reference confidence="0.999920632075472">
+E. R. Fernandes, C. N. dos Santos, and R. L. Milidi´u.
+2012. Latent structure perceptron with feature induc-
+tion for unrestricted coreference resolution. In Joint
+Conference on EMILP and CoILL - Shared Task.
+T. Finley and T. Joachims. 2005. Supervised cluster-
+ing with support vector machines. In Proceedings
+of the International Conference on Machine Learning
+(ICML).
+K. Ganchev, J. Grac¸a, J. Gillenwater, and B. Taskar.
+2010. Posterior regularization for structured latent
+variable models. Journal of Machine Learning Re-
+search.
+K. Gimpel and N. A. Smith. 2010. Softmax-margin
+CRFs: Training log-linear models with cost functions.
+In IAACL.
+A. Haghighi and D. Klein. 2010. Coreference resolution
+in a modular, entity-centered model. In IAACL.
+H. Ji and R. Grishman. 2011. Knowledge base popula-
+tion: successful approaches and challenges. In Pro-
+ceedings of the 49th Annual Meeting of the Associa-
+tion for Computational Linguistics: Human Language
+Technologies - Volume 1.
+T. Koo, A. M. Rush, M. Collins, T. Jaakkola, and D. Son-
+tag. 2010. Dual decomposition for parsing with non-
+projective head automata. In EMILP.
+H. Lee, Y. Peirsman, A. Chang, N. Chambers, M. Sur-
+deanu, and D. Jurafsky. 2011. Stanford’s multi-
+pass sieve coreference resolution system at the conll-
+2011 shared task. In Proceedings of the CoILL-2011
+Shared Task.
+H. Lee, A. Chang, Y. Peirsman, N. Chambers, M. Sur-
+deanu, and D. Jurafsky. 2013. Deterministic coref-
+erence resolution based on entity-centric, precision-
+ranked rules. Computational Linguistics, 39(4).
+X. Luo. 2005. On coreference resolution performance
+metrics. In EMILP.
+S. Martschat, J. Cai, S. Broscheit, ´E. M´ujdricza-Maydt,
+and M. Strube. 2012. A multigraph model for corefer-
+ence resolution. In Joint Conference on EMILP and
+CoILL - Shared Task, July.
+A. McCallum and B. Wellner. 2003. Toward condi-
+tional models of identity uncertainty with application
+to proper noun coreference. In The Conference on
+Advances in Ieural Information Processing Systems
+(IIPS).
+R. Mihalcea and A. Csomai. 2007. Wikify!: linking doc-
+uments to encyclopedic knowledge. In CIKM.
+V. Ng and C. Cardie. 2002. Improving machine learning
+approaches to coreference resolution. In ACL.
+Vincent Ng. 2005. Supervised ranking for pronoun res-
+olution: Some recent improvements. In AAAI, pages
+1081–1086.
+NIST. 2004. The ACE evaluation plan.
+D. Pascal and J. Baldridge. 2009. Global joint models for
+coreference resolution and named entity classification.
+In Procesamiento del Lenguaje Iatural.
+P. Pletscher, C. S. Ong, and J. M. Buhmann. 2010. En-
+tropy and margin maximization for structured output
+learning. In ECML PKDD.
+S. Pradhan, L. Ramshaw, M. Marcus, M. Palmer,
+R. Weischedel, and N. Xue. 2011. Conll-2011 shared
+task: Modeling unrestricted coreference in ontonotes.
+In CoILL.
+S. Pradhan, A. Moschitti, N. Xue, O. Uryupina, and
+Y. Zhang. 2012. CoNLL-2012 shared task: Modeling
+multilingual unrestricted coreference in OntoNotes. In
+CoILL 2012.
+M. Sammons Y. Tu V. Vydiswaran Q. Do, D. Roth. 2009.
+Robust, light-weight approaches to compute lexical
+similarity. Technical report.
+K. Raghunathan, H. Lee, S. Rangarajan, N. Chambers,
+M. Surdeanu, D. Jurafsky, and C. Manning. 2010.
+A multi-pass sieve for coreference resolution. In
+EMILP.
+A. Rahman and V. Ng. 2011a. Coreference resolution
+with world knowledge. In ACL, pages 814–824.
+A. Rahman and V. Ng. 2011b. Ensemble-based corefer-
+ence resolution. In IJCAI.
+A. Rahman and V. Ng. 2011c. Narrowing the modeling
+gap: a cluster-ranking approach to coreference resolu-
+tion. JAIR.
+W.M. Rand. 1971. Objective criteria for the evaluation
+of clustering methods. Journal of the American Statis-
+tical Association, 66(336):846–850.
+L. Ratinov and D. Roth. 2012. Learning-based multi-
+sieve co-reference resolution with knowledge. In
+EMILP.
+L. Ratinov, D. Roth, D. Downey, and M. Anderson.
+2011. Local and global algorithms for disambiguation
+to wikipedia. In Proc. of the Annual Meeting of the
+Association for Computational Linguistics (ACL).
+Dan Roth and Wen Tau Yih. 2004. A linear program-
+ming formulation for global inference in natural lan-
+guage tasks. In Proceedings of CoILL-04, pages 1–8.
+R. Samdani, M. Chang, and D. Roth. 2012. Unified ex-
+pectation maximization. In IAACL.
+W. M. Soon, H. T. Ng, and D. C. Y. Lim. 2001. A ma-
+chine learning approach to coreference resolution of
+noun phrases. Comput. Linguist.
+V. Stoyanov and J. Eisner. 2012. Easy-first coreference
+resolution. In COLIIG, pages 2519–2534.
+V. Stoyanov, N. Gilbert, C. Cardie, and E. Riloff. 2009.
+Conundrums in noun phrase coreference resolution:
+making sense of the state-of-the-art. In ACL.
+M. Vilain, J. Burger, J. Aberdeen, D. Connolly, and
+L. Hirschman. 1995. A model-theoretic coreference
+</reference>
+<page confidence="0.976247">
+611
+</page>
+<reference confidence="0.995817428571429">
+scoring scheme. In Proceedings of the 6th conference
+on Message understanding.
+C. Yu and T. Joachims. 2009. Learning structural svms
+with latent variables. In Proceedings of the Interna-
+tional Conference on Machine Learning (ICML).
+A. L. Yuille and A. Rangarajan. 2003. The concave-
+convex procedure. Neural Computation, 15(4).
+</reference>
+<page confidence="0.997479">
+612
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.942080">
+<title confidence="0.999873">A Constrained Latent Variable Model for Coreference Resolution</title>
+<author confidence="0.999496">Kai-Wei Chang Rajhans Samdani Dan</author>
+<affiliation confidence="0.980118">University of Illinois at</affiliation>
+<abstract confidence="0.997555125">Coreference resolution is a well known clustering task in Natural Language Processing. In this paper, we describe the Latent Left Linking a novel, principled, and linguistically motivated latent structured prediction approach to coreference resolution. We show admits efficient inference and can be augmented with knowledge-based constraints; we also present a fast stochastic gradient based learning. Experiments on ACE and Ontonotes show that and its constrained verare more accurate than several state-of-the-art approaches as well as some structured prediction models proposed in the literature.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>A Bagga</author>
+<author>B Baldwin</author>
+</authors>
+<title>Algorithms for scoring coreference chains. In</title>
+<date>1998</date>
+<booktitle>In The First International Conference on Language Resources and Evaluation Workshop on Linguistics Coreference.</booktitle>
+<contexts>
+<context position="13487" citStr="Bagga and Baldwin, 1998" startWordPosition="2166" endWordPosition="2169">not only over training documents, but also over individual mentions in each document, we can perform SGD on a per-mention basis. The stochastic sub-gradient w.r.t. mention i in document d is given by ∇L(w)id a φ(j′, i) − φ(j′′, i) + λw, where (4) j′ =arg max (w · φ(j, i) + 1 − Cd(i, j)) 0≤j&lt;i L(w) = 2 11w112 +|D |dE md (max (s d, w) j′′ =arg max w · φ(j, i) 0≤j&lt;i,C(i,j)=1 + Δ(C,Cd)) − s(Cd; d, w)) , where Δ(C, Cd) is a loss function used in coreference. In order to achieve tractable loss-augmented minimization — something not possible with standard loss functions used in coreference (e.g. B3 (Bagga and Baldwin, 1998)) — we use a decomposable loss function that just counts the number of mention pairs on which C and Cd disagree: Δ(C,Cd) = E�di��=0J&lt;i IC(iJ)=Cd(iJ), where I is a binary indicator function. This loss function is equivalent to the numerator of the Rand index loss (Rand, 1971). With this form of loss function and using the scoring function in Eq. (2), we can write L(w) as 2 an d 211w11 + |D |d� md E(m� (w · φ(j, i) i=1 � + δ(Cd, i, j)� − max (w · φ(j, i)) , 0≤j&lt;i,C(i,j)=1 where δ(Cd, i, j) = 1 − Cd(i, j) is the loss-based margin that is 1 if i and j are not coreferent in Cd, and is 0 otherwise. </context>
+<context position="24152" citStr="Bagga and Baldwin, 1998" startWordPosition="4061" endWordPosition="4064">value (tuned on a development set) during testing. For learning with L3M, we do stochastic gradient descent with 5 passes over the data. Empirically, we observe that this is enough to generate a stable model. For PL3M (Sec. 4), we tune the value of γ using the development set picking the best γ from 10.0, 0.2, ... ,1.0}. Recall that when γ = 0, PL3M is the same as L3M. We refer to L3M and PL3M with incorporating constraints during inference as CL3M and CPL3M (Sec. 3.4), respectively. Metrics: We compare the systems using three popular metrics for coreference — MUC (Vilain et al., 1995), BCUB (Bagga and Baldwin, 1998), and e, (w·φ(i,j)+δ(Cd,i,j)) 1 pj = 606 Entity-based CEAF (CEAF,) (Luo, 2005). Following, the CoNLL shared tasks (Pradhan et al., 2012), we use the average F1 scores of these three metrics as the main metric of comparison. Features: We build our system on the publicly available Illinois-Coref system1 primarily because it contains a rich set of features presented in Bengtson and Roth (2008) and Chang et al. (2012a) (the latter adds features for pronominal anaphora resolution). We also compare with the Best-Left-Link approach described by Bengtson and Roth (2008). Constraints: We consider the f</context>
+<context position="29433" citStr="Bagga and Baldwin, 1998" startWordPosition="4916" endWordPosition="4919">onstraints, CL3M. Although our system is much simple, it achieves the best B3 score on the test set and is competitive with the best system participated in the CoNLL shared task 2012. Performance on named entities: The coreference annotation in Ontonotes 5.0 includes various types of mentions. However, not all mention types are equally interesting. In particular, clusters which contain at least one proper name or a named entity mention are more important for information extraction tasks like Wikification (Mihalcea and Csomai, 2007; Ratinov et al., 2011), cross-document coreference resolution (Bagga and Baldwin, 1998), and entity linking and knowledge based population (Ji and Grishman, 2011). Inspired by this, we compare our system to the best systems in the CoNLL shared task of 2011 (Stanford (Lee et al., 2011)) and 2012 (Fernandes (Fernandes et al., 2012)) on the following specific tasks on Ontonotes-5.0. • ENT-C: Evaluate the system on clusters that contain at least one proper name mention. We generate the gold annotation and system outputs by using the gold and predicted name entity tag annotations provided by the CoNLL shard task 2012. That is, if a cluster does not include any name entity mention, th</context>
+</contexts>
+<marker>Bagga, Baldwin, 1998</marker>
+<rawString>A. Bagga and B. Baldwin. 1998. Algorithms for scoring coreference chains. In In The First International Conference on Language Resources and Evaluation Workshop on Linguistics Coreference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Bansal</author>
+<author>D Klein</author>
+</authors>
+<title>Coreference semantics from web features.</title>
+<date>2012</date>
+<booktitle>In Proceedings ofACL, Jeju Island, South Korea,</booktitle>
+<contexts>
+<context position="8877" citStr="Bansal and Klein, 2012" startWordPosition="1338" endWordPosition="1341">and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate t</context>
+</contexts>
+<marker>Bansal, Klein, 2012</marker>
+<rawString>M. Bansal and D. Klein. 2012. Coreference semantics from web features. In Proceedings ofACL, Jeju Island, South Korea, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>N Bansal</author>
+<author>A Blum</author>
+<author>S Chawla</author>
+</authors>
+<title>Correlation clustering.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 43rd Symposium on Foundations of Computer Science.</booktitle>
+<contexts>
+<context position="7952" citStr="Bansal et al., 2002" startWordPosition="1191" endWordPosition="1194">ased system (Lee et al., 2011), we significantly outperform this system. Most importantly, our model obtains state-of-the-art performance on OntoNotes-5.0 while still operating at the mention-pair granularity. We believe that this is due to our novel and principled structured prediction framework which results in accurate (and efficient) training. Several structured prediction techniques have been applied to coreference resolution in the machine learning literature. For example, McCallum and Wellner (2003) and Finley and Joachims (2005) model coreference as a correlational clustering problem (Bansal et al., 2002) on a complete graph over the mentions with edge weights given by the pairwise classifier. However, correlational clustering is known to be NP Hard (Bansal et al., 2002); nonetheless, an ILP solver or an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperfor</context>
+</contexts>
+<marker>Bansal, Blum, Chawla, 2002</marker>
+<rawString>N. Bansal, A. Blum, and S. Chawla. 2002. Correlation clustering. In Proceedings of the 43rd Symposium on Foundations of Computer Science.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>E Bengtson</author>
+<author>D Roth</author>
+</authors>
+<title>Understanding the value of features for coreference resolution.</title>
+<date>2008</date>
+<booktitle>In EMNLP, 10. A. Bj¨orkelund</booktitle>
+<contexts>
+<context position="1428" citStr="Bengtson and Roth, 2008" startWordPosition="202" endWordPosition="205">ls proposed in the literature. 1 Introduction Coreference resolution is a challenging task, that involves identification and clustering of noun phrases mentions that refer to the same real-world entity. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learning framework that pushes t</context>
+<context position="4521" citStr="Bengtson and Roth, 2008" startWordPosition="662" endWordPosition="665">orably with other, more complicated, state-of-the-art algorithms on a variety of evaluation metrics. Overall, the main contribution of this paper is a principled machine learning model operating at mention-pair granularity, using easy to implement constraint-augmented inference and learning, that yields competitive results on coreference resolution on Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). 2 Related Work The idea of Latent Left-linking Model (L3M) is inspired by a popular inference approach to coreference which we call the Best-Left-Link approach (Ng and Cardie, 2002; Bengtson and Roth, 2008). In the best-left-link strategy, each mention i is connected to the best antecedent mention j with j &lt; i (i.e. a mention occurring to the left of i, assuming a leftto-right reading order), thereby creating a left-link. The “best” antecedent mention is the one with the highest pairwise score, wzj; furthermore, if wzj is below some threshold, say 0, then i is not connected to any antecedent mention. The final clustering is a transitive closure of these “best” links. The intuition behind best-left-link strategy is based on how humans read and decipher coreference links – they mostly rely on info</context>
+<context position="9839" citStr="Bengtson and Roth, 2008" startWordPosition="1489" endWordPosition="1492">tem with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1,</context>
+<context position="22802" citStr="Bengtson and Roth (2008)" startWordPosition="3821" endWordPosition="3825">ated on the gold mentions of Ontonotes. We show that CL3M performs particularly well on clusters containing named entity mentions, which are more important for many information extraction applications. In the rest of this section, after describing our experimental setting, we provide careful analysis of our algorithms and compare them to competitive coreference approaches in the literature. 5.1 Experimental Setup Datasets: ACE 2004 contains 443 documents — we used a standard split of these documents into 268 training, 68 development, and 106 testing documents used by Culotta et al. (2007) and Bengtson and Roth (2008). OntoNotes-5.0 dataset, released for the CoNLL 2012 Shared Task (Pradhan et al., 2012), is by far the largest annotated corpus on coreference. It contains 3,145 annotated documents drawn from a wide variety of sources — newswire, bible, broadcast transcripts, magazine articles, and web blogs. We report results on both development set and test set. To test on the development set, we further split the training data into training and development sets. Classifier details: For each of the pairwise approaches, we assume the pairwise score is given by w·φ(·, ·)+t where φ are the features, w is the w</context>
+<context position="24545" citStr="Bengtson and Roth (2008)" startWordPosition="4125" endWordPosition="4128">L3M with incorporating constraints during inference as CL3M and CPL3M (Sec. 3.4), respectively. Metrics: We compare the systems using three popular metrics for coreference — MUC (Vilain et al., 1995), BCUB (Bagga and Baldwin, 1998), and e, (w·φ(i,j)+δ(Cd,i,j)) 1 pj = 606 Entity-based CEAF (CEAF,) (Luo, 2005). Following, the CoNLL shared tasks (Pradhan et al., 2012), we use the average F1 scores of these three metrics as the main metric of comparison. Features: We build our system on the publicly available Illinois-Coref system1 primarily because it contains a rich set of features presented in Bengtson and Roth (2008) and Chang et al. (2012a) (the latter adds features for pronominal anaphora resolution). We also compare with the Best-Left-Link approach described by Bengtson and Roth (2008). Constraints: We consider the following constraints in CL3M and CPL3M. • SameSpan: two mentions must be linked to each other if they share the same surface text span and the number of words in the text span is larger than a threshold (set as 5 in our implementation). • SameDetNom: two mentions must be linked to each other if both mentions start with a determiner and the [0,1] wordnet-based similarity score between the me</context>
+</contexts>
+<marker>Bengtson, Roth, 2008</marker>
+<rawString>E. Bengtson and D. Roth. 2008. Understanding the value of features for coreference resolution. In EMNLP, 10. A. Bj¨orkelund and R. Farkas.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K-W Chang</author>
+<author>R Samdani</author>
+<author>A Rozovskaya</author>
+<author>N Rizzolo</author>
+<author>M Sammons</author>
+<author>D Roth</author>
+</authors>
+<title>Inference protocols for coreference resolution. In CoNLL Shared Task.</title>
+<date>2011</date>
+<contexts>
+<context position="16524" citStr="Chang et al. (2011)" startWordPosition="2679" endWordPosition="2682">ints encourage a pair of mentions to connect, while “cannot-link” constraints discourage mention pairs from being linked. Consequently, the coefficients ρp associated with “must-link” constraints are positive while ρp for “cannot-link” constraints are negative. In the following, we briefly discuss how to (3) 604 solve the inference problem with these two types of constraints. We slightly abuse notations and use ψp(j, i) to indicate the pth constraint on a pair of mentions (i, j). ψp(j, i) is a binary function that is 1 iff two mentions i and j satisfy the conditions specified in constraint p. Chang et al. (2011) shows that best-left-link inference can be formulated as an ILP problem. When we add constraints, the ILP becomes: X X arg max i,j:j&lt;i wjiBji + i,j ρpψp(j, i)Cij B,CE{0,1} s.t Ckj &gt;_ Cij + Cki − 1, Vi, j, k, i−1 Xj=0 Bji = 1, Vi Bji &lt; Cji,Cji = Cji, Vi, j, where Cij - C(i, j) is a binary variable indicating whether i and j are in the same cluster or not and Bji is an auxiliary variable indicating the best-leftlink for mention i. The first set of inequality constraints in (5) enforces the transitive closure of the clustering. The constraints Bji &lt; Cji, Vi, j enforce the consistency between the</context>
+<context position="33802" citStr="Chang et al. (2011)" startWordPosition="5636" endWordPosition="5639"> Table 3: Performance on ACE 2004 and OntoNotes-5.0. All-Link-Red. is based on correlational clustering; Spanning is based on latent spanning forest based clustering (see Sec. 2). Our proposed approach is L3M (Sec. 3) and PL3M (sec. 4). CL3M and CPL3M are the version with incorporating constraints. 1. All-Link-Red: a reduced and faster alternative to the correlational clustering based approach (Finley and Joachims, 2005). We implemented this algorithm as an ILP and droped one of the three transitivity constraints for each triplet of mention variables. Following Pascal and Baldridge (2009) and Chang et al. (2011) we observe that this slightly improves the accuracy over a pure correlation clustering approach, in addition to speeding up inference. 2. Spanning: the latent spanning forest based approach presented by Yu and Joachims (2009). We use the publicly available implementation provided by the authors3 for the ACE data; since their CCCP implementation is slow, we implemented our own stochastic gradient descent version to scale it to the much larger Ontonotes data. 3Available at http://www.cs.cornell.edu/ cnyu/latentssvm/ Table 3 lists the results. Although L3M is simple and use only the features def</context>
+</contexts>
+<marker>Chang, Samdani, Rozovskaya, Rizzolo, Sammons, Roth, 2011</marker>
+<rawString>K.-W. Chang, R. Samdani, A. Rozovskaya, N. Rizzolo, M. Sammons, and D. Roth. 2011. Inference protocols for coreference resolution. In CoNLL Shared Task.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>K-W Chang</author>
+<author>R Samdani</author>
+<author>A Rozovskaya</author>
+<author>M Sammons</author>
+<author>D Roth</author>
+</authors>
+<booktitle>2012a. Illinois-coref: The UI system in the CoNLL-2012 Shared Task. In CoNLL Shared Task.</booktitle>
+<marker>Chang, Samdani, Rozovskaya, Sammons, Roth, </marker>
+<rawString>K.-W. Chang, R. Samdani, A. Rozovskaya, M. Sammons, and D. Roth. 2012a. Illinois-coref: The UI system in the CoNLL-2012 Shared Task. In CoNLL Shared Task.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Chang</author>
+<author>L Ratinov</author>
+<author>D Roth</author>
+</authors>
+<title>Structured learning with constrained conditional models.</title>
+<date>2012</date>
+<booktitle>Machine Learning,</booktitle>
+<volume>88</volume>
+<issue>3</issue>
+<pages>6</pages>
+<contexts>
+<context position="9991" citStr="Chang et al., 2012" startWordPosition="1512" endWordPosition="1515">focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1, ... ,md}. We represent C as a binary function with C(i, j) = 1 if mentions i and j are coreferent, otherwise C(i, j) = 0. Let s(C; w, d) be the score o</context>
+<context position="24568" citStr="Chang et al. (2012" startWordPosition="4130" endWordPosition="4133">aints during inference as CL3M and CPL3M (Sec. 3.4), respectively. Metrics: We compare the systems using three popular metrics for coreference — MUC (Vilain et al., 1995), BCUB (Bagga and Baldwin, 1998), and e, (w·φ(i,j)+δ(Cd,i,j)) 1 pj = 606 Entity-based CEAF (CEAF,) (Luo, 2005). Following, the CoNLL shared tasks (Pradhan et al., 2012), we use the average F1 scores of these three metrics as the main metric of comparison. Features: We build our system on the publicly available Illinois-Coref system1 primarily because it contains a rich set of features presented in Bengtson and Roth (2008) and Chang et al. (2012a) (the latter adds features for pronominal anaphora resolution). We also compare with the Best-Left-Link approach described by Bengtson and Roth (2008). Constraints: We consider the following constraints in CL3M and CPL3M. • SameSpan: two mentions must be linked to each other if they share the same surface text span and the number of words in the text span is larger than a threshold (set as 5 in our implementation). • SameDetNom: two mentions must be linked to each other if both mentions start with a determiner and the [0,1] wordnet-based similarity score between the mention head words is abo</context>
+<context position="26332" citStr="Chang et al., 2012" startWordPosition="4408" endWordPosition="4411">an”. We gather a list of mutual exclusive modifiers from the training data. • PropertyMismatch: the constraint prevents two mentions to be linked if their properties conflict. For example, it prevents male pronouns to link to female pronouns and “Mr. Clinton” to link to “Mrs. Clinton” by checking the gender property. The properties we consider are gender, number, professional title and the na1The system is available at http://cogcomp.cs. illinois.edu/page/software_view/Coref/ 2http://cogcomp.cs.illinois.edu/page/ software_view/NESim MUC BCUB CEAF, AVG Dev Set Stanford 64.30 70.46 46.35 60.37 (Chang et al., 2012a) 65.75 70.25 45.30 60.43 (Martschat et al., 2012) 66.76 71.91 47.52 62.06 (Bj¨orkelund and Farkas, ) 67.12 71.18 46.84 61.71 (Chen and Ng, 2012) 66.4 71.8 48.8 62.3 (Fernandes et al., 2012) 69.46 71.93 48.66 63.35 L3M 67.88 71.88 47.16 62.30 CL3M 69.20 72.89 48.67 63.59 Test Set Stanford 63.83 68.52 45.36 59.23 (Chang et al., 2012a) 66.38 69.34 44.81 60.18 (Martschat et al., 2012) 66.97 70.36 46.60 61.31 (Bj¨orkelund and Farkas, ) 67.58 70.26 45.87 61.24 (Chen and Ng, 2012) 63.7 69.0 46.4 59.7 (Fernandes et al., 2012) 70.51 71.24 48.37 63.37 L3M 68.31 70.81 46.73 61.95 CL3M 69.64 71.93 48.32</context>
+<context position="32347" citStr="Chang et al., 2012" startWordPosition="5400" endWordPosition="5403">st one specific type of entity by a margin larger than that for the overall coreference. 5.3 Analysis on Gold Mentions To better understand the contribution of our joint learning and clustering model, we present experiments assuming that gold mentions are given. The definitions of gold mentions in ACE and Ontonotes are different because Ontonotes-5.0 excludes singleton clusters in the annotation. In addition, Ontonotes includes longer mentions; for example, it includes NP and appositives in the same mention. We compare with the publicly available Stanford (Lee et al., 2011) and IllinoisCoref (Chang et al., 2012a) systems; the system of Fernandes et al. (2012) is not publicly available. In addition, we also compare with the following two structured prediction baselines that use the same set of features as L3M and PL3M. 608 MUC BCUB CEAFe AVG ACE 2004 Gold Ment. All-Link-Red. 77.45 81.10 77.57 78.71 Spanning 73.31 79.25 74.66 75.74 IllinoisCoref 76.02 81.04 77.6 78.22 Stanford 75.04 80.45 76.75 77.41 (Stoyanov and Eisner, 2012) 80.1 81.8 - - L3M 77.57 81.77 78.15 79.16 PL3M 78.18 82.09 79.21 79.83 CL3M 78.17 81.64 78.45 79.42 CPL3M 78.29 82.20 79.26 79.91 Ontonotes 5.0 Gold Ment. All-Link-Red. 83.72 7</context>
+</contexts>
+<marker>Chang, Ratinov, Roth, 2012</marker>
+<rawString>M. Chang, L. Ratinov, and D. Roth. 2012b. Structured learning with constrained conditional models. Machine Learning, 88(3):399–431, 6.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Chen</author>
+<author>V Ng</author>
+</authors>
+<title>Combining the best of two worlds: A hybrid approach to multilingual coreference resolution.</title>
+<date>2012</date>
+<booktitle>In Joint Conference on EMNLP and CoNLL - Shared Task.</booktitle>
+<contexts>
+<context position="26478" citStr="Chen and Ng, 2012" startWordPosition="4432" endWordPosition="4435">if their properties conflict. For example, it prevents male pronouns to link to female pronouns and “Mr. Clinton” to link to “Mrs. Clinton” by checking the gender property. The properties we consider are gender, number, professional title and the na1The system is available at http://cogcomp.cs. illinois.edu/page/software_view/Coref/ 2http://cogcomp.cs.illinois.edu/page/ software_view/NESim MUC BCUB CEAF, AVG Dev Set Stanford 64.30 70.46 46.35 60.37 (Chang et al., 2012a) 65.75 70.25 45.30 60.43 (Martschat et al., 2012) 66.76 71.91 47.52 62.06 (Bj¨orkelund and Farkas, ) 67.12 71.18 46.84 61.71 (Chen and Ng, 2012) 66.4 71.8 48.8 62.3 (Fernandes et al., 2012) 69.46 71.93 48.66 63.35 L3M 67.88 71.88 47.16 62.30 CL3M 69.20 72.89 48.67 63.59 Test Set Stanford 63.83 68.52 45.36 59.23 (Chang et al., 2012a) 66.38 69.34 44.81 60.18 (Martschat et al., 2012) 66.97 70.36 46.60 61.31 (Bj¨orkelund and Farkas, ) 67.58 70.26 45.87 61.24 (Chen and Ng, 2012) 63.7 69.0 46.4 59.7 (Fernandes et al., 2012) 70.51 71.24 48.37 63.37 L3M 68.31 70.81 46.73 61.95 CL3M 69.64 71.93 48.32 63.30 Table 1: Performance on OntoNotes-5.0 with predicted mentions. We report the F1 scores (%) on various coreference metrics (MUC, BCUB, CEAF)</context>
+</contexts>
+<marker>Chen, Ng, 2012</marker>
+<rawString>C. Chen and V. Ng. 2012. Combining the best of two worlds: A hybrid approach to multilingual coreference resolution. In Joint Conference on EMNLP and CoNLL - Shared Task.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Clarke</author>
+<author>M Lapata</author>
+</authors>
+<title>Constraint-based sentence compression: An integer programming approach.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL),</booktitle>
+<pages>144--151</pages>
+<publisher>ACL.</publisher>
+<location>Sydney, Australia,</location>
+<contexts>
+<context position="9971" citStr="Clarke and Lapata, 2006" startWordPosition="1508" endWordPosition="1511">dge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1, ... ,md}. We represent C as a binary function with C(i, j) = 1 if mentions i and j are coreferent, otherwise C(i, j) = 0. Let s(C; </context>
+</contexts>
+<marker>Clarke, Lapata, 2006</marker>
+<rawString>J. Clarke and M. Lapata. 2006. Constraint-based sentence compression: An integer programming approach. In Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL), pages 144–151, Sydney, Australia, July. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Culotta</author>
+<author>M Wick</author>
+<author>R Hall</author>
+<author>A McCallum</author>
+</authors>
+<title>First-order probabilistic models for coreference resolution.</title>
+<date>2007</date>
+<booktitle>In HLT/NAACL.</booktitle>
+<contexts>
+<context position="22773" citStr="Culotta et al. (2007)" startWordPosition="3816" endWordPosition="3819">ithm on ACE and when evaluated on the gold mentions of Ontonotes. We show that CL3M performs particularly well on clusters containing named entity mentions, which are more important for many information extraction applications. In the rest of this section, after describing our experimental setting, we provide careful analysis of our algorithms and compare them to competitive coreference approaches in the literature. 5.1 Experimental Setup Datasets: ACE 2004 contains 443 documents — we used a standard split of these documents into 268 training, 68 development, and 106 testing documents used by Culotta et al. (2007) and Bengtson and Roth (2008). OntoNotes-5.0 dataset, released for the CoNLL 2012 Shared Task (Pradhan et al., 2012), is by far the largest annotated corpus on coreference. It contains 3,145 annotated documents drawn from a wide variety of sources — newswire, bible, broadcast transcripts, magazine articles, and web blogs. We report results on both development set and test set. To test on the development set, we further split the training data into training and development sets. Classifier details: For each of the pairwise approaches, we assume the pairwise score is given by w·φ(·, ·)+t where φ</context>
+</contexts>
+<marker>Culotta, Wick, Hall, McCallum, 2007</marker>
+<rawString>A. Culotta, M. Wick, R. Hall, and A. McCallum. 2007. First-order probabilistic models for coreference resolution. In HLT/NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Denis</author>
+<author>J Baldridge</author>
+</authors>
+<title>Joint determination of anaphoricity and coreference resolution using integer programming.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Annual Meeting of the North American Association of Computational Linguistics (NAACL).</booktitle>
+<contexts>
+<context position="3119" citStr="Denis and Baldridge, 2007" startWordPosition="452" endWordPosition="455">unlike previous best-link techniques, learning in our case is performed jointly with decoding — we present a novel latent structural SVM approach, optimized using a fast stochastic gradient-based technique. Furthermore, we present a probabilistic generalization of L3M that is more expressive in that it is capable of considering mention-entity interactions using scores at the mention-pair granularity. We augment this model with a temperature-like parameter (Samdani et al., 2012) to provide additional flexibility. CL3M augments L3M with knowledge-based constraints following (Roth and Yih, 2004; Denis and Baldridge, 2007). This capability is very desirable as shown by the success of the rule-based deterministic approach of Raghunathan et al. (2010) in the CoNLL shared task 2011 (Pradhan et al., 2011). In L3M, domain-specific constraints are incorporated into learning and inference in a straightforward way. CL3M scores a mention’s contribution to its cluster by combining the corresponding score 601 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 601–612, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics of the underlying </context>
+</contexts>
+<marker>Denis, Baldridge, 2007</marker>
+<rawString>P. Denis and J. Baldridge. 2007. Joint determination of anaphoricity and coreference resolution using integer programming. In Proceedings of the Annual Meeting of the North American Association of Computational Linguistics (NAACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Denis</author>
+<author>J Baldridge</author>
+</authors>
+<title>Specialized models and ranking for coreference resolution. In</title>
+<date>2008</date>
+<booktitle>EMNLP,</booktitle>
+<pages>660--669</pages>
+<contexts>
+<context position="6300" citStr="Denis and Baldridge (2008)" startWordPosition="945" endWordPosition="948">tive examples. Similar approaches to training and, additionally, decoupling the training stage from the clustering stage were used by other systems. In this paper, we formalize the learning problem of the best-left-link model as a structured prediction problem and analyze our system with detailed experiments. Furthermore, we generalize this approach by considering multiple pairwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constrain</context>
+</contexts>
+<marker>Denis, Baldridge, 2008</marker>
+<rawString>P. Denis and J. Baldridge. 2008. Specialized models and ranking for coreference resolution. In EMNLP, pages 660–669.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Durrett</author>
+<author>D Hall</author>
+<author>D Klein</author>
+</authors>
+<title>Decentralized entity-level modeling for coreference resolution.</title>
+<date>2013</date>
+<booktitle>In Proceedings ofACL,</booktitle>
+<contexts>
+<context position="6824" citStr="Durrett et al. (2013)" startWordPosition="1030" endWordPosition="1033">rature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Furthermore, while their model performs only slightly better than the Stanford rule-based system (Lee et al., 2011), we significantly outperform this system. Most importantly, o</context>
+</contexts>
+<marker>Durrett, Hall, Klein, 2013</marker>
+<rawString>G. Durrett, D. Hall, and D. Klein. 2013. Decentralized entity-level modeling for coreference resolution. In Proceedings ofACL, August.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>E R Fernandes</author>
+<author>C N dos Santos</author>
+<author>R L Milidi´u</author>
+</authors>
+<title>Latent structure perceptron with feature induction for unrestricted coreference resolution.</title>
+<date>2012</date>
+<booktitle>In Joint Conference on EMILP and CoILL - Shared Task.</booktitle>
+<marker>Fernandes, Santos, Milidi´u, 2012</marker>
+<rawString>E. R. Fernandes, C. N. dos Santos, and R. L. Milidi´u. 2012. Latent structure perceptron with feature induction for unrestricted coreference resolution. In Joint Conference on EMILP and CoILL - Shared Task.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Finley</author>
+<author>T Joachims</author>
+</authors>
+<title>Supervised clustering with support vector machines.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML).</booktitle>
+<contexts>
+<context position="7874" citStr="Finley and Joachims (2005)" startWordPosition="1179" endWordPosition="1182">urthermore, while their model performs only slightly better than the Stanford rule-based system (Lee et al., 2011), we significantly outperform this system. Most importantly, our model obtains state-of-the-art performance on OntoNotes-5.0 while still operating at the mention-pair granularity. We believe that this is due to our novel and principled structured prediction framework which results in accurate (and efficient) training. Several structured prediction techniques have been applied to coreference resolution in the machine learning literature. For example, McCallum and Wellner (2003) and Finley and Joachims (2005) model coreference as a correlational clustering problem (Bansal et al., 2002) on a complete graph over the mentions with edge weights given by the pairwise classifier. However, correlational clustering is known to be NP Hard (Bansal et al., 2002); nonetheless, an ILP solver or an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of ment</context>
+<context position="33607" citStr="Finley and Joachims, 2005" startWordPosition="5604" endWordPosition="5607">.83 61.07 73.18 IllinoisCoref 80.84 74.29 65.96 73.70 Stanford 82.26 76.82 61.69 73.59 L3M 83.44 78.12 64.56 75.37 PL3M 83.97 78.25 65.69 75.97 CL3M 84.10 78.30 68.74 77.05 CPL3M 84.80 78.74 68.75 77.43 Table 3: Performance on ACE 2004 and OntoNotes-5.0. All-Link-Red. is based on correlational clustering; Spanning is based on latent spanning forest based clustering (see Sec. 2). Our proposed approach is L3M (Sec. 3) and PL3M (sec. 4). CL3M and CPL3M are the version with incorporating constraints. 1. All-Link-Red: a reduced and faster alternative to the correlational clustering based approach (Finley and Joachims, 2005). We implemented this algorithm as an ILP and droped one of the three transitivity constraints for each triplet of mention variables. Following Pascal and Baldridge (2009) and Chang et al. (2011) we observe that this slightly improves the accuracy over a pure correlation clustering approach, in addition to speeding up inference. 2. Spanning: the latent spanning forest based approach presented by Yu and Joachims (2009). We use the publicly available implementation provided by the authors3 for the ACE data; since their CCCP implementation is slow, we implemented our own stochastic gradient desce</context>
+</contexts>
+<marker>Finley, Joachims, 2005</marker>
+<rawString>T. Finley and T. Joachims. 2005. Supervised clustering with support vector machines. In Proceedings of the International Conference on Machine Learning (ICML).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K Ganchev</author>
+<author>J Grac¸a</author>
+<author>J Gillenwater</author>
+<author>B Taskar</author>
+</authors>
+<title>Posterior regularization for structured latent variable models.</title>
+<date>2010</date>
+<journal>Journal of Machine Learning Research.</journal>
+<marker>Ganchev, Grac¸a, Gillenwater, Taskar, 2010</marker>
+<rawString>K. Ganchev, J. Grac¸a, J. Gillenwater, and B. Taskar. 2010. Posterior regularization for structured latent variable models. Journal of Machine Learning Research.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K Gimpel</author>
+<author>N A Smith</author>
+</authors>
+<title>Softmax-margin CRFs: Training log-linear models with cost functions.</title>
+<date>2010</date>
+<booktitle>In IAACL.</booktitle>
+<contexts>
+<context position="20851" citStr="Gimpel and Smith, 2010" startWordPosition="3468" endWordPosition="3471">dani et al., 2012). Consequently, as γ —* 0, Pr[c O i; d, w] in Eq. 8 approaches a Kronecker delta function centered on the cluster containing the max-scoring mention, thus reducing to the best-link case of L3M. Thus, PL3M, when tuning the value of γ, is a strictly more general model than L3M. Learning with PL3M We use a likelihood-based approach to learning with PL3M, and first compute the probability Pr[C; d, w] of generating a clustering C, given w. We then learn w by minimizing the regularized negative log-likelihood of the data, augmenting the partition function with a loss-based margin (Gimpel and Smith, 2010). We omit the details of likelihood computation due to lack of space. With PL3M, we again follow a stochastic gradient descent technique instead of CCCP for the same reasons mentioned in Sec. 3.3. The stochastic gradient (subgradient when γ = 0) w.r.t. mention i in document d is given by VLL(w)id a � pjφ(i, j) − � p′jφ(i, j) + λw, 0≤j&lt;i 0≤j&lt;i where pj and p′j, j = 0, ... , i − 1, are non-negative weights that sum to one and are given by , (w·φ(i,k)+δ(Cd,i,k)) and E0≤k&lt;i e C, (i j)Zi(d �&apos;�&apos;&apos; _ &apos; &apos; PrU +— i; d, w] p′j Zi (Cd; d, w, γ) W . Interestingly, the above update rule generalizes the one </context>
+</contexts>
+<marker>Gimpel, Smith, 2010</marker>
+<rawString>K. Gimpel and N. A. Smith. 2010. Softmax-margin CRFs: Training log-linear models with cost functions. In IAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Haghighi</author>
+<author>D Klein</author>
+</authors>
+<title>Coreference resolution in a modular, entity-centered model.</title>
+<date>2010</date>
+<booktitle>In IAACL.</booktitle>
+<contexts>
+<context position="1602" citStr="Haghighi and Klein, 2010" startWordPosition="229" endWordPosition="232"> the same real-world entity. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learning framework that pushes the state-ofthe-art while operating at a mention-pair granularity. We present two models — the Latent Left-Linking Model (L3M), and a version of that is augmented with domain </context>
+<context position="6705" citStr="Haghighi and Klein, 2010" startWordPosition="1011" endWordPosition="1014"> just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Furthermore, while their model performs only slightly bett</context>
+</contexts>
+<marker>Haghighi, Klein, 2010</marker>
+<rawString>A. Haghighi and D. Klein. 2010. Coreference resolution in a modular, entity-centered model. In IAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Ji</author>
+<author>R Grishman</author>
+</authors>
+<title>Knowledge base population: successful approaches and challenges.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies -</booktitle>
+<volume>1</volume>
+<contexts>
+<context position="29508" citStr="Ji and Grishman, 2011" startWordPosition="4927" endWordPosition="4930"> score on the test set and is competitive with the best system participated in the CoNLL shared task 2012. Performance on named entities: The coreference annotation in Ontonotes 5.0 includes various types of mentions. However, not all mention types are equally interesting. In particular, clusters which contain at least one proper name or a named entity mention are more important for information extraction tasks like Wikification (Mihalcea and Csomai, 2007; Ratinov et al., 2011), cross-document coreference resolution (Bagga and Baldwin, 1998), and entity linking and knowledge based population (Ji and Grishman, 2011). Inspired by this, we compare our system to the best systems in the CoNLL shared task of 2011 (Stanford (Lee et al., 2011)) and 2012 (Fernandes (Fernandes et al., 2012)) on the following specific tasks on Ontonotes-5.0. • ENT-C: Evaluate the system on clusters that contain at least one proper name mention. We generate the gold annotation and system outputs by using the gold and predicted name entity tag annotations provided by the CoNLL shard task 2012. That is, if a cluster does not include any name entity mention, then it will be removed from the final clustering. • PER-C: As in the constru</context>
+</contexts>
+<marker>Ji, Grishman, 2011</marker>
+<rawString>H. Ji and R. Grishman. 2011. Knowledge base population: successful approaches and challenges. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Koo</author>
+<author>A M Rush</author>
+<author>M Collins</author>
+<author>T Jaakkola</author>
+<author>D Sontag</author>
+</authors>
+<title>Dual decomposition for parsing with nonprojective head automata.</title>
+<date>2010</date>
+<booktitle>In EMILP.</booktitle>
+<contexts>
+<context position="10032" citStr="Koo et al., 2010" startWordPosition="1520" endWordPosition="1523">parison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1, ... ,md}. We represent C as a binary function with C(i, j) = 1 if mentions i and j are coreferent, otherwise C(i, j) = 0. Let s(C; w, d) be the score of a given clustering C for a given docume</context>
+</contexts>
+<marker>Koo, Rush, Collins, Jaakkola, Sontag, 2010</marker>
+<rawString>T. Koo, A. M. Rush, M. Collins, T. Jaakkola, and D. Sontag. 2010. Dual decomposition for parsing with nonprojective head automata. In EMILP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Lee</author>
+<author>Y Peirsman</author>
+<author>A Chang</author>
+<author>N Chambers</author>
+<author>M Surdeanu</author>
+<author>D Jurafsky</author>
+</authors>
+<title>Stanford’s multipass sieve coreference resolution system at the conll2011 shared task.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the CoILL-2011 Shared Task.</booktitle>
+<contexts>
+<context position="7362" citStr="Lee et al., 2011" startWordPosition="1108" endWordPosition="1111">arning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Furthermore, while their model performs only slightly better than the Stanford rule-based system (Lee et al., 2011), we significantly outperform this system. Most importantly, our model obtains state-of-the-art performance on OntoNotes-5.0 while still operating at the mention-pair granularity. We believe that this is due to our novel and principled structured prediction framework which results in accurate (and efficient) training. Several structured prediction techniques have been applied to coreference resolution in the machine learning literature. For example, McCallum and Wellner (2003) and Finley and Joachims (2005) model coreference as a correlational clustering problem (Bansal et al., 2002) on a comp</context>
+<context position="8768" citStr="Lee et al., 2011" startWordPosition="1322" endWordPosition="1325">r an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not</context>
+<context position="27975" citStr="Lee et al., 2011" startWordPosition="4688" endWordPosition="4691">r can be treated as features, due to their high precision, treating them as hard constraints (set p to a high value) is a safe and direct way to inject human knowledge into the learning model. Moreover, our framework allows a constraint to use information from previous decisions (such as “cannot-link” constraints). Treating such constraints as features will complicate the learning model. 5.2 Performance of the End-to-End System We compare our system with the top systems reported in the CoNLL shared task 2012 as well as with the Stanford’s publicly released rule-based system (Lee et al., 2013; Lee et al., 2011), which won the CoNLL 2011 Shared Task (Pradhan et al., 2011). Note that all the systems use the same annotations (e.g., gender prediction, part-of-speech tags, name entity tags) provided by the shared task organizers. 607 However, each system implements its own mention detector and pipelines the identified mentions into the coreference clustering component. Moreover, different systems use a different set of features. In order to partially control for errors on mention detection and better evaluate the clustering component in our coreference system, we will also present results on correct (gol</context>
+<context position="29631" citStr="Lee et al., 2011" startWordPosition="4950" endWordPosition="4953">entities: The coreference annotation in Ontonotes 5.0 includes various types of mentions. However, not all mention types are equally interesting. In particular, clusters which contain at least one proper name or a named entity mention are more important for information extraction tasks like Wikification (Mihalcea and Csomai, 2007; Ratinov et al., 2011), cross-document coreference resolution (Bagga and Baldwin, 1998), and entity linking and knowledge based population (Ji and Grishman, 2011). Inspired by this, we compare our system to the best systems in the CoNLL shared task of 2011 (Stanford (Lee et al., 2011)) and 2012 (Fernandes (Fernandes et al., 2012)) on the following specific tasks on Ontonotes-5.0. • ENT-C: Evaluate the system on clusters that contain at least one proper name mention. We generate the gold annotation and system outputs by using the gold and predicted name entity tag annotations provided by the CoNLL shard task 2012. That is, if a cluster does not include any name entity mention, then it will be removed from the final clustering. • PER-C: As in the construction of ENT-C, but here we only consider clusters which contain at least one “Person (PER)” entity. • ORG-C: As in the con</context>
+<context position="32309" citStr="Lee et al., 2011" startWordPosition="5394" endWordPosition="5397">s on the clusters that contain at least one specific type of entity by a margin larger than that for the overall coreference. 5.3 Analysis on Gold Mentions To better understand the contribution of our joint learning and clustering model, we present experiments assuming that gold mentions are given. The definitions of gold mentions in ACE and Ontonotes are different because Ontonotes-5.0 excludes singleton clusters in the annotation. In addition, Ontonotes includes longer mentions; for example, it includes NP and appositives in the same mention. We compare with the publicly available Stanford (Lee et al., 2011) and IllinoisCoref (Chang et al., 2012a) systems; the system of Fernandes et al. (2012) is not publicly available. In addition, we also compare with the following two structured prediction baselines that use the same set of features as L3M and PL3M. 608 MUC BCUB CEAFe AVG ACE 2004 Gold Ment. All-Link-Red. 77.45 81.10 77.57 78.71 Spanning 73.31 79.25 74.66 75.74 IllinoisCoref 76.02 81.04 77.6 78.22 Stanford 75.04 80.45 76.75 77.41 (Stoyanov and Eisner, 2012) 80.1 81.8 - - L3M 77.57 81.77 78.15 79.16 PL3M 78.18 82.09 79.21 79.83 CL3M 78.17 81.64 78.45 79.42 CPL3M 78.29 82.20 79.26 79.91 Ontonote</context>
+</contexts>
+<marker>Lee, Peirsman, Chang, Chambers, Surdeanu, Jurafsky, 2011</marker>
+<rawString>H. Lee, Y. Peirsman, A. Chang, N. Chambers, M. Surdeanu, and D. Jurafsky. 2011. Stanford’s multipass sieve coreference resolution system at the conll2011 shared task. In Proceedings of the CoILL-2011 Shared Task.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Lee</author>
+<author>A Chang</author>
+<author>Y Peirsman</author>
+<author>N Chambers</author>
+<author>M Surdeanu</author>
+<author>D Jurafsky</author>
+</authors>
+<title>Deterministic coreference resolution based on entity-centric, precisionranked rules.</title>
+<date>2013</date>
+<journal>Computational Linguistics,</journal>
+<volume>39</volume>
+<issue>4</issue>
+<contexts>
+<context position="27956" citStr="Lee et al., 2013" startWordPosition="4684" endWordPosition="4687">cribed in the paper can be treated as features, due to their high precision, treating them as hard constraints (set p to a high value) is a safe and direct way to inject human knowledge into the learning model. Moreover, our framework allows a constraint to use information from previous decisions (such as “cannot-link” constraints). Treating such constraints as features will complicate the learning model. 5.2 Performance of the End-to-End System We compare our system with the top systems reported in the CoNLL shared task 2012 as well as with the Stanford’s publicly released rule-based system (Lee et al., 2013; Lee et al., 2011), which won the CoNLL 2011 Shared Task (Pradhan et al., 2011). Note that all the systems use the same annotations (e.g., gender prediction, part-of-speech tags, name entity tags) provided by the shared task organizers. 607 However, each system implements its own mention detector and pipelines the identified mentions into the coreference clustering component. Moreover, different systems use a different set of features. In order to partially control for errors on mention detection and better evaluate the clustering component in our coreference system, we will also present resu</context>
+<context position="30724" citStr="Lee et al., 2013" startWordPosition="5136" endWordPosition="5139">uction of ENT-C, but here we only consider clusters which contain at least one “Person (PER)” entity. • ORG-C: As in the construction of Entity-C, but here we only consider clusters which contain at least one “Organization (ORG)” entity. Typically, the clusters that get ignored in the above definitions contain only first and second person Task Stanford Fernandes L3M CL3M ENT-C 44.06 47.05 46.63 48.02 PER-C 34.04 36.43 37.01 37.57 ORG-C 25.02 26.23 26.22 27.01 Table 2: Performance on named entities for OntoNotes5.0 data. We compare our system to Fernandes (Fernandes et al., 2012) and Stanford (Lee et al., 2013) systems. pronouns (which often happens in transcribed discourse.) Also note that all the systems are trained with the same name entity tags, provided by the shared task organizers, and we use the same name entity tags to construct the specific clustering. Also, in order to further ensure fairness, we do not tune our system to favor the evaluation of these specific types of clusters. We chose to do so because we only have access to the system output of Fernandes et al. (2012). Table 2 shows the results. The performance of all systems degrades when considering only clusters that contain name en</context>
+</contexts>
+<marker>Lee, Chang, Peirsman, Chambers, Surdeanu, Jurafsky, 2013</marker>
+<rawString>H. Lee, A. Chang, Y. Peirsman, N. Chambers, M. Surdeanu, and D. Jurafsky. 2013. Deterministic coreference resolution based on entity-centric, precisionranked rules. Computational Linguistics, 39(4).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>X Luo</author>
+</authors>
+<title>On coreference resolution performance metrics.</title>
+<date>2005</date>
+<booktitle>In EMILP.</booktitle>
+<contexts>
+<context position="24230" citStr="Luo, 2005" startWordPosition="4075" endWordPosition="4076">radient descent with 5 passes over the data. Empirically, we observe that this is enough to generate a stable model. For PL3M (Sec. 4), we tune the value of γ using the development set picking the best γ from 10.0, 0.2, ... ,1.0}. Recall that when γ = 0, PL3M is the same as L3M. We refer to L3M and PL3M with incorporating constraints during inference as CL3M and CPL3M (Sec. 3.4), respectively. Metrics: We compare the systems using three popular metrics for coreference — MUC (Vilain et al., 1995), BCUB (Bagga and Baldwin, 1998), and e, (w·φ(i,j)+δ(Cd,i,j)) 1 pj = 606 Entity-based CEAF (CEAF,) (Luo, 2005). Following, the CoNLL shared tasks (Pradhan et al., 2012), we use the average F1 scores of these three metrics as the main metric of comparison. Features: We build our system on the publicly available Illinois-Coref system1 primarily because it contains a rich set of features presented in Bengtson and Roth (2008) and Chang et al. (2012a) (the latter adds features for pronominal anaphora resolution). We also compare with the Best-Left-Link approach described by Bengtson and Roth (2008). Constraints: We consider the following constraints in CL3M and CPL3M. • SameSpan: two mentions must be linke</context>
+</contexts>
+<marker>Luo, 2005</marker>
+<rawString>X. Luo. 2005. On coreference resolution performance metrics. In EMILP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Martschat</author>
+<author>J Cai</author>
+<author>S Broscheit</author>
+<author>´E M´ujdricza-Maydt</author>
+<author>M Strube</author>
+</authors>
+<title>A multigraph model for coreference resolution.</title>
+<date>2012</date>
+<booktitle>In Joint Conference on EMILP and CoILL - Shared Task,</booktitle>
+<marker>Martschat, Cai, Broscheit, M´ujdricza-Maydt, Strube, 2012</marker>
+<rawString>S. Martschat, J. Cai, S. Broscheit, ´E. M´ujdricza-Maydt, and M. Strube. 2012. A multigraph model for coreference resolution. In Joint Conference on EMILP and CoILL - Shared Task, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A McCallum</author>
+<author>B Wellner</author>
+</authors>
+<title>Toward conditional models of identity uncertainty with application to proper noun coreference.</title>
+<date>2003</date>
+<booktitle>In The Conference on Advances in Ieural Information Processing Systems (IIPS).</booktitle>
+<contexts>
+<context position="7843" citStr="McCallum and Wellner (2003)" startWordPosition="1174" endWordPosition="1177">obabilities of multiple links. Furthermore, while their model performs only slightly better than the Stanford rule-based system (Lee et al., 2011), we significantly outperform this system. Most importantly, our model obtains state-of-the-art performance on OntoNotes-5.0 while still operating at the mention-pair granularity. We believe that this is due to our novel and principled structured prediction framework which results in accurate (and efficient) training. Several structured prediction techniques have been applied to coreference resolution in the machine learning literature. For example, McCallum and Wellner (2003) and Finley and Joachims (2005) model coreference as a correlational clustering problem (Bansal et al., 2002) on a complete graph over the mentions with edge weights given by the pairwise classifier. However, correlational clustering is known to be NP Hard (Bansal et al., 2002); nonetheless, an ILP solver or an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural</context>
+</contexts>
+<marker>McCallum, Wellner, 2003</marker>
+<rawString>A. McCallum and B. Wellner. 2003. Toward conditional models of identity uncertainty with application to proper noun coreference. In The Conference on Advances in Ieural Information Processing Systems (IIPS).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Mihalcea</author>
+<author>A Csomai</author>
+</authors>
+<title>Wikify!: linking documents to encyclopedic knowledge.</title>
+<date>2007</date>
+<booktitle>In CIKM.</booktitle>
+<contexts>
+<context position="29345" citStr="Mihalcea and Csomai, 2007" startWordPosition="4904" endWordPosition="4907">. (2012) is better than L3M, but this difference disappears when we use our system with constraints, CL3M. Although our system is much simple, it achieves the best B3 score on the test set and is competitive with the best system participated in the CoNLL shared task 2012. Performance on named entities: The coreference annotation in Ontonotes 5.0 includes various types of mentions. However, not all mention types are equally interesting. In particular, clusters which contain at least one proper name or a named entity mention are more important for information extraction tasks like Wikification (Mihalcea and Csomai, 2007; Ratinov et al., 2011), cross-document coreference resolution (Bagga and Baldwin, 1998), and entity linking and knowledge based population (Ji and Grishman, 2011). Inspired by this, we compare our system to the best systems in the CoNLL shared task of 2011 (Stanford (Lee et al., 2011)) and 2012 (Fernandes (Fernandes et al., 2012)) on the following specific tasks on Ontonotes-5.0. • ENT-C: Evaluate the system on clusters that contain at least one proper name mention. We generate the gold annotation and system outputs by using the gold and predicted name entity tag annotations provided by the C</context>
+</contexts>
+<marker>Mihalcea, Csomai, 2007</marker>
+<rawString>R. Mihalcea and A. Csomai. 2007. Wikify!: linking documents to encyclopedic knowledge. In CIKM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>V Ng</author>
+<author>C Cardie</author>
+</authors>
+<title>Improving machine learning approaches to coreference resolution.</title>
+<date>2002</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="1402" citStr="Ng and Cardie, 2002" startWordPosition="198" endWordPosition="201">tured prediction models proposed in the literature. 1 Introduction Coreference resolution is a challenging task, that involves identification and clustering of noun phrases mentions that refer to the same real-world entity. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learni</context>
+<context position="4495" citStr="Ng and Cardie, 2002" startWordPosition="658" endWordPosition="661">traints, compares favorably with other, more complicated, state-of-the-art algorithms on a variety of evaluation metrics. Overall, the main contribution of this paper is a principled machine learning model operating at mention-pair granularity, using easy to implement constraint-augmented inference and learning, that yields competitive results on coreference resolution on Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). 2 Related Work The idea of Latent Left-linking Model (L3M) is inspired by a popular inference approach to coreference which we call the Best-Left-Link approach (Ng and Cardie, 2002; Bengtson and Roth, 2008). In the best-left-link strategy, each mention i is connected to the best antecedent mention j with j &lt; i (i.e. a mention occurring to the left of i, assuming a leftto-right reading order), thereby creating a left-link. The “best” antecedent mention is the one with the highest pairwise score, wzj; furthermore, if wzj is below some threshold, say 0, then i is not connected to any antecedent mention. The final clustering is a transitive closure of these “best” links. The intuition behind best-left-link strategy is based on how humans read and decipher coreference links </context>
+<context position="9813" citStr="Ng and Cardie, 2002" startWordPosition="1485" endWordPosition="1488">incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint set</context>
+</contexts>
+<marker>Ng, Cardie, 2002</marker>
+<rawString>V. Ng and C. Cardie. 2002. Improving machine learning approaches to coreference resolution. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Vincent Ng</author>
+</authors>
+<title>Supervised ranking for pronoun resolution: Some recent improvements.</title>
+<date>2005</date>
+<booktitle>In AAAI,</booktitle>
+<pages>1081--1086</pages>
+<contexts>
+<context position="6314" citStr="Ng (2005)" startWordPosition="950" endWordPosition="951">es to training and, additionally, decoupling the training stage from the clustering stage were used by other systems. In this paper, we formalize the learning problem of the best-left-link model as a structured prediction problem and analyze our system with detailed experiments. Furthermore, we generalize this approach by considering multiple pairwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between spe</context>
+</contexts>
+<marker>Ng, 2005</marker>
+<rawString>Vincent Ng. 2005. Supervised ranking for pronoun resolution: Some recent improvements. In AAAI, pages 1081–1086.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>NIST</author>
+</authors>
+<title>The ACE evaluation plan.</title>
+<date>2004</date>
+<contexts>
+<context position="4313" citStr="NIST, 2004" startWordPosition="629" endWordPosition="630">f the underlying L3M model with that from a set of constraints. Most importantly, in our experiments on benchmark coreference datasets, we show that CL3M, with just five constraints, compares favorably with other, more complicated, state-of-the-art algorithms on a variety of evaluation metrics. Overall, the main contribution of this paper is a principled machine learning model operating at mention-pair granularity, using easy to implement constraint-augmented inference and learning, that yields competitive results on coreference resolution on Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). 2 Related Work The idea of Latent Left-linking Model (L3M) is inspired by a popular inference approach to coreference which we call the Best-Left-Link approach (Ng and Cardie, 2002; Bengtson and Roth, 2008). In the best-left-link strategy, each mention i is connected to the best antecedent mention j with j &lt; i (i.e. a mention occurring to the left of i, assuming a leftto-right reading order), thereby creating a left-link. The “best” antecedent mention is the one with the highest pairwise score, wzj; furthermore, if wzj is below some threshold, say 0, then i is not connected to any antecedent</context>
+<context position="21920" citStr="NIST, 2004" startWordPosition="3678" endWordPosition="3679">i,k)) and E0≤k&lt;i e C, (i j)Zi(d �&apos;�&apos;&apos; _ &apos; &apos; PrU +— i; d, w] p′j Zi (Cd; d, w, γ) W . Interestingly, the above update rule generalizes the one for L3M, as we are incorporating a weighted sum of all previous mentions in the update rule. With γ —* 0, the SGD in Eq. (4) converges to the SGD update in L3M (Eq. (4)). Finally, in the presence of constraints, we can fold them inside the pairwise link probabilities as in Eq. (6). 5 Experiments and Results In this section, we present our experiments on the two commonly used benchmarks for coreference — Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). Table 1 exhibits our bottom line results: CL3M achieves the best result reported on Ontonotes-5.0 development set and essentially ties with (Fernandes et al., 2012) on the test set. As shown in Table 3, CL3M is also the best algorithm on ACE and when evaluated on the gold mentions of Ontonotes. We show that CL3M performs particularly well on clusters containing named entity mentions, which are more important for many information extraction applications. In the rest of this section, after describing our experimental setting, we provide careful analysis of our algorithms and compare them to co</context>
+</contexts>
+<marker>NIST, 2004</marker>
+<rawString>NIST. 2004. The ACE evaluation plan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Pascal</author>
+<author>J Baldridge</author>
+</authors>
+<title>Global joint models for coreference resolution and named entity classification.</title>
+<date>2009</date>
+<booktitle>In Procesamiento del Lenguaje Iatural.</booktitle>
+<contexts>
+<context position="10061" citStr="Pascal and Baldridge, 2009" startWordPosition="1524" endWordPosition="1527"> relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1, ... ,md}. We represent C as a binary function with C(i, j) = 1 if mentions i and j are coreferent, otherwise C(i, j) = 0. Let s(C; w, d) be the score of a given clustering C for a given document and a given pairwise weigh</context>
+<context position="33778" citStr="Pascal and Baldridge (2009)" startWordPosition="5631" endWordPosition="5634">05 CPL3M 84.80 78.74 68.75 77.43 Table 3: Performance on ACE 2004 and OntoNotes-5.0. All-Link-Red. is based on correlational clustering; Spanning is based on latent spanning forest based clustering (see Sec. 2). Our proposed approach is L3M (Sec. 3) and PL3M (sec. 4). CL3M and CPL3M are the version with incorporating constraints. 1. All-Link-Red: a reduced and faster alternative to the correlational clustering based approach (Finley and Joachims, 2005). We implemented this algorithm as an ILP and droped one of the three transitivity constraints for each triplet of mention variables. Following Pascal and Baldridge (2009) and Chang et al. (2011) we observe that this slightly improves the accuracy over a pure correlation clustering approach, in addition to speeding up inference. 2. Spanning: the latent spanning forest based approach presented by Yu and Joachims (2009). We use the publicly available implementation provided by the authors3 for the ACE data; since their CCCP implementation is slow, we implemented our own stochastic gradient descent version to scale it to the much larger Ontonotes data. 3Available at http://www.cs.cornell.edu/ cnyu/latentssvm/ Table 3 lists the results. Although L3M is simple and u</context>
+</contexts>
+<marker>Pascal, Baldridge, 2009</marker>
+<rawString>D. Pascal and J. Baldridge. 2009. Global joint models for coreference resolution and named entity classification. In Procesamiento del Lenguaje Iatural.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Pletscher</author>
+<author>C S Ong</author>
+<author>J M Buhmann</author>
+</authors>
+<title>Entropy and margin maximization for structured output learning.</title>
+<date>2010</date>
+<booktitle>In ECML PKDD.</booktitle>
+<contexts>
+<context position="20223" citStr="Pletscher et al., 2010" startWordPosition="3359" endWordPosition="3362"> the mentions inside that cluster, mimicking the notion of a mention-to-cluster link. This provides more expressiveness than the BestLeft-Link inference, where a mention connects to a cluster solely based on a single pairwise link to some antecedent mention (the best-link mention) in that cluster. The case of γ = 0: As γ approaches zero, it is easy to show that the probability P[j +— i; d, w] j∗ = arg max j&lt;i X= jEc,0&lt;j&lt;i 605 in Eq. (7) approaches a Kronecker delta function that puts probability 1 on the max-scoring mention j = arg max0≤k&lt;i w·φ(i, j) (assuming no ties), and 0 everywhere else (Pletscher et al., 2010; Samdani et al., 2012). Consequently, as γ —* 0, Pr[c O i; d, w] in Eq. 8 approaches a Kronecker delta function centered on the cluster containing the max-scoring mention, thus reducing to the best-link case of L3M. Thus, PL3M, when tuning the value of γ, is a strictly more general model than L3M. Learning with PL3M We use a likelihood-based approach to learning with PL3M, and first compute the probability Pr[C; d, w] of generating a clustering C, given w. We then learn w by minimizing the regularized negative log-likelihood of the data, augmenting the partition function with a loss-based mar</context>
+</contexts>
+<marker>Pletscher, Ong, Buhmann, 2010</marker>
+<rawString>P. Pletscher, C. S. Ong, and J. M. Buhmann. 2010. Entropy and margin maximization for structured output learning. In ECML PKDD.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Pradhan</author>
+<author>L Ramshaw</author>
+<author>M Marcus</author>
+<author>M Palmer</author>
+<author>R Weischedel</author>
+<author>N Xue</author>
+</authors>
+<title>Conll-2011 shared task: Modeling unrestricted coreference in ontonotes.</title>
+<date>2011</date>
+<booktitle>In CoILL.</booktitle>
+<contexts>
+<context position="3301" citStr="Pradhan et al., 2011" startWordPosition="484" endWordPosition="487">nt-based technique. Furthermore, we present a probabilistic generalization of L3M that is more expressive in that it is capable of considering mention-entity interactions using scores at the mention-pair granularity. We augment this model with a temperature-like parameter (Samdani et al., 2012) to provide additional flexibility. CL3M augments L3M with knowledge-based constraints following (Roth and Yih, 2004; Denis and Baldridge, 2007). This capability is very desirable as shown by the success of the rule-based deterministic approach of Raghunathan et al. (2010) in the CoNLL shared task 2011 (Pradhan et al., 2011). In L3M, domain-specific constraints are incorporated into learning and inference in a straightforward way. CL3M scores a mention’s contribution to its cluster by combining the corresponding score 601 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 601–612, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics of the underlying L3M model with that from a set of constraints. Most importantly, in our experiments on benchmark coreference datasets, we show that CL3M, with just five constraints, compares favorab</context>
+<context position="28036" citStr="Pradhan et al., 2011" startWordPosition="4699" endWordPosition="4702">, treating them as hard constraints (set p to a high value) is a safe and direct way to inject human knowledge into the learning model. Moreover, our framework allows a constraint to use information from previous decisions (such as “cannot-link” constraints). Treating such constraints as features will complicate the learning model. 5.2 Performance of the End-to-End System We compare our system with the top systems reported in the CoNLL shared task 2012 as well as with the Stanford’s publicly released rule-based system (Lee et al., 2013; Lee et al., 2011), which won the CoNLL 2011 Shared Task (Pradhan et al., 2011). Note that all the systems use the same annotations (e.g., gender prediction, part-of-speech tags, name entity tags) provided by the shared task organizers. 607 However, each system implements its own mention detector and pipelines the identified mentions into the coreference clustering component. Moreover, different systems use a different set of features. In order to partially control for errors on mention detection and better evaluate the clustering component in our coreference system, we will also present results on correct (gold) mentions in the next section. Table 1 shows the end-to-end</context>
+</contexts>
+<marker>Pradhan, Ramshaw, Marcus, Palmer, Weischedel, Xue, 2011</marker>
+<rawString>S. Pradhan, L. Ramshaw, M. Marcus, M. Palmer, R. Weischedel, and N. Xue. 2011. Conll-2011 shared task: Modeling unrestricted coreference in ontonotes. In CoILL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Pradhan</author>
+<author>A Moschitti</author>
+<author>N Xue</author>
+<author>O Uryupina</author>
+<author>Y Zhang</author>
+</authors>
+<title>CoNLL-2012 shared task: Modeling multilingual unrestricted coreference in OntoNotes. In CoILL</title>
+<date>2012</date>
+<contexts>
+<context position="4287" citStr="Pradhan et al., 2012" startWordPosition="622" endWordPosition="625">tion for Computational Linguistics of the underlying L3M model with that from a set of constraints. Most importantly, in our experiments on benchmark coreference datasets, we show that CL3M, with just five constraints, compares favorably with other, more complicated, state-of-the-art algorithms on a variety of evaluation metrics. Overall, the main contribution of this paper is a principled machine learning model operating at mention-pair granularity, using easy to implement constraint-augmented inference and learning, that yields competitive results on coreference resolution on Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). 2 Related Work The idea of Latent Left-linking Model (L3M) is inspired by a popular inference approach to coreference which we call the Best-Left-Link approach (Ng and Cardie, 2002; Bengtson and Roth, 2008). In the best-left-link strategy, each mention i is connected to the best antecedent mention j with j &lt; i (i.e. a mention occurring to the left of i, assuming a leftto-right reading order), thereby creating a left-link. The “best” antecedent mention is the one with the highest pairwise score, wzj; furthermore, if wzj is below some threshold, say 0, then i is not c</context>
+<context position="21894" citStr="Pradhan et al., 2012" startWordPosition="3671" endWordPosition="3674">e and are given by , (w·φ(i,k)+δ(Cd,i,k)) and E0≤k&lt;i e C, (i j)Zi(d �&apos;�&apos;&apos; _ &apos; &apos; PrU +— i; d, w] p′j Zi (Cd; d, w, γ) W . Interestingly, the above update rule generalizes the one for L3M, as we are incorporating a weighted sum of all previous mentions in the update rule. With γ —* 0, the SGD in Eq. (4) converges to the SGD update in L3M (Eq. (4)). Finally, in the presence of constraints, we can fold them inside the pairwise link probabilities as in Eq. (6). 5 Experiments and Results In this section, we present our experiments on the two commonly used benchmarks for coreference — Ontonotes-5.0 (Pradhan et al., 2012) and ACE 2004 (NIST, 2004). Table 1 exhibits our bottom line results: CL3M achieves the best result reported on Ontonotes-5.0 development set and essentially ties with (Fernandes et al., 2012) on the test set. As shown in Table 3, CL3M is also the best algorithm on ACE and when evaluated on the gold mentions of Ontonotes. We show that CL3M performs particularly well on clusters containing named entity mentions, which are more important for many information extraction applications. In the rest of this section, after describing our experimental setting, we provide careful analysis of our algorit</context>
+<context position="24288" citStr="Pradhan et al., 2012" startWordPosition="4083" endWordPosition="4086">pirically, we observe that this is enough to generate a stable model. For PL3M (Sec. 4), we tune the value of γ using the development set picking the best γ from 10.0, 0.2, ... ,1.0}. Recall that when γ = 0, PL3M is the same as L3M. We refer to L3M and PL3M with incorporating constraints during inference as CL3M and CPL3M (Sec. 3.4), respectively. Metrics: We compare the systems using three popular metrics for coreference — MUC (Vilain et al., 1995), BCUB (Bagga and Baldwin, 1998), and e, (w·φ(i,j)+δ(Cd,i,j)) 1 pj = 606 Entity-based CEAF (CEAF,) (Luo, 2005). Following, the CoNLL shared tasks (Pradhan et al., 2012), we use the average F1 scores of these three metrics as the main metric of comparison. Features: We build our system on the publicly available Illinois-Coref system1 primarily because it contains a rich set of features presented in Bengtson and Roth (2008) and Chang et al. (2012a) (the latter adds features for pronominal anaphora resolution). We also compare with the Best-Left-Link approach described by Bengtson and Roth (2008). Constraints: We consider the following constraints in CL3M and CPL3M. • SameSpan: two mentions must be linked to each other if they share the same surface text span a</context>
+</contexts>
+<marker>Pradhan, Moschitti, Xue, Uryupina, Zhang, 2012</marker>
+<rawString>S. Pradhan, A. Moschitti, N. Xue, O. Uryupina, and Y. Zhang. 2012. CoNLL-2012 shared task: Modeling multilingual unrestricted coreference in OntoNotes. In CoILL 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Sammons Y Tu V Vydiswaran Q Do</author>
+<author>D Roth</author>
+</authors>
+<title>Robust, light-weight approaches to compute lexical similarity.</title>
+<date>2009</date>
+<tech>Technical report.</tech>
+<marker>Do, Roth, 2009</marker>
+<rawString>M. Sammons Y. Tu V. Vydiswaran Q. Do, D. Roth. 2009. Robust, light-weight approaches to compute lexical similarity. Technical report.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K Raghunathan</author>
+<author>H Lee</author>
+<author>S Rangarajan</author>
+<author>N Chambers</author>
+<author>M Surdeanu</author>
+<author>D Jurafsky</author>
+<author>C Manning</author>
+</authors>
+<title>A multi-pass sieve for coreference resolution.</title>
+<date>2010</date>
+<booktitle>In EMILP.</booktitle>
+<contexts>
+<context position="3248" citStr="Raghunathan et al. (2010)" startWordPosition="474" endWordPosition="477">al SVM approach, optimized using a fast stochastic gradient-based technique. Furthermore, we present a probabilistic generalization of L3M that is more expressive in that it is capable of considering mention-entity interactions using scores at the mention-pair granularity. We augment this model with a temperature-like parameter (Samdani et al., 2012) to provide additional flexibility. CL3M augments L3M with knowledge-based constraints following (Roth and Yih, 2004; Denis and Baldridge, 2007). This capability is very desirable as shown by the success of the rule-based deterministic approach of Raghunathan et al. (2010) in the CoNLL shared task 2011 (Pradhan et al., 2011). In L3M, domain-specific constraints are incorporated into learning and inference in a straightforward way. CL3M scores a mention’s contribution to its cluster by combining the corresponding score 601 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 601–612, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics of the underlying L3M model with that from a set of constraints. Most importantly, in our experiments on benchmark coreference datasets, we show th</context>
+<context position="8749" citStr="Raghunathan et al., 2010" startWordPosition="1317" endWordPosition="1321">netheless, an ILP solver or an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowled</context>
+</contexts>
+<marker>Raghunathan, Lee, Rangarajan, Chambers, Surdeanu, Jurafsky, Manning, 2010</marker>
+<rawString>K. Raghunathan, H. Lee, S. Rangarajan, N. Chambers, M. Surdeanu, D. Jurafsky, and C. Manning. 2010. A multi-pass sieve for coreference resolution. In EMILP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Rahman</author>
+<author>V Ng</author>
+</authors>
+<title>Coreference resolution with world knowledge.</title>
+<date>2011</date>
+<booktitle>In ACL,</booktitle>
+<pages>814--824</pages>
+<contexts>
+<context position="1623" citStr="Rahman and Ng, 2011" startWordPosition="233" endWordPosition="236">y. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learning framework that pushes the state-ofthe-art while operating at a mention-pair granularity. We present two models — the Latent Left-Linking Model (L3M), and a version of that is augmented with domain knowledge-based const</context>
+<context position="6650" citStr="Rahman and Ng, 2011" startWordPosition="1003" endWordPosition="1006">nsidering multiple pairwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Fur</context>
+<context position="8898" citStr="Rahman and Ng, 2011" startWordPosition="1342" endWordPosition="1345">u602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in</context>
+</contexts>
+<marker>Rahman, Ng, 2011</marker>
+<rawString>A. Rahman and V. Ng. 2011a. Coreference resolution with world knowledge. In ACL, pages 814–824.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Rahman</author>
+<author>V Ng</author>
+</authors>
+<title>Ensemble-based coreference resolution.</title>
+<date>2011</date>
+<booktitle>In IJCAI.</booktitle>
+<contexts>
+<context position="1623" citStr="Rahman and Ng, 2011" startWordPosition="233" endWordPosition="236">y. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learning framework that pushes the state-ofthe-art while operating at a mention-pair granularity. We present two models — the Latent Left-Linking Model (L3M), and a version of that is augmented with domain knowledge-based const</context>
+<context position="6650" citStr="Rahman and Ng, 2011" startWordPosition="1003" endWordPosition="1006">nsidering multiple pairwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Fur</context>
+<context position="8898" citStr="Rahman and Ng, 2011" startWordPosition="1342" endWordPosition="1345">u602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in</context>
+</contexts>
+<marker>Rahman, Ng, 2011</marker>
+<rawString>A. Rahman and V. Ng. 2011b. Ensemble-based coreference resolution. In IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Rahman</author>
+<author>V Ng</author>
+</authors>
+<title>Narrowing the modeling gap: a cluster-ranking approach to coreference resolution.</title>
+<date>2011</date>
+<publisher>JAIR.</publisher>
+<contexts>
+<context position="1623" citStr="Rahman and Ng, 2011" startWordPosition="233" endWordPosition="236">y. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and principled machine learning framework that pushes the state-ofthe-art while operating at a mention-pair granularity. We present two models — the Latent Left-Linking Model (L3M), and a version of that is augmented with domain knowledge-based const</context>
+<context position="6650" citStr="Rahman and Ng, 2011" startWordPosition="1003" endWordPosition="1006">nsidering multiple pairwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Fur</context>
+<context position="8898" citStr="Rahman and Ng, 2011" startWordPosition="1342" endWordPosition="1345">u602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in</context>
+</contexts>
+<marker>Rahman, Ng, 2011</marker>
+<rawString>A. Rahman and V. Ng. 2011c. Narrowing the modeling gap: a cluster-ranking approach to coreference resolution. JAIR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>W M Rand</author>
+</authors>
+<title>Objective criteria for the evaluation of clustering methods.</title>
+<date>1971</date>
+<journal>Journal of the American Statistical Association,</journal>
+<volume>66</volume>
+<issue>336</issue>
+<contexts>
+<context position="13762" citStr="Rand, 1971" startWordPosition="2217" endWordPosition="2218">0≤j&lt;i L(w) = 2 11w112 +|D |dE md (max (s d, w) j′′ =arg max w · φ(j, i) 0≤j&lt;i,C(i,j)=1 + Δ(C,Cd)) − s(Cd; d, w)) , where Δ(C, Cd) is a loss function used in coreference. In order to achieve tractable loss-augmented minimization — something not possible with standard loss functions used in coreference (e.g. B3 (Bagga and Baldwin, 1998)) — we use a decomposable loss function that just counts the number of mention pairs on which C and Cd disagree: Δ(C,Cd) = E�di��=0J&lt;i IC(iJ)=Cd(iJ), where I is a binary indicator function. This loss function is equivalent to the numerator of the Rand index loss (Rand, 1971). With this form of loss function and using the scoring function in Eq. (2), we can write L(w) as 2 an d 211w11 + |D |d� md E(m� (w · φ(j, i) i=1 � + δ(Cd, i, j)� − max (w · φ(j, i)) , 0≤j&lt;i,C(i,j)=1 where δ(Cd, i, j) = 1 − Cd(i, j) is the loss-based margin that is 1 if i and j are not coreferent in Cd, and is 0 otherwise. In the above objective function, the left-links remain latent while we get to observe the clustering. This objective function is related to latent structural SVMs (Yu and Joachims, 2009). However Yu and Joachims (2009) use a spanning tree based latent structure which does no</context>
+</contexts>
+<marker>Rand, 1971</marker>
+<rawString>W.M. Rand. 1971. Objective criteria for the evaluation of clustering methods. Journal of the American Statistical Association, 66(336):846–850.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Ratinov</author>
+<author>D Roth</author>
+</authors>
+<title>Learning-based multisieve co-reference resolution with knowledge.</title>
+<date>2012</date>
+<booktitle>In EMILP.</booktitle>
+<contexts>
+<context position="8853" citStr="Ratinov and Roth, 2012" startWordPosition="1334" endWordPosition="1337">approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2012; Rahman and Ng, 2011a) has tried to integrate world knowledge from webbased statistics or knowledge bases into a coreference system. World knowledge is potentially useful for resolving coreference and can be injected into our system in a straightforward way via the constraints framework. We will show an example of incorporating our system with name-entity and WordNet-based similarity metric (Q. Do, 2009) in Sec. 5. Including massive amount of information from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models bu</context>
+</contexts>
+<marker>Ratinov, Roth, 2012</marker>
+<rawString>L. Ratinov and D. Roth. 2012. Learning-based multisieve co-reference resolution with knowledge. In EMILP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Ratinov</author>
+<author>D Roth</author>
+<author>D Downey</author>
+<author>M Anderson</author>
+</authors>
+<title>Local and global algorithms for disambiguation to wikipedia.</title>
+<date>2011</date>
+<booktitle>In Proc. of the Annual Meeting of the Association for Computational Linguistics (ACL).</booktitle>
+<contexts>
+<context position="29368" citStr="Ratinov et al., 2011" startWordPosition="4908" endWordPosition="4911">, but this difference disappears when we use our system with constraints, CL3M. Although our system is much simple, it achieves the best B3 score on the test set and is competitive with the best system participated in the CoNLL shared task 2012. Performance on named entities: The coreference annotation in Ontonotes 5.0 includes various types of mentions. However, not all mention types are equally interesting. In particular, clusters which contain at least one proper name or a named entity mention are more important for information extraction tasks like Wikification (Mihalcea and Csomai, 2007; Ratinov et al., 2011), cross-document coreference resolution (Bagga and Baldwin, 1998), and entity linking and knowledge based population (Ji and Grishman, 2011). Inspired by this, we compare our system to the best systems in the CoNLL shared task of 2011 (Stanford (Lee et al., 2011)) and 2012 (Fernandes (Fernandes et al., 2012)) on the following specific tasks on Ontonotes-5.0. • ENT-C: Evaluate the system on clusters that contain at least one proper name mention. We generate the gold annotation and system outputs by using the gold and predicted name entity tag annotations provided by the CoNLL shard task 2012. T</context>
+</contexts>
+<marker>Ratinov, Roth, Downey, Anderson, 2011</marker>
+<rawString>L. Ratinov, D. Roth, D. Downey, and M. Anderson. 2011. Local and global algorithms for disambiguation to wikipedia. In Proc. of the Annual Meeting of the Association for Computational Linguistics (ACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Roth</author>
+<author>Wen Tau Yih</author>
+</authors>
+<title>A linear programming formulation for global inference in natural language tasks.</title>
+<date>2004</date>
+<booktitle>In Proceedings of CoILL-04,</booktitle>
+<pages>1--8</pages>
+<contexts>
+<context position="3091" citStr="Roth and Yih, 2004" startWordPosition="448" endWordPosition="451">th, 2008). However, unlike previous best-link techniques, learning in our case is performed jointly with decoding — we present a novel latent structural SVM approach, optimized using a fast stochastic gradient-based technique. Furthermore, we present a probabilistic generalization of L3M that is more expressive in that it is capable of considering mention-entity interactions using scores at the mention-pair granularity. We augment this model with a temperature-like parameter (Samdani et al., 2012) to provide additional flexibility. CL3M augments L3M with knowledge-based constraints following (Roth and Yih, 2004; Denis and Baldridge, 2007). This capability is very desirable as shown by the success of the rule-based deterministic approach of Raghunathan et al. (2010) in the CoNLL shared task 2011 (Pradhan et al., 2011). In L3M, domain-specific constraints are incorporated into learning and inference in a straightforward way. CL3M scores a mention’s contribution to its cluster by combining the corresponding score 601 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 601–612, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Li</context>
+<context position="9946" citStr="Roth and Yih, 2004" startWordPosition="1504" endWordPosition="1507">ormation from knowledge resources is not the focus of this paper and may distort the comparison with other relevant models but our results indicate that this is doable in our model, and may provide significant improvements. 3 Latent Left-Linking Model with Constraints In this section, we describe our Constrained Latent Left-Linking Model (CL�M). CL�M is inspired by a few ideas from the literature: (a) the popular BestLeft-Link inference approach to coreference (Ng and Cardie, 2002; Bengtson and Roth, 2008), and (b) the injection of domain knowledge-based constraints for structured prediction (Roth and Yih, 2004; Clarke and Lapata, 2006; Chang et al., 2012b; Ganchev et al., 2010; Koo et al., 2010; Pascal and Baldridge, 2009). We first introduce the notion of a pairwise mention-scorer, then introduce our Left-Linking Model (L�M), and finally describe how to inject constraints into our model. Let d be a document with md mentions. Mentions are denoted solely using their indices, ranging from 1 to md. A coreference clustering C for document d is a collection of disjoint sets partitioning the set {1, ... ,md}. We represent C as a binary function with C(i, j) = 1 if mentions i and j are coreferent, otherwi</context>
+</contexts>
+<marker>Roth, Yih, 2004</marker>
+<rawString>Dan Roth and Wen Tau Yih. 2004. A linear programming formulation for global inference in natural language tasks. In Proceedings of CoILL-04, pages 1–8.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Samdani</author>
+<author>M Chang</author>
+<author>D Roth</author>
+</authors>
+<title>Unified expectation maximization.</title>
+<date>2012</date>
+<booktitle>In IAACL.</booktitle>
+<contexts>
+<context position="2975" citStr="Samdani et al., 2012" startWordPosition="433" endWordPosition="436">rring mention to its left, much like the existing best-left-link inference models (Ng and Cardie, 2002; Bengtson and Roth, 2008). However, unlike previous best-link techniques, learning in our case is performed jointly with decoding — we present a novel latent structural SVM approach, optimized using a fast stochastic gradient-based technique. Furthermore, we present a probabilistic generalization of L3M that is more expressive in that it is capable of considering mention-entity interactions using scores at the mention-pair granularity. We augment this model with a temperature-like parameter (Samdani et al., 2012) to provide additional flexibility. CL3M augments L3M with knowledge-based constraints following (Roth and Yih, 2004; Denis and Baldridge, 2007). This capability is very desirable as shown by the success of the rule-based deterministic approach of Raghunathan et al. (2010) in the CoNLL shared task 2011 (Pradhan et al., 2011). In L3M, domain-specific constraints are incorporated into learning and inference in a straightforward way. CL3M scores a mention’s contribution to its cluster by combining the corresponding score 601 Proceedings of the 2013 Conference on Empirical Methods in Natural Langu</context>
+<context position="18646" citStr="Samdani et al., 2012" startWordPosition="3058" endWordPosition="3061">nd generalize our leftlinking model approach to a probabilistic model, Probabilistic Latent Left-Linking Model (PL3M), that allows us to naturally consider mention-toentity (or mention-to-cluster) links. While in L3M, we assumed that each mention links deterministically to the max-scoring mention on its left, in PL3M, we assume that mention i links to mention j, j &lt; i, with probability given by e � (w·φ(i,j)) Pr[j +— i; d, w] = 1 Zi(w, γ) . (7) Here Zi(w, γ) = P0&lt;k&lt;i e f (w·φ(i,k)) is a normalizing constant and γ E (0, 1] is a constant temperature parameter that is tuned on a development set (Samdani et al., 2012). We assume that the event that mention i links to a mention j is independent of the event that mention i′ links to j′ for i =� i′. Inference with PL3M: Given the probability of a link as in Eq. (7), the probability that mention i joins an existing cluster c, Pr[c O i; d, w], is simply the sum of the probabilities of i linking to the mentions inside c: Pr[c O i; d, w] = X Pr[j +— i; d, w] jEc,0&lt;j&lt;i e�(w·φ(i,j)) 1 Zi(d, w, γ) . (8) Based on Eq. (8) and making use of the independence assumption of left-links, we follow a simple greedy clustering (or inference) algorithm: sequentially add each me</context>
+<context position="20246" citStr="Samdani et al., 2012" startWordPosition="3363" endWordPosition="3366">t cluster, mimicking the notion of a mention-to-cluster link. This provides more expressiveness than the BestLeft-Link inference, where a mention connects to a cluster solely based on a single pairwise link to some antecedent mention (the best-link mention) in that cluster. The case of γ = 0: As γ approaches zero, it is easy to show that the probability P[j +— i; d, w] j∗ = arg max j&lt;i X= jEc,0&lt;j&lt;i 605 in Eq. (7) approaches a Kronecker delta function that puts probability 1 on the max-scoring mention j = arg max0≤k&lt;i w·φ(i, j) (assuming no ties), and 0 everywhere else (Pletscher et al., 2010; Samdani et al., 2012). Consequently, as γ —* 0, Pr[c O i; d, w] in Eq. 8 approaches a Kronecker delta function centered on the cluster containing the max-scoring mention, thus reducing to the best-link case of L3M. Thus, PL3M, when tuning the value of γ, is a strictly more general model than L3M. Learning with PL3M We use a likelihood-based approach to learning with PL3M, and first compute the probability Pr[C; d, w] of generating a clustering C, given w. We then learn w by minimizing the regularized negative log-likelihood of the data, augmenting the partition function with a loss-based margin (Gimpel and Smith, </context>
+</contexts>
+<marker>Samdani, Chang, Roth, 2012</marker>
+<rawString>R. Samdani, M. Chang, and D. Roth. 2012. Unified expectation maximization. In IAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>W M Soon</author>
+<author>H T Ng</author>
+<author>D C Y Lim</author>
+</authors>
+<title>A machine learning approach to coreference resolution of noun phrases.</title>
+<date>2001</date>
+<journal>Comput. Linguist.</journal>
+<contexts>
+<context position="1381" citStr="Soon et al., 2001" startWordPosition="194" endWordPosition="197"> well as some structured prediction models proposed in the literature. 1 Introduction Coreference resolution is a challenging task, that involves identification and clustering of noun phrases mentions that refer to the same real-world entity. Most machine learning approaches to coreference resolution learn a scoring function to estimate the compatibility between two mentions or two sets of previously clustered mentions. Then, a decoding algorithm is designed to aggregate these scores and find an optimal clustering assignment. The most popular of these frameworks is the pairwise mention model (Soon et al., 2001; Ng and Cardie, 2002; Bengtson and Roth, 2008), which learns a compatibility score of mention-pairs and uses these pairwise scores to obtain a global clustering. Recently, efforts have been made (Haghighi and Klein, 2010; Rahman and Ng, 2011b; Rahman and Ng, 2011c) to consider models that capture higher order interactions, in particular, between mentions and previously identified entities (that is, between mentions and clusters). While such models are potentially more expressive, they are largely based on heuristics to achieve computational tractability. This paper focuses on a novel and prin</context>
+</contexts>
+<marker>Soon, Ng, Lim, 2001</marker>
+<rawString>W. M. Soon, H. T. Ng, and D. C. Y. Lim. 2001. A machine learning approach to coreference resolution of noun phrases. Comput. Linguist.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>V Stoyanov</author>
+<author>J Eisner</author>
+</authors>
+<title>Easy-first coreference resolution.</title>
+<date>2012</date>
+<booktitle>In COLIIG,</booktitle>
+<pages>2519--2534</pages>
+<contexts>
+<context position="6678" citStr="Stoyanov and Eisner, 2012" startWordPosition="1007" endWordPosition="1010">rwise left-links instead of just the best link, efficiently capturing the notion of a mention-to-cluster link. Many techniques in the coreference literature break away from the mention pair-based, best-leftlink paradigm. Denis and Baldridge (2008) and Ng (2005) learn a local ranker to rank the mention pairs based on their compatibility. While these approaches achieve decent empirical performance, it is unclear why these are the right ways to train the model. Some techniques consider a more expressive model by using features defined over mentioncluster or cluster-cluster (Rahman and Ng, 2011c; Stoyanov and Eisner, 2012; Haghighi and Klein, 2010). For these models, the inference and learning algorithms are usually complicated. Very recently, Durrett et al. (2013) propose a probabilistic model which enforces structural agreement constraints between specified properties of mention cluster when using a mention-pair model. This approach is very related to the probabilistic extension of our method as both models attempt to leverage entity-level information from mention-pair features. However, our approach is simpler because it directly considers the probabilities of multiple links. Furthermore, while their model </context>
+<context position="32770" citStr="Stoyanov and Eisner, 2012" startWordPosition="5470" endWordPosition="5473">tonotes includes longer mentions; for example, it includes NP and appositives in the same mention. We compare with the publicly available Stanford (Lee et al., 2011) and IllinoisCoref (Chang et al., 2012a) systems; the system of Fernandes et al. (2012) is not publicly available. In addition, we also compare with the following two structured prediction baselines that use the same set of features as L3M and PL3M. 608 MUC BCUB CEAFe AVG ACE 2004 Gold Ment. All-Link-Red. 77.45 81.10 77.57 78.71 Spanning 73.31 79.25 74.66 75.74 IllinoisCoref 76.02 81.04 77.6 78.22 Stanford 75.04 80.45 76.75 77.41 (Stoyanov and Eisner, 2012) 80.1 81.8 - - L3M 77.57 81.77 78.15 79.16 PL3M 78.18 82.09 79.21 79.83 CL3M 78.17 81.64 78.45 79.42 CPL3M 78.29 82.20 79.26 79.91 Ontonotes 5.0 Gold Ment. All-Link-Red. 83.72 75.59 64.00 74.44 Spanning 83.64 74.83 61.07 73.18 IllinoisCoref 80.84 74.29 65.96 73.70 Stanford 82.26 76.82 61.69 73.59 L3M 83.44 78.12 64.56 75.37 PL3M 83.97 78.25 65.69 75.97 CL3M 84.10 78.30 68.74 77.05 CPL3M 84.80 78.74 68.75 77.43 Table 3: Performance on ACE 2004 and OntoNotes-5.0. All-Link-Red. is based on correlational clustering; Spanning is based on latent spanning forest based clustering (see Sec. 2). Our pro</context>
+</contexts>
+<marker>Stoyanov, Eisner, 2012</marker>
+<rawString>V. Stoyanov and J. Eisner. 2012. Easy-first coreference resolution. In COLIIG, pages 2519–2534.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>V Stoyanov</author>
+<author>N Gilbert</author>
+<author>C Cardie</author>
+<author>E Riloff</author>
+</authors>
+<title>Conundrums in noun phrase coreference resolution: making sense of the state-of-the-art. In</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 6th conference on Message understanding.</booktitle>
+<contexts>
+<context position="5379" citStr="Stoyanov et al., 2009" startWordPosition="808" endWordPosition="811">edent mention is the one with the highest pairwise score, wzj; furthermore, if wzj is below some threshold, say 0, then i is not connected to any antecedent mention. The final clustering is a transitive closure of these “best” links. The intuition behind best-left-link strategy is based on how humans read and decipher coreference links – they mostly rely on information to the left of the mention when deciding whether to add it to a previously constructed cluster or not. This strategy has been successful and commonly used in coreference resolution (Ng and Cardie, 2002; Bengtson and Roth, 2008; Stoyanov et al., 2009). However, most works have developed ad-hoc approaches to implement this idea. For instance, Bengtson and Roth (2008) train a model w on binary training data generated by taking for each mention, the closest antecedent coreferent mention as a positive example, and all the other mentions as negative examples. Similar approaches to training and, additionally, decoupling the training stage from the clustering stage were used by other systems. In this paper, we formalize the learning problem of the best-left-link model as a structured prediction problem and analyze our system with detailed experim</context>
+</contexts>
+<marker>Stoyanov, Gilbert, Cardie, Riloff, 2009</marker>
+<rawString>V. Stoyanov, N. Gilbert, C. Cardie, and E. Riloff. 2009. Conundrums in noun phrase coreference resolution: making sense of the state-of-the-art. In ACL. M. Vilain, J. Burger, J. Aberdeen, D. Connolly, and L. Hirschman. 1995. A model-theoretic coreference scoring scheme. In Proceedings of the 6th conference on Message understanding.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Yu</author>
+<author>T Joachims</author>
+</authors>
+<title>Learning structural svms with latent variables.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML).</booktitle>
+<contexts>
+<context position="8274" citStr="Yu and Joachims (2009)" startWordPosition="1247" endWordPosition="1250">ate (and efficient) training. Several structured prediction techniques have been applied to coreference resolution in the machine learning literature. For example, McCallum and Wellner (2003) and Finley and Joachims (2005) model coreference as a correlational clustering problem (Bansal et al., 2002) on a complete graph over the mentions with edge weights given by the pairwise classifier. However, correlational clustering is known to be NP Hard (Bansal et al., 2002); nonetheless, an ILP solver or an approximate inference algorithm can be used to solve this problem. Another approach proposed by Yu and Joachims (2009) formu602 lates coreference with latent spanning trees. However, their approach has no directionality between mentions, whereas our latent structure captures the natural left-to-right ordering of mentions. In our experiments (Sec. 5), we show that our technique vastly outperforms both the spanning tree and the correlational clustering techniques. We also compare with (Fernandes et al., 2012) and the publicly available Stanford coreference system (Raghunathan et al., 2010; Lee et al., 2011), a state-of-theart rule-based system. Finally, some research (Ratinov and Roth, 2012; Bansal and Klein, 2</context>
+<context position="14273" citStr="Yu and Joachims, 2009" startWordPosition="2319" endWordPosition="2322">inary indicator function. This loss function is equivalent to the numerator of the Rand index loss (Rand, 1971). With this form of loss function and using the scoring function in Eq. (2), we can write L(w) as 2 an d 211w11 + |D |d� md E(m� (w · φ(j, i) i=1 � + δ(Cd, i, j)� − max (w · φ(j, i)) , 0≤j&lt;i,C(i,j)=1 where δ(Cd, i, j) = 1 − Cd(i, j) is the loss-based margin that is 1 if i and j are not coreferent in Cd, and is 0 otherwise. In the above objective function, the left-links remain latent while we get to observe the clustering. This objective function is related to latent structural SVMs (Yu and Joachims, 2009). However Yu and Joachims (2009) use a spanning tree based latent structure which does not have the left-to-right directionality we exploit. We can minimize the above function using Concave Convex Procedure (Yuille and Rangarajan, 2003), which is guaranteed to reach the local minima. However, such a procedure is costly as it requires doing inference on all the documents to compute a single gradient update. Consequently, we choose a faster stochastic While SGD has no theoretically convergence guarantee, it works excellently in our experiments. Specifically, we observe that SGD achieves similar </context>
+<context position="34028" citStr="Yu and Joachims (2009)" startWordPosition="5673" endWordPosition="5676">L3M (sec. 4). CL3M and CPL3M are the version with incorporating constraints. 1. All-Link-Red: a reduced and faster alternative to the correlational clustering based approach (Finley and Joachims, 2005). We implemented this algorithm as an ILP and droped one of the three transitivity constraints for each triplet of mention variables. Following Pascal and Baldridge (2009) and Chang et al. (2011) we observe that this slightly improves the accuracy over a pure correlation clustering approach, in addition to speeding up inference. 2. Spanning: the latent spanning forest based approach presented by Yu and Joachims (2009). We use the publicly available implementation provided by the authors3 for the ACE data; since their CCCP implementation is slow, we implemented our own stochastic gradient descent version to scale it to the much larger Ontonotes data. 3Available at http://www.cs.cornell.edu/ cnyu/latentssvm/ Table 3 lists the results. Although L3M is simple and use only the features defined on pairwise mentions, it compares favorably with all recently published results. Moreover, the probabilistic generalization of L3M, PL3M, achieves even better performance. For example, L3M with -y = 0.2 improves L3M with </context>
+<context position="35383" citStr="Yu and Joachims (2009)" startWordPosition="5901" endWordPosition="5904">st with the predicted mentions where -y = 0 performed best. We suspect that this is because noisy mentions can hurt the performance of PL3M that takes into account not just the best scoring links, but also weaker links which are likely to be less reliable (more false positives). Also, as opposed to what is reported by Yu and Joachims (2009), the correlation clustering approach performs better than the spanning forest approach. We think that this is because we compare the systems on different metrics than they did and also because we use exact ILP inference for correlational clustering whereas Yu and Joachims (2009) used approximate greedy inference. Both L3M and PL3M can be benefit from using constraints. However, The constraints improve only marginally on the ACE 2004 data because ACE uses shorter phrases as mentions. Consequently, constraints designed for leveraging information from long mention spans are less effective. Overall, the experiments show that L3M and PL3M perform well on modeling coreference clustering. 5.4 Ablation Study of Constrains Finally, we study the value of individual constraints by adding one constraint at a time to the coreference system starting with the simple L3M model. The </context>
+</contexts>
+<marker>Yu, Joachims, 2009</marker>
+<rawString>C. Yu and T. Joachims. 2009. Learning structural svms with latent variables. In Proceedings of the International Conference on Machine Learning (ICML).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A L Yuille</author>
+<author>A Rangarajan</author>
+</authors>
+<title>The concaveconvex procedure.</title>
+<date>2003</date>
+<journal>Neural Computation,</journal>
+<volume>15</volume>
+<issue>4</issue>
+<contexts>
+<context position="14509" citStr="Yuille and Rangarajan, 2003" startWordPosition="2356" endWordPosition="2359">� md E(m� (w · φ(j, i) i=1 � + δ(Cd, i, j)� − max (w · φ(j, i)) , 0≤j&lt;i,C(i,j)=1 where δ(Cd, i, j) = 1 − Cd(i, j) is the loss-based margin that is 1 if i and j are not coreferent in Cd, and is 0 otherwise. In the above objective function, the left-links remain latent while we get to observe the clustering. This objective function is related to latent structural SVMs (Yu and Joachims, 2009). However Yu and Joachims (2009) use a spanning tree based latent structure which does not have the left-to-right directionality we exploit. We can minimize the above function using Concave Convex Procedure (Yuille and Rangarajan, 2003), which is guaranteed to reach the local minima. However, such a procedure is costly as it requires doing inference on all the documents to compute a single gradient update. Consequently, we choose a faster stochastic While SGD has no theoretically convergence guarantee, it works excellently in our experiments. Specifically, we observe that SGD achieves similar training performance to CCCP with a speed-up of around 10,000. 3.4 Incorporating Constraints Next, we show how to incorporate domain knowledge-based constraints into L3M and generalize it to CL3M. In CL3M, we obtain a clustering by maxi</context>
+</contexts>
+<marker>Yuille, Rangarajan, 2003</marker>
+<rawString>A. L. Yuille and A. Rangarajan. 2003. The concaveconvex procedure. Neural Computation, 15(4).</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

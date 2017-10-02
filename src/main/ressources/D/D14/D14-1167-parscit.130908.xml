@@ -1,0 +1,1732 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.980906">
+Knowledge Graph and Text Jointly Embedding
+</title>
+<author confidence="0.991725">
+Zhen Wang†§ , Jianwen Zhang† , Jianlin Feng§ , Zheng Chen††{v-zw,jiazhan,zhengc}@microsoft.com
+</author>
+<affiliation confidence="0.5135715">
+§{wangzh56@mail2,fengjlin@mail}.sysu.edu.cn
+†Microsoft Research §Sun Yat-sen University
+</affiliation>
+<sectionHeader confidence="0.971353" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999981666666667">
+We examine the embedding approach to
+reason new relational facts from a large-
+scale knowledge graph and a text corpus.
+We propose a novel method of jointly em-
+bedding entities and words into the same
+continuous vector space. The embedding
+process attempts to preserve the relations
+between entities in the knowledge graph
+and the concurrences of words in the text
+corpus. Entity names and Wikipedia an-
+chors are utilized to align the embeddings
+of entities and words in the same space.
+Large scale experiments on Freebase
+and a Wikipedia/NY Times corpus show
+that jointly embedding brings promising
+improvement in the accuracy of predicting
+facts, compared to separately embedding
+knowledge graphs and text. Particularly,
+jointly embedding enables the prediction
+of facts containing entities out of the
+knowledge graph, which cannot be han-
+dled by previous embedding methods. At
+the same time, concerning the quality of
+the word embeddings, experiments on the
+analogical reasoning task show that jointly
+embedding is comparable to or slightly
+better than word2vec (Skip-Gram).
+</bodyText>
+<sectionHeader confidence="0.999471" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999975921568628">
+Knowledge graphs such as Freebase (Bollacker et
+al., 2008) and WordNet (Miller, 1995) have be-
+come important resources for many AI &amp; NLP ap-
+plications such as Q &amp; A. Generally, a knowledge
+graph is a collection of relational facts that are of-
+ten represented in the form of a triplet (head en-
+tity, relation, tail entity), e.g., “(Obama, Born-in,
+Honolulu)”. An urgent issue for knowledge graph-
+s is the coverage, e.g., even the largest knowledge
+graph of Freebase is still far from complete.
+Recently, targeting knowledge graph comple-
+tion, a promising paradigm of embedding was pro-
+posed, which is able to reason new facts only from
+the knowledge graph (Bordes et al., 2011; Bor-
+des et al., 2013; Socher et al., 2013; Wang et al.,
+2014). Generally, in this series of methods, each
+entity is represented as a k-dimensional vector and
+each relation is characterized by an operation in
+Rk so that a candidate fact can be asserted by sim-
+ple vector operations. The embeddings are usually
+learnt by minimizing a global loss function of all
+the entities and relations in the knowledge graph.
+Thus, the vector of an entity may encode global
+information from the entire graph, and hence scor-
+ing a candidate fact by designed vector operations
+plays a similar role to long range “reasoning” in
+the graph. However, since this requires the vectors
+of both entities to score a candidate fact, this type
+of methods can only complete missing facts for
+which both entities exist in the knowledge graph.
+However, a missing fact often contains entities out
+of the knowledge graph (called out-of-kb for short
+in this paper), e.g., one or both entities are phras-
+es appearing in web text but not included in the
+knowledge graph yet. How to deal with these fact-
+s is a significant obstacle to widely applying the
+embedding paradigm.
+In addition to knowledge embedding, anoth-
+er interesting approach is the word embedding
+method word2vec (Mikolov et al., 2013b), which
+shows that learning word embeddings from an
+unlabeled text corpus can make the vectors con-
+necting the pairs of words of some certain
+relation almost parallel, e.g., vec(“China”) −
+vec(“Beijing”) ≈ vec(“Japan”) − vec(“Tokyo”).
+However, it does not know the exact relation be-
+tween the pairs. Thus, it cannot be directly applied
+to complete knowledge graphs.
+The capabilities and limitations of knowledge
+embedding and word embedding have inspired us
+to design a mechanism to mosaic the knowledge
+</bodyText>
+<page confidence="0.929183">
+1591
+</page>
+<note confidence="0.897087">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1591–1601,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999502217391304">
+graph and the “word graph” together in a vector
+space so that we can score any candidate relation-
+al facts between entities and words1. Therefore,
+we propose a novel method to jointly embed enti-
+ties and words into the same vector space. In our
+solution, we define a coherent probabilistic model
+for both knowledge and text, which is composed
+of three components: the knowledge model, text
+model, and alignment model. Both the knowledge
+model and text model use the same core transla-
+tion assumption for the fact modeling: a candidate
+fact (h, r, t) is scored based on �h + r − t11. The
+only difference is, in the knowledge model the re-
+lation r is explicitly supervised and the goal is to
+fit the fact triplets, while in the text model we as-
+sume any pair of words h and t that concur in some
+text windows are of certain relation r but r is a hid-
+den variable, and the goal is to fit the concurring
+pairs of words. The alignment model guarantees
+the embeddings of entities and words/phrases lie
+in the same space and impels the two models to en-
+hance each other. Two mechanisms of alignment
+are introduced in this paper: utilizing names of en-
+tities and utilizing Wikipedia anchors. This way of
+jointly embedding knowledge and text can be con-
+sidered to be semi-supervised knowledge embed-
+ding: the knowledge graph provides explicit su-
+pervision of facts while the text corpus provides
+much more “relation-unlabeled” pairs of words.
+We conduct extensive large scale experiments
+on Freebase and Wikipedia corpus, which show
+jointly embedding brings promising improve-
+ments to the accuracy of predicting facts, com-
+pared to separately embedding the knowledge
+graph and the text corpus, respectively. Particu-
+larly, jointly embedding enables the prediction of
+a candidate fact with out-of-kb entities, which can
+not be handled by any existing embedding meth-
+ods. We also use embeddings to provide a prior
+score to help fact extraction on the benchmark da-
+ta set of Freebase+NYTimes and also observe very
+promising improvements. Meanwhile, concerning
+the quality of word embeddings, experiments on
+the analogical reasoning task show that jointly em-
+bedding is comparable to or slightly better than
+word2vec (Skip-Gram).
+</bodyText>
+<footnote confidence="0.836522">
+1We do not distinguish between “words” and “phrases”,
+i.e., “words” means “words/phrases”.
+</footnote>
+<sectionHeader confidence="0.998277" genericHeader="related work">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999131500000001">
+Knowledge Embedding. A knowledge graph is
+embedded into a low-dimensional continuous vec-
+tor space while certain properties of it are pre-
+served (Bordes et al., 2011; Bordes et al., 2013;
+Socher et al., 2013; Chang et al., 2013; Wang et
+al., 2014). Generally, each entity is represented
+as a point in that space while each relation is inter-
+preted as an operation over entity embeddings. For
+instance, TransE (Bordes et al., 2013) interprets a
+relation as a translation from the head entity to the
+tail entity. The embedding representations are usu-
+ally learnt by minimizing a global loss function in-
+volving all entities and relations so that each entity
+embedding encodes both local and global connec-
+tivity patterns of the original graph. Thus, we can
+reason new facts from learnt embeddings.
+Word Embedding. Generally, word embeddings
+are learned from a given text corpus without su-
+pervision by predicting the context of each word
+or predicting the current word given its contex-
+t (Bengio et al., 2003; Collobert et al., 2011;
+Mikolov et al., 2013a; Mikolov et al., 2013b). Al-
+though relations between words are not explicitly
+modeled, continuous bag-of-words (CBOW) and
+Skip-gram (Mikolov et al., 2013a; Mikolov et al.,
+2013b) learn word embeddings capturing many
+syntactic and semantic relations between words
+where a relation is also represented as the trans-
+lation between word embeddings.
+Relational Facts Extraction. Another pivotal
+channel for knowledge graph completion is ex-
+tracting relational facts from external sources such
+as free text (Mintz et al., 2009; Riedel et al., 2010;
+Hoffmann et al., 2011; Surdeanu et al., 2012;
+Zhang et al., 2013; Fan et al., 2014). This se-
+ries of methods focuses on identifying local text
+patterns that express a certain relation and making
+predictions based on them. However, they have
+not fully utilized the evidences from a knowledge
+graph, e.g., knowledge embedding is able to rea-
+son new facts without any external sources. Ac-
+tually, knowledge embedding is very complemen-
+tary to traditional extraction methods, which was
+first confirmed by (Weston et al., 2013). To es-
+timate the plausibility of a candidate fact, they
+added scores from embeddings to scores from an
+extractor, which showed significant improvemen-
+t. However, as pointed out in the introduction,
+their knowledge embedding method cannot pre-
+dict facts involving out-of-kb entities.
+</bodyText>
+<page confidence="0.981775">
+1592
+</page>
+<figure confidence="0.6906425">
+3 Jointly Embedding Knowledge and in the knowledge graph:
+Text �LK = Lf(h,r, t) (3)
+</figure>
+<bodyText confidence="0.997726466666667">
+We will first describe the notation used in this pa-
+per. A knowledge graph A is a set of triplets in
+the form (h, r, t), h, t ∈ E and r ∈ R where E is
+the entity vocabulary and R is a collection of pre-
+defined relations. We use bold letters h, r, t to de-
+note the corresponding embedding representation-
+s of h, r, t. A text corpus is a sequence of words
+drawn from the word vocabulary V. Note that we
+perform some preprocessing to detect phrases in
+the text and the vocabulary here already includes
+the phrases. For simplicity’s sake, without spe-
+cial explanation, when we say “word(s)”, it means
+“word(s)/phrase(s)”. Since we consider triplets in-
+volving not only entities but also words, we denote
+I = E ∪V. Additionally, we denote anchors by A.
+</bodyText>
+<subsectionHeader confidence="0.998583">
+3.1 Modeling
+</subsectionHeader>
+<bodyText confidence="0.999984846153846">
+Our model is composed of three components:
+the knowledge model, text model, and alignment
+model.
+Before defining the component models, we first
+define the element model for a fact triplet. In-
+spired by TransE, we also represent a relation r
+as a vector r ∈ &lt;k and score a fact triplet (h, r, t)
+byz(h,r,t) = b−12kh+r−tk2where bisa
+constant for bias designated for adjusting the scale
+for better numerical stability and b = 7 is a sensi-
+ble choice. z(h, r, t) is expected to be large if the
+triplet is true. Based on the same element model of
+fact, we define the component models as follows.
+</bodyText>
+<sectionHeader confidence="0.454815" genericHeader="method">
+3.1.1 Knowledge Model
+</sectionHeader>
+<bodyText confidence="0.9992675">
+We define the following conditional probability of
+a fact (h, r, t) in a knowledge graph:
+</bodyText>
+<equation confidence="0.998766666666667">
+exp{z(h, r, t)
+Prhr, t} (1)
+(  |) = E˜hEZ exp{z(˜h, r, t)}
+</equation>
+<bodyText confidence="0.9995775">
+and we have named our model pTransE (Proba-
+bilistic TransE) to show respect to TransE. We also
+define Pr(r|h, t) and Pr(t|h, r) in the same way
+by choosing corresponding normalization terms
+respectively. We define the likelihood of observ-
+ing a fact triplet as:
+</bodyText>
+<equation confidence="0.998284">
+Lf(h, r, t) = log Pr(h|r, t)+ log Pr(t|h, r)
++ log Pr(r|h, t) (2)
+</equation>
+<bodyText confidence="0.997282">
+The goal of the knowledge model is to maximize
+the conditional likelihoods of existing fact triplets
+</bodyText>
+<equation confidence="0.634654">
+(h,r,t)EO
+</equation>
+<subsectionHeader confidence="0.369372">
+3.1.2 Text Model
+</subsectionHeader>
+<bodyText confidence="0.9987016">
+We propose the following key assumption for
+modeling text, which connects word embedding
+and knowledge embedding: there are relations
+between words although we do not know what
+they are.
+</bodyText>
+<listItem confidence="0.3617255">
+Relational Concurrence Assumption. If two
+words w and v concur in some context, e.g., a win-
+dow of text, then there is a relation rwv between
+the two words. That is, we can state the triplet of
+</listItem>
+<equation confidence="0.710707">
+(w, rwv,v) is a fact.
+</equation>
+<bodyText confidence="0.998442157894737">
+We define the conditional probability
+Pr(w|rwv, v) following the same formulation
+of Eq.(1) to model why two words concur in some
+context. In contrast to knowledge embedding,
+here rwv is a hidden variable rather than explicitly
+supervised.
+The challenge is to deal with the hidden variable
+rwv. Obviously, without any more assumption-
+s, the number of distinct rwv is around |V |× ¯N,
+where N¯ is the average number of unique word-
+s concurred with each word. This number is ex-
+tremely large. Thus it is almost impossible to esti-
+mate a vector for each rwv. And the problem is ac-
+tually ill-posed. We need to constrain the freedom
+degree of rwv. Here we use auxiliary variables to
+reduce the size of variables we need to estimate:
+let w&apos; = w + rwv, then
+z(w, rwv, v)°= z(w&apos;, v) = b − 12kw&apos; − vk2 (4)
+and
+</bodyText>
+<equation confidence="0.993546">
+Pr(w|rwv, v) = Pr(w|v) = exp{z(w&apos;, v)}
+E˜wEV exp{z(˜w&apos;, v)}
+(5)
+</equation>
+<bodyText confidence="0.9984034">
+In this way we need to estimate vectors w and w&apos;
+for each word w, and a total of 2 × |V |vectors.
+The goal of the text model is to maximize the
+likelihood of the concurrences of pairs of words in
+text windows:
+</bodyText>
+<equation confidence="0.99773">
+�LT = nwv log Pr(w|v). (6)
+(w,v)EC
+</equation>
+<bodyText confidence="0.9998464">
+In the above equation, C is all the distinct pairs of
+words concurring in text windows of a fixed size.
+And nwv is the number of concurrences of the pair
+(w, v). Interestingly, as explained in Sec.(3.3),
+this text model is almost equivalent to Skip-Gram.
+</bodyText>
+<page confidence="0.979087">
+1593
+</page>
+<subsectionHeader confidence="0.581825">
+3.1.3 Alignment Model
+</subsectionHeader>
+<bodyText confidence="0.998606952380952">
+If we only have the knowledge model and text
+model, the entity embeddings and word embed-
+dings will be in different spaces and any comput-
+ing between them is meaningless. Thus we need
+mechanisms to align the two spaces into the same
+one. We propose two mechanisms in this paper: u-
+tilizing Wikipedia anchors, and utilizing names of
+entities.
+Alignment by Wikipedia Anchors. This mod-
+el is based on the connection between Wikipedia
+and Freebase: for most Wikipedia (English) pages,
+there is an unique corresponding entity in Free-
+base. As a result, for most of the anchors in
+Wikipedia, each of which refers to a Wikipedi-
+a page, we know that the surface phrase v of an
+anchor actually refers to the Freebase entity ev.
+Thus, we define a likelihood for this part of an-
+chors as Eq.(6) but replace the word pair (w, v)
+with the word-entity pair (w, ev), i.e., using the
+corresponding entity ev rather than the surface
+word v in Eq.(5):
+</bodyText>
+<equation confidence="0.9964925">
+�LAA = log Pr(w|ev) (7)
+(w,v)EC,vEA
+</equation>
+<bodyText confidence="0.999672785714286">
+where A denotes the set of anchors.
+In addition to Wikipedia anchors, we can also
+use an entity linking system with satisfactory per-
+formance to produce the pseudo anchors.
+Alignment by Names of Entities. Another way
+is to use the names of entities. For a fact triplet
+(h, r, t) E A, if h has a name wh and wh E V, then
+we will generate a new triplet of (wh, r, t) and add
+it to the graph. Similarly, we also add (h, r, wt)
+and (wh, r, wt) into the graph if the names exist
+and belong to the word vocabulary. We call this
+sub-graph containing names the name graph and
+define a likelihood for the name graph by observ-
+ing its triplets:
+</bodyText>
+<equation confidence="0.99395725">
+�LAN = I[whEV n wtEV]&apos;Lf(wh, r, wt)+
+(h,r,t)EA
+I[whEV] &apos; Lf(wh, r, t) + I[wtEV] &apos; Lf(h, r, wt)
+(8)
+</equation>
+<bodyText confidence="0.999894454545455">
+Both alignment models have advantages and
+disadvantages. Alignment by names of entities is
+straightforward and does not rely on additional da-
+ta sources. The number of triplets generated by the
+names is also large and can significantly change
+the results. However, this model is risky. On the
+one hand, the name of an entity is ambiguous be-
+cause different entities sometimes have the same
+name so that the name graph may contaminate the
+knowledge embedding. On the other hand, an en-
+tity often has several different aliases when men-
+tioned in the text but we do not have the complete
+set, which will break the semantic balance of word
+embedding. For example, for the entity Apple In-
+c., suppose we only have the standard name “Ap-
+ple Inc.” but do not have the alias “apple”. And for
+the entity Apple that is fruit, suppose we have the
+name ”apple” included in the name graph. Then
+the vector of the word “apple” will be biased to
+the concept of fruit rather than the company. But if
+no name graph intervenes, the unsupervised word
+embedding is able to learn a vector that is closer to
+the concept of the company due to the polarities.
+Alignment by anchors relies on the additional data
+source of Wikipedia anchors. Moreover, the num-
+ber of matched Wikipedia anchors (-40M) is rela-
+tively small compared to the total number of word
+pairs (-2.0B in Wikipedia) and hence the contri-
+bution is limited. However, the advantage is that
+the quality of the data is very high and there are no
+ambiguity/completeness issues.
+Considering the above three component models
+together, the likelihood we maximize is:
+</bodyText>
+<equation confidence="0.956546">
+L = LK + LT + LA (9)
+</equation>
+<bodyText confidence="0.983633">
+where LA could be LAA or LAN or LAA + LAN.
+</bodyText>
+<subsectionHeader confidence="0.986828">
+3.2 Training
+</subsectionHeader>
+<subsubsectionHeader confidence="0.505548">
+3.2.1 Approximation to the Normalizers
+</subsubsectionHeader>
+<bodyText confidence="0.998755769230769">
+It is difficult to directly compute the normalizers in
+Pr(h|r, t) (or Pr(t|h, r), Pr(r|h, t)) and Pr(w|v)
+as the normalizers sum over |I |or |V |terms where
+both |I |and |V |reach tens of millions. To pre-
+vent having to exactly calculate the normalizer-
+s, we use negative sampling (NEG) (Mikolov et
+al., 2013b) to transform the original objective, i.e.,
+Eq.(9) to a simple objective of the binary classifi-
+cation problem—differentiating the observed data
+from noise.
+First, we define: (i) the probability of a given
+triplet (h, r, t) to be true (D = 1); and (ii) the
+probability of a given word pair (w, v) to co-occur
+</bodyText>
+<equation confidence="0.896199454545454">
+(D = 1):
+Pr(D = 1|h, r, t) = Q(z(h, r, t)) (10)
+Pr(D = 1|w, v) = Q(z(w&apos;, v)) (11)
+where Q(x) = 1+exp{−x} and D E {0,1}.
+1
+1594
+Instead of maximizing log Pr(h|r, t) in Eq.(2),
+we maximize:
+log Pr(1|h, r, t)
+c
+1 ˜hi∼Prneg(˜hi)[Pr(0|˜hi, r, t)]
+</equation>
+<bodyText confidence="0.9997732">
+where c is the number of negative examples to
+be discriminated for each positive example. NEG
+guarantees that maximizing Eq.(12) can approxi-
+mately maximize log Pr(h|r, t). Thus, we also re-
+place log Pr(r|h, t), log Pr(t|r,h) in Eq.(2), and
+log Pr(w|v) in Eq.(6) in the same way by choosing
+corresponding negative distributions respectively.
+As a result, the objectives of both the knowledge
+model GK (Eq.(3)) and text model GT (Eq.(6)) are
+free from cumbersome normalizers.
+</bodyText>
+<subsectionHeader confidence="0.643531">
+3.2.2 Optimization
+</subsectionHeader>
+<bodyText confidence="0.998639">
+We use stochastic gradient descent (SGD) to max-
+imize the simplified objectives.
+Knowledge model. A is randomly tra-
+versed multiple times. When a positive example
+(h, r, t) E A is considered, to maximize (12), we
+construct c negative triplets by sampling elements
+from an uniform distribution over Z and replacing
+the head of (h, r, t). The transformed objective of
+log Pr(r|h,t) is maximized in the same manner,
+but by sampling from a uniform distribution over
+R and corrupting the relation of (h, r, t). After a
+mini-batch, computed gradients are used to update
+the involved embeddings.
+Text model. The text corpus is traversed one or
+more times. When current word v and a context
+word w are considered, c words are sampled from
+the unigram distribution raised to the 3/4rd power
+and regarded as negative examples ( ˜w, v) that are
+never concurrent. Then we compute and update
+the related gradients.
+Alignment model. GAA and GAN are absorbed
+by the text model and knowledge model respec-
+tively, since anchors are considered to predict con-
+text given an entity and the name graph are homo-
+geneous to the original knowledge graph.
+Joint. All three component objectives are si-
+multaneously optimized. To deal with large-scale
+data, we implement a multi-thread version with
+shared memory. Each thread is in charge of a por-
+tion of the data (either knowledge or text corpus),
+and traverses through them, calculates gradients
+and commits the update to the global model and
+is stored in a block of shared memory. For the
+</bodyText>
+<tableCaption confidence="0.966645">
+Table 1: Data: triplets used in our experiments.
+</tableCaption>
+<table confidence="0.7078955">
+#R #E #Triplet (Train/Valid/Test)
+4,490 43,793,608 123,062,855 40,528,963 40,528,963
+</table>
+<bodyText confidence="0.9428715">
+sake of efficiency, no lock is used on the shared
+memory.
+</bodyText>
+<subsectionHeader confidence="0.999185">
+3.3 Connections to Related Models
+</subsectionHeader>
+<bodyText confidence="0.999974105263158">
+TransE. (Bordes et al., 2013) proposed to mod-
+el a relation r as a translation vector r E Rk
+which is expected to connect h and t with low
+error if (h, r, t) E A. We also follow it. How-
+ever, TransE uses a margin based ranking loss
+{IIh+r−tII2+γ−II˜h+r−˜tII2}+. Itis nota proba-
+bilistic model and hence it needs to restrict the nor-
+m of either entity embedding and/or relation em-
+bedding. Bordes et al. (2013) intuitively addresses
+this problem by simply normalizing the entity em-
+beddings to the unit sphere before computing gra-
+dients at each iteration. We define pTransE as a
+probabilistic model, which doesn’t need addition-
+al constraints on the norms of embeddings of en-
+tities/words/relations, and thus eliminates the nor-
+malization operations.
+Skip-gram. (Mikolov et al., 2013a; Mikolov et al.,
+2013b) defines the probability of the concurrence
+of two words in a window as:
+</bodyText>
+<equation confidence="0.9553385">
+exp{w&apos;Tv}
+Pr(w|v) = E˜w∈V exp{˜w&apos;Tv} (13)
+</equation>
+<bodyText confidence="0.999754666666667">
+which is based on the inner product, while our text
+model (Eqs. (4), (5)) is based on distance. If we
+constrain IIwII = 1 for each w, then w&apos;Tv =
+1 − 12IIw&apos; − vII2. It is easy to see that our text
+model is equivalent to Skip-gram in this case. Our
+distance-based text model is directly derived from
+the triplet fact model, which clearly explains why
+it is able to make the pairs of entities of a certain
+relation parallel in the vector space.
+</bodyText>
+<sectionHeader confidence="0.999819" genericHeader="evaluation">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.999797111111111">
+We empirically evaluate and compare related mod-
+els with regards to three tasks: triplet classifica-
+tion (Socher et al., 2013), improving relation ex-
+traction (Weston et al., 2013), and the analogi-
+cal reasoning task (Mikolov et al., 2013a). The
+related models include: for knowledge embed-
+ding alone, TransE (Bordes et al., 2013), pTransE
+(proposed in this paper); for word embedding
+alone, Skip-gram (Mikolov et al., 2013b); for both
+</bodyText>
+<equation confidence="0.89470925">
+�
++
+i=1
+(12)
+</equation>
+<page confidence="0.980529">
+1595
+</page>
+<tableCaption confidence="0.974766">
+Table 2: Data: the number of e − e, w − e, e −
+</tableCaption>
+<table confidence="0.935027375">
+w, w − w triplets/analogies where w represents
+the out-of-kb entity, which is regarded as word and
+replaced by its corresponding entity name.
+Type #Triplet (Valid/Test) #Analogy
+12,305,200 12,305,200 71,441
+3,655,164 3,654,404 70,878
+3,643,914 3,642,978 70,442
+460,762 451,381 40,980
+</table>
+<bodyText confidence="0.997236571428571">
+knowledge and text, we use “respectively” to re-
+fer to the embeddings learnt by TransE/pTransE
+and Skip-gram, respectively, “jointly” to refer to
+our jointly embedding method, in which “anchor”
+and “name” refer to “Alignment by Wikipedia An-
+chors” and “Alignment by Names of Entities”, re-
+spectively.
+</bodyText>
+<subsectionHeader confidence="0.926254">
+4.1 Data
+</subsectionHeader>
+<bodyText confidence="0.99919490625">
+To learn the embedding representations of entities
+and words, we use a knowledge graph, a text cor-
+pus, and some connections between them.
+Knowledge. We adopt Freebase as our knowl-
+edge graph. First, we remove the user profiles,
+version control, and meta data, leaving 52,124,755
+entities, 4,490 relations, and 204,120,782 triplet-
+s. We call this graph main facts. Then we held
+out 8,331,147 entities from main facts and regard
+them as out-of-kb entities. Under such a setting,
+from main facts, we held out all the triplets in-
+volving out-of-kb entities, as well as 24,610,400
+triplets that don’t contain out-of-kb entities. Held-
+out triplets are used for validation and testing; the
+remaining triplets are used for training. See Table
+1 for the statistics.
+We regard out-of-kb entities as words/phrases
+and thus divide the held-out triplets into four type-
+s: no out-of-kb entity (e−e), the head is out-of-kb
+entity but the tail is not (w − e), the tail is out-of-
+kb entity but the head is not (e − w), and both the
+head and tail are out-of-kb entities (w − w). Then
+we replace the out-of-kb entities among the held-
+out triplets by their corresponding entity names.
+The mapping from a Freebase entity identifier to
+its name is done through the Freebase predicate—
+“/type/object/name”. Since some entity names
+are not present in our vocabulary V, we remove
+triplets involving these names (see Table 2). In
+such a way, besides the missing edges between ex-
+isting entities, the related models can be evaluated
+on triplets involving words/phrases as their head
+</bodyText>
+<tableCaption confidence="0.8404045">
+Table 3: Triplet Classification: comparison be-
+tween TransE and pTransE over e − e triplets.
+</tableCaption>
+<figure confidence="0.402047333333333">
+Method Accuracy (%) Area under PR curve
+TransE
+pTransE
+</figure>
+<figureCaption confidence="0.220352">
+and/or tail.
+</figureCaption>
+<bodyText confidence="0.9974264375">
+Text. We adopt the Wikipedia (English) cor-
+pus. After removing pages designated for nav-
+igation, disambiguation, or discussion purpos-
+es, there are 3,469,024 articles left. We ap-
+ply sentence segmentation, tokenization, Part-of-
+Speech (POS) tagging, and named entity recog-
+nition (NER) to these articles using Apache
+OpenNLP package2. Then we conduct some sim-
+ple chunking to acquire phrases: if several con-
+secutive tokens are identically tagged as ”Loca-
+tion”/”Person”/”Organization”, or covered by an
+anchor, we combine them as a chunk. After the
+preprocessing, our text corpus contain 73,675,188
+sentences consisting of 1,522,291,723 chunks. A-
+mong them, there are around 20 millions distinct
+chunks, including words and phrases. We filter out
+punctuation and rare words/phrases that occur less
+than three times in the text corpus, reducing |V |to
+5,240,003.
+Alignment. One of our alignment models need-
+s Wikipedia anchors. There are around 45 million
+such anchors in our text corpus and 41,970,548 of
+them refer to entities in £. Another mechanism u-
+tilizes the name graph constructed through names
+of entities. Specifically, for each training triplet
+(h, r, t), suppose h and t have entity names wh
+and wt, respectively and wh, wt E V, the train-
+ing triplet contributes (wh, r, wt), (wh, r, t), and
+(h, r, wt) to the name graph. There are 81,753,310
+triplets in our name graphs. Note that there is no
+overlapping between the name graph and held-out
+triplets of e − w, w − e, and w − w types.
+</bodyText>
+<subsectionHeader confidence="0.97135">
+4.2 Triplet Classification
+</subsectionHeader>
+<bodyText confidence="0.9998775">
+This task judges whether a triplet (h, r, t) is true
+or false, i.e., binary classification of a triplet.
+Evaluation protocol. Following the same pro-
+tocol in NTN (Socher et al., 2013), for each true
+triplet, we construct a false triplet for it by ran-
+domly sampling an element from Z to corrupt its
+head or tail. Since |£ |is significantly larger than
+|V |in our data, sampling from a uniform distri-
+</bodyText>
+<footnote confidence="0.857563">
+2https://opennlp.apache.org
+</footnote>
+<figure confidence="0.992885833333333">
+e − e
+w − e
+e − w
+w − w
+93.1 0.86
+93.4 0.97
+</figure>
+<page confidence="0.985458">
+1596
+</page>
+<tableCaption confidence="0.999718">
+Table 4: Triplet classification: accuracy (%) over various types of triplets.
+</tableCaption>
+<table confidence="0.9990212">
+Type e − e w − e e − w w−w all
+respectively 93.4 52.1 51.4 71.0 77.5
+jointly (anchor) 94.4 67.0 66.7 79.8 81.9
+jointly (name) 94.5 80.5 80.0 89.0 87.7
+jointly (anchor+name) 95.0 82.0 81.5 90.0 88.8
+</table>
+<bodyText confidence="0.997503295454546">
+bution over I will let triplets involving no word
+dominate the false triplets. To avoid that, when we
+corrupt the head of (h, r, t), if h ∈ E, h&apos; is sam-
+pled from E while if h ∈ V, h&apos; is sampled from V.
+The same rule is applied when we corrupt the tail
+of (h, r, t). In this way, for each of the four types
+of triplets, we ensure the number of true triplets is
+equal to that of false ones.
+To classify a triplet (h, r, t), we first use the con-
+sidered methods to score it. TransE scores it by
+−|h + r − t|. Our models score it by Pr(D =
+1|h, r, t) (see Eq.(10)). Then the considered meth-
+ods label a triplet (h, r, t) as true if its score is
+larger than the relation-specific threshold of r, as
+false otherwise. The relation-specific thresholds
+are chosen to maximize the classification accura-
+cy over the validation set.
+We report the classification accuracy. Addition-
+ally, we rank all the testing triplets by their scores
+in descending order. Then we draw a precision-
+recall (PR) curve based on this ranking and report
+the area under the PR curve.
+Implementation. We implement TransE (Bor-
+des et al., 2013), Skip-gram (Mikolov et al.,
+2013a), and our models.
+First, we train TransE and pTransE over our
+training triplets with embedding dimension k
+in {50,100,150}. Adhering to (Bordes et al.,
+2013), we use the fixed learning rate α in
+{0.005, 0.01, 0.05} for TransE during its 300 e-
+pochs. For pTransE, we use the number of neg-
+ative examples per positive example c among
+{5,10}, the learning rate α among {0.01, 0.025}
+where α decreases along with its 40 epochs. The
+optimal configurations of TransE are: k = 100,
+α = 0.01. The optimal configurations of pTransE
+are: k = 100, c = 10, and α = 0.025.
+Then we train Skip-gram with the embedding
+dimension k in {50,100,150}, the max skip-range
+s in {5,10}, the number of negative examples per
+positive example c in {5,10}, and learning rate
+α = 0.025 linearly decreasing along with the 6
+epochs over our text corpus. Popular words whose
+frequencies are larger than 10−5 are subsampled
+according to the trick proposed in (Mikolov et al.,
+2013b). The optimal configurations of Skip-gram
+are: k = 150, s = 5, and c = 10.
+Combining entity embeddings and word em-
+beddings learnt by pTransE and Skip-gram respec-
+tively, “respectively” model can score all types of
+held-out triplets. For our jointly embedding mod-
+el, we consider various alignment mechanisms and
+use equal numbers of threads for knowledge mod-
+el and text model. The best configurations of
+“jointly” model are: k = 150, s = 5, c = 10, and
+α = 0.025 which linearly decreases along with the
+6 epochs of traversing text corpus.
+Results. We first illustrate the comparison be-
+tween TransE and pTransE over e − e type triplet-
+s in Table 3. Observing the scores assigned to
+true triplets by TransE, we notice that triplets of
+popular relations generally have larger scores than
+those of rare relations. In contrast, pTransE, as
+a probabilistic model, assigns comparable scores
+to true triplets of both popular and rare relations.
+When we use a threshold to separate true triplets
+from false triplets of the same relation, there is no
+obvious difference between the two models. How-
+ever, when all triplets are ranked together, assign-
+ing scores in a more uniform scale is definitely an
+advantage. Thus, the contradiction stems from the
+different training strategies of the two models and
+the consideration of relation-specific thresholds.
+Classification accuracies over various types of
+held-out triplets are presented in Table 4. The
+“jointly” model outperforms the “respectively”
+model no matter which alignment mechanism(s)
+are used. Actually, for the “respectively” model,
+there is no interaction between entity embeddings
+and word embeddings during training and thus it-
+s predictions, over triplets that involve both enti-
+ty and word at the same time, are not much bet-
+ter than random guessing. It is also a natural re-
+sult that alignment by names is more effective than
+alignment by anchors. The number of anchors is
+much smaller than the number of overall chunks
+in our text corpus. In addition, the number of en-
+tities mentioned by anchors is very limited com-
+</bodyText>
+<page confidence="0.97272">
+1597
+</page>
+<figure confidence="0.999448121212121">
+1.05
+1.00
+0.95
+precision
+0.90
+0.85
+0.80
+Recall
+1.0
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.0 0.2 0.4 0.6 0.8 1.0
+Recall
+precision
+Mintz (0.864752658197)
+Mintz+Jointly (0.891043673778)
+Mintz+Knowledge (0.917260610051)
+0.75
+0.0 0.2 0.4 0.6 0.8 1.0
+Mintz (0.512956668019)
+Mintz+Jointly (0.636313453126)
+Recall
+precision
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.0 0.2 0.4 0.6 0.8 1.0
+1.0
+Mintz (0.662641417434)
+Mintz+Jointly (0.695062505333)
+precision
+0.30
+0.20
+0.10
+0.00
+0.0 0.2 0.4 0.6 0.8 1.0
+0.35
+0.25
+0.15
+0.05
+Mintz (0.0914506877334)
+Mintz+Jointly (0.0993184342972)
+precision
+0.4
+0.9
+0.8
+0.7
+0.6
+0.5
+0.3
+0.2
+0.1
+0.0 0.2 0.4 0.6 0.8 1.0
+1.0
+Mintz (0.363969399646)
+Mintz+Jointly (0.480909766665)
+Mintz+Knowledge (0.418875519101)
+Recall Recall
+</figure>
+<figureCaption confidence="0.9444205">
+Figure 1: Improving Relation Extraction: PR curves of Mintz alone or combined with knowledge
+(pTransE) / jointly model over (a) e − e, (b) w − e, (c) e − w, (d) w − w, and (e) all triplets.
+</figureCaption>
+<bodyText confidence="0.666082">
+pared with |9|. Thus, interactions brought in by
+anchors are not as significant as that of the name
+graph.
+</bodyText>
+<subsectionHeader confidence="0.999566">
+4.3 Improving Relation Extraction
+</subsectionHeader>
+<bodyText confidence="0.999986958333333">
+It has been shown that embedding models are very
+complementary to extractors (Weston et al., 2013).
+However, some entities detected from text are out-
+of-kb entities. In such a case, triplets involving
+these entities cannot be handled by any existing
+knowledge embedding method, but our jointly em-
+bedding model can score them. As our model can
+cover more candidate triplets provided by extrac-
+tors, it is expected to provide more significant im-
+provements to extractors than any other embed-
+ding model. We confirm this point as follow.
+Evaluation protocol. For relation extraction,
+we use a public dataset—NYT+FB (Riedel et al.,
+2010)3, which distantly labels the NYT corpus by
+Freebase facts. We consider (Mintz et al., 2009)
+and Sm2r (Weston et al., 2013) as our extractors
+to provide candidate triplets as well as their plau-
+sibilities estimated according to text features.
+For embedding, we first held out triplets from
+our training set that appear in the test set of
+NYT+FB. Then we train TransE, pTransE and the
+“jointly” model on the remaining training triplets
+as well as on our text corpus. Then we use these
+models to score each candidate triplet in the same
+</bodyText>
+<footnote confidence="0.794715">
+3http://iesl.cs.umass.edu/riedel/ecml/
+</footnote>
+<bodyText confidence="0.999572214285714">
+way as the previous triplet classification experi-
+ment.
+For combination, we first divide each candidate
+triplet into one of these categories: e − e, e − w,
+w − e, w − w, and “out-of-vocabulary”. Be-
+cause there is no embedding model that can score
+triplets involving out-of-vocabulary word/phrase,
+we just ignore these triplets.Please note that, for
+our jointly embedding model, there are no “out-
+of-vocabulary” triplets if we include the NYT cor-
+pus for training. We use the embedding models
+to score candidate triplets and combine the scores
+given by the embedding model with scores given
+by the extractors. For each type e−e, e−w, w−e,
+w −w and their union (i.e. all), we rank the candi-
+date triplets by their revisited scores and draw PR
+curve to observe which embedding method pro-
+vides the most significant improvements to the ex-
+tractors.
+Implementation. For (Mintz et al., 2009), we
+use the implementation in (Surdeanu et al., 2012)4.
+We implement Sm2r by ourselves with the best hy-
+perparameters introduced in (Weston et al., 2013).
+For TransE, pTransE, and the “jointly” model, we
+use the same implementations, scoring schemes,
+and optimal configurations as the triplet classifica-
+tion experiment.
+To combine extractors with embedding mod-
+</bodyText>
+<footnote confidence="0.9835355">
+4http://nlp.stanford.edu/software/
+mimlre.shtml
+</footnote>
+<page confidence="0.985027">
+1598
+</page>
+<figure confidence="0.991299363636363">
+Recall
+Recall
+Recall
+Recall
+Recall
+Figure 2: Improving Relation Extraction: PR curves of Sm2r alone or combined with knowledge
+(TransE) / jointly model over (a) e − e, (b) w − e, (c) e − w, (d) w − w, and (e) all triplets.
+1.00
+1.00
+1.00
+0.95
+0.98
+0.98
+0.90
+0.96
+0.96
+0.85
+0.94
+0.94
+0.92
+0.80
+precision
+precision
+precision
+0.75
+0.90
+0.92
+0.70
+0.88
+0.90
+0.65
+0.86
+0.88
+Sm2r
+(0.908752270146)
+Sm2r+Jointly (0.966914103913)
+Sm2r (0.875810724647)
+Sm2r+Jointly (0.966676169402)
+0.60
+0.84
+0.55
+0.0 0.2 0.4 0.6 0.8 1.0
+0.86
+0.0 0.2 0.4 0.6 0.8 1.0
+0.82
+0.0 0.2 0.4 0.6 0.8 1.0
+Sm2r (0.773014296476)
+Sm2r+Jointly (0.858251870864)
+Sm2r+Knowledge (0.858251870864)
+1.0
+0.90
+0.9
+0.85
+0.8
+0.80
+0.7
+0.75
+precision
+precision
+0.6
+0.70
+0.5
+0.65
+0.4
+0.60
+0.3
+0.55
+Sm2r (0.431460754321)
+Sm2r+Jointly (0.536200901997)
+0.2
+0.0 0.2 0.4 0.6 0.8 1.0
+0.50
+0.0 0.2 0.4 0.6 0.8 1.0
+Sm2r
+(0.67446140565)
+Sm2r+Jointly (0.802071230237)
+Sm2r+Knowledge (0.697899016348)
+</figure>
+<bodyText confidence="0.99969237037037">
+els, we consider two schemes. Since Mintz s-
+cores candidate triplets in a probabilistic man-
+ner, we linearly combine its scores with the s-
+cores given by pTransE or the “jointly” mod-
+el: Q PrMintz +(1 − Q)PrpTransE/Jointly where Q is
+enumerated from 0 to 1 with 0.025 as a search
+step. On the other hand, neither Sm2r nor TransE
+is a probabilistic model. Thus, we combine
+Sm2r with TransE or the “jointly” model ac-
+cording to the scheme proposed in (Weston et
+al., 2013) where for each candidate (h, r, t), if
+Er,=r S(Score(h, r, t) &lt; Score(h, r&apos;, t)) is less
+than T, we increase ScoreSm2r(h, r, t) by p. We
+search for the best Q, T, and p on another dataset—
+Wikipedia corpus distantly labeled by Freebase.
+Result. We present the PR curves in Fig. (1,
+2). Over candidate triplets provided by either
+Mintz or Sm2r, the “jointly” model is consis-
+tently comparable with the “knowledge” model
+(TransE/pTransE) over e − e triplets while it out-
+performs the “knowledge” model by a consider-
+able margin over triplets of other types. These
+results confirm the advantage of jointly embed-
+ding and are actually straightforward results of our
+triplet classification experiment because the only
+difference is that the triplets here are provided by
+the extractor.
+</bodyText>
+<tableCaption confidence="0.949897">
+Table 6: Phrases Analogical Reasoning Task.
+</tableCaption>
+<subsectionHeader confidence="0.6541145">
+Method Accuracy (%) Hits@10 (%)
+4.4 Analogical Reasoning Task
+</subsectionHeader>
+<bodyText confidence="0.9999148">
+We compare our method with Skip-gram on this
+task to observe and study the influences of both
+knowledge embedding and alignment mechanisms
+on the quality of word embeddings.
+Evaluation protocol. We use the same pub-
+lic datasets as in (Mikolov et al., 2013b): 19,544
+word analogies5; 3,218 phrase analogies6. We al-
+so construct analogies from our held-out triplet-
+s (see Table 2) by first concatenating two entity
+pairs of the same relation to form an analogy and
+</bodyText>
+<footnote confidence="0.7861125">
+5code.google.com/p/word2vec/source/
+browse/trunk/questions-words.txt
+6code.google.com/p/word2vec/source/
+browse/trunk/questions-phrases.txt
+</footnote>
+<tableCaption confidence="0.6767905">
+Table 7: Constructed Analogical Reasoning
+Task.
+</tableCaption>
+<figure confidence="0.999387">
+Method Accuracy (%) Hits@10 (%)
+18.0 56.1
+27.6 65.0
+11.3 40.6
+18.3 54.0
+10.5 14.1
+10.5 14.3
+11.5 16.2
+11.6 16.5
+Skip-gram
+Jointly (anchor)
+Jointly (name)
+Jointly (anchor+name)
+Skip-gram
+Jointly (anchor)
+Jointly (name)
+Jointly (anchor+name)
+</figure>
+<page confidence="0.99465">
+1599
+</page>
+<tableCaption confidence="0.997277">
+Table 5: Words Analogical Reasoning Task.
+</tableCaption>
+<table confidence="0.999747">
+Method Accuracy (%) Hits@10 (%)
+Semantic Syntactic Total Semantic Syntactic Total
+Skip-gram 71.4 69.0 70.0 90.4 89.3 89.8
+Jointly (anchor) 75.3 68.3 71.2 91.5 88.9 89.9
+Jointly (name) 54.5 54.2 59.0 75.8 86.5 82.1
+Jointly (anchor+name) 56.5 65.7 61.9 78.1 87.6 83.6
+</table>
+<bodyText confidence="0.993733126984127">
+then replacing the entities by corresponding entity
+names, e.g., “(Obama, Honolulu, David Beckham,
+London)” where the relation is “Born-in”.
+Following (Mikolov et al., 2013b), we only con-
+sider analogies that consist of the top-K most fre-
+quent words/phrases in the vocabulary. For each
+analogy denoted by (h1, t1, h2, t2), we enumer-
+ate all the top-K most frequent words/phrases w
+except for h1, t1, h2, and calculate the distance
+(Cosine/Euclidean according to specific model)
+between h2 + (t1 − h1) and w. Ordering all
+these words/phrases by their distances in ascend-
+ing order, we obtain the rank of the correct an-
+swer t2. Finally, we report Hits@10 (i.e., the pro-
+portion of correct answers whose ranks are not
+larger than 10) and accuracy (i.e., Hits@1). For
+word analogies and constructed analogies, we set
+K = 200, 000; while for phrase analogies, we set
+K = 1, 000, 000 to recall sufficient analogies.
+Implementation. For Skip-gram and the
+“Jointly” (anchor/name/anchor+name) model, we
+use the same implementations and optimal config-
+urations as the triplet classification experiment.
+Results. Jointly embedding using Wikipedi-
+a anchors for alignment consistently outperforms
+Skip-gram (Table 5, 6, 7) showing that the influ-
+ence of knowledge embedding, injected into word
+embedding through Wikipedia anchors, is benefi-
+cial. The vector of an ambiguous word is often a
+mixture of its several meanings but, in a specific
+context, the word is disambiguated and refers to
+a specific meaning. Using global word embedding
+to predict words within a specific context may pol-
+lute the embeddings of surrounding words. Align-
+ment by anchors enables entity embeddings to al-
+leviate the propagation of ambiguities and thus im-
+proves the quality of word embeddings.
+Using entity names for alignment hurts the per-
+formance of analogies of words and phrases (Ta-
+ble 5, 6). The main reason is that these analo-
+gies are popular facts frequently mentioned in tex-
+t while a name graph forces word embeddings to
+satisfy both popular and rare facts. Another rea-
+son stems from the versatility of mentioning an
+entity. Consider “(Japan, yen, Europe, euro)” for
+example. Knowledge embedding is supposed to
+give significant help to completing this analogy as
+“/location/country/currency”E R. However, the
+entity of Japanese currency is named “Japanese
+yen” rather than “yen” and thus the explicit trans-
+lation learnt from knowledge embedding is not di-
+rectly imposed on the word embedding of “yen”.
+In contrast, using entity names for alignment im-
+proves the performances on constructed analogies
+(Table 7). Since there is a relation r E R for
+each constructed analogy (wh1, wt1, wh2, wt2), al-
+though neither (wh1, r, wt1) nor (wh2, r, wt2) is
+present in the name graph, other facts involving
+these words act on the vectors of these words, in
+the same manner of traditional knowledge embed-
+ding.
+Overall, any high-quality entity linking system
+can be used to further improve the performance.
+</bodyText>
+<sectionHeader confidence="0.999806" genericHeader="conclusions">
+5 Conclusions
+</sectionHeader>
+<bodyText confidence="0.9999636">
+In this paper, we introduced a novel method of
+jointly embedding knowledge graphs and a text
+corpus so that entities and words/phrases are rep-
+resented in the same vector space. In such a way,
+our method can perform prediction on any can-
+didate facts between entities/words/phrases, going
+beyond previous knowledge embedding methods,
+which can only predict facts whose entities exist
+in knowledge graph. Extensive, large-scale exper-
+iments show that the proposed method is very ef-
+fective at reasoning new facts. In addition, we also
+provides insights into word embedding, especially
+on the capability of analogical reasoning. In this
+aspect, we empirically observed some hints that
+jointly embedding also helps word embedding.
+</bodyText>
+<sectionHeader confidence="0.999643" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.9983285">
+Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and
+Christian Jauvin. 2003. A neural probabilistic lan-
+guage model. Journal of Machine Learning Re-
+search, 3:1137–1155.
+</reference>
+<page confidence="0.710862">
+1600
+</page>
+<reference confidence="0.999923079207921">
+Kurt Bollacker, Colin Evans, Praveen Paritosh, Tim S-
+turge, and Jamie Taylor. 2008. Freebase: a collab-
+oratively created graph database for structuring hu-
+man knowledge. In Proceedings of the 2008 ACM
+SIGMOD International Conference on Management
+of Data, pages 1247–1250. ACM.
+Antoine Bordes, Jason Weston, Ronan Collobert, and
+Yoshua Bengio. 2011. Learning structured embed-
+dings of knowledge bases. In Proceedings of the
+Twenty-Fifth AAAI Conference on Artificial Intelli-
+gence, pages 301–306.
+Antoine Bordes, Nicolas Usunier, Alberto Garcia-
+Duran, Jason Weston, and Oksana Yakhnenko.
+2013. Translating embeddings for modeling multi-
+relational data. In Advances in Neural Information
+Processing Systems, pages 2787–2795.
+Kai-Wei Chang, Wen-tau Yih, and Christopher Meek.
+2013. Multi-relational latent semantic analysis. In
+Proceedings of the 2013 Conference on Empirical
+Methods in Natural Language Processing, pages
+1602–1612, Seattle, Washington, USA, October.
+Association for Computational Linguistics.
+Ronan Collobert, Jason Weston, L´eon Bottou, Michael
+Karlen, Koray Kavukcuoglu, and Pavel Kuksa.
+2011. Natural language processing (almost) from
+scratch. Journal of Machine Learning Research,
+12:2493–2537.
+Miao Fan, Deli Zhao, Qiang Zhou, Zhiyuan Liu,
+Thomas Fang Zheng, and Edward Y. Chang. 2014.
+Distant supervision for relation extraction with ma-
+trix completion. In Proceedings of the 52nd Annual
+Meeting of the Association for Computational Lin-
+guistics (Volume 1: Long Papers), pages 839–849,
+Baltimore, Maryland, June. Association for Compu-
+tational Linguistics.
+Raphael Hoffmann, Congle Zhang, Xiao Ling, Luke
+Zettlemoyer, and Daniel S Weld. 2011. Knowledge-
+based weak supervision for information extraction
+of overlapping relations. In Proceedings of the 49th
+Annual Meeting of the Association for Computa-
+tional Linguistics: Human Language Technologies-
+Volume 1, pages 541–550. Association for Compu-
+tational Linguistics.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey
+Dean. 2013a. Efficient estimation of word rep-
+resentations in vector space. arXiv preprint arX-
+iv:1301.3781.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Cor-
+rado, and Jeff Dean. 2013b. Distributed representa-
+tions of words and phrases and their compositional-
+ity. In Advances in Neural Information Processing
+Systems 26, pages 3111–3119.
+George A Miller. 1995. Wordnet: a lexical
+database for english. Communications of the ACM,
+38(11):39–41.
+Mike Mintz, Steven Bills, Rion Snow, and Dan Ju-
+rafsky. 2009. Distant supervision for relation ex-
+traction without labeled data. In Proceedings of the
+Joint Conference of the 47th Annual Meeting of the
+ACL and the 4th International Joint Conference on
+Natural Language Processing of the AFNLP: Vol-
+ume 2-Volume 2, pages 1003–1011. Association for
+Computational Linguistics.
+Sebastian Riedel, Limin Yao, and Andrew McCal-
+lum. 2010. Modeling relations and their mention-
+s without labeled text. In Machine Learning and
+Knowledge Discovery in Databases, pages 148–163.
+Springer.
+Richard Socher, Danqi Chen, Christopher D Manning,
+and Andrew Ng. 2013. Reasoning with neural ten-
+sor networks for knowledge base completion. In Ad-
+vances in Neural Information Processing Systems,
+pages 926–934.
+Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati,
+and Christopher D Manning. 2012. Multi-instance
+multi-label learning for relation extraction. In Pro-
+ceedings of the 2012 Joint Conference on Empirical
+Methods in Natural Language Processing and Com-
+putational Natural Language Learning, pages 455–
+465. Association for Computational Linguistics.
+Zhen Wang, Jianwen Zhang, Jianlin Feng, and Zheng
+Chen. 2014. Knowledge graph embedding by trans-
+lating on hyperplanes. In Proceedings of the Twenty-
+Eighth AAAI Conference on Artificial Intelligence,
+pages 1112–1119.
+Jason Weston, Antoine Bordes, Oksana Yakhnenko,
+and Nicolas Usunier. 2013. Connecting language
+and knowledge bases with embedding models for re-
+lation extraction. In Proceedings of the 2013 Con-
+ference on Empirical Methods in Natural Language
+Processing, pages 1366–1371, Seattle, Washington,
+USA, October. Association for Computational Lin-
+guistics.
+Xingxing Zhang, Jianwen Zhang, Junyu Zeng, Jun
+Yan, Zheng Chen, and Zhifang Sui. 2013. Towards
+accurate distant supervision for relational facts ex-
+traction. In Proceedings of the 51st Annual Meet-
+ing of the Association for Computational Linguistic-
+s (Volume 2: Short Papers), pages 810–815, Sofi-
+a, Bulgaria, August. Association for Computational
+Linguistics.
+</reference>
+<page confidence="0.991656">
+1601
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.819711">
+<title confidence="0.999189">Knowledge Graph and Text Jointly Embedding</title>
+<author confidence="0.99763">Jianwen Jianlin Zheng</author>
+<affiliation confidence="0.994869">Research Yat-sen University</affiliation>
+<abstract confidence="0.993560821428572">We examine the embedding approach to reason new relational facts from a largescale knowledge graph and a text corpus. We propose a novel method of jointly embedding entities and words into the same continuous vector space. The embedding process attempts to preserve the relations between entities in the knowledge graph and the concurrences of words in the text corpus. Entity names and Wikipedia anchors are utilized to align the embeddings of entities and words in the same space. Large scale experiments on Freebase and a Wikipedia/NY Times corpus show that jointly embedding brings promising improvement in the accuracy of predicting facts, compared to separately embedding knowledge graphs and text. Particularly, jointly embedding enables the prediction of facts containing entities out of the knowledge graph, which cannot be handled by previous embedding methods. At the same time, concerning the quality of the word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram).</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yoshua Bengio</author>
+<author>R´ejean Ducharme</author>
+<author>Pascal Vincent</author>
+<author>Christian Jauvin</author>
+</authors>
+<title>A neural probabilistic language model.</title>
+<date>2003</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>3--1137</pages>
+<contexts>
+<context position="7259" citStr="Bengio et al., 2003" startWordPosition="1170" endWordPosition="1173">ings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word embeddings are learned from a given text corpus without supervision by predicting the context of each word or predicting the current word given its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et </context>
+</contexts>
+<marker>Bengio, Ducharme, Vincent, Jauvin, 2003</marker>
+<rawString>Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and Christian Jauvin. 2003. A neural probabilistic language model. Journal of Machine Learning Research, 3:1137–1155.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kurt Bollacker</author>
+<author>Colin Evans</author>
+<author>Praveen Paritosh</author>
+<author>Tim Sturge</author>
+<author>Jamie Taylor</author>
+</authors>
+<title>Freebase: a collaboratively created graph database for structuring human knowledge.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 2008 ACM SIGMOD International Conference on Management of Data,</booktitle>
+<pages>1247--1250</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="1381" citStr="Bollacker et al., 2008" startWordPosition="197" endWordPosition="200">a Wikipedia/NY Times corpus show that jointly embedding brings promising improvement in the accuracy of predicting facts, compared to separately embedding knowledge graphs and text. Particularly, jointly embedding enables the prediction of facts containing entities out of the knowledge graph, which cannot be handled by previous embedding methods. At the same time, concerning the quality of the word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1 Introduction Knowledge graphs such as Freebase (Bollacker et al., 2008) and WordNet (Miller, 1995) have become important resources for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et</context>
+</contexts>
+<marker>Bollacker, Evans, Paritosh, Sturge, Taylor, 2008</marker>
+<rawString>Kurt Bollacker, Colin Evans, Praveen Paritosh, Tim Sturge, and Jamie Taylor. 2008. Freebase: a collaboratively created graph database for structuring human knowledge. In Proceedings of the 2008 ACM SIGMOD International Conference on Management of Data, pages 1247–1250. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Jason Weston</author>
+<author>Ronan Collobert</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Learning structured embeddings of knowledge bases.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Twenty-Fifth AAAI Conference on Artificial Intelligence,</booktitle>
+<pages>301--306</pages>
+<contexts>
+<context position="1991" citStr="Bordes et al., 2011" startWordPosition="302" endWordPosition="305">l., 2008) and WordNet (Miller, 1995) have become important resources for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Wang et al., 2014). Generally, in this series of methods, each entity is represented as a k-dimensional vector and each relation is characterized by an operation in Rk so that a candidate fact can be asserted by simple vector operations. The embeddings are usually learnt by minimizing a global loss function of all the entities and relations in the knowledge graph. Thus, the vector of an entity may encode global information from the entire graph, and hence scoring a candidate fact by designed vector operations plays a similar role to long range “reaso</context>
+<context position="6424" citStr="Bordes et al., 2011" startWordPosition="1030" endWordPosition="1033">lso use embeddings to provide a prior score to help fact extraction on the benchmark data set of Freebase+NYTimes and also observe very promising improvements. Meanwhile, concerning the quality of word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1We do not distinguish between “words” and “phrases”, i.e., “words” means “words/phrases”. 2 Related Work Knowledge Embedding. A knowledge graph is embedded into a low-dimensional continuous vector space while certain properties of it are preserved (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Chang et al., 2013; Wang et al., 2014). Generally, each entity is represented as a point in that space while each relation is interpreted as an operation over entity embeddings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new fac</context>
+</contexts>
+<marker>Bordes, Weston, Collobert, Bengio, 2011</marker>
+<rawString>Antoine Bordes, Jason Weston, Ronan Collobert, and Yoshua Bengio. 2011. Learning structured embeddings of knowledge bases. In Proceedings of the Twenty-Fifth AAAI Conference on Artificial Intelligence, pages 301–306.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Nicolas Usunier</author>
+<author>Alberto GarciaDuran</author>
+<author>Jason Weston</author>
+<author>Oksana Yakhnenko</author>
+</authors>
+<title>Translating embeddings for modeling multirelational data.</title>
+<date>2013</date>
+<booktitle>In Advances in Neural Information Processing Systems,</booktitle>
+<pages>2787--2795</pages>
+<contexts>
+<context position="2012" citStr="Bordes et al., 2013" startWordPosition="306" endWordPosition="310"> (Miller, 1995) have become important resources for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Wang et al., 2014). Generally, in this series of methods, each entity is represented as a k-dimensional vector and each relation is characterized by an operation in Rk so that a candidate fact can be asserted by simple vector operations. The embeddings are usually learnt by minimizing a global loss function of all the entities and relations in the knowledge graph. Thus, the vector of an entity may encode global information from the entire graph, and hence scoring a candidate fact by designed vector operations plays a similar role to long range “reasoning” in the graph. H</context>
+<context position="6445" citStr="Bordes et al., 2013" startWordPosition="1034" endWordPosition="1037"> provide a prior score to help fact extraction on the benchmark data set of Freebase+NYTimes and also observe very promising improvements. Meanwhile, concerning the quality of word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1We do not distinguish between “words” and “phrases”, i.e., “words” means “words/phrases”. 2 Related Work Knowledge Embedding. A knowledge graph is embedded into a low-dimensional continuous vector space while certain properties of it are preserved (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Chang et al., 2013; Wang et al., 2014). Generally, each entity is represented as a point in that space while each relation is interpreted as an operation over entity embeddings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embedd</context>
+<context position="19011" citStr="Bordes et al., 2013" startWordPosition="3239" endWordPosition="3242">omponent objectives are simultaneously optimized. To deal with large-scale data, we implement a multi-thread version with shared memory. Each thread is in charge of a portion of the data (either knowledge or text corpus), and traverses through them, calculates gradients and commits the update to the global model and is stored in a block of shared memory. For the Table 1: Data: triplets used in our experiments. #R #E #Triplet (Train/Valid/Test) 4,490 43,793,608 123,062,855 40,528,963 40,528,963 sake of efficiency, no lock is used on the shared memory. 3.3 Connections to Related Models TransE. (Bordes et al., 2013) proposed to model a relation r as a translation vector r E Rk which is expected to connect h and t with low error if (h, r, t) E A. We also follow it. However, TransE uses a margin based ranking loss {IIh+r−tII2+γ−II˜h+r−˜tII2}+. Itis nota probabilistic model and hence it needs to restrict the norm of either entity embedding and/or relation embedding. Bordes et al. (2013) intuitively addresses this problem by simply normalizing the entity embeddings to the unit sphere before computing gradients at each iteration. We define pTransE as a probabilistic model, which doesn’t need additional constr</context>
+<context position="20677" citStr="Bordes et al., 2013" startWordPosition="3527" endWordPosition="3530">2. It is easy to see that our text model is equivalent to Skip-gram in this case. Our distance-based text model is directly derived from the triplet fact model, which clearly explains why it is able to make the pairs of entities of a certain relation parallel in the vector space. 4 Experiments We empirically evaluate and compare related models with regards to three tasks: triplet classification (Socher et al., 2013), improving relation extraction (Weston et al., 2013), and the analogical reasoning task (Mikolov et al., 2013a). The related models include: for knowledge embedding alone, TransE (Bordes et al., 2013), pTransE (proposed in this paper); for word embedding alone, Skip-gram (Mikolov et al., 2013b); for both � + i=1 (12) 1595 Table 2: Data: the number of e − e, w − e, e − w, w − w triplets/analogies where w represents the out-of-kb entity, which is regarded as word and replaced by its corresponding entity name. Type #Triplet (Valid/Test) #Analogy 12,305,200 12,305,200 71,441 3,655,164 3,654,404 70,878 3,643,914 3,642,978 70,442 460,762 451,381 40,980 knowledge and text, we use “respectively” to refer to the embeddings learnt by TransE/pTransE and Skip-gram, respectively, “jointly” to refer to </context>
+<context position="26511" citStr="Bordes et al., 2013" startWordPosition="4534" endWordPosition="4538">es it by −|h + r − t|. Our models score it by Pr(D = 1|h, r, t) (see Eq.(10)). Then the considered methods label a triplet (h, r, t) as true if its score is larger than the relation-specific threshold of r, as false otherwise. The relation-specific thresholds are chosen to maximize the classification accuracy over the validation set. We report the classification accuracy. Additionally, we rank all the testing triplets by their scores in descending order. Then we draw a precisionrecall (PR) curve based on this ranking and report the area under the PR curve. Implementation. We implement TransE (Bordes et al., 2013), Skip-gram (Mikolov et al., 2013a), and our models. First, we train TransE and pTransE over our training triplets with embedding dimension k in {50,100,150}. Adhering to (Bordes et al., 2013), we use the fixed learning rate α in {0.005, 0.01, 0.05} for TransE during its 300 epochs. For pTransE, we use the number of negative examples per positive example c among {5,10}, the learning rate α among {0.01, 0.025} where α decreases along with its 40 epochs. The optimal configurations of TransE are: k = 100, α = 0.01. The optimal configurations of pTransE are: k = 100, c = 10, and α = 0.025. Then we</context>
+</contexts>
+<marker>Bordes, Usunier, GarciaDuran, Weston, Yakhnenko, 2013</marker>
+<rawString>Antoine Bordes, Nicolas Usunier, Alberto GarciaDuran, Jason Weston, and Oksana Yakhnenko. 2013. Translating embeddings for modeling multirelational data. In Advances in Neural Information Processing Systems, pages 2787–2795.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kai-Wei Chang</author>
+<author>Wen-tau Yih</author>
+<author>Christopher Meek</author>
+</authors>
+<title>Multi-relational latent semantic analysis.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1602--1612</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Seattle, Washington, USA,</location>
+<contexts>
+<context position="6486" citStr="Chang et al., 2013" startWordPosition="1042" endWordPosition="1045">tion on the benchmark data set of Freebase+NYTimes and also observe very promising improvements. Meanwhile, concerning the quality of word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1We do not distinguish between “words” and “phrases”, i.e., “words” means “words/phrases”. 2 Related Work Knowledge Embedding. A knowledge graph is embedded into a low-dimensional continuous vector space while certain properties of it are preserved (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Chang et al., 2013; Wang et al., 2014). Generally, each entity is represented as a point in that space while each relation is interpreted as an operation over entity embeddings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word emb</context>
+</contexts>
+<marker>Chang, Yih, Meek, 2013</marker>
+<rawString>Kai-Wei Chang, Wen-tau Yih, and Christopher Meek. 2013. Multi-relational latent semantic analysis. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1602–1612, Seattle, Washington, USA, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ronan Collobert</author>
+<author>Jason Weston</author>
+<author>L´eon Bottou</author>
+<author>Michael Karlen</author>
+<author>Koray Kavukcuoglu</author>
+<author>Pavel Kuksa</author>
+</authors>
+<title>Natural language processing (almost) from scratch.</title>
+<date>2011</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>12--2493</pages>
+<contexts>
+<context position="7283" citStr="Collobert et al., 2011" startWordPosition="1174" endWordPosition="1177">ransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word embeddings are learned from a given text corpus without supervision by predicting the context of each word or predicting the current word given its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et a</context>
+</contexts>
+<marker>Collobert, Weston, Bottou, Karlen, Kavukcuoglu, Kuksa, 2011</marker>
+<rawString>Ronan Collobert, Jason Weston, L´eon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel Kuksa. 2011. Natural language processing (almost) from scratch. Journal of Machine Learning Research, 12:2493–2537.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Miao Fan</author>
+<author>Deli Zhao</author>
+<author>Qiang Zhou</author>
+<author>Zhiyuan Liu</author>
+<author>Thomas Fang Zheng</author>
+<author>Edward Y Chang</author>
+</authors>
+<title>Distant supervision for relation extraction with matrix completion.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>839--849</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, Maryland,</location>
+<contexts>
+<context position="7930" citStr="Fan et al., 2014" startWordPosition="1274" endWordPosition="1277">ov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embeddings to scores from an extractor, which showed significant improvement. However, as </context>
+</contexts>
+<marker>Fan, Zhao, Zhou, Liu, Zheng, Chang, 2014</marker>
+<rawString>Miao Fan, Deli Zhao, Qiang Zhou, Zhiyuan Liu, Thomas Fang Zheng, and Edward Y. Chang. 2014. Distant supervision for relation extraction with matrix completion. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 839–849, Baltimore, Maryland, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Raphael Hoffmann</author>
+<author>Congle Zhang</author>
+<author>Xiao Ling</author>
+<author>Luke Zettlemoyer</author>
+<author>Daniel S Weld</author>
+</authors>
+<title>Knowledgebased weak supervision for information extraction of overlapping relations.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language TechnologiesVolume 1,</booktitle>
+<pages>541--550</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="7868" citStr="Hoffmann et al., 2011" startWordPosition="1262" endWordPosition="1265">et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embeddings to scores from an</context>
+</contexts>
+<marker>Hoffmann, Zhang, Ling, Zettlemoyer, Weld, 2011</marker>
+<rawString>Raphael Hoffmann, Congle Zhang, Xiao Ling, Luke Zettlemoyer, and Daniel S Weld. 2011. Knowledgebased weak supervision for information extraction of overlapping relations. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language TechnologiesVolume 1, pages 541–550. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Kai Chen</author>
+<author>Greg Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Efficient estimation of word representations in vector space. arXiv preprint arXiv:1301.3781.</title>
+<date>2013</date>
+<contexts>
+<context position="3250" citStr="Mikolov et al., 2013" startWordPosition="516" endWordPosition="519"> requires the vectors of both entities to score a candidate fact, this type of methods can only complete missing facts for which both entities exist in the knowledge graph. However, a missing fact often contains entities out of the knowledge graph (called out-of-kb for short in this paper), e.g., one or both entities are phrases appearing in web text but not included in the knowledge graph yet. How to deal with these facts is a significant obstacle to widely applying the embedding paradigm. In addition to knowledge embedding, another interesting approach is the word embedding method word2vec (Mikolov et al., 2013b), which shows that learning word embeddings from an unlabeled text corpus can make the vectors connecting the pairs of words of some certain relation almost parallel, e.g., vec(“China”) − vec(“Beijing”) ≈ vec(“Japan”) − vec(“Tokyo”). However, it does not know the exact relation between the pairs. Thus, it cannot be directly applied to complete knowledge graphs. The capabilities and limitations of knowledge embedding and word embedding have inspired us to design a mechanism to mosaic the knowledge 1591 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMN</context>
+<context position="7305" citStr="Mikolov et al., 2013" startWordPosition="1178" endWordPosition="1181">13) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word embeddings are learned from a given text corpus without supervision by predicting the context of each word or predicting the current word given its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al.</context>
+<context position="16203" citStr="Mikolov et al., 2013" startWordPosition="2763" endWordPosition="2766">ver, the advantage is that the quality of the data is very high and there are no ambiguity/completeness issues. Considering the above three component models together, the likelihood we maximize is: L = LK + LT + LA (9) where LA could be LAA or LAN or LAA + LAN. 3.2 Training 3.2.1 Approximation to the Normalizers It is difficult to directly compute the normalizers in Pr(h|r, t) (or Pr(t|h, r), Pr(r|h, t)) and Pr(w|v) as the normalizers sum over |I |or |V |terms where both |I |and |V |reach tens of millions. To prevent having to exactly calculate the normalizers, we use negative sampling (NEG) (Mikolov et al., 2013b) to transform the original objective, i.e., Eq.(9) to a simple objective of the binary classification problem—differentiating the observed data from noise. First, we define: (i) the probability of a given triplet (h, r, t) to be true (D = 1); and (ii) the probability of a given word pair (w, v) to co-occur (D = 1): Pr(D = 1|h, r, t) = Q(z(h, r, t)) (10) Pr(D = 1|w, v) = Q(z(w&apos;, v)) (11) where Q(x) = 1+exp{−x} and D E {0,1}. 1 1594 Instead of maximizing log Pr(h|r, t) in Eq.(2), we maximize: log Pr(1|h, r, t) c 1 ˜hi∼Prneg(˜hi)[Pr(0|˜hi, r, t)] where c is the number of negative examples to be</context>
+<context position="19755" citStr="Mikolov et al., 2013" startWordPosition="3365" endWordPosition="3368"> t) E A. We also follow it. However, TransE uses a margin based ranking loss {IIh+r−tII2+γ−II˜h+r−˜tII2}+. Itis nota probabilistic model and hence it needs to restrict the norm of either entity embedding and/or relation embedding. Bordes et al. (2013) intuitively addresses this problem by simply normalizing the entity embeddings to the unit sphere before computing gradients at each iteration. We define pTransE as a probabilistic model, which doesn’t need additional constraints on the norms of embeddings of entities/words/relations, and thus eliminates the normalization operations. Skip-gram. (Mikolov et al., 2013a; Mikolov et al., 2013b) defines the probability of the concurrence of two words in a window as: exp{w&apos;Tv} Pr(w|v) = E˜w∈V exp{˜w&apos;Tv} (13) which is based on the inner product, while our text model (Eqs. (4), (5)) is based on distance. If we constrain IIwII = 1 for each w, then w&apos;Tv = 1 − 12IIw&apos; − vII2. It is easy to see that our text model is equivalent to Skip-gram in this case. Our distance-based text model is directly derived from the triplet fact model, which clearly explains why it is able to make the pairs of entities of a certain relation parallel in the vector space. 4 Experiments We </context>
+<context position="26544" citStr="Mikolov et al., 2013" startWordPosition="4540" endWordPosition="4543"> score it by Pr(D = 1|h, r, t) (see Eq.(10)). Then the considered methods label a triplet (h, r, t) as true if its score is larger than the relation-specific threshold of r, as false otherwise. The relation-specific thresholds are chosen to maximize the classification accuracy over the validation set. We report the classification accuracy. Additionally, we rank all the testing triplets by their scores in descending order. Then we draw a precisionrecall (PR) curve based on this ranking and report the area under the PR curve. Implementation. We implement TransE (Bordes et al., 2013), Skip-gram (Mikolov et al., 2013a), and our models. First, we train TransE and pTransE over our training triplets with embedding dimension k in {50,100,150}. Adhering to (Bordes et al., 2013), we use the fixed learning rate α in {0.005, 0.01, 0.05} for TransE during its 300 epochs. For pTransE, we use the number of negative examples per positive example c among {5,10}, the learning rate α among {0.01, 0.025} where α decreases along with its 40 epochs. The optimal configurations of TransE are: k = 100, α = 0.01. The optimal configurations of pTransE are: k = 100, c = 10, and α = 0.025. Then we train Skip-gram with the embeddi</context>
+<context position="35644" citStr="Mikolov et al., 2013" startWordPosition="6039" endWordPosition="6042">argin over triplets of other types. These results confirm the advantage of jointly embedding and are actually straightforward results of our triplet classification experiment because the only difference is that the triplets here are provided by the extractor. Table 6: Phrases Analogical Reasoning Task. Method Accuracy (%) Hits@10 (%) 4.4 Analogical Reasoning Task We compare our method with Skip-gram on this task to observe and study the influences of both knowledge embedding and alignment mechanisms on the quality of word embeddings. Evaluation protocol. We use the same public datasets as in (Mikolov et al., 2013b): 19,544 word analogies5; 3,218 phrase analogies6. We also construct analogies from our held-out triplets (see Table 2) by first concatenating two entity pairs of the same relation to form an analogy and 5code.google.com/p/word2vec/source/ browse/trunk/questions-words.txt 6code.google.com/p/word2vec/source/ browse/trunk/questions-phrases.txt Table 7: Constructed Analogical Reasoning Task. Method Accuracy (%) Hits@10 (%) 18.0 56.1 27.6 65.0 11.3 40.6 18.3 54.0 10.5 14.1 10.5 14.3 11.5 16.2 11.6 16.5 Skip-gram Jointly (anchor) Jointly (name) Jointly (anchor+name) Skip-gram Jointly (anchor) Joi</context>
+</contexts>
+<marker>Mikolov, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013a. Efficient estimation of word representations in vector space. arXiv preprint arXiv:1301.3781.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Ilya Sutskever</author>
+<author>Kai Chen</author>
+<author>Greg S Corrado</author>
+<author>Jeff Dean</author>
+</authors>
+<title>Distributed representations of words and phrases and their compositionality.</title>
+<date>2013</date>
+<booktitle>In Advances in Neural Information Processing Systems 26,</booktitle>
+<pages>3111--3119</pages>
+<contexts>
+<context position="3250" citStr="Mikolov et al., 2013" startWordPosition="516" endWordPosition="519"> requires the vectors of both entities to score a candidate fact, this type of methods can only complete missing facts for which both entities exist in the knowledge graph. However, a missing fact often contains entities out of the knowledge graph (called out-of-kb for short in this paper), e.g., one or both entities are phrases appearing in web text but not included in the knowledge graph yet. How to deal with these facts is a significant obstacle to widely applying the embedding paradigm. In addition to knowledge embedding, another interesting approach is the word embedding method word2vec (Mikolov et al., 2013b), which shows that learning word embeddings from an unlabeled text corpus can make the vectors connecting the pairs of words of some certain relation almost parallel, e.g., vec(“China”) − vec(“Beijing”) ≈ vec(“Japan”) − vec(“Tokyo”). However, it does not know the exact relation between the pairs. Thus, it cannot be directly applied to complete knowledge graphs. The capabilities and limitations of knowledge embedding and word embedding have inspired us to design a mechanism to mosaic the knowledge 1591 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMN</context>
+<context position="7305" citStr="Mikolov et al., 2013" startWordPosition="1178" endWordPosition="1181">13) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word embeddings are learned from a given text corpus without supervision by predicting the context of each word or predicting the current word given its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al.</context>
+<context position="16203" citStr="Mikolov et al., 2013" startWordPosition="2763" endWordPosition="2766">ver, the advantage is that the quality of the data is very high and there are no ambiguity/completeness issues. Considering the above three component models together, the likelihood we maximize is: L = LK + LT + LA (9) where LA could be LAA or LAN or LAA + LAN. 3.2 Training 3.2.1 Approximation to the Normalizers It is difficult to directly compute the normalizers in Pr(h|r, t) (or Pr(t|h, r), Pr(r|h, t)) and Pr(w|v) as the normalizers sum over |I |or |V |terms where both |I |and |V |reach tens of millions. To prevent having to exactly calculate the normalizers, we use negative sampling (NEG) (Mikolov et al., 2013b) to transform the original objective, i.e., Eq.(9) to a simple objective of the binary classification problem—differentiating the observed data from noise. First, we define: (i) the probability of a given triplet (h, r, t) to be true (D = 1); and (ii) the probability of a given word pair (w, v) to co-occur (D = 1): Pr(D = 1|h, r, t) = Q(z(h, r, t)) (10) Pr(D = 1|w, v) = Q(z(w&apos;, v)) (11) where Q(x) = 1+exp{−x} and D E {0,1}. 1 1594 Instead of maximizing log Pr(h|r, t) in Eq.(2), we maximize: log Pr(1|h, r, t) c 1 ˜hi∼Prneg(˜hi)[Pr(0|˜hi, r, t)] where c is the number of negative examples to be</context>
+<context position="19755" citStr="Mikolov et al., 2013" startWordPosition="3365" endWordPosition="3368"> t) E A. We also follow it. However, TransE uses a margin based ranking loss {IIh+r−tII2+γ−II˜h+r−˜tII2}+. Itis nota probabilistic model and hence it needs to restrict the norm of either entity embedding and/or relation embedding. Bordes et al. (2013) intuitively addresses this problem by simply normalizing the entity embeddings to the unit sphere before computing gradients at each iteration. We define pTransE as a probabilistic model, which doesn’t need additional constraints on the norms of embeddings of entities/words/relations, and thus eliminates the normalization operations. Skip-gram. (Mikolov et al., 2013a; Mikolov et al., 2013b) defines the probability of the concurrence of two words in a window as: exp{w&apos;Tv} Pr(w|v) = E˜w∈V exp{˜w&apos;Tv} (13) which is based on the inner product, while our text model (Eqs. (4), (5)) is based on distance. If we constrain IIwII = 1 for each w, then w&apos;Tv = 1 − 12IIw&apos; − vII2. It is easy to see that our text model is equivalent to Skip-gram in this case. Our distance-based text model is directly derived from the triplet fact model, which clearly explains why it is able to make the pairs of entities of a certain relation parallel in the vector space. 4 Experiments We </context>
+<context position="26544" citStr="Mikolov et al., 2013" startWordPosition="4540" endWordPosition="4543"> score it by Pr(D = 1|h, r, t) (see Eq.(10)). Then the considered methods label a triplet (h, r, t) as true if its score is larger than the relation-specific threshold of r, as false otherwise. The relation-specific thresholds are chosen to maximize the classification accuracy over the validation set. We report the classification accuracy. Additionally, we rank all the testing triplets by their scores in descending order. Then we draw a precisionrecall (PR) curve based on this ranking and report the area under the PR curve. Implementation. We implement TransE (Bordes et al., 2013), Skip-gram (Mikolov et al., 2013a), and our models. First, we train TransE and pTransE over our training triplets with embedding dimension k in {50,100,150}. Adhering to (Bordes et al., 2013), we use the fixed learning rate α in {0.005, 0.01, 0.05} for TransE during its 300 epochs. For pTransE, we use the number of negative examples per positive example c among {5,10}, the learning rate α among {0.01, 0.025} where α decreases along with its 40 epochs. The optimal configurations of TransE are: k = 100, α = 0.01. The optimal configurations of pTransE are: k = 100, c = 10, and α = 0.025. Then we train Skip-gram with the embeddi</context>
+<context position="35644" citStr="Mikolov et al., 2013" startWordPosition="6039" endWordPosition="6042">argin over triplets of other types. These results confirm the advantage of jointly embedding and are actually straightforward results of our triplet classification experiment because the only difference is that the triplets here are provided by the extractor. Table 6: Phrases Analogical Reasoning Task. Method Accuracy (%) Hits@10 (%) 4.4 Analogical Reasoning Task We compare our method with Skip-gram on this task to observe and study the influences of both knowledge embedding and alignment mechanisms on the quality of word embeddings. Evaluation protocol. We use the same public datasets as in (Mikolov et al., 2013b): 19,544 word analogies5; 3,218 phrase analogies6. We also construct analogies from our held-out triplets (see Table 2) by first concatenating two entity pairs of the same relation to form an analogy and 5code.google.com/p/word2vec/source/ browse/trunk/questions-words.txt 6code.google.com/p/word2vec/source/ browse/trunk/questions-phrases.txt Table 7: Constructed Analogical Reasoning Task. Method Accuracy (%) Hits@10 (%) 18.0 56.1 27.6 65.0 11.3 40.6 18.3 54.0 10.5 14.1 10.5 14.3 11.5 16.2 11.6 16.5 Skip-gram Jointly (anchor) Jointly (name) Jointly (anchor+name) Skip-gram Jointly (anchor) Joi</context>
+</contexts>
+<marker>Mikolov, Sutskever, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Corrado, and Jeff Dean. 2013b. Distributed representations of words and phrases and their compositionality. In Advances in Neural Information Processing Systems 26, pages 3111–3119.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>George A Miller</author>
+</authors>
+<title>Wordnet: a lexical database for english.</title>
+<date>1995</date>
+<journal>Communications of the ACM,</journal>
+<volume>38</volume>
+<issue>11</issue>
+<contexts>
+<context position="1408" citStr="Miller, 1995" startWordPosition="203" endWordPosition="204"> jointly embedding brings promising improvement in the accuracy of predicting facts, compared to separately embedding knowledge graphs and text. Particularly, jointly embedding enables the prediction of facts containing entities out of the knowledge graph, which cannot be handled by previous embedding methods. At the same time, concerning the quality of the word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1 Introduction Knowledge graphs such as Freebase (Bollacker et al., 2008) and WordNet (Miller, 1995) have become important resources for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et al., 2011; Bordes et al., </context>
+</contexts>
+<marker>Miller, 1995</marker>
+<rawString>George A Miller. 1995. Wordnet: a lexical database for english. Communications of the ACM, 38(11):39–41.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mike Mintz</author>
+<author>Steven Bills</author>
+<author>Rion Snow</author>
+<author>Dan Jurafsky</author>
+</authors>
+<title>Distant supervision for relation extraction without labeled data.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP: Volume</booktitle>
+<volume>2</volume>
+<pages>1003--1011</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="7824" citStr="Mintz et al., 2009" startWordPosition="1254" endWordPosition="1257">e current word given its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they ad</context>
+<context position="31332" citStr="Mintz et al., 2009" startWordPosition="5333" endWordPosition="5336">wever, some entities detected from text are outof-kb entities. In such a case, triplets involving these entities cannot be handled by any existing knowledge embedding method, but our jointly embedding model can score them. As our model can cover more candidate triplets provided by extractors, it is expected to provide more significant improvements to extractors than any other embedding model. We confirm this point as follow. Evaluation protocol. For relation extraction, we use a public dataset—NYT+FB (Riedel et al., 2010)3, which distantly labels the NYT corpus by Freebase facts. We consider (Mintz et al., 2009) and Sm2r (Weston et al., 2013) as our extractors to provide candidate triplets as well as their plausibilities estimated according to text features. For embedding, we first held out triplets from our training set that appear in the test set of NYT+FB. Then we train TransE, pTransE and the “jointly” model on the remaining training triplets as well as on our text corpus. Then we use these models to score each candidate triplet in the same 3http://iesl.cs.umass.edu/riedel/ecml/ way as the previous triplet classification experiment. For combination, we first divide each candidate triplet into one</context>
+<context position="32691" citStr="Mintz et al., 2009" startWordPosition="5559" endWordPosition="5562">ving out-of-vocabulary word/phrase, we just ignore these triplets.Please note that, for our jointly embedding model, there are no “outof-vocabulary” triplets if we include the NYT corpus for training. We use the embedding models to score candidate triplets and combine the scores given by the embedding model with scores given by the extractors. For each type e−e, e−w, w−e, w −w and their union (i.e. all), we rank the candidate triplets by their revisited scores and draw PR curve to observe which embedding method provides the most significant improvements to the extractors. Implementation. For (Mintz et al., 2009), we use the implementation in (Surdeanu et al., 2012)4. We implement Sm2r by ourselves with the best hyperparameters introduced in (Weston et al., 2013). For TransE, pTransE, and the “jointly” model, we use the same implementations, scoring schemes, and optimal configurations as the triplet classification experiment. To combine extractors with embedding mod4http://nlp.stanford.edu/software/ mimlre.shtml 1598 Recall Recall Recall Recall Recall Figure 2: Improving Relation Extraction: PR curves of Sm2r alone or combined with knowledge (TransE) / jointly model over (a) e − e, (b) w − e, (c) e − </context>
+</contexts>
+<marker>Mintz, Bills, Snow, Jurafsky, 2009</marker>
+<rawString>Mike Mintz, Steven Bills, Rion Snow, and Dan Jurafsky. 2009. Distant supervision for relation extraction without labeled data. In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP: Volume 2-Volume 2, pages 1003–1011. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sebastian Riedel</author>
+<author>Limin Yao</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Modeling relations and their mentions without labeled text.</title>
+<date>2010</date>
+<booktitle>In Machine Learning and Knowledge Discovery in Databases,</booktitle>
+<pages>148--163</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="7845" citStr="Riedel et al., 2010" startWordPosition="1258" endWordPosition="1261"> its context (Bengio et al., 2003; Collobert et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embed</context>
+<context position="31240" citStr="Riedel et al., 2010" startWordPosition="5318" endWordPosition="5321">en shown that embedding models are very complementary to extractors (Weston et al., 2013). However, some entities detected from text are outof-kb entities. In such a case, triplets involving these entities cannot be handled by any existing knowledge embedding method, but our jointly embedding model can score them. As our model can cover more candidate triplets provided by extractors, it is expected to provide more significant improvements to extractors than any other embedding model. We confirm this point as follow. Evaluation protocol. For relation extraction, we use a public dataset—NYT+FB (Riedel et al., 2010)3, which distantly labels the NYT corpus by Freebase facts. We consider (Mintz et al., 2009) and Sm2r (Weston et al., 2013) as our extractors to provide candidate triplets as well as their plausibilities estimated according to text features. For embedding, we first held out triplets from our training set that appear in the test set of NYT+FB. Then we train TransE, pTransE and the “jointly” model on the remaining training triplets as well as on our text corpus. Then we use these models to score each candidate triplet in the same 3http://iesl.cs.umass.edu/riedel/ecml/ way as the previous triplet</context>
+</contexts>
+<marker>Riedel, Yao, McCallum, 2010</marker>
+<rawString>Sebastian Riedel, Limin Yao, and Andrew McCallum. 2010. Modeling relations and their mentions without labeled text. In Machine Learning and Knowledge Discovery in Databases, pages 148–163. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Danqi Chen</author>
+<author>Christopher D Manning</author>
+<author>Andrew Ng</author>
+</authors>
+<title>Reasoning with neural tensor networks for knowledge base completion.</title>
+<date>2013</date>
+<booktitle>In Advances in Neural Information Processing Systems,</booktitle>
+<pages>926--934</pages>
+<contexts>
+<context position="2033" citStr="Socher et al., 2013" startWordPosition="311" endWordPosition="314">become important resources for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Wang et al., 2014). Generally, in this series of methods, each entity is represented as a k-dimensional vector and each relation is characterized by an operation in Rk so that a candidate fact can be asserted by simple vector operations. The embeddings are usually learnt by minimizing a global loss function of all the entities and relations in the knowledge graph. Thus, the vector of an entity may encode global information from the entire graph, and hence scoring a candidate fact by designed vector operations plays a similar role to long range “reasoning” in the graph. However, since this re</context>
+<context position="6466" citStr="Socher et al., 2013" startWordPosition="1038" endWordPosition="1041">e to help fact extraction on the benchmark data set of Freebase+NYTimes and also observe very promising improvements. Meanwhile, concerning the quality of word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1We do not distinguish between “words” and “phrases”, i.e., “words” means “words/phrases”. 2 Related Work Knowledge Embedding. A knowledge graph is embedded into a low-dimensional continuous vector space while certain properties of it are preserved (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Chang et al., 2013; Wang et al., 2014). Generally, each entity is represented as a point in that space while each relation is interpreted as an operation over entity embeddings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding.</context>
+<context position="20476" citStr="Socher et al., 2013" startWordPosition="3495" endWordPosition="3498">{w&apos;Tv} Pr(w|v) = E˜w∈V exp{˜w&apos;Tv} (13) which is based on the inner product, while our text model (Eqs. (4), (5)) is based on distance. If we constrain IIwII = 1 for each w, then w&apos;Tv = 1 − 12IIw&apos; − vII2. It is easy to see that our text model is equivalent to Skip-gram in this case. Our distance-based text model is directly derived from the triplet fact model, which clearly explains why it is able to make the pairs of entities of a certain relation parallel in the vector space. 4 Experiments We empirically evaluate and compare related models with regards to three tasks: triplet classification (Socher et al., 2013), improving relation extraction (Weston et al., 2013), and the analogical reasoning task (Mikolov et al., 2013a). The related models include: for knowledge embedding alone, TransE (Bordes et al., 2013), pTransE (proposed in this paper); for word embedding alone, Skip-gram (Mikolov et al., 2013b); for both � + i=1 (12) 1595 Table 2: Data: the number of e − e, w − e, e − w, w − w triplets/analogies where w represents the out-of-kb entity, which is regarded as word and replaced by its corresponding entity name. Type #Triplet (Valid/Test) #Analogy 12,305,200 12,305,200 71,441 3,655,164 3,654,404 7</context>
+<context position="24841" citStr="Socher et al., 2013" startWordPosition="4215" endWordPosition="4218">ted through names of entities. Specifically, for each training triplet (h, r, t), suppose h and t have entity names wh and wt, respectively and wh, wt E V, the training triplet contributes (wh, r, wt), (wh, r, t), and (h, r, wt) to the name graph. There are 81,753,310 triplets in our name graphs. Note that there is no overlapping between the name graph and held-out triplets of e − w, w − e, and w − w types. 4.2 Triplet Classification This task judges whether a triplet (h, r, t) is true or false, i.e., binary classification of a triplet. Evaluation protocol. Following the same protocol in NTN (Socher et al., 2013), for each true triplet, we construct a false triplet for it by randomly sampling an element from Z to corrupt its head or tail. Since |£ |is significantly larger than |V |in our data, sampling from a uniform distri2https://opennlp.apache.org e − e w − e e − w w − w 93.1 0.86 93.4 0.97 1596 Table 4: Triplet classification: accuracy (%) over various types of triplets. Type e − e w − e e − w w−w all respectively 93.4 52.1 51.4 71.0 77.5 jointly (anchor) 94.4 67.0 66.7 79.8 81.9 jointly (name) 94.5 80.5 80.0 89.0 87.7 jointly (anchor+name) 95.0 82.0 81.5 90.0 88.8 bution over I will let triplets </context>
+</contexts>
+<marker>Socher, Chen, Manning, Ng, 2013</marker>
+<rawString>Richard Socher, Danqi Chen, Christopher D Manning, and Andrew Ng. 2013. Reasoning with neural tensor networks for knowledge base completion. In Advances in Neural Information Processing Systems, pages 926–934.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mihai Surdeanu</author>
+<author>Julie Tibshirani</author>
+<author>Ramesh Nallapati</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Multi-instance multi-label learning for relation extraction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>455--465</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="7891" citStr="Surdeanu et al., 2012" startWordPosition="1266" endWordPosition="1269"> et al., 2011; Mikolov et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embeddings to scores from an extractor, which showe</context>
+<context position="32745" citStr="Surdeanu et al., 2012" startWordPosition="5568" endWordPosition="5571">these triplets.Please note that, for our jointly embedding model, there are no “outof-vocabulary” triplets if we include the NYT corpus for training. We use the embedding models to score candidate triplets and combine the scores given by the embedding model with scores given by the extractors. For each type e−e, e−w, w−e, w −w and their union (i.e. all), we rank the candidate triplets by their revisited scores and draw PR curve to observe which embedding method provides the most significant improvements to the extractors. Implementation. For (Mintz et al., 2009), we use the implementation in (Surdeanu et al., 2012)4. We implement Sm2r by ourselves with the best hyperparameters introduced in (Weston et al., 2013). For TransE, pTransE, and the “jointly” model, we use the same implementations, scoring schemes, and optimal configurations as the triplet classification experiment. To combine extractors with embedding mod4http://nlp.stanford.edu/software/ mimlre.shtml 1598 Recall Recall Recall Recall Recall Figure 2: Improving Relation Extraction: PR curves of Sm2r alone or combined with knowledge (TransE) / jointly model over (a) e − e, (b) w − e, (c) e − w, (d) w − w, and (e) all triplets. 1.00 1.00 1.00 0.9</context>
+</contexts>
+<marker>Surdeanu, Tibshirani, Nallapati, Manning, 2012</marker>
+<rawString>Mihai Surdeanu, Julie Tibshirani, Ramesh Nallapati, and Christopher D Manning. 2012. Multi-instance multi-label learning for relation extraction. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 455– 465. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhen Wang</author>
+<author>Jianwen Zhang</author>
+<author>Jianlin Feng</author>
+<author>Zheng Chen</author>
+</authors>
+<title>Knowledge graph embedding by translating on hyperplanes.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the TwentyEighth AAAI Conference on Artificial Intelligence,</booktitle>
+<pages>1112--1119</pages>
+<contexts>
+<context position="2053" citStr="Wang et al., 2014" startWordPosition="315" endWordPosition="318">urces for many AI &amp; NLP applications such as Q &amp; A. Generally, a knowledge graph is a collection of relational facts that are often represented in the form of a triplet (head entity, relation, tail entity), e.g., “(Obama, Born-in, Honolulu)”. An urgent issue for knowledge graphs is the coverage, e.g., even the largest knowledge graph of Freebase is still far from complete. Recently, targeting knowledge graph completion, a promising paradigm of embedding was proposed, which is able to reason new facts only from the knowledge graph (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Wang et al., 2014). Generally, in this series of methods, each entity is represented as a k-dimensional vector and each relation is characterized by an operation in Rk so that a candidate fact can be asserted by simple vector operations. The embeddings are usually learnt by minimizing a global loss function of all the entities and relations in the knowledge graph. Thus, the vector of an entity may encode global information from the entire graph, and hence scoring a candidate fact by designed vector operations plays a similar role to long range “reasoning” in the graph. However, since this requires the vectors o</context>
+<context position="6506" citStr="Wang et al., 2014" startWordPosition="1046" endWordPosition="1049">k data set of Freebase+NYTimes and also observe very promising improvements. Meanwhile, concerning the quality of word embeddings, experiments on the analogical reasoning task show that jointly embedding is comparable to or slightly better than word2vec (Skip-Gram). 1We do not distinguish between “words” and “phrases”, i.e., “words” means “words/phrases”. 2 Related Work Knowledge Embedding. A knowledge graph is embedded into a low-dimensional continuous vector space while certain properties of it are preserved (Bordes et al., 2011; Bordes et al., 2013; Socher et al., 2013; Chang et al., 2013; Wang et al., 2014). Generally, each entity is represented as a point in that space while each relation is interpreted as an operation over entity embeddings. For instance, TransE (Bordes et al., 2013) interprets a relation as a translation from the head entity to the tail entity. The embedding representations are usually learnt by minimizing a global loss function involving all entities and relations so that each entity embedding encodes both local and global connectivity patterns of the original graph. Thus, we can reason new facts from learnt embeddings. Word Embedding. Generally, word embeddings are learned </context>
+</contexts>
+<marker>Wang, Zhang, Feng, Chen, 2014</marker>
+<rawString>Zhen Wang, Jianwen Zhang, Jianlin Feng, and Zheng Chen. 2014. Knowledge graph embedding by translating on hyperplanes. In Proceedings of the TwentyEighth AAAI Conference on Artificial Intelligence, pages 1112–1119.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Weston</author>
+<author>Antoine Bordes</author>
+<author>Oksana Yakhnenko</author>
+<author>Nicolas Usunier</author>
+</authors>
+<title>Connecting language and knowledge bases with embedding models for relation extraction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1366--1371</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Seattle, Washington, USA,</location>
+<contexts>
+<context position="8365" citStr="Weston et al., 2013" startWordPosition="1343" endWordPosition="1346">ng relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embeddings to scores from an extractor, which showed significant improvement. However, as pointed out in the introduction, their knowledge embedding method cannot predict facts involving out-of-kb entities. 1592 3 Jointly Embedding Knowledge and in the knowledge graph: Text �LK = Lf(h,r, t) (3) We will first describe the notation used in this paper. A knowledge graph A is a set of triplets in the form (h, r, t), h, t ∈ E and r ∈ R where E is the entity vocabulary and R is a collection of predefined relations. We use bol</context>
+<context position="20529" citStr="Weston et al., 2013" startWordPosition="3503" endWordPosition="3506"> on the inner product, while our text model (Eqs. (4), (5)) is based on distance. If we constrain IIwII = 1 for each w, then w&apos;Tv = 1 − 12IIw&apos; − vII2. It is easy to see that our text model is equivalent to Skip-gram in this case. Our distance-based text model is directly derived from the triplet fact model, which clearly explains why it is able to make the pairs of entities of a certain relation parallel in the vector space. 4 Experiments We empirically evaluate and compare related models with regards to three tasks: triplet classification (Socher et al., 2013), improving relation extraction (Weston et al., 2013), and the analogical reasoning task (Mikolov et al., 2013a). The related models include: for knowledge embedding alone, TransE (Bordes et al., 2013), pTransE (proposed in this paper); for word embedding alone, Skip-gram (Mikolov et al., 2013b); for both � + i=1 (12) 1595 Table 2: Data: the number of e − e, w − e, e − w, w − w triplets/analogies where w represents the out-of-kb entity, which is regarded as word and replaced by its corresponding entity name. Type #Triplet (Valid/Test) #Analogy 12,305,200 12,305,200 71,441 3,655,164 3,654,404 70,878 3,643,914 3,642,978 70,442 460,762 451,381 40,9</context>
+<context position="30709" citStr="Weston et al., 2013" startWordPosition="5233" endWordPosition="5236">.0993184342972) precision 0.4 0.9 0.8 0.7 0.6 0.5 0.3 0.2 0.1 0.0 0.2 0.4 0.6 0.8 1.0 1.0 Mintz (0.363969399646) Mintz+Jointly (0.480909766665) Mintz+Knowledge (0.418875519101) Recall Recall Figure 1: Improving Relation Extraction: PR curves of Mintz alone or combined with knowledge (pTransE) / jointly model over (a) e − e, (b) w − e, (c) e − w, (d) w − w, and (e) all triplets. pared with |9|. Thus, interactions brought in by anchors are not as significant as that of the name graph. 4.3 Improving Relation Extraction It has been shown that embedding models are very complementary to extractors (Weston et al., 2013). However, some entities detected from text are outof-kb entities. In such a case, triplets involving these entities cannot be handled by any existing knowledge embedding method, but our jointly embedding model can score them. As our model can cover more candidate triplets provided by extractors, it is expected to provide more significant improvements to extractors than any other embedding model. We confirm this point as follow. Evaluation protocol. For relation extraction, we use a public dataset—NYT+FB (Riedel et al., 2010)3, which distantly labels the NYT corpus by Freebase facts. We consid</context>
+<context position="32844" citStr="Weston et al., 2013" startWordPosition="5584" endWordPosition="5587">plets if we include the NYT corpus for training. We use the embedding models to score candidate triplets and combine the scores given by the embedding model with scores given by the extractors. For each type e−e, e−w, w−e, w −w and their union (i.e. all), we rank the candidate triplets by their revisited scores and draw PR curve to observe which embedding method provides the most significant improvements to the extractors. Implementation. For (Mintz et al., 2009), we use the implementation in (Surdeanu et al., 2012)4. We implement Sm2r by ourselves with the best hyperparameters introduced in (Weston et al., 2013). For TransE, pTransE, and the “jointly” model, we use the same implementations, scoring schemes, and optimal configurations as the triplet classification experiment. To combine extractors with embedding mod4http://nlp.stanford.edu/software/ mimlre.shtml 1598 Recall Recall Recall Recall Recall Figure 2: Improving Relation Extraction: PR curves of Sm2r alone or combined with knowledge (TransE) / jointly model over (a) e − e, (b) w − e, (c) e − w, (d) w − w, and (e) all triplets. 1.00 1.00 1.00 0.95 0.98 0.98 0.90 0.96 0.96 0.85 0.94 0.94 0.92 0.80 precision precision precision 0.75 0.90 0.92 0.</context>
+<context position="34506" citStr="Weston et al., 2013" startWordPosition="5850" endWordPosition="5853">.536200901997) 0.2 0.0 0.2 0.4 0.6 0.8 1.0 0.50 0.0 0.2 0.4 0.6 0.8 1.0 Sm2r (0.67446140565) Sm2r+Jointly (0.802071230237) Sm2r+Knowledge (0.697899016348) els, we consider two schemes. Since Mintz scores candidate triplets in a probabilistic manner, we linearly combine its scores with the scores given by pTransE or the “jointly” model: Q PrMintz +(1 − Q)PrpTransE/Jointly where Q is enumerated from 0 to 1 with 0.025 as a search step. On the other hand, neither Sm2r nor TransE is a probabilistic model. Thus, we combine Sm2r with TransE or the “jointly” model according to the scheme proposed in (Weston et al., 2013) where for each candidate (h, r, t), if Er,=r S(Score(h, r, t) &lt; Score(h, r&apos;, t)) is less than T, we increase ScoreSm2r(h, r, t) by p. We search for the best Q, T, and p on another dataset— Wikipedia corpus distantly labeled by Freebase. Result. We present the PR curves in Fig. (1, 2). Over candidate triplets provided by either Mintz or Sm2r, the “jointly” model is consistently comparable with the “knowledge” model (TransE/pTransE) over e − e triplets while it outperforms the “knowledge” model by a considerable margin over triplets of other types. These results confirm the advantage of jointly</context>
+</contexts>
+<marker>Weston, Bordes, Yakhnenko, Usunier, 2013</marker>
+<rawString>Jason Weston, Antoine Bordes, Oksana Yakhnenko, and Nicolas Usunier. 2013. Connecting language and knowledge bases with embedding models for relation extraction. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1366–1371, Seattle, Washington, USA, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xingxing Zhang</author>
+<author>Jianwen Zhang</author>
+<author>Junyu Zeng</author>
+<author>Jun Yan</author>
+<author>Zheng Chen</author>
+<author>Zhifang Sui</author>
+</authors>
+<title>Towards accurate distant supervision for relational facts extraction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers),</booktitle>
+<pages>810--815</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="7911" citStr="Zhang et al., 2013" startWordPosition="1270" endWordPosition="1273">et al., 2013a; Mikolov et al., 2013b). Although relations between words are not explicitly modeled, continuous bag-of-words (CBOW) and Skip-gram (Mikolov et al., 2013a; Mikolov et al., 2013b) learn word embeddings capturing many syntactic and semantic relations between words where a relation is also represented as the translation between word embeddings. Relational Facts Extraction. Another pivotal channel for knowledge graph completion is extracting relational facts from external sources such as free text (Mintz et al., 2009; Riedel et al., 2010; Hoffmann et al., 2011; Surdeanu et al., 2012; Zhang et al., 2013; Fan et al., 2014). This series of methods focuses on identifying local text patterns that express a certain relation and making predictions based on them. However, they have not fully utilized the evidences from a knowledge graph, e.g., knowledge embedding is able to reason new facts without any external sources. Actually, knowledge embedding is very complementary to traditional extraction methods, which was first confirmed by (Weston et al., 2013). To estimate the plausibility of a candidate fact, they added scores from embeddings to scores from an extractor, which showed significant improv</context>
+</contexts>
+<marker>Zhang, Zhang, Zeng, Yan, Chen, Sui, 2013</marker>
+<rawString>Xingxing Zhang, Jianwen Zhang, Junyu Zeng, Jun Yan, Zheng Chen, and Zhifang Sui. 2013. Towards accurate distant supervision for relational facts extraction. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), pages 810–815, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

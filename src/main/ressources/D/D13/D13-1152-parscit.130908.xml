@@ -1,0 +1,1615 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000029">
+<title confidence="0.99605">
+Dynamic Feature Selection for Dependency Parsing
+</title>
+<author confidence="0.999287">
+He He Hal Daum´e III
+</author>
+<affiliation confidence="0.9975455">
+Department of Computer Science
+University of Maryland
+</affiliation>
+<address confidence="0.975831">
+College Park, MD 20740
+</address>
+<email confidence="0.999424">
+{hhe,hal}@cs.umd.edu
+</email>
+<author confidence="0.99522">
+Jason Eisner
+</author>
+<affiliation confidence="0.924006">
+Department of Computer Science
+Johns Hopkins University
+</affiliation>
+<address confidence="0.929355">
+Baltimore, MD 21218
+</address>
+<email confidence="0.998964">
+jason@cs.jhu.edu
+</email>
+<sectionHeader confidence="0.996661" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999919785714286">
+Feature computation and exhaustive search
+have significantly restricted the speed of
+graph-based dependency parsing. We propose
+a faster framework of dynamic feature selec-
+tion, where features are added sequentially as
+needed, edges are pruned early, and decisions
+are made online for each sentence. We model
+this as a sequential decision-making problem
+and solve it by imitation learning techniques.
+We test our method on 7 languages. Our dy-
+namic parser can achieve accuracies compara-
+ble or even superior to parsers using a full set
+of features, while computing fewer than 30%
+of the feature templates.
+</bodyText>
+<sectionHeader confidence="0.998781" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999917666666667">
+Graph-based dependency parsing usually consists of
+two stages. In the scoring stage, we score all pos-
+sible edges (or other small substructures) using a
+learned function; in the decoding stage, we use com-
+binatorial optimization to find the dependency tree
+with the highest total score.
+Generally linear edge-scoring functions are used
+for speed. But they use a large set of features, de-
+rived from feature templates that consider different
+conjunctions of the edge’s attributes. As a result,
+parsing time is dominated by the scoring stage—
+computing edge attributes, using them to instanti-
+ate feature templates, and looking up the weights of
+the resulting features in a hash table. For example,
+McDonald et al. (2005a) used on average about 120
+first-order feature templates on each edge, built from
+attributes such as the edge direction and length, the
+two words connected by the edge, and the parts of
+speech of these and nearby words.
+We therefore ask the question: can we use fewer
+features to score the edges, while maintaining the ef-
+fect that the true dependency tree still gets a higher
+score? Motivated by recent progress on dynamic
+feature selection (Benbouzid et al., 2012; He et al.,
+2012), we propose to add features one group at a
+time to the dependency graph, and to use these fea-
+tures together with interactions among edges (as de-
+termined by intermediate parsing results) to make
+hard decisions on some edges before all their fea-
+tures have been seen. Our approach has a similar
+flavor to cascaded classifiers (Viola and Jones, 2004;
+Weiss and Taskar, 2010) in that we make decisions
+for each edge at every stage. However, in place of
+relatively simple heuristics such as a global relative
+pruning threshold, we learn a featurized decision-
+making policy of a more complex form. Since each
+decision can affect later stages, or later decisions in
+the same stage, we model this problem as a sequen-
+tial decision-making process and solve it by Dataset
+Aggregation (DAgger) (Ross et al., 2011), a recent
+iterative imitation learning technique for structured
+prediction.
+Previous work has made much progress on the
+complementary problem: speeding up the decoding
+stage by pruning the search space of tree structures.
+In Roark and Hollingshead (2008) and Bergsma and
+Cherry (2010), pruning decisions are made locally
+as a preprocessing step. In the recent vine prun-
+ing approach (Rush and Petrov, 2012), significant
+speedup is gained by leveraging structured infor-
+mation via a coarse-to-fine projective parsing cas-
+</bodyText>
+<page confidence="0.918314">
+1455
+</page>
+<note confidence="0.7323155">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1455–1464,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.998714555555556">
+cade (Charniak et al., 2006). These approaches
+do not directly tackle the feature selection problem.
+Although pruned edges do not require further fea-
+ture computation, the pruning step must itself com-
+pute similar high-dimensional features just to de-
+cide which edges to prune. For this reason, Rush
+and Petrov (2012) restrict the pruning models to a
+smaller feature set for time efficiency. We aim to do
+feature selection and edge pruning dynamically, bal-
+ancing speed and accuracy by using only as many
+features as needed.
+In this paper, we first explore standard static fea-
+ture selection methods for dependency parsing, and
+show that even a few feature templates can give de-
+cent accuracy (Section 3.2). We then propose a
+novel way to dynamically select features for each
+edge while keeping the overhead of decision mak-
+ing low (Section 4). Our present experiments use the
+Maximum Spanning Tree (MST) parsing algorithm
+(McDonald et al., 2005a; McDonald and Pereira,
+2006). However, our approach applies to other
+graph-based dependency parsers as well—including
+non-projective parsing, higher-order parsing, or ap-
+proximations to higher-order parsing that use stack-
+ing (Martins et al., 2008), belief propagation (Smith
+and Eisner, 2008), or structured boosting (Wang et
+al., 2007).
+</bodyText>
+<sectionHeader confidence="0.954841" genericHeader="method">
+2 Graph-based Dependency Parsing
+</sectionHeader>
+<bodyText confidence="0.999957274509804">
+In graph-based dependency parsing of an n-word in-
+put sentence, we must construct a tree y whose ver-
+tices 0,1, ... n correspond to the root node (namely
+0) and the ordered words of the sentence. Each di-
+rected edge of this tree points from a head (parent)
+to one of its modifiers (child).
+Following a common approach to structured pre-
+diction problems, the score of a tree y is defined
+as a sum of local scores. That is, sθ(y) = θ ·
+EEEy O(E) = EEEy θ · O(E), where E ranges
+over small connected subgraphs of y that can be
+scored individually. Here O(E) extracts a high-
+dimensional feature vector from E together with the
+input sentence, and θ denotes a weight vector that
+has typically been learned from data.
+The first-order model decomposes the tree into
+edges E of the form (h, m), where h E [0, n] and
+m E [1, n] (with h =� m) are a head token and one
+of its modifiers. Finding the best tree requires first
+computing θ·O(E) for each of the n2 possible edges.
+Since scoring the edges independently in this way
+restricts the parser to a local view of the depen-
+dency structure, higher-order models can achieve
+better accuracy. For example, in the second-order
+model of McDonald and Pereira (2006), each local
+subgraph E is a triple that includes the head and
+two modifiers of the head, which are adjacent to
+each other. Other methods that use triples include
+grandparent-parent-child triples (Koo and Collins,
+2010), or non-adjacent siblings (Carreras, 2007).
+Third-order models (Koo and Collins, 2010) use
+quadruples, employing grand-sibling and tri-sibling
+information.
+The usual inference problem is to find the high-
+est scoring tree for the input sentence. Note that in
+a valid tree, each token 1, ... , n must be attached
+to exactly one parent (either another token or the
+root 0). We can further require the tree to be pro-
+jective, meaning that edges are not allowed to cross
+each other. It is well known that dynamic program-
+ming can be used to find the best projective depen-
+dency tree in O(n3) time, much as in CKY, for first-
+order models and some higher-order models (Eis-
+ner, 1996; McDonald and Pereira, 2006).1 When
+the projectivity restriction is lifted, McDonald et al.
+(2005b) pointed out that the best tree can be found in
+O(n2) time using a minimum directed spanning tree
+algorithm (Chu and Liu, 1965; Edmonds, 1967; Tar-
+jan, 1977), though only for first-order models.2 We
+will make use of this fast non-projective algorithm
+as a subroutine in early stages of our system.
+</bodyText>
+<sectionHeader confidence="0.970019" genericHeader="method">
+3 Dynamic Feature Selection
+</sectionHeader>
+<bodyText confidence="0.992875166666667">
+Unlike typical feature selection methods that fix a
+subset of selected features and use it throughout test-
+ing, in dynamic feature selection we choose features
+adaptively for each instance. We briefly introduce
+this framework below and motivate our algorithm
+from empirical results on MST dependency parsing.
+</bodyText>
+<footnote confidence="0.9995415">
+1Although the third-order model of Koo and Collins (2010),
+for example, takes O(n4) time.
+2The non-projective parsing problem becomes NP-hard for
+higher-order models. One approximate solution (McDonald
+and Pereira, 2006) works by doing projective parsing and then
+rearranging edges.
+</footnote>
+<page confidence="0.989944">
+1456
+</page>
+<figureCaption confidence="0.998551833333333">
+Figure 1: Dynamic feature selection for dependency parsing. (a) Start with all possible edges except those filtered
+by the length dictionary. (b) – (e) Add the next group of feature templates and parse using the non-projective parser.
+Predicted trees are shown as blue and red edges, where red indicates the edges that we then decide to lock. Dashed
+edges are pruned because of having the same child as a locked edge; 2-dot-3-dash edges are pruned because of crossing
+with a locked edge; fine-dashed edges are pruned because of forming a cycle with a locked edge; and 2-dot-1-dash
+edges are pruned since the root has already been locked with one child. (f) Final projective parsing.
+</figureCaption>
+<figure confidence="0.9913539">
+$ This time
+,
+the firms were ready. $ This time , the firms were ready . group $ This time , the firms were ready
+add feat. add feat.
+group
+(a) (b) (c)
+add feat.
+group
+$
+This time , the firms were ready
+. decoding
+projective
+$ This time , the firms were ready .
+add feat.
+group
+$ This time , the firms were ready
+.
+(f)
+(e)
+(d)
+</figure>
+<subsectionHeader confidence="0.998401">
+3.1 Sequential Decision Making
+</subsectionHeader>
+<bodyText confidence="0.9999682">
+Our work is motivated by recent progress on dy-
+namic feature selection (Benbouzid et al., 2012; He
+et al., 2012; Grubb and Bagnell, 2012), where fea-
+tures are added sequentially to a test instance based
+on previously acquired features and intermediate
+prediction results. This requires sequential decision
+making. Abstractly, when the system is in some state
+s E 5, it chooses an action a = 7r(s) from the ac-
+tion set A using its policy 7r, and transitions to a new
+state s&apos;, inducing some cost. In the specific case of
+dynamic feature selection, when the system is in a
+given state, it decides whether to add some more
+features or to stop and make a prediction based on
+the features added so far. Usually the sequential de-
+cision making problem is solved by reinforcement
+learning (Sutton and Barto, 1998) or imitation learn-
+ing (Abbeel and Ng, 2004; Ratliff et al., 2004).
+The dynamic feature selection framework has
+been successfully applied to supervised classifica-
+tion and ranking problems (Benbouzid et al., 2012;
+He et al., 2012; Gao and Koller, 2010). Below, we
+design a version that avoids overhead in our struc-
+tured prediction setting. As there are n2 possible
+edges on a sentence of length n, we wish to avoid
+the overhead of making many individual decisions
+about specific features on specific edges, with each
+decision considering the current scores of all other
+edges. Instead we will batch the work of dynamic
+feature selection into a smaller number of coarse-
+grained steps.
+</bodyText>
+<subsectionHeader confidence="0.999139">
+3.2 Strategy
+</subsectionHeader>
+<bodyText confidence="0.99997316">
+To speed up graph-based dependency parsing, we
+first investigate time usage in the parsing process
+on our development set, section 22 of the Penn
+Treebank (PTB) (Marcus et al., 1993). In Fig-
+ure 2, we observe that (a) feature computation took
+more than 80% of the total time; (b) even though
+non-projective decoding time grows quadratically in
+terms of the sentence length, in practice it is al-
+most negligible compared to the projective decoding
+time, with an average of 0.23 ms; (c) the second-
+order projective model is significantly slower due
+to higher asymptotic complexity in both the scoring
+and decoding stages.
+At each stage of our algorithm, we need to de-
+cide whether to use additional features to refine the
+edge scores. As making this decision separately for
+each of the n2 possible edges is expensive, we in-
+stead propose a version that reduces the number of
+decisions needed. We show the process for one short
+sentence in Figure 1. The first step is to parse us-
+ing the current features. We use the fast first-order
+non-projective parser for this purpose, since given
+observations (b) and (c), we cannot afford to run
+projective parsing multiple times. The single result-
+ing tree (blue and red edges in Figure 1) has only
+</bodyText>
+<page confidence="0.969884">
+1457
+</page>
+<figure confidence="0.994168">
+0 10 20 30 40 50 60 70
+sentence length
+</figure>
+<figureCaption confidence="0.9938525">
+Figure 2: Time comparison of scoring time and decoding
+time on English PTB section 22.
+</figureCaption>
+<bodyText confidence="0.9373124">
+n edges, and we use a classifier to decide which
+of these edges are reliable enough that we should
+“lock” them—i.e., commit to including them in the
+final tree. This is the only decision that our policy
+7r must make. Locked (red) edges are definitely in
+the final tree. We also do constraint propagation: we
+rule out all edges that conflict with the locked edges,
+barring them from appearing in the final tree.3 Con-
+flicts are defined as violation of the projective pars-
+ing constraints:
+</bodyText>
+<listItem confidence="0.9979795">
+• Each word has exactly one parent
+• Edges cannot cross each other4
+• The directed graph is non-cyclic
+• Only one word is attached to the root
+</listItem>
+<bodyText confidence="0.938082923076923">
+For example, in Figure 1(d), the dashed edges are
+removed because they have the same child as one of
+the locked (red) edges. The 2-dot-3-dash edge time
++— firms is removed because it crosses the locked
+edge (comma) +— were (whereas we ultimately seek
+a projective parse). The fine dashed edge were +—
+(period) is removed because it forms a cycle with
+were —* (period). In Figure 1(e), the 2-dot-1-dash
+edge (root) —* time is removed since we allow the
+root to have only one modifier.
+3Constraint propagation also automatically locks an edge
+when all other edges with the same child have been ruled out.
+4A reviewer asks about the cost of finding edges that cross a
+locked edge. Naively this is O(n2). But at most n edges will be
+locked during the entire algorithm, for a total O(n3) runtime—
+the same as one call to projective parsing, and far faster in prac-
+tice. With cleverness this can even be reduced to O(n2 log n).
+Once constraint propagation has finished, we visit
+all edges (gray) whose fate is still unknown, and up-
+date their scores in parallel by adding the next group
+of features.
+As a result, most edges will be locked in or ruled
+out without needing to look up all of their features.
+Some edges may still remain uncertain even after in-
+cluding all features. If so, a final iteration (Figure 1
+(f)) uses the slower projective parser to resolve the
+status of these maximally uncertain edges. In our
+example, the parser does not figure out the correct
+parent of time until this final step. This final, accu-
+rate parser can use its own set of weighted features,
+including higher-order features, as well as the pro-
+jectivity constraint. But since it only needs to re-
+solve the few uncertain edges, both scoring and de-
+coding are fast.
+If we wanted our parser to be able to produce non-
+projective trees, then we would skip this final step
+or have it use a higher-order non-projective parser.
+Also, at earlier steps we would not prune edges
+crossing the locked edges.
+</bodyText>
+<sectionHeader confidence="0.997407" genericHeader="method">
+4 Methods
+</sectionHeader>
+<bodyText confidence="0.999991230769231">
+Our goal is to produce a faster dependency parser by
+reducing the feature computation time. We assume
+that we are given three increasingly accurate but in-
+creasingly slow parsers that can be called as sub-
+routines: a first-order non-projective parser, a first-
+order projective parser, and a second-order projec-
+tive parser. In all cases, their feature weights have
+already been trained using the full set of features,
+and we will not change these weights. In general
+we will return the output of one of the projective
+parsers. But at early iterations, the non-projective
+parser helps us rapidly consider interactions among
+edges that may be relevant to our dynamic decisions.
+</bodyText>
+<subsectionHeader confidence="0.997516">
+4.1 Feature Template Ranking
+</subsectionHeader>
+<bodyText confidence="0.99998675">
+We first rank the 268 first-order feature templates by
+forward selection. We start with an empty list of fea-
+ture templates, and at each step we greedily add the
+one whose addition most improves the parsing ac-
+curacy on a development set. Since some features
+may be slower than others (for example, the ”be-
+tween” feature templates require checking all tokens
+in-between the head and the modifier), we could in-
+</bodyText>
+<figure confidence="0.956444785714286">
+1st-order scoring O(n2)
+2nd-order scoring O(n3)
+proj dec O(n3)
+non-proj dec O(n2)
+2nd-order proj dec O(n3)
+mean time (ms) 1400
+1200
+1000
+800
+600
+400
+200
+0
+1458
+</figure>
+<figureCaption confidence="0.9981285">
+Figure 3: Forward feature selection result using the non-
+projective model on English PTB section 22.
+</figureCaption>
+<bodyText confidence="0.999921322580645">
+stead select the feature template with the highest ra-
+tio of accuracy improvement to runtime. However,
+for simplicity we do not consider this: after group-
+ing (see below), minor changes of the ranks within a
+group have no effect. The accuracy is evaluated by
+running the first-order non-projective parser, since
+we will use it to make most of the decisions. The
+112 second-order feature templates are then ranked
+by adding them in a similar greedy fashion (given
+that all first-order features have already been added),
+evaluating with the second-order projective parser.
+We then divide this ordered list of feature tem-
+plates into K groups: {T1, T2, ... , TK}. Our parser
+adds an entire group of feature templates at each
+step, since adding one template at a time would re-
+quire too many decisions and obviate speedups. The
+simplest grouping method would be to put an equal
+number of feature templates in each group. From
+Figure 3 we can see that the accuracy increases sig-
+nificantly with the first few templates and gradually
+levels off as we add less valuable templates. Thus,
+a more cost-efficient method is to split the ranked
+list into several groups so that the accuracy increases
+by roughly the same amount after each group is
+added. In this case, earlier stages are fast because
+they tend to have many fewer feature templates than
+later stages. For example, for English, we use 7
+groups of first-order feature templates and 4 groups
+of second-order feature templates. The sequence of
+group sizes is 1, 4, 10, 12, 47, 33, 161 and 35, 29, 31,
+17 for first- and second-order parsing respectively.
+</bodyText>
+<subsectionHeader confidence="0.998605">
+4.2 Sequential Feature Selection
+</subsectionHeader>
+<bodyText confidence="0.999291928571428">
+Similar to the length dictionary filter of Rush and
+Petrov (2012), for each test sentence, we first de-
+terministically remove edges longer than the maxi-
+mum length of edges in the training set that have the
+same head POS tag, modifier POS tag, and direction.
+This simple step prunes around 40% of the non-gold
+edges in our Penn Treebank development set (Sec-
+tion 6.1) at a cost of less than 0.1% in accuracy.
+Given a test sentence of length n, we start with
+a complete directed graph 9(V, £), where £ =
+{(h, m): h E [0, n], m E [1, n]}. After the length
+dictionary pruning step, we compute T1 for all re-
+maining edges to obtain a pruned weighted directed
+graph. We predict a parse tree using the features so
+far (other features are treated as absent, with value
+0). Then for each edge in this intermediate tree, we
+use a binary linear classifier to choose between two
+actions: A = {lock, add}. The lock action ensures
+that (h, m) appears in the final parse tree by prun-
+ing edges that conflict with (h, m).5 If the classi-
+fier is not confident enough about the parent of m,
+it decides to add to gather more information. The
+add action computes the next group of features for
+(h, m) and all other competing edges with child m.
+(Since we classify the edges one at a time, deci-
+sions on one edge may affect later edges. To im-
+prove efficiency and reduce cascaded error, we sort
+the edges in the predicted tree and process them as
+above in descending order of their scores.)
+Now we can continue with the second iteration of
+parsing. Overall, our method runs up to K = K1 +
+K2 iterations on a given sentence, where we have
+K1 groups of first-order features and K2 groups of
+second-order features. We run K1 − 1 iterations
+of non-projective first-order parsing (adding groups
+T1, ... , TK1_1), then 1 iteration of projective first-
+order parsing (adding group TK,), and finally K2 it-
+erations of projective second-order parsing (adding
+groups TK1+1,... TK).
+Before each iteration, we use the result of the pre-
+vious iteration (as explained above) to prune some
+edges and add a new group of features to the rest. We
+</bodyText>
+<footnote confidence="0.796819">
+5If the conflicting edge is in the current predicted parse tree
+(which can happen because of non-projectivity), we forbid the
+model to prune it. Otherwise in rare cases the non-projective
+parser at the next stage may fail to find a tree.
+</footnote>
+<figure confidence="0.995445272727273">
+0 50 100 150 200 250 300 350 400
+Number of feature templates used
+Unlabeled attachment score (UAS)
+0.9
+0.8
+0.7
+0.6
+0.5
+1st-order non-proj
+1st-order proj
+2nd-order
+</figure>
+<page confidence="0.986429">
+1459
+</page>
+<bodyText confidence="0.999973">
+then run the relevant parser. Each of the three parsers
+has a different set of feature weights, so when we
+switch parsers on rounds K1 and K1 + 1, we must
+also change the weights of the previously added fea-
+tures to those specified by the new parsing model.
+In practice, we can stop as soon as the fate of all
+edges is known. Also, if no projective parse tree
+can be constructed at round K1 using the available
+unpruned edges, then we immediately fall back to
+returning the non-projective parse tree from round
+K1 − 1. This FAIL case rarely occurs in our experi-
+ments (fewer than 1% of sentences).
+We report results both for a first-order system
+where K2 = 0 (shown in Figure 1 and Algorithm 1)
+and for a second-order system where K2 &gt; 0.
+</bodyText>
+<equation confidence="0.9447765">
+Algorithm 1 DynFS(9(V, £), 7r)
+£ +— {(h, m): |h − m |c lenDict(h, m)}
+</equation>
+<bodyText confidence="0.9103186">
+Add T1 to all edges in £
+y +— non-projective decoding
+for i = 2 to K do
+£sort +— sort unlocked edges {E : E E y} in
+descending order of their scores
+</bodyText>
+<equation confidence="0.867774894736842">
+for (h, m) E £sort do
+if 7r(0((h, m))) == lock then
+£ + —£ \ {{(h&apos;,m) E £ : h&apos; =�h} U
+{(h&apos;, m&apos;) E £ : crosses (h, m)} U
+{(h&apos;, m&apos;) E £ : cycle with (h, m)}}
+if h == 0 then
+£ +— £ \ {(0,m&apos;) E £ : m&apos; =�m}
+end if
+else
+Add Ti to {(h&apos;,m&apos;) E £ : m&apos; == m}
+end if
+end for
+if i == K then
+y +— projective decoding
+else if i =� K or FAIL then
+y +— non-projective decoding
+end if
+end for
+return y
+</equation>
+<sectionHeader confidence="0.983327" genericHeader="method">
+5 Policy Training
+</sectionHeader>
+<bodyText confidence="0.996963">
+We cast this problem as an imitation learning task
+and use Dataset Aggregation (DAgger) Ross et al.
+(2011) to train the policy iteratively.
+</bodyText>
+<subsectionHeader confidence="0.993346">
+5.1 Imitation Learning
+</subsectionHeader>
+<bodyText confidence="0.999977521739131">
+In imitation learning (also called apprenticeship
+learning) (Abbeel and Ng, 2004; Ratliff et al., 2004),
+instead of exploring the environment directed by its
+feedback (reward) as in typical reinforcement learn-
+ing problems, the learner observes expert demon-
+strations and aims to mimic the expert’s behavior.
+The expert demonstration can be represented as tra-
+jectories of state-action pairs, {(st, at)} where t is
+the time step. A typical approach to imitation learn-
+ing is to collect supervised data from the expert’s
+trajectories to learn a policy (multiclass classifier),
+where the input is 0(s), a feature representation of
+the current state (we call these policy features to
+avoid confusion with the parsing features), and the
+output is the predicted action (label) for that state.
+In the sequential feature selection framework, it is
+hard to directly apply standard reinforcement learn-
+ing algorithms, as we cannot assign credit to certain
+features until the policy decides to stop and let us
+evaluate the prediction result. On the other hand,
+knowing the gold parse tree makes it easy to ob-
+tain expert demonstrations, which enables imitation
+learning.
+</bodyText>
+<subsectionHeader confidence="0.972605">
+5.2 DAgger
+</subsectionHeader>
+<bodyText confidence="0.999965523809524">
+Since the above approach collects training data only
+from the expert’s trajectories, it ignores the fact that
+the distribution of states at training time and that at
+test time are different. If the learned policy can-
+not mimic the expert perfectly, one wrong step may
+lead to states never visited by the expert due to cu-
+mulative errors. This problem of insufficient explo-
+ration can be alleviated by iteratively learning a pol-
+icy trained under states visited by both the expert
+and the learner (Ross et al., 2011; Daum´e III et al.,
+2009; K¨a¨ari¨ainen, 2006).
+Ross et al. (2011) proposed to train the policy iter-
+atively and aggregate data collected from the previ-
+ous learned policy. Let 7r* denote the expert’s policy
+and s,,z denote states visited by executing 7ri. In its
+simplest parameter-free form, in each iteration, we
+first run the most recently learned policy 7ri; then for
+each state s,,z on the trajectory, we collect a training
+example (0(s,,,), 7r*(s,,,)) by labeling the state with
+the expert’s action. Intuitively, this step intends to
+correct the learner’s mistakes and pull it back to the
+</bodyText>
+<page confidence="0.978883">
+1460
+</page>
+<bodyText confidence="0.998063">
+expert’s trajectory. Thus we can obtain a policy that
+performs well under its own induced state distribu-
+tion.
+</bodyText>
+<subsectionHeader confidence="0.693739">
+5.3 DAgger for Feature Selection
+</subsectionHeader>
+<bodyText confidence="0.999886833333334">
+In our case, the expert’s decision is rather straight-
+forward. Replace the policy π in Algorithm 1 by
+an expert. If the edge under consideration is a gold
+edge, it executes lock; otherwise, it executes add.
+Basically the expert “cheats” by knowing the true
+tree and always making the right decision. On our
+PTB dev set, it can get 96.47% accuracy6 with only
+2.9% of the first-order features. This is an upper
+bound on our performance.
+We present the training procedure in Algorithm
+2. We begin by partitioning the training set into
+N folds. To simulate parsing results at test time,
+when collecting examples on Ti, similar to cross-
+validation, we use parsers trained on T�i = T \ Ti.
+Also note that we show only one pass over training
+sentences in Algorithm 2; however, multiple passes
+are possible in practice, especially when the training
+data is limited.
+</bodyText>
+<equation confidence="0.630693">
+Algorithm 2 DAgger(T, π*)
+Split the training sentences T into N folds
+T 1, T2, ... , TN
+Initialize D ← ∅, π1 ← π*
+for i = 1toNdo
+for G(V, E) ∈ Ti do
+Sample trajectories {(sπi,πi(sπi))} by
+DynFS(G(V, E), πi)
+D ← D U {(ψ(s), π*(s)}
+</equation>
+<subsectionHeader confidence="0.370442">
+end for
+end for
+</subsectionHeader>
+<bodyText confidence="0.885637">
+Train policy πi+1 on D
+return Best πi evaluated on development set
+</bodyText>
+<subsectionHeader confidence="0.997282">
+5.4 Policy Features
+</subsectionHeader>
+<bodyText confidence="0.99932025">
+Our linear edge classifier uses a feature vector ψ that
+concatenates all previously acquired parsing fea-
+tures together with “meta-features” that reflect con-
+fidence in the edge. The classifier’s weights are fixed
+</bodyText>
+<footnote confidence="0.978656">
+6The imperfect performance is because the accuracy is mea-
+sured with respect to the gold parse trees. The expert only
+makes optimal pruning decisions but the performance depends
+on the pre-trained parser as well.
+</footnote>
+<bodyText confidence="0.9009602">
+across iterations, but ψ(edge) changes per iteration.
+We standardize the edge scores by a sigmoid func-
+tion. Let s� denote the normalized score, defined
+by sθ(hh, mi) = 1/(1 + exp{−sθ(hh, mi)}). Our
+meta-features for hh, mi include
+</bodyText>
+<listItem confidence="0.971342166666667">
+• current normalized score, and normalized score
+before adding the current feature group
+• margin to the highest scoring competing edges,
+i.e., s(w, hh, mi) − maxhl s(w, hh&apos;, mi)
+where h&apos; ∈ [0, n] and h&apos; =6 h
+• index of the next feature group to be added
+</listItem>
+<bodyText confidence="0.999683777777778">
+We also tried more complex meta-features, for ex-
+ample, mean and variance of the scores of compet-
+ing edges, and structured features such as whether
+the head of e is locked and how many locked chil-
+dren it currently has. It turns out that given all the
+parsing features, the margin is the most discrimi-
+native meta-feature. When it is present, other meta-
+features we added do not help much, Thus we do not
+include them in our experiments due to overhead.
+</bodyText>
+<sectionHeader confidence="0.992105" genericHeader="evaluation">
+6 Experiment
+</sectionHeader>
+<subsectionHeader confidence="0.993314">
+6.1 Setup
+</subsectionHeader>
+<bodyText confidence="0.999944956521739">
+We generate dependency structures from the PTB
+constituency trees using the head rules of Yamada
+and Matsumoto (2003). Following convention, we
+use sections 02–21 for training, section 22 for de-
+velopment and section 23 for testing. We also re-
+port results on six languages from the CoNLL-X
+shared task (Buchholz and Marsi, 2006) as sug-
+gested in (Rush and Petrov, 2012), which cover a
+variety of language families. We follow the stan-
+dard training/test split specified in the CoNLL-X
+data and tune parameters by cross validation when
+training the classifiers (policies). The PTB test data
+is tagged by a Stanford part-of-speech (POS) tagger
+(Toutanova et al., 2003) trained on sections 02–21.
+We use the provided gold POS tags for the CoNLL
+test data. All results are evaluated by the unlabeled
+attachment score (UAS). For fair comparison with
+previous work, punctuation is included when com-
+puting parsing accuracy of all CoNLL-X languages
+but not English (PTB).
+For policy training, we train a linear SVM classi-
+fier using Liblinear (Fan et al., 2008). For all lan-
+guages, we run DAgger for 20 iterations and se-
+</bodyText>
+<page confidence="0.964447">
+1461
+</page>
+<table confidence="0.999958952380952">
+Language Method First-order Second-order
+Speedup Cost(%) UAS(D) UAS(F) Speedup Cost(%) UAS(D) UAS(F)
+DYNFS 3.44 34.6 91.1 91.3 4.73 16.3 91.6 92.0
+Bulgarian 3.25 - 90.5 90.7 7.91 - 91.6 92.0
+VINEP
+DYNFS 2.12 42.7 91.0 91.3 2.36 31.6 91.6 91.9
+Chinese 1.02 - 89.3 89.5 2.03 - 90.3 90.5
+VINEP
+English DYNFS 5.58 24.8 91.7 91.9 5.27 49.1 92.5 92.7
+VINEP 5.23 - 91.0 91.2 11.88 - 92.2 92.4
+DYNFS 4.71 21.0 89.2 89.3 6.02 36.6 89.7 89.9
+German 3.37 - 89.0 89.2 7.38 - 90.1 90.3
+VINEP
+DYNFS 4.80 15.6 93.7 93.6 8.49 7.53 93.9 93.9
+Japanese 4.60 - 91.7 92.0 14.90 - 92.1 92.0
+VINEP
+DYNFS 4.36 32.9 87.3 87.1 6.84 40.4 88.0 88.2
+Portuguese 4.47 - 90.0 90.1 12.32 - 90.9 91.2
+VINEP
+Swedish DYNFS 3.60 37.8 88.8 89.0 5.04 22.1 89.5 89.8
+VINEP 4.64 - 88.3 88.5 13.89 - 89.4 89.7
+</table>
+<tableCaption confidence="0.83997">
+Table 1: Comparison of speedup and accuracy with the vine pruning cascade approach for six languages. In the setup,
+DYNFS means our dynamic feature selection model, VINEP means the vine pruning cascade model, UAS(D) and
+UAS(F) refer to the unlabeled attachment score of the dynamic model (D) and the full-feature model (F) respectively.
+For each language, the speedup is relative to its corresponding first- or second-order model using the full set of features.
+Results for the vine pruning cascade model are taken from Rush and Petrov (2012). The cost is the percentage of
+feature templates used per sentence on edges that are not pruned by the dictionary filter.
+</tableCaption>
+<bodyText confidence="0.9983935">
+lect the best policy evaluated on the development set
+among the 20 policies obtained from each iteration.
+</bodyText>
+<subsectionHeader confidence="0.998945">
+6.2 Baseline Models
+</subsectionHeader>
+<bodyText confidence="0.999980052631579">
+We use the publicly available implementation of
+MSTParser7 (with modifications to the feature com-
+putation) and its default settings, so the feature
+weights of the projective and non-projective parsers
+are trained by the MIRA algorithm (Crammer and
+Singer, 2003; Crammer et al., 2006).
+Our feature set contains most features proposed
+in the literature (McDonald et al., 2005a; Koo and
+Collins, 2010). The basic feature components in-
+clude lexical features (token, prefix, suffix), POS
+features (coarse and fine), edge length and direction.
+The feature templates consists of different conjunc-
+tions of these components. Other than features on
+the head word and the child word, we include fea-
+tures on in-between words and surrounding words as
+well. For PTB, our first-order model has 268 feature
+templates and 76,287,848 features; the second-order
+model has 380 feature templates and 95,796,140 fea-
+tures. The accuracy of our full-feature models is
+</bodyText>
+<footnote confidence="0.9185525">
+7http://www.seas.upenn.edu/˜strctlrn/
+MSTParser/MSTParser.html
+</footnote>
+<figure confidence="0.925750533333333">
+comparable or superior to previous results.
+6.3 Results
+Time/Accuracy/Edge Percentage
+0.8
+0.6
+0.4
+0.2
+0.00 1 2 3 4 5 6
+Feature selection stage
+1.0
+runtime %
+UAS %
+remaining edge %
+locked edge %
+pruned edge %
+</figure>
+<figureCaption confidence="0.997692">
+Figure 4: System dynamics on English PTB section 23.
+</figureCaption>
+<bodyText confidence="0.897274285714286">
+Time and accuracy are relative to those of the baseline
+model using full features. Red (locked), gray (unde-
+cided), dashed gray (pruned) lines correspond to edges
+shown in Figure 1.
+In Table 1, we compare the dynamic parsing mod-
+els with the full-feature models and the vine prun-
+ing cascade models for first-order and second-order
+</bodyText>
+<page confidence="0.995419">
+1462
+</page>
+<figureCaption confidence="0.9984075">
+Figure 5: Pareto curves for the dynamic and static ap-
+proaches on English PTB section 23.
+</figureCaption>
+<bodyText confidence="0.999915683333333">
+parsing. The speedup for each language is defined as
+the speed relative to its full-feature baseline model.
+We take results reported by Rush and Petrov (2012)
+for the vine pruning model. As speed comparison
+for parsing largely relies on implementation, we also
+report the percentage of feature templates chosen for
+each sentence. The cost column shows the average
+number of feature templates computed for each sen-
+tence, expressed as a percentage of the number of
+feature templates if we had only pruned using the
+length dictionary filter.
+From the table we notice that our first-order
+model’s performance is comparable or superior to
+the vine pruning model, both in terms of speedup
+and accuracy. In some cases, the model with fewer
+features even achieves higher accuracy than the
+model with full features. The second-order model,
+however, does not work as well. In our experi-
+ments, the second-order model is more sensitive to
+false negatives, i.e. pruning of gold edges, due to
+larger error propagation than the first-order model.
+Therefore, to maintain parsing accuracy, the policy
+must make high-precision pruning decisions and be-
+comes conservative. We could mitigate this by train-
+ing the original parsing feature weights in conjunc-
+tion with our policy feature weights. In addition,
+there is larger overhead during when checking non-
+projective edges and cycles.
+We demonstrate the dynamics of our system in
+Figure 4 on PTB section 23. We show how the run-
+time, accuracy, number of locked edges and unde-
+cided edges change over the iterations in our first-
+order dynamic projective parsing. From iterations
+1 to 6, we obtain parsing results from the non-
+projective parser; in iteration 7, we run the projective
+parser. The plot shows relative numbers (percent-
+age) to the baseline model with full features. The
+number of remaining edges drops quickly after the
+second iteration. From Figure 3, however, we notice
+that even with the first feature group which only con-
+tains one feature template, the non-projective parser
+can almost achieve 50% accuracy. Thus, ideally, our
+policy should have locked that many edges after the
+first iteration. The learned policy does not imitate
+the expert perfectly, either because our policy fea-
+tures are not discriminative enough, or because a lin-
+ear classifier is not powerful enough for this task.
+Finally, to show the advantage of making dynamic
+decisions that consider the interaction among edges
+on the given input sentence, we compare our results
+with a static feature selection approach on PTB sec-
+tion 23. The static algorithm does no pruning except
+by the length dictionary at the start. In each iteration,
+instead of running a fast parser and making deci-
+sions online, it simply adds the next group of feature
+templates to all edges. By forcing both algorithms
+to stop after each stage, we get the Pareto curves
+shown in Figure 5. For a given level of high accu-
+racy, our dynamic approach (black) is much faster
+than its static counterpart (blue).
+</bodyText>
+<sectionHeader confidence="0.998458" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999479">
+In this paper we present a dynamic feature selec-
+tion algorithm for graph-based dependency parsing.
+We show that choosing feature templates adaptively
+for each edge in the dependency graph greatly re-
+duces feature computation time and in some cases
+improves parsing accuracy. Our model also makes
+it practical to use an even larger feature set, since
+features are computed only when needed. In future,
+we are interested in training parsers favoring the dy-
+namic feature selection setting, for example, parsers
+that are robust to missing features, or parsers opti-
+mized for different stages.
+</bodyText>
+<sectionHeader confidence="0.996022" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.789413666666667">
+This work was supported by the National Science
+Foundation under Grant No. 0964681. We thank the
+anonymous reviewers for very helpful comments.
+</bodyText>
+<figure confidence="0.998349928571429">
+0.95
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+0.60
+static
+dynamic
+0.500 10 20 30 40 50 60 70 80
+Runtime (s)
+Unlabeled attachment score (UAS)
+0.55
+</figure>
+<page confidence="0.925467">
+1463
+</page>
+<sectionHeader confidence="0.985809" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999926682692308">
+P. Abbeel and A. Y. Ng. 2004. Apprenticeship learning
+via inverse reinforcement learning. In Proceedings of
+ICML.
+D. Benbouzid, R. Busa-Fekete, and B. K´egl. 2012. Fast
+classification using space decision DAGs. In Proceed-
+ings of ICML.
+S. Bergsma and C. Cherry. 2010. Fast and accurate arc
+filtering for dependency parsing. In Proceedings of
+COLING.
+S. Buchholz and E. Marsi. 2006. CoNLL-X shared task
+on multilingual dependency parsing. In CoNLL.
+Xavier Carreras. 2007. Experiments with a higher-order
+projective dependency parser. In Proceedings of the
+CoNLL Shared Task Session of EMNLP-CoNLL.
+Eugene Charniak, Mark Johnson, Micha Elsner, Joseph
+Austerweil, David Ellis, Isaac Haxton, Catherine Hill,
+R. Shrivaths, Jeremy Moore, Michael Pozar, and
+Theresa Vu. 2006. Multilevel coarse-to-fine PCFG
+parsing. In Proceedings of ACL.
+Y. J. Chu and T. H. Liu. 1965. On the shortest arbores-
+cence of a directed graph. Science Sinica, 14.
+Koby Crammer and Yoram Singer. 2003. Ultraconserva-
+tive online algorithms for multiclass problems. Jour-
+nal of Machine Learning Research, 3:951–991.
+Koby Crammer, Ofer Dekel, Joseph Keshet, Shai Shalev-
+Shwartz, and Yoram Singer. 2006. Online passive-
+aggressive algorithms. Journal of Machine Learning
+Research, 7:551–585.
+Hal Daum´e III, John Langford, and Daniel Marcu. 2009.
+Search-based structured prediction. Machine Learn-
+ing Journal (MLJ).
+J. Edmonds. 1967. Optimum branchings. Journal
+of Research of the National Bureau of Standards,
+(71B):233–240.
+Jason Eisner. 1996. Three new probabilistic models for
+dependency parsing: an exploration. In Proceedings
+of COLING.
+Rong-En Fan, Kai-Wei Chang, Cho-Jui Hsieh, Xiang-Rui
+Wang, and Chih-Jen Lin. 2008. LIBLINEAR: A li-
+brary for large linear classification. Journal of Ma-
+chine Learning Research, 9:1871–1874.
+Tianshi Gao and Daphne Koller. 2010. Active classifi-
+cation based on value of classifier. In Proceedings of
+NIPS.
+Alexander Grubb and J. Andrew Bagnell. 2012.
+SpeedBoost: Anytime prediction with uniform near-
+optimality. In AISTATS.
+He He, Hal Daum´e III, and Jason Eisner. 2012. Cost-
+sensitive dynamic feature selection. In ICML Infern-
+ing Workshop.
+Matti K¨a¨ari¨ainen. 2006. Lower bounds for reduc-
+tions. Talk at the Atomic Learning Workshop (TTI-C),
+March.
+Terry Koo and Michael Collins. 2010. Efficient third-
+order dependency parsers. In Proceedings of ACL.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated cor-
+pus of English: The Penn Treebank. Computational
+Linguistics, 19(2):313–330.
+Andr´e F. T. Martins, Dipanjan Das, Noah A. Smith, and
+Eric P. Xing. 2008. Stacking dependency parsers. In
+Proceedings of EMNLP.
+Ryan McDonald and Fernando Pereira. 2006. On-
+line learning of approximate dependency parsing al-
+gorithms. In Proceedings of EACL, pages 81–88.
+Ryan McDonald, K. Crammer, and Fernando Pereira.
+2005a. Online large-margin training of dependency
+parsers. In Proceedings of ACL.
+Ryan McDonald, Fernando Pereira, Kiril Ribarov, and
+Jan Hajiˇc. 2005b. Non-projective dependency parsing
+using spanning tree algorithms. In Proc. of EMNLP.
+N. Ratliff, D. Bradley, J. A. Bagnell, and J. Chestnutt.
+2004. Boosting structured prediction for imitation
+learning. In Proceedings of ICML.
+B. Roark and K. Hollingshead. 2008. Classifying chart
+cells for quadratic complexity context-free inference.
+In Proceedings of COLING.
+St´ephane. Ross, Geoffrey J. Gordon, and J. Andrew. Bag-
+nell. 2011. A reduction of imitation learning and
+structured prediction to no-regret online learning. In
+Proceedings of AISTATS.
+Alexander Rush and Slav Petrov. 2012. Vine pruning for
+efficient multi-pass dependency parsing. In Proceed-
+ings of NAACL.
+David A. Smith and Jason Eisner. 2008. Dependency
+parsing by belief propagation. In EMNLP.
+Richard S. Sutton and Andrew G. Barto. 1998. Rein-
+forcement Learning : An Introduction. MIT Press.
+R. E. Tarjan. 1977. Finding optimum branchings. Net-
+works, 7(1):25–35.
+Kristina Toutanova, Dan Klein, Christopher Manning,
+and Yoram Singer. 2003. Feature-rich part-of-speech
+tagging with a cyclic dependency network. In NAACL.
+Paul Viola and Michael Jones. 2004. Robust feal-time
+face detection. International Journal of Computer Vi-
+sion, 57:137–154.
+Qin Iris Wang, Dekang Lin, and Dale Schuurmans. 2007.
+Simple training of dependency parsers via structured
+boosting. In Proceedings of IJCAI.
+David Weiss and Ben Taskar. 2010. Structured predic-
+tion cascades. In Proceedings of AISTATS.
+H. Yamada and Y. Matsumoto. 2003. Statistical depen-
+dency analysis with Support Vector Machines. In Pro-
+ceedings of IWPT.
+</reference>
+<page confidence="0.995271">
+1464
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.465552">
+<title confidence="0.99997">Dynamic Feature Selection for Dependency Parsing</title>
+<author confidence="0.911013">He He Hal Daum´e</author>
+<affiliation confidence="0.9998335">Department of Computer University of</affiliation>
+<address confidence="0.984305">College Park, MD</address>
+<author confidence="0.989742">Jason</author>
+<affiliation confidence="0.78077">Department of Computer Johns Hopkins</affiliation>
+<address confidence="0.949974">Baltimore, MD</address>
+<email confidence="0.999431">jason@cs.jhu.edu</email>
+<abstract confidence="0.999862666666667">Feature computation and exhaustive search have significantly restricted the speed of graph-based dependency parsing. We propose faster framework of feature selecwhere features are added sequentially as needed, edges are pruned early, and decisions are made online for each sentence. We model this as a sequential decision-making problem and solve it by imitation learning techniques. We test our method on 7 languages. Our dynamic parser can achieve accuracies comparable or even superior to parsers using a full set features, while computing fewer than of the feature templates.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>P Abbeel</author>
+<author>A Y Ng</author>
+</authors>
+<title>Apprenticeship learning via inverse reinforcement learning.</title>
+<date>2004</date>
+<booktitle>In Proceedings of ICML.</booktitle>
+<contexts>
+<context position="9922" citStr="Abbeel and Ng, 2004" startWordPosition="1635" endWordPosition="1638">atures and intermediate prediction results. This requires sequential decision making. Abstractly, when the system is in some state s E 5, it chooses an action a = 7r(s) from the action set A using its policy 7r, and transitions to a new state s&apos;, inducing some cost. In the specific case of dynamic feature selection, when the system is in a given state, it decides whether to add some more features or to stop and make a prediction based on the features added so far. Usually the sequential decision making problem is solved by reinforcement learning (Sutton and Barto, 1998) or imitation learning (Abbeel and Ng, 2004; Ratliff et al., 2004). The dynamic feature selection framework has been successfully applied to supervised classification and ranking problems (Benbouzid et al., 2012; He et al., 2012; Gao and Koller, 2010). Below, we design a version that avoids overhead in our structured prediction setting. As there are n2 possible edges on a sentence of length n, we wish to avoid the overhead of making many individual decisions about specific features on specific edges, with each decision considering the current scores of all other edges. Instead we will batch the work of dynamic feature selection into a </context>
+<context position="21645" citStr="Abbeel and Ng, 2004" startWordPosition="3727" endWordPosition="3730">r(0((h, m))) == lock then £ + —£ \ {{(h&apos;,m) E £ : h&apos; =�h} U {(h&apos;, m&apos;) E £ : crosses (h, m)} U {(h&apos;, m&apos;) E £ : cycle with (h, m)}} if h == 0 then £ +— £ \ {(0,m&apos;) E £ : m&apos; =�m} end if else Add Ti to {(h&apos;,m&apos;) E £ : m&apos; == m} end if end for if i == K then y +— projective decoding else if i =� K or FAIL then y +— non-projective decoding end if end for return y 5 Policy Training We cast this problem as an imitation learning task and use Dataset Aggregation (DAgger) Ross et al. (2011) to train the policy iteratively. 5.1 Imitation Learning In imitation learning (also called apprenticeship learning) (Abbeel and Ng, 2004; Ratliff et al., 2004), instead of exploring the environment directed by its feedback (reward) as in typical reinforcement learning problems, the learner observes expert demonstrations and aims to mimic the expert’s behavior. The expert demonstration can be represented as trajectories of state-action pairs, {(st, at)} where t is the time step. A typical approach to imitation learning is to collect supervised data from the expert’s trajectories to learn a policy (multiclass classifier), where the input is 0(s), a feature representation of the current state (we call these policy features to avo</context>
+</contexts>
+<marker>Abbeel, Ng, 2004</marker>
+<rawString>P. Abbeel and A. Y. Ng. 2004. Apprenticeship learning via inverse reinforcement learning. In Proceedings of ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Benbouzid</author>
+<author>R Busa-Fekete</author>
+<author>B K´egl</author>
+</authors>
+<title>Fast classification using space decision DAGs.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ICML.</booktitle>
+<marker>Benbouzid, Busa-Fekete, K´egl, 2012</marker>
+<rawString>D. Benbouzid, R. Busa-Fekete, and B. K´egl. 2012. Fast classification using space decision DAGs. In Proceedings of ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Bergsma</author>
+<author>C Cherry</author>
+</authors>
+<title>Fast and accurate arc filtering for dependency parsing.</title>
+<date>2010</date>
+<booktitle>In Proceedings of COLING.</booktitle>
+<contexts>
+<context position="3184" citStr="Bergsma and Cherry (2010)" startWordPosition="504" endWordPosition="507">simple heuristics such as a global relative pruning threshold, we learn a featurized decisionmaking policy of a more complex form. Since each decision can affect later stages, or later decisions in the same stage, we model this problem as a sequential decision-making process and solve it by Dataset Aggregation (DAgger) (Ross et al., 2011), a recent iterative imitation learning technique for structured prediction. Previous work has made much progress on the complementary problem: speeding up the decoding stage by pruning the search space of tree structures. In Roark and Hollingshead (2008) and Bergsma and Cherry (2010), pruning decisions are made locally as a preprocessing step. In the recent vine pruning approach (Rush and Petrov, 2012), significant speedup is gained by leveraging structured information via a coarse-to-fine projective parsing cas1455 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1455–1464, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics cade (Charniak et al., 2006). These approaches do not directly tackle the feature selection problem. Although pruned edges do not require further feature computat</context>
+</contexts>
+<marker>Bergsma, Cherry, 2010</marker>
+<rawString>S. Bergsma and C. Cherry. 2010. Fast and accurate arc filtering for dependency parsing. In Proceedings of COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Buchholz</author>
+<author>E Marsi</author>
+</authors>
+<title>CoNLL-X shared task on multilingual dependency parsing.</title>
+<date>2006</date>
+<booktitle>In CoNLL.</booktitle>
+<contexts>
+<context position="26883" citStr="Buchholz and Marsi, 2006" startWordPosition="4615" endWordPosition="4618">how many locked children it currently has. It turns out that given all the parsing features, the margin is the most discriminative meta-feature. When it is present, other metafeatures we added do not help much, Thus we do not include them in our experiments due to overhead. 6 Experiment 6.1 Setup We generate dependency structures from the PTB constituency trees using the head rules of Yamada and Matsumoto (2003). Following convention, we use sections 02–21 for training, section 22 for development and section 23 for testing. We also report results on six languages from the CoNLL-X shared task (Buchholz and Marsi, 2006) as suggested in (Rush and Petrov, 2012), which cover a variety of language families. We follow the standard training/test split specified in the CoNLL-X data and tune parameters by cross validation when training the classifiers (policies). The PTB test data is tagged by a Stanford part-of-speech (POS) tagger (Toutanova et al., 2003) trained on sections 02–21. We use the provided gold POS tags for the CoNLL test data. All results are evaluated by the unlabeled attachment score (UAS). For fair comparison with previous work, punctuation is included when computing parsing accuracy of all CoNLL-X </context>
+</contexts>
+<marker>Buchholz, Marsi, 2006</marker>
+<rawString>S. Buchholz and E. Marsi. 2006. CoNLL-X shared task on multilingual dependency parsing. In CoNLL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xavier Carreras</author>
+</authors>
+<title>Experiments with a higher-order projective dependency parser.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the CoNLL Shared Task Session of EMNLP-CoNLL.</booktitle>
+<contexts>
+<context position="6388" citStr="Carreras, 2007" startWordPosition="1032" endWordPosition="1033">ken and one of its modifiers. Finding the best tree requires first computing θ·O(E) for each of the n2 possible edges. Since scoring the edges independently in this way restricts the parser to a local view of the dependency structure, higher-order models can achieve better accuracy. For example, in the second-order model of McDonald and Pereira (2006), each local subgraph E is a triple that includes the head and two modifiers of the head, which are adjacent to each other. Other methods that use triples include grandparent-parent-child triples (Koo and Collins, 2010), or non-adjacent siblings (Carreras, 2007). Third-order models (Koo and Collins, 2010) use quadruples, employing grand-sibling and tri-sibling information. The usual inference problem is to find the highest scoring tree for the input sentence. Note that in a valid tree, each token 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in CKY, for firstorder models and some higher</context>
+</contexts>
+<marker>Carreras, 2007</marker>
+<rawString>Xavier Carreras. 2007. Experiments with a higher-order projective dependency parser. In Proceedings of the CoNLL Shared Task Session of EMNLP-CoNLL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+<author>Mark Johnson</author>
+<author>Micha Elsner</author>
+<author>Joseph Austerweil</author>
+<author>David Ellis</author>
+<author>Isaac Haxton</author>
+<author>Catherine Hill</author>
+<author>R Shrivaths</author>
+<author>Jeremy Moore</author>
+<author>Michael Pozar</author>
+<author>Theresa Vu</author>
+</authors>
+<title>Multilevel coarse-to-fine PCFG parsing.</title>
+<date>2006</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="3650" citStr="Charniak et al., 2006" startWordPosition="570" endWordPosition="573">ntary problem: speeding up the decoding stage by pruning the search space of tree structures. In Roark and Hollingshead (2008) and Bergsma and Cherry (2010), pruning decisions are made locally as a preprocessing step. In the recent vine pruning approach (Rush and Petrov, 2012), significant speedup is gained by leveraging structured information via a coarse-to-fine projective parsing cas1455 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1455–1464, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics cade (Charniak et al., 2006). These approaches do not directly tackle the feature selection problem. Although pruned edges do not require further feature computation, the pruning step must itself compute similar high-dimensional features just to decide which edges to prune. For this reason, Rush and Petrov (2012) restrict the pruning models to a smaller feature set for time efficiency. We aim to do feature selection and edge pruning dynamically, balancing speed and accuracy by using only as many features as needed. In this paper, we first explore standard static feature selection methods for dependency parsing, and show </context>
+</contexts>
+<marker>Charniak, Johnson, Elsner, Austerweil, Ellis, Haxton, Hill, Shrivaths, Moore, Pozar, Vu, 2006</marker>
+<rawString>Eugene Charniak, Mark Johnson, Micha Elsner, Joseph Austerweil, David Ellis, Isaac Haxton, Catherine Hill, R. Shrivaths, Jeremy Moore, Michael Pozar, and Theresa Vu. 2006. Multilevel coarse-to-fine PCFG parsing. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y J Chu</author>
+<author>T H Liu</author>
+</authors>
+<title>On the shortest arborescence of a directed graph.</title>
+<date>1965</date>
+<journal>Science Sinica,</journal>
+<volume>14</volume>
+<contexts>
+<context position="7241" citStr="Chu and Liu, 1965" startWordPosition="1179" endWordPosition="1182">ken 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in CKY, for firstorder models and some higher-order models (Eisner, 1996; McDonald and Pereira, 2006).1 When the projectivity restriction is lifted, McDonald et al. (2005b) pointed out that the best tree can be found in O(n2) time using a minimum directed spanning tree algorithm (Chu and Liu, 1965; Edmonds, 1967; Tarjan, 1977), though only for first-order models.2 We will make use of this fast non-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for each instance. We briefly introduce this framework below and motivate our algorithm from empirical results on MST dependency parsing. 1Although the third-order model of Koo and Collins (2010), for example, takes O(n4) time. 2Th</context>
+</contexts>
+<marker>Chu, Liu, 1965</marker>
+<rawString>Y. J. Chu and T. H. Liu. 1965. On the shortest arborescence of a directed graph. Science Sinica, 14.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Ultraconservative online algorithms for multiclass problems.</title>
+<date>2003</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>3--951</pages>
+<contexts>
+<context position="29487" citStr="Crammer and Singer, 2003" startWordPosition="5058" endWordPosition="5061">el using the full set of features. Results for the vine pruning cascade model are taken from Rush and Petrov (2012). The cost is the percentage of feature templates used per sentence on edges that are not pruned by the dictionary filter. lect the best policy evaluated on the development set among the 20 policies obtained from each iteration. 6.2 Baseline Models We use the publicly available implementation of MSTParser7 (with modifications to the feature computation) and its default settings, so the feature weights of the projective and non-projective parsers are trained by the MIRA algorithm (Crammer and Singer, 2003; Crammer et al., 2006). Our feature set contains most features proposed in the literature (McDonald et al., 2005a; Koo and Collins, 2010). The basic feature components include lexical features (token, prefix, suffix), POS features (coarse and fine), edge length and direction. The feature templates consists of different conjunctions of these components. Other than features on the head word and the child word, we include features on in-between words and surrounding words as well. For PTB, our first-order model has 268 feature templates and 76,287,848 features; the second-order model has 380 fea</context>
+</contexts>
+<marker>Crammer, Singer, 2003</marker>
+<rawString>Koby Crammer and Yoram Singer. 2003. Ultraconservative online algorithms for multiclass problems. Journal of Machine Learning Research, 3:951–991.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Ofer Dekel</author>
+<author>Joseph Keshet</author>
+<author>Shai ShalevShwartz</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Online passiveaggressive algorithms.</title>
+<date>2006</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>7--551</pages>
+<contexts>
+<context position="29510" citStr="Crammer et al., 2006" startWordPosition="5062" endWordPosition="5065">eatures. Results for the vine pruning cascade model are taken from Rush and Petrov (2012). The cost is the percentage of feature templates used per sentence on edges that are not pruned by the dictionary filter. lect the best policy evaluated on the development set among the 20 policies obtained from each iteration. 6.2 Baseline Models We use the publicly available implementation of MSTParser7 (with modifications to the feature computation) and its default settings, so the feature weights of the projective and non-projective parsers are trained by the MIRA algorithm (Crammer and Singer, 2003; Crammer et al., 2006). Our feature set contains most features proposed in the literature (McDonald et al., 2005a; Koo and Collins, 2010). The basic feature components include lexical features (token, prefix, suffix), POS features (coarse and fine), edge length and direction. The feature templates consists of different conjunctions of these components. Other than features on the head word and the child word, we include features on in-between words and surrounding words as well. For PTB, our first-order model has 268 feature templates and 76,287,848 features; the second-order model has 380 feature templates and 95,7</context>
+</contexts>
+<marker>Crammer, Dekel, Keshet, ShalevShwartz, Singer, 2006</marker>
+<rawString>Koby Crammer, Ofer Dekel, Joseph Keshet, Shai ShalevShwartz, and Yoram Singer. 2006. Online passiveaggressive algorithms. Journal of Machine Learning Research, 7:551–585.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hal Daum´e John Langford</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Search-based structured prediction.</title>
+<date>2009</date>
+<journal>Machine Learning Journal (MLJ).</journal>
+<marker>Langford, Marcu, 2009</marker>
+<rawString>Hal Daum´e III, John Langford, and Daniel Marcu. 2009. Search-based structured prediction. Machine Learning Journal (MLJ).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Edmonds</author>
+</authors>
+<title>Optimum branchings.</title>
+<date>1967</date>
+<journal>Journal of Research of the National Bureau of Standards,</journal>
+<contexts>
+<context position="7256" citStr="Edmonds, 1967" startWordPosition="1183" endWordPosition="1184"> be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in CKY, for firstorder models and some higher-order models (Eisner, 1996; McDonald and Pereira, 2006).1 When the projectivity restriction is lifted, McDonald et al. (2005b) pointed out that the best tree can be found in O(n2) time using a minimum directed spanning tree algorithm (Chu and Liu, 1965; Edmonds, 1967; Tarjan, 1977), though only for first-order models.2 We will make use of this fast non-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for each instance. We briefly introduce this framework below and motivate our algorithm from empirical results on MST dependency parsing. 1Although the third-order model of Koo and Collins (2010), for example, takes O(n4) time. 2The non-projectiv</context>
+</contexts>
+<marker>Edmonds, 1967</marker>
+<rawString>J. Edmonds. 1967. Optimum branchings. Journal of Research of the National Bureau of Standards, (71B):233–240.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Eisner</author>
+</authors>
+<title>Three new probabilistic models for dependency parsing: an exploration.</title>
+<date>1996</date>
+<booktitle>In Proceedings of COLING.</booktitle>
+<contexts>
+<context position="7015" citStr="Eisner, 1996" startWordPosition="1143" endWordPosition="1145">odels (Koo and Collins, 2010) use quadruples, employing grand-sibling and tri-sibling information. The usual inference problem is to find the highest scoring tree for the input sentence. Note that in a valid tree, each token 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in CKY, for firstorder models and some higher-order models (Eisner, 1996; McDonald and Pereira, 2006).1 When the projectivity restriction is lifted, McDonald et al. (2005b) pointed out that the best tree can be found in O(n2) time using a minimum directed spanning tree algorithm (Chu and Liu, 1965; Edmonds, 1967; Tarjan, 1977), though only for first-order models.2 We will make use of this fast non-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for e</context>
+</contexts>
+<marker>Eisner, 1996</marker>
+<rawString>Jason Eisner. 1996. Three new probabilistic models for dependency parsing: an exploration. In Proceedings of COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rong-En Fan</author>
+<author>Kai-Wei Chang</author>
+<author>Cho-Jui Hsieh</author>
+<author>Xiang-Rui Wang</author>
+<author>Chih-Jen Lin</author>
+</authors>
+<title>LIBLINEAR: A library for large linear classification.</title>
+<date>2008</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>9--1871</pages>
+<contexts>
+<context position="27604" citStr="Fan et al., 2008" startWordPosition="4733" endWordPosition="4736">dard training/test split specified in the CoNLL-X data and tune parameters by cross validation when training the classifiers (policies). The PTB test data is tagged by a Stanford part-of-speech (POS) tagger (Toutanova et al., 2003) trained on sections 02–21. We use the provided gold POS tags for the CoNLL test data. All results are evaluated by the unlabeled attachment score (UAS). For fair comparison with previous work, punctuation is included when computing parsing accuracy of all CoNLL-X languages but not English (PTB). For policy training, we train a linear SVM classifier using Liblinear (Fan et al., 2008). For all languages, we run DAgger for 20 iterations and se1461 Language Method First-order Second-order Speedup Cost(%) UAS(D) UAS(F) Speedup Cost(%) UAS(D) UAS(F) DYNFS 3.44 34.6 91.1 91.3 4.73 16.3 91.6 92.0 Bulgarian 3.25 - 90.5 90.7 7.91 - 91.6 92.0 VINEP DYNFS 2.12 42.7 91.0 91.3 2.36 31.6 91.6 91.9 Chinese 1.02 - 89.3 89.5 2.03 - 90.3 90.5 VINEP English DYNFS 5.58 24.8 91.7 91.9 5.27 49.1 92.5 92.7 VINEP 5.23 - 91.0 91.2 11.88 - 92.2 92.4 DYNFS 4.71 21.0 89.2 89.3 6.02 36.6 89.7 89.9 German 3.37 - 89.0 89.2 7.38 - 90.1 90.3 VINEP DYNFS 4.80 15.6 93.7 93.6 8.49 7.53 93.9 93.9 Japanese 4.</context>
+</contexts>
+<marker>Fan, Chang, Hsieh, Wang, Lin, 2008</marker>
+<rawString>Rong-En Fan, Kai-Wei Chang, Cho-Jui Hsieh, Xiang-Rui Wang, and Chih-Jen Lin. 2008. LIBLINEAR: A library for large linear classification. Journal of Machine Learning Research, 9:1871–1874.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tianshi Gao</author>
+<author>Daphne Koller</author>
+</authors>
+<title>Active classification based on value of classifier.</title>
+<date>2010</date>
+<booktitle>In Proceedings of NIPS.</booktitle>
+<contexts>
+<context position="10130" citStr="Gao and Koller, 2010" startWordPosition="1667" endWordPosition="1670">y 7r, and transitions to a new state s&apos;, inducing some cost. In the specific case of dynamic feature selection, when the system is in a given state, it decides whether to add some more features or to stop and make a prediction based on the features added so far. Usually the sequential decision making problem is solved by reinforcement learning (Sutton and Barto, 1998) or imitation learning (Abbeel and Ng, 2004; Ratliff et al., 2004). The dynamic feature selection framework has been successfully applied to supervised classification and ranking problems (Benbouzid et al., 2012; He et al., 2012; Gao and Koller, 2010). Below, we design a version that avoids overhead in our structured prediction setting. As there are n2 possible edges on a sentence of length n, we wish to avoid the overhead of making many individual decisions about specific features on specific edges, with each decision considering the current scores of all other edges. Instead we will batch the work of dynamic feature selection into a smaller number of coarsegrained steps. 3.2 Strategy To speed up graph-based dependency parsing, we first investigate time usage in the parsing process on our development set, section 22 of the Penn Treebank (</context>
+</contexts>
+<marker>Gao, Koller, 2010</marker>
+<rawString>Tianshi Gao and Daphne Koller. 2010. Active classification based on value of classifier. In Proceedings of NIPS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander Grubb</author>
+<author>J Andrew Bagnell</author>
+</authors>
+<title>SpeedBoost: Anytime prediction with uniform nearoptimality.</title>
+<date>2012</date>
+<booktitle>In AISTATS.</booktitle>
+<contexts>
+<context position="9213" citStr="Grubb and Bagnell, 2012" startWordPosition="1511" endWordPosition="1514">cked edge; and 2-dot-1-dash edges are pruned since the root has already been locked with one child. (f) Final projective parsing. $ This time , the firms were ready. $ This time , the firms were ready . group $ This time , the firms were ready add feat. add feat. group (a) (b) (c) add feat. group $ This time , the firms were ready . decoding projective $ This time , the firms were ready . add feat. group $ This time , the firms were ready . (f) (e) (d) 3.1 Sequential Decision Making Our work is motivated by recent progress on dynamic feature selection (Benbouzid et al., 2012; He et al., 2012; Grubb and Bagnell, 2012), where features are added sequentially to a test instance based on previously acquired features and intermediate prediction results. This requires sequential decision making. Abstractly, when the system is in some state s E 5, it chooses an action a = 7r(s) from the action set A using its policy 7r, and transitions to a new state s&apos;, inducing some cost. In the specific case of dynamic feature selection, when the system is in a given state, it decides whether to add some more features or to stop and make a prediction based on the features added so far. Usually the sequential decision making pr</context>
+</contexts>
+<marker>Grubb, Bagnell, 2012</marker>
+<rawString>Alexander Grubb and J. Andrew Bagnell. 2012. SpeedBoost: Anytime prediction with uniform nearoptimality. In AISTATS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>He He</author>
+<author>Hal Daum´e</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Costsensitive dynamic feature selection.</title>
+<date>2012</date>
+<booktitle>In ICML Inferning Workshop.</booktitle>
+<marker>He, Daum´e, Eisner, 2012</marker>
+<rawString>He He, Hal Daum´e III, and Jason Eisner. 2012. Costsensitive dynamic feature selection. In ICML Inferning Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matti K¨a¨ari¨ainen</author>
+</authors>
+<title>Lower bounds for reductions. Talk at the Atomic Learning Workshop (TTI-C),</title>
+<date>2006</date>
+<marker>K¨a¨ari¨ainen, 2006</marker>
+<rawString>Matti K¨a¨ari¨ainen. 2006. Lower bounds for reductions. Talk at the Atomic Learning Workshop (TTI-C), March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Terry Koo</author>
+<author>Michael Collins</author>
+</authors>
+<title>Efficient thirdorder dependency parsers.</title>
+<date>2010</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="6345" citStr="Koo and Collins, 2010" startWordPosition="1025" endWordPosition="1028"> [0, n] and m E [1, n] (with h =� m) are a head token and one of its modifiers. Finding the best tree requires first computing θ·O(E) for each of the n2 possible edges. Since scoring the edges independently in this way restricts the parser to a local view of the dependency structure, higher-order models can achieve better accuracy. For example, in the second-order model of McDonald and Pereira (2006), each local subgraph E is a triple that includes the head and two modifiers of the head, which are adjacent to each other. Other methods that use triples include grandparent-parent-child triples (Koo and Collins, 2010), or non-adjacent siblings (Carreras, 2007). Third-order models (Koo and Collins, 2010) use quadruples, employing grand-sibling and tri-sibling information. The usual inference problem is to find the highest scoring tree for the input sentence. Note that in a valid tree, each token 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in</context>
+<context position="7805" citStr="Koo and Collins (2010)" startWordPosition="1266" endWordPosition="1269">inimum directed spanning tree algorithm (Chu and Liu, 1965; Edmonds, 1967; Tarjan, 1977), though only for first-order models.2 We will make use of this fast non-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for each instance. We briefly introduce this framework below and motivate our algorithm from empirical results on MST dependency parsing. 1Although the third-order model of Koo and Collins (2010), for example, takes O(n4) time. 2The non-projective parsing problem becomes NP-hard for higher-order models. One approximate solution (McDonald and Pereira, 2006) works by doing projective parsing and then rearranging edges. 1456 Figure 1: Dynamic feature selection for dependency parsing. (a) Start with all possible edges except those filtered by the length dictionary. (b) – (e) Add the next group of feature templates and parse using the non-projective parser. Predicted trees are shown as blue and red edges, where red indicates the edges that we then decide to lock. Dashed edges are pruned be</context>
+<context position="29625" citStr="Koo and Collins, 2010" startWordPosition="5080" endWordPosition="5083">age of feature templates used per sentence on edges that are not pruned by the dictionary filter. lect the best policy evaluated on the development set among the 20 policies obtained from each iteration. 6.2 Baseline Models We use the publicly available implementation of MSTParser7 (with modifications to the feature computation) and its default settings, so the feature weights of the projective and non-projective parsers are trained by the MIRA algorithm (Crammer and Singer, 2003; Crammer et al., 2006). Our feature set contains most features proposed in the literature (McDonald et al., 2005a; Koo and Collins, 2010). The basic feature components include lexical features (token, prefix, suffix), POS features (coarse and fine), edge length and direction. The feature templates consists of different conjunctions of these components. Other than features on the head word and the child word, we include features on in-between words and surrounding words as well. For PTB, our first-order model has 268 feature templates and 76,287,848 features; the second-order model has 380 feature templates and 95,796,140 features. The accuracy of our full-feature models is 7http://www.seas.upenn.edu/˜strctlrn/ MSTParser/MSTPars</context>
+</contexts>
+<marker>Koo, Collins, 2010</marker>
+<rawString>Terry Koo and Michael Collins. 2010. Efficient thirdorder dependency parsers. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Beatrice Santorini</author>
+<author>Mary Ann Marcinkiewicz</author>
+</authors>
+<title>Building a large annotated corpus of English: The Penn Treebank. Computational Linguistics,</title>
+<date>1993</date>
+<contexts>
+<context position="10756" citStr="Marcus et al., 1993" startWordPosition="1771" endWordPosition="1774">w, we design a version that avoids overhead in our structured prediction setting. As there are n2 possible edges on a sentence of length n, we wish to avoid the overhead of making many individual decisions about specific features on specific edges, with each decision considering the current scores of all other edges. Instead we will batch the work of dynamic feature selection into a smaller number of coarsegrained steps. 3.2 Strategy To speed up graph-based dependency parsing, we first investigate time usage in the parsing process on our development set, section 22 of the Penn Treebank (PTB) (Marcus et al., 1993). In Figure 2, we observe that (a) feature computation took more than 80% of the total time; (b) even though non-projective decoding time grows quadratically in terms of the sentence length, in practice it is almost negligible compared to the projective decoding time, with an average of 0.23 ms; (c) the secondorder projective model is significantly slower due to higher asymptotic complexity in both the scoring and decoding stages. At each stage of our algorithm, we need to decide whether to use additional features to refine the edge scores. As making this decision separately for each of the n2</context>
+</contexts>
+<marker>Marcus, Santorini, Marcinkiewicz, 1993</marker>
+<rawString>Mitchell P. Marcus, Beatrice Santorini, and Mary Ann Marcinkiewicz. 1993. Building a large annotated corpus of English: The Penn Treebank. Computational Linguistics, 19(2):313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andr´e F T Martins</author>
+<author>Dipanjan Das</author>
+<author>Noah A Smith</author>
+<author>Eric P Xing</author>
+</authors>
+<title>Stacking dependency parsers.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="4808" citStr="Martins et al., 2008" startWordPosition="752" endWordPosition="755">tic feature selection methods for dependency parsing, and show that even a few feature templates can give decent accuracy (Section 3.2). We then propose a novel way to dynamically select features for each edge while keeping the overhead of decision making low (Section 4). Our present experiments use the Maximum Spanning Tree (MST) parsing algorithm (McDonald et al., 2005a; McDonald and Pereira, 2006). However, our approach applies to other graph-based dependency parsers as well—including non-projective parsing, higher-order parsing, or approximations to higher-order parsing that use stacking (Martins et al., 2008), belief propagation (Smith and Eisner, 2008), or structured boosting (Wang et al., 2007). 2 Graph-based Dependency Parsing In graph-based dependency parsing of an n-word input sentence, we must construct a tree y whose vertices 0,1, ... n correspond to the root node (namely 0) and the ordered words of the sentence. Each directed edge of this tree points from a head (parent) to one of its modifiers (child). Following a common approach to structured prediction problems, the score of a tree y is defined as a sum of local scores. That is, sθ(y) = θ · EEEy O(E) = EEEy θ · O(E), where E ranges over</context>
+</contexts>
+<marker>Martins, Das, Smith, Xing, 2008</marker>
+<rawString>Andr´e F. T. Martins, Dipanjan Das, Noah A. Smith, and Eric P. Xing. 2008. Stacking dependency parsers. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Fernando Pereira</author>
+</authors>
+<title>Online learning of approximate dependency parsing algorithms.</title>
+<date>2006</date>
+<booktitle>In Proceedings of EACL,</booktitle>
+<pages>81--88</pages>
+<contexts>
+<context position="4590" citStr="McDonald and Pereira, 2006" startWordPosition="723" endWordPosition="726">s to a smaller feature set for time efficiency. We aim to do feature selection and edge pruning dynamically, balancing speed and accuracy by using only as many features as needed. In this paper, we first explore standard static feature selection methods for dependency parsing, and show that even a few feature templates can give decent accuracy (Section 3.2). We then propose a novel way to dynamically select features for each edge while keeping the overhead of decision making low (Section 4). Our present experiments use the Maximum Spanning Tree (MST) parsing algorithm (McDonald et al., 2005a; McDonald and Pereira, 2006). However, our approach applies to other graph-based dependency parsers as well—including non-projective parsing, higher-order parsing, or approximations to higher-order parsing that use stacking (Martins et al., 2008), belief propagation (Smith and Eisner, 2008), or structured boosting (Wang et al., 2007). 2 Graph-based Dependency Parsing In graph-based dependency parsing of an n-word input sentence, we must construct a tree y whose vertices 0,1, ... n correspond to the root node (namely 0) and the ordered words of the sentence. Each directed edge of this tree points from a head (parent) to o</context>
+<context position="6126" citStr="McDonald and Pereira (2006)" startWordPosition="990" endWordPosition="993">imensional feature vector from E together with the input sentence, and θ denotes a weight vector that has typically been learned from data. The first-order model decomposes the tree into edges E of the form (h, m), where h E [0, n] and m E [1, n] (with h =� m) are a head token and one of its modifiers. Finding the best tree requires first computing θ·O(E) for each of the n2 possible edges. Since scoring the edges independently in this way restricts the parser to a local view of the dependency structure, higher-order models can achieve better accuracy. For example, in the second-order model of McDonald and Pereira (2006), each local subgraph E is a triple that includes the head and two modifiers of the head, which are adjacent to each other. Other methods that use triples include grandparent-parent-child triples (Koo and Collins, 2010), or non-adjacent siblings (Carreras, 2007). Third-order models (Koo and Collins, 2010) use quadruples, employing grand-sibling and tri-sibling information. The usual inference problem is to find the highest scoring tree for the input sentence. Note that in a valid tree, each token 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can fur</context>
+<context position="7968" citStr="McDonald and Pereira, 2006" startWordPosition="1287" endWordPosition="1290">on-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for each instance. We briefly introduce this framework below and motivate our algorithm from empirical results on MST dependency parsing. 1Although the third-order model of Koo and Collins (2010), for example, takes O(n4) time. 2The non-projective parsing problem becomes NP-hard for higher-order models. One approximate solution (McDonald and Pereira, 2006) works by doing projective parsing and then rearranging edges. 1456 Figure 1: Dynamic feature selection for dependency parsing. (a) Start with all possible edges except those filtered by the length dictionary. (b) – (e) Add the next group of feature templates and parse using the non-projective parser. Predicted trees are shown as blue and red edges, where red indicates the edges that we then decide to lock. Dashed edges are pruned because of having the same child as a locked edge; 2-dot-3-dash edges are pruned because of crossing with a locked edge; fine-dashed edges are pruned because of form</context>
+</contexts>
+<marker>McDonald, Pereira, 2006</marker>
+<rawString>Ryan McDonald and Fernando Pereira. 2006. Online learning of approximate dependency parsing algorithms. In Proceedings of EACL, pages 81–88.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>K Crammer</author>
+<author>Fernando Pereira</author>
+</authors>
+<title>Online large-margin training of dependency parsers.</title>
+<date>2005</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="1615" citStr="McDonald et al. (2005" startWordPosition="243" endWordPosition="246"> all possible edges (or other small substructures) using a learned function; in the decoding stage, we use combinatorial optimization to find the dependency tree with the highest total score. Generally linear edge-scoring functions are used for speed. But they use a large set of features, derived from feature templates that consider different conjunctions of the edge’s attributes. As a result, parsing time is dominated by the scoring stage— computing edge attributes, using them to instantiate feature templates, and looking up the weights of the resulting features in a hash table. For example, McDonald et al. (2005a) used on average about 120 first-order feature templates on each edge, built from attributes such as the edge direction and length, the two words connected by the edge, and the parts of speech of these and nearby words. We therefore ask the question: can we use fewer features to score the edges, while maintaining the effect that the true dependency tree still gets a higher score? Motivated by recent progress on dynamic feature selection (Benbouzid et al., 2012; He et al., 2012), we propose to add features one group at a time to the dependency graph, and to use these features together with in</context>
+<context position="4560" citStr="McDonald et al., 2005" startWordPosition="719" endWordPosition="722">strict the pruning models to a smaller feature set for time efficiency. We aim to do feature selection and edge pruning dynamically, balancing speed and accuracy by using only as many features as needed. In this paper, we first explore standard static feature selection methods for dependency parsing, and show that even a few feature templates can give decent accuracy (Section 3.2). We then propose a novel way to dynamically select features for each edge while keeping the overhead of decision making low (Section 4). Our present experiments use the Maximum Spanning Tree (MST) parsing algorithm (McDonald et al., 2005a; McDonald and Pereira, 2006). However, our approach applies to other graph-based dependency parsers as well—including non-projective parsing, higher-order parsing, or approximations to higher-order parsing that use stacking (Martins et al., 2008), belief propagation (Smith and Eisner, 2008), or structured boosting (Wang et al., 2007). 2 Graph-based Dependency Parsing In graph-based dependency parsing of an n-word input sentence, we must construct a tree y whose vertices 0,1, ... n correspond to the root node (namely 0) and the ordered words of the sentence. Each directed edge of this tree po</context>
+<context position="7113" citStr="McDonald et al. (2005" startWordPosition="1156" endWordPosition="1159">ormation. The usual inference problem is to find the highest scoring tree for the input sentence. Note that in a valid tree, each token 1, ... , n must be attached to exactly one parent (either another token or the root 0). We can further require the tree to be projective, meaning that edges are not allowed to cross each other. It is well known that dynamic programming can be used to find the best projective dependency tree in O(n3) time, much as in CKY, for firstorder models and some higher-order models (Eisner, 1996; McDonald and Pereira, 2006).1 When the projectivity restriction is lifted, McDonald et al. (2005b) pointed out that the best tree can be found in O(n2) time using a minimum directed spanning tree algorithm (Chu and Liu, 1965; Edmonds, 1967; Tarjan, 1977), though only for first-order models.2 We will make use of this fast non-projective algorithm as a subroutine in early stages of our system. 3 Dynamic Feature Selection Unlike typical feature selection methods that fix a subset of selected features and use it throughout testing, in dynamic feature selection we choose features adaptively for each instance. We briefly introduce this framework below and motivate our algorithm from empirical </context>
+<context position="29600" citStr="McDonald et al., 2005" startWordPosition="5076" endWordPosition="5079"> The cost is the percentage of feature templates used per sentence on edges that are not pruned by the dictionary filter. lect the best policy evaluated on the development set among the 20 policies obtained from each iteration. 6.2 Baseline Models We use the publicly available implementation of MSTParser7 (with modifications to the feature computation) and its default settings, so the feature weights of the projective and non-projective parsers are trained by the MIRA algorithm (Crammer and Singer, 2003; Crammer et al., 2006). Our feature set contains most features proposed in the literature (McDonald et al., 2005a; Koo and Collins, 2010). The basic feature components include lexical features (token, prefix, suffix), POS features (coarse and fine), edge length and direction. The feature templates consists of different conjunctions of these components. Other than features on the head word and the child word, we include features on in-between words and surrounding words as well. For PTB, our first-order model has 268 feature templates and 76,287,848 features; the second-order model has 380 feature templates and 95,796,140 features. The accuracy of our full-feature models is 7http://www.seas.upenn.edu/˜st</context>
+</contexts>
+<marker>McDonald, Crammer, Pereira, 2005</marker>
+<rawString>Ryan McDonald, K. Crammer, and Fernando Pereira. 2005a. Online large-margin training of dependency parsers. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Fernando Pereira</author>
+<author>Kiril Ribarov</author>
+<author>Jan Hajiˇc</author>
+</authors>
+<title>Non-projective dependency parsing using spanning tree algorithms.</title>
+<date>2005</date>
+<booktitle>In Proc. of EMNLP.</booktitle>
+<marker>McDonald, Pereira, Ribarov, Hajiˇc, 2005</marker>
+<rawString>Ryan McDonald, Fernando Pereira, Kiril Ribarov, and Jan Hajiˇc. 2005b. Non-projective dependency parsing using spanning tree algorithms. In Proc. of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>N Ratliff</author>
+<author>D Bradley</author>
+<author>J A Bagnell</author>
+<author>J Chestnutt</author>
+</authors>
+<title>Boosting structured prediction for imitation learning.</title>
+<date>2004</date>
+<booktitle>In Proceedings of ICML.</booktitle>
+<contexts>
+<context position="9945" citStr="Ratliff et al., 2004" startWordPosition="1639" endWordPosition="1642">te prediction results. This requires sequential decision making. Abstractly, when the system is in some state s E 5, it chooses an action a = 7r(s) from the action set A using its policy 7r, and transitions to a new state s&apos;, inducing some cost. In the specific case of dynamic feature selection, when the system is in a given state, it decides whether to add some more features or to stop and make a prediction based on the features added so far. Usually the sequential decision making problem is solved by reinforcement learning (Sutton and Barto, 1998) or imitation learning (Abbeel and Ng, 2004; Ratliff et al., 2004). The dynamic feature selection framework has been successfully applied to supervised classification and ranking problems (Benbouzid et al., 2012; He et al., 2012; Gao and Koller, 2010). Below, we design a version that avoids overhead in our structured prediction setting. As there are n2 possible edges on a sentence of length n, we wish to avoid the overhead of making many individual decisions about specific features on specific edges, with each decision considering the current scores of all other edges. Instead we will batch the work of dynamic feature selection into a smaller number of coars</context>
+<context position="21668" citStr="Ratliff et al., 2004" startWordPosition="3731" endWordPosition="3734">then £ + —£ \ {{(h&apos;,m) E £ : h&apos; =�h} U {(h&apos;, m&apos;) E £ : crosses (h, m)} U {(h&apos;, m&apos;) E £ : cycle with (h, m)}} if h == 0 then £ +— £ \ {(0,m&apos;) E £ : m&apos; =�m} end if else Add Ti to {(h&apos;,m&apos;) E £ : m&apos; == m} end if end for if i == K then y +— projective decoding else if i =� K or FAIL then y +— non-projective decoding end if end for return y 5 Policy Training We cast this problem as an imitation learning task and use Dataset Aggregation (DAgger) Ross et al. (2011) to train the policy iteratively. 5.1 Imitation Learning In imitation learning (also called apprenticeship learning) (Abbeel and Ng, 2004; Ratliff et al., 2004), instead of exploring the environment directed by its feedback (reward) as in typical reinforcement learning problems, the learner observes expert demonstrations and aims to mimic the expert’s behavior. The expert demonstration can be represented as trajectories of state-action pairs, {(st, at)} where t is the time step. A typical approach to imitation learning is to collect supervised data from the expert’s trajectories to learn a policy (multiclass classifier), where the input is 0(s), a feature representation of the current state (we call these policy features to avoid confusion with the p</context>
+</contexts>
+<marker>Ratliff, Bradley, Bagnell, Chestnutt, 2004</marker>
+<rawString>N. Ratliff, D. Bradley, J. A. Bagnell, and J. Chestnutt. 2004. Boosting structured prediction for imitation learning. In Proceedings of ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Roark</author>
+<author>K Hollingshead</author>
+</authors>
+<title>Classifying chart cells for quadratic complexity context-free inference.</title>
+<date>2008</date>
+<booktitle>In Proceedings of COLING.</booktitle>
+<contexts>
+<context position="3154" citStr="Roark and Hollingshead (2008)" startWordPosition="499" endWordPosition="502">. However, in place of relatively simple heuristics such as a global relative pruning threshold, we learn a featurized decisionmaking policy of a more complex form. Since each decision can affect later stages, or later decisions in the same stage, we model this problem as a sequential decision-making process and solve it by Dataset Aggregation (DAgger) (Ross et al., 2011), a recent iterative imitation learning technique for structured prediction. Previous work has made much progress on the complementary problem: speeding up the decoding stage by pruning the search space of tree structures. In Roark and Hollingshead (2008) and Bergsma and Cherry (2010), pruning decisions are made locally as a preprocessing step. In the recent vine pruning approach (Rush and Petrov, 2012), significant speedup is gained by leveraging structured information via a coarse-to-fine projective parsing cas1455 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1455–1464, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics cade (Charniak et al., 2006). These approaches do not directly tackle the feature selection problem. Although pruned edges do not re</context>
+</contexts>
+<marker>Roark, Hollingshead, 2008</marker>
+<rawString>B. Roark and K. Hollingshead. 2008. Classifying chart cells for quadratic complexity context-free inference. In Proceedings of COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Geoffrey J Gordon Ross</author>
+<author>J Andrew Bagnell</author>
+</authors>
+<title>A reduction of imitation learning and structured prediction to no-regret online learning.</title>
+<date>2011</date>
+<booktitle>In Proceedings of AISTATS.</booktitle>
+<marker>Ross, Bagnell, 2011</marker>
+<rawString>St´ephane. Ross, Geoffrey J. Gordon, and J. Andrew. Bagnell. 2011. A reduction of imitation learning and structured prediction to no-regret online learning. In Proceedings of AISTATS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander Rush</author>
+<author>Slav Petrov</author>
+</authors>
+<title>Vine pruning for efficient multi-pass dependency parsing.</title>
+<date>2012</date>
+<booktitle>In Proceedings of NAACL.</booktitle>
+<contexts>
+<context position="3305" citStr="Rush and Petrov, 2012" startWordPosition="524" endWordPosition="527"> form. Since each decision can affect later stages, or later decisions in the same stage, we model this problem as a sequential decision-making process and solve it by Dataset Aggregation (DAgger) (Ross et al., 2011), a recent iterative imitation learning technique for structured prediction. Previous work has made much progress on the complementary problem: speeding up the decoding stage by pruning the search space of tree structures. In Roark and Hollingshead (2008) and Bergsma and Cherry (2010), pruning decisions are made locally as a preprocessing step. In the recent vine pruning approach (Rush and Petrov, 2012), significant speedup is gained by leveraging structured information via a coarse-to-fine projective parsing cas1455 Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1455–1464, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics cade (Charniak et al., 2006). These approaches do not directly tackle the feature selection problem. Although pruned edges do not require further feature computation, the pruning step must itself compute similar high-dimensional features just to decide which edges to prune. For this</context>
+<context position="17606" citStr="Rush and Petrov (2012)" startWordPosition="2957" endWordPosition="2960"> a more cost-efficient method is to split the ranked list into several groups so that the accuracy increases by roughly the same amount after each group is added. In this case, earlier stages are fast because they tend to have many fewer feature templates than later stages. For example, for English, we use 7 groups of first-order feature templates and 4 groups of second-order feature templates. The sequence of group sizes is 1, 4, 10, 12, 47, 33, 161 and 35, 29, 31, 17 for first- and second-order parsing respectively. 4.2 Sequential Feature Selection Similar to the length dictionary filter of Rush and Petrov (2012), for each test sentence, we first deterministically remove edges longer than the maximum length of edges in the training set that have the same head POS tag, modifier POS tag, and direction. This simple step prunes around 40% of the non-gold edges in our Penn Treebank development set (Section 6.1) at a cost of less than 0.1% in accuracy. Given a test sentence of length n, we start with a complete directed graph 9(V, £), where £ = {(h, m): h E [0, n], m E [1, n]}. After the length dictionary pruning step, we compute T1 for all remaining edges to obtain a pruned weighted directed graph. We pred</context>
+<context position="26923" citStr="Rush and Petrov, 2012" startWordPosition="4623" endWordPosition="4626">It turns out that given all the parsing features, the margin is the most discriminative meta-feature. When it is present, other metafeatures we added do not help much, Thus we do not include them in our experiments due to overhead. 6 Experiment 6.1 Setup We generate dependency structures from the PTB constituency trees using the head rules of Yamada and Matsumoto (2003). Following convention, we use sections 02–21 for training, section 22 for development and section 23 for testing. We also report results on six languages from the CoNLL-X shared task (Buchholz and Marsi, 2006) as suggested in (Rush and Petrov, 2012), which cover a variety of language families. We follow the standard training/test split specified in the CoNLL-X data and tune parameters by cross validation when training the classifiers (policies). The PTB test data is tagged by a Stanford part-of-speech (POS) tagger (Toutanova et al., 2003) trained on sections 02–21. We use the provided gold POS tags for the CoNLL test data. All results are evaluated by the unlabeled attachment score (UAS). For fair comparison with previous work, punctuation is included when computing parsing accuracy of all CoNLL-X languages but not English (PTB). For pol</context>
+<context position="28978" citStr="Rush and Petrov (2012)" startWordPosition="4978" endWordPosition="4981">.60 37.8 88.8 89.0 5.04 22.1 89.5 89.8 VINEP 4.64 - 88.3 88.5 13.89 - 89.4 89.7 Table 1: Comparison of speedup and accuracy with the vine pruning cascade approach for six languages. In the setup, DYNFS means our dynamic feature selection model, VINEP means the vine pruning cascade model, UAS(D) and UAS(F) refer to the unlabeled attachment score of the dynamic model (D) and the full-feature model (F) respectively. For each language, the speedup is relative to its corresponding first- or second-order model using the full set of features. Results for the vine pruning cascade model are taken from Rush and Petrov (2012). The cost is the percentage of feature templates used per sentence on edges that are not pruned by the dictionary filter. lect the best policy evaluated on the development set among the 20 policies obtained from each iteration. 6.2 Baseline Models We use the publicly available implementation of MSTParser7 (with modifications to the feature computation) and its default settings, so the feature weights of the projective and non-projective parsers are trained by the MIRA algorithm (Crammer and Singer, 2003; Crammer et al., 2006). Our feature set contains most features proposed in the literature </context>
+<context position="31075" citStr="Rush and Petrov (2012)" startWordPosition="5311" endWordPosition="5314">stem dynamics on English PTB section 23. Time and accuracy are relative to those of the baseline model using full features. Red (locked), gray (undecided), dashed gray (pruned) lines correspond to edges shown in Figure 1. In Table 1, we compare the dynamic parsing models with the full-feature models and the vine pruning cascade models for first-order and second-order 1462 Figure 5: Pareto curves for the dynamic and static approaches on English PTB section 23. parsing. The speedup for each language is defined as the speed relative to its full-feature baseline model. We take results reported by Rush and Petrov (2012) for the vine pruning model. As speed comparison for parsing largely relies on implementation, we also report the percentage of feature templates chosen for each sentence. The cost column shows the average number of feature templates computed for each sentence, expressed as a percentage of the number of feature templates if we had only pruned using the length dictionary filter. From the table we notice that our first-order model’s performance is comparable or superior to the vine pruning model, both in terms of speedup and accuracy. In some cases, the model with fewer features even achieves hi</context>
+</contexts>
+<marker>Rush, Petrov, 2012</marker>
+<rawString>Alexander Rush and Slav Petrov. 2012. Vine pruning for efficient multi-pass dependency parsing. In Proceedings of NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David A Smith</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Dependency parsing by belief propagation.</title>
+<date>2008</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="4853" citStr="Smith and Eisner, 2008" startWordPosition="758" endWordPosition="761">y parsing, and show that even a few feature templates can give decent accuracy (Section 3.2). We then propose a novel way to dynamically select features for each edge while keeping the overhead of decision making low (Section 4). Our present experiments use the Maximum Spanning Tree (MST) parsing algorithm (McDonald et al., 2005a; McDonald and Pereira, 2006). However, our approach applies to other graph-based dependency parsers as well—including non-projective parsing, higher-order parsing, or approximations to higher-order parsing that use stacking (Martins et al., 2008), belief propagation (Smith and Eisner, 2008), or structured boosting (Wang et al., 2007). 2 Graph-based Dependency Parsing In graph-based dependency parsing of an n-word input sentence, we must construct a tree y whose vertices 0,1, ... n correspond to the root node (namely 0) and the ordered words of the sentence. Each directed edge of this tree points from a head (parent) to one of its modifiers (child). Following a common approach to structured prediction problems, the score of a tree y is defined as a sum of local scores. That is, sθ(y) = θ · EEEy O(E) = EEEy θ · O(E), where E ranges over small connected subgraphs of y that can be s</context>
+</contexts>
+<marker>Smith, Eisner, 2008</marker>
+<rawString>David A. Smith and Jason Eisner. 2008. Dependency parsing by belief propagation. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard S Sutton</author>
+<author>Andrew G Barto</author>
+</authors>
+<title>Reinforcement Learning : An Introduction.</title>
+<date>1998</date>
+<journal>Networks,</journal>
+<volume>7</volume>
+<issue>1</issue>
+<publisher>MIT</publisher>
+<contexts>
+<context position="9879" citStr="Sutton and Barto, 1998" startWordPosition="1627" endWordPosition="1630">a test instance based on previously acquired features and intermediate prediction results. This requires sequential decision making. Abstractly, when the system is in some state s E 5, it chooses an action a = 7r(s) from the action set A using its policy 7r, and transitions to a new state s&apos;, inducing some cost. In the specific case of dynamic feature selection, when the system is in a given state, it decides whether to add some more features or to stop and make a prediction based on the features added so far. Usually the sequential decision making problem is solved by reinforcement learning (Sutton and Barto, 1998) or imitation learning (Abbeel and Ng, 2004; Ratliff et al., 2004). The dynamic feature selection framework has been successfully applied to supervised classification and ranking problems (Benbouzid et al., 2012; He et al., 2012; Gao and Koller, 2010). Below, we design a version that avoids overhead in our structured prediction setting. As there are n2 possible edges on a sentence of length n, we wish to avoid the overhead of making many individual decisions about specific features on specific edges, with each decision considering the current scores of all other edges. Instead we will batch th</context>
+</contexts>
+<marker>Sutton, Barto, 1998</marker>
+<rawString>Richard S. Sutton and Andrew G. Barto. 1998. Reinforcement Learning : An Introduction. MIT Press. R. E. Tarjan. 1977. Finding optimum branchings. Networks, 7(1):25–35.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Dan Klein</author>
+<author>Christopher Manning</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Feature-rich part-of-speech tagging with a cyclic dependency network.</title>
+<date>2003</date>
+<booktitle>In NAACL.</booktitle>
+<contexts>
+<context position="27218" citStr="Toutanova et al., 2003" startWordPosition="4669" endWordPosition="4672">the PTB constituency trees using the head rules of Yamada and Matsumoto (2003). Following convention, we use sections 02–21 for training, section 22 for development and section 23 for testing. We also report results on six languages from the CoNLL-X shared task (Buchholz and Marsi, 2006) as suggested in (Rush and Petrov, 2012), which cover a variety of language families. We follow the standard training/test split specified in the CoNLL-X data and tune parameters by cross validation when training the classifiers (policies). The PTB test data is tagged by a Stanford part-of-speech (POS) tagger (Toutanova et al., 2003) trained on sections 02–21. We use the provided gold POS tags for the CoNLL test data. All results are evaluated by the unlabeled attachment score (UAS). For fair comparison with previous work, punctuation is included when computing parsing accuracy of all CoNLL-X languages but not English (PTB). For policy training, we train a linear SVM classifier using Liblinear (Fan et al., 2008). For all languages, we run DAgger for 20 iterations and se1461 Language Method First-order Second-order Speedup Cost(%) UAS(D) UAS(F) Speedup Cost(%) UAS(D) UAS(F) DYNFS 3.44 34.6 91.1 91.3 4.73 16.3 91.6 92.0 Bul</context>
+</contexts>
+<marker>Toutanova, Klein, Manning, Singer, 2003</marker>
+<rawString>Kristina Toutanova, Dan Klein, Christopher Manning, and Yoram Singer. 2003. Feature-rich part-of-speech tagging with a cyclic dependency network. In NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Paul Viola</author>
+<author>Michael Jones</author>
+</authors>
+<title>Robust feal-time face detection.</title>
+<date>2004</date>
+<journal>International Journal of Computer Vision,</journal>
+<pages>57--137</pages>
+<contexts>
+<context position="2445" citStr="Viola and Jones, 2004" startWordPosition="386" endWordPosition="389">earby words. We therefore ask the question: can we use fewer features to score the edges, while maintaining the effect that the true dependency tree still gets a higher score? Motivated by recent progress on dynamic feature selection (Benbouzid et al., 2012; He et al., 2012), we propose to add features one group at a time to the dependency graph, and to use these features together with interactions among edges (as determined by intermediate parsing results) to make hard decisions on some edges before all their features have been seen. Our approach has a similar flavor to cascaded classifiers (Viola and Jones, 2004; Weiss and Taskar, 2010) in that we make decisions for each edge at every stage. However, in place of relatively simple heuristics such as a global relative pruning threshold, we learn a featurized decisionmaking policy of a more complex form. Since each decision can affect later stages, or later decisions in the same stage, we model this problem as a sequential decision-making process and solve it by Dataset Aggregation (DAgger) (Ross et al., 2011), a recent iterative imitation learning technique for structured prediction. Previous work has made much progress on the complementary problem: sp</context>
+</contexts>
+<marker>Viola, Jones, 2004</marker>
+<rawString>Paul Viola and Michael Jones. 2004. Robust feal-time face detection. International Journal of Computer Vision, 57:137–154.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Qin Iris Wang</author>
+<author>Dekang Lin</author>
+<author>Dale Schuurmans</author>
+</authors>
+<title>Simple training of dependency parsers via structured boosting.</title>
+<date>2007</date>
+<booktitle>In Proceedings of IJCAI.</booktitle>
+<contexts>
+<context position="4897" citStr="Wang et al., 2007" startWordPosition="765" endWordPosition="768">ates can give decent accuracy (Section 3.2). We then propose a novel way to dynamically select features for each edge while keeping the overhead of decision making low (Section 4). Our present experiments use the Maximum Spanning Tree (MST) parsing algorithm (McDonald et al., 2005a; McDonald and Pereira, 2006). However, our approach applies to other graph-based dependency parsers as well—including non-projective parsing, higher-order parsing, or approximations to higher-order parsing that use stacking (Martins et al., 2008), belief propagation (Smith and Eisner, 2008), or structured boosting (Wang et al., 2007). 2 Graph-based Dependency Parsing In graph-based dependency parsing of an n-word input sentence, we must construct a tree y whose vertices 0,1, ... n correspond to the root node (namely 0) and the ordered words of the sentence. Each directed edge of this tree points from a head (parent) to one of its modifiers (child). Following a common approach to structured prediction problems, the score of a tree y is defined as a sum of local scores. That is, sθ(y) = θ · EEEy O(E) = EEEy θ · O(E), where E ranges over small connected subgraphs of y that can be scored individually. Here O(E) extracts a hig</context>
+</contexts>
+<marker>Wang, Lin, Schuurmans, 2007</marker>
+<rawString>Qin Iris Wang, Dekang Lin, and Dale Schuurmans. 2007. Simple training of dependency parsers via structured boosting. In Proceedings of IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Weiss</author>
+<author>Ben Taskar</author>
+</authors>
+<title>Structured prediction cascades.</title>
+<date>2010</date>
+<booktitle>In Proceedings of AISTATS.</booktitle>
+<contexts>
+<context position="2470" citStr="Weiss and Taskar, 2010" startWordPosition="390" endWordPosition="393">re ask the question: can we use fewer features to score the edges, while maintaining the effect that the true dependency tree still gets a higher score? Motivated by recent progress on dynamic feature selection (Benbouzid et al., 2012; He et al., 2012), we propose to add features one group at a time to the dependency graph, and to use these features together with interactions among edges (as determined by intermediate parsing results) to make hard decisions on some edges before all their features have been seen. Our approach has a similar flavor to cascaded classifiers (Viola and Jones, 2004; Weiss and Taskar, 2010) in that we make decisions for each edge at every stage. However, in place of relatively simple heuristics such as a global relative pruning threshold, we learn a featurized decisionmaking policy of a more complex form. Since each decision can affect later stages, or later decisions in the same stage, we model this problem as a sequential decision-making process and solve it by Dataset Aggregation (DAgger) (Ross et al., 2011), a recent iterative imitation learning technique for structured prediction. Previous work has made much progress on the complementary problem: speeding up the decoding st</context>
+</contexts>
+<marker>Weiss, Taskar, 2010</marker>
+<rawString>David Weiss and Ben Taskar. 2010. Structured prediction cascades. In Proceedings of AISTATS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Yamada</author>
+<author>Y Matsumoto</author>
+</authors>
+<title>Statistical dependency analysis with Support Vector Machines.</title>
+<date>2003</date>
+<booktitle>In Proceedings of IWPT.</booktitle>
+<contexts>
+<context position="26673" citStr="Yamada and Matsumoto (2003)" startWordPosition="4580" endWordPosition="4583">f the next feature group to be added We also tried more complex meta-features, for example, mean and variance of the scores of competing edges, and structured features such as whether the head of e is locked and how many locked children it currently has. It turns out that given all the parsing features, the margin is the most discriminative meta-feature. When it is present, other metafeatures we added do not help much, Thus we do not include them in our experiments due to overhead. 6 Experiment 6.1 Setup We generate dependency structures from the PTB constituency trees using the head rules of Yamada and Matsumoto (2003). Following convention, we use sections 02–21 for training, section 22 for development and section 23 for testing. We also report results on six languages from the CoNLL-X shared task (Buchholz and Marsi, 2006) as suggested in (Rush and Petrov, 2012), which cover a variety of language families. We follow the standard training/test split specified in the CoNLL-X data and tune parameters by cross validation when training the classifiers (policies). The PTB test data is tagged by a Stanford part-of-speech (POS) tagger (Toutanova et al., 2003) trained on sections 02–21. We use the provided gold PO</context>
+</contexts>
+<marker>Yamada, Matsumoto, 2003</marker>
+<rawString>H. Yamada and Y. Matsumoto. 2003. Statistical dependency analysis with Support Vector Machines. In Proceedings of IWPT.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

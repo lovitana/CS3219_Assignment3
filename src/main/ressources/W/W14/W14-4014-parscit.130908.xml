@@ -1,0 +1,1770 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.929699">
+Transformation and Decomposition for Efficiently Implementing and
+Improving Dependency-to-String Model In Moses
+</title>
+<author confidence="0.948716">
+Liangyou Li†, Jun Xie‡, Andy Way† and Qun Liu†‡† CNGL Centre for Global Intelligent Content, School of Computing
+</author>
+<affiliation confidence="0.990001">
+Dublin City University, Dublin 9, Ireland
+‡ Key Laboratory of Intelligent Information Processing, Institute of Computing Technology
+Chinese Academy of Sciences, Beijing, China
+</affiliation>
+<email confidence="0.985957">
+{liangyouli,away,qliu}@computing.dcu.ie
+junxie@ict.ac.cn
+</email>
+<sectionHeader confidence="0.996552" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999699068965517">
+Dependency structure provides grammat-
+ical relations between words, which have
+shown to be effective in Statistical Ma-
+chine Translation (SMT). In this paper, we
+present an open source module in Moses
+which implements a dependency-to-string
+model. We propose a method to trans-
+form the input dependency tree into a cor-
+responding constituent tree for reusing the
+tree-based decoder in Moses. In our ex-
+periments, this method achieves compara-
+ble results with the standard model. Fur-
+thermore, we enrich this model via the
+decomposition of dependency structure,
+including extracting rules from the sub-
+structures of the dependency tree during
+training and creating a pseudo-forest in-
+stead of the tree per se as the input dur-
+ing decoding. Large-scale experiments
+on Chinese–English and German–English
+tasks show that the decomposition ap-
+proach improves the baseline dependency-
+to-string model significantly. Our sys-
+tem achieves comparable results with the
+state-of-the-art hierarchical phrase-based
+model (HPB). Finally, when resorting to
+phrasal rules, the dependency-to-string
+model performs significantly better than
+Moses HPB.
+</bodyText>
+<sectionHeader confidence="0.999158" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999869">
+Dependency structure models relations between
+words in a sentence. Such relations indicate
+the syntactic function of one word to another
+word. As dependency structure directly encodes
+semantic information and has the best inter-lingual
+phrasal cohesion properties (Fox, 2002), it is be-
+lieved to be helpful to translation.
+In recent years, dependency structure has been
+widely used in SMT. For example, Shen et al.
+(2010) present a string-to-dependency model by
+using the dependency fragments of the neighbour-
+ing words on the target side, which makes it easier
+to integrate a dependency language model. How-
+ever such string-to-tree systems run slowly in cu-
+bic time (Huang et al., 2006).
+Another example is the treelet approach
+(Menezes and Quirk, 2005; Quirk et al., 2005),
+which uses dependency structure on the source
+side. Xiong et al. (2007) extend the treelet ap-
+proach to allow dependency fragments with gaps.
+As the treelet is defined as an arbitrary connected
+sub-graph, typically both substitution and inser-
+tion operations are adopted for decoding. How-
+ever, as translation rules based on the treelets
+do not encode enough reordering information di-
+rectly, another heuristic or separate reordering
+model is usually needed to decide the best target
+position of the inserted words.
+Different from these works, Xie et al. (2011)
+present a dependency-to-string (Dep2Str) model,
+which extracts head-dependent (HD) rules from
+word-aligned source dependency trees and target
+strings. As this model specifies reordering infor-
+mation in the HD rules, during translation only the
+substitution operation is needed, because words
+are reordered simultaneously with the rule being
+applied. Meng et al. (2013) and Xie et al. (2014)
+extend the model by augmenting HD rules with the
+help of either constituent tree or fixed/float struc-
+ture (Shen et al., 2010). Augmented rules are cre-
+ated by the combination of two or more nodes in
+</bodyText>
+<page confidence="0.960888">
+122
+</page>
+<note confidence="0.78352">
+Proceedings of SSST-8, Eighth Workshop on Syntax, Semantics and Structure in Statistical Translation, pages 122–131,
+October 25, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999876805555556">
+the HD fragment, and are capable of capturing
+translations of non-syntactic phrases. However,
+the decoder needs to be changed correspondingly
+to handle these rules.
+Attracted by the simplicity of the Dep2Str
+model, in this paper we describe an easy way to
+integrate the model into the popular translation
+framework Moses (Koehn et al., 2007). In or-
+der to share the same decoder with the conven-
+tional syntax-based model, we present an algo-
+rithm which transforms a dependency tree into a
+corresponding constituent tree which encodes de-
+pendency information in its non-leaf nodes and is
+compatible with the Dep2Str model. In addition,
+we present a method to decompose a dependency
+structure (HD fragment) into smaller parts which
+enrich translation rules and also allow us to cre-
+ate a pseudo-forest as the input. “Pseudo” means
+the forest is not obtained by combining several
+trees from a parser, but rather that it is created
+based on the decomposition of an HD fragment.
+Large-scale experiments on Chinese–English and
+German–English tasks show that the transforma-
+tion and decomposition are effective for transla-
+tion.
+In the remainder of the paper, we first describe
+the Dep2Str model (Section 2). Then we describe
+how to transform a dependency tree into a con-
+stituent tree which is compatible with the Dep2Str
+model (Section 3). The idea of decomposition in-
+cluding extracting sub-structural rules and creat-
+ing a pseudo-forest is presented in Section 4. Then
+experiments are conducted to compare translation
+results of our approach with the state-of-the-art
+HPB model (Section 5). We conclude in Section 6
+and present avenues for future work.
+</bodyText>
+<sectionHeader confidence="0.999197" genericHeader="method">
+2 Dependency-to-String Model
+</sectionHeader>
+<bodyText confidence="0.9390586">
+In the Dep2Str model (Xie et al., 2011), the HD
+fragment is the basic unit. As shown in Figure
+1, in a dependency tree, each non-leaf node is the
+head of some other nodes (dependents), so an HD
+fragment is composed of a head node and all of its
+dependents.1
+In this model, there are two kinds of rules for
+translation. One is the head rule which specifies
+the translation of a source word:
+Juxing
+</bodyText>
+<footnote confidence="0.90836025">
+#T7, holds
+1In this paper, HD fragment of a node means the HD frag-
+ment with this node as the head. Leaf nodes have no HD
+fragments.
+</footnote>
+<figureCaption confidence="0.881691333333333">
+Figure 1: Example of a dependency tree, with
+head-dependent fragments being indicated by dot-
+ted lines.
+</figureCaption>
+<bodyText confidence="0.9989385">
+The other one is the HD rule which consists of
+three parts: the HD fragment s of the source
+side (maybe containing variables), a target string
+t (maybe containing variables) and a one-to-one
+mapping φ from variables in s to variables in t, as
+in:
+</bodyText>
+<subsectionHeader confidence="0.630376">
+Boliweiya Juxing Xuanju
+</subsectionHeader>
+<equation confidence="0.97503125">
+X09 ) #T7 (x1: A—# )
+t = Bolivia holds x1
+Xuanju
+φ = {x1 :7-#, x1}
+</equation>
+<bodyText confidence="0.849834296296296">
+where the underlined element denotes the leaf
+node. Variables in the Dep2Str model are con-
+strained either by words (like x1:i-#) or Part-of-
+Speech (POS) tags (like x1:NN).
+Given a source sentence with a dependency tree,
+a target string and the word alignment between the
+source and target sentences, this model first an-
+notates each node N with two annotations: head
+span and dependency span.2 These two spans
+specify the corresponding target position of a node
+(by the head span) or sub-tree (by the depen-
+dency span). After annotation, acceptable HD
+fragments3 are utilized to induce lexicalized HD
+2Some definitions: Closure clos(S) of set S is the small-
+est superset of S in which the elements (integers) are contin-
+uous. Let H be the set of indexes of target words aligned to
+node N. Head span hsp(N) of node N is clos(H). Head
+span hsp(N) is consistent if it does not overlap with head
+span of any other node. Dependency span dsp(N) of node
+N is the union of all consistent head spans in the subtree
+rooted at N.
+3A head-dependent fragment is acceptable if the head
+span of the head node is consistent and none of the depen-
+dency spans of its dependents is empty. We could see that
+in an acceptable fragment, the head span of the head node
+and dependency spans of dependents are not overlapped with
+each other.
+</bodyText>
+<figure confidence="0.983424230769231">
+Boliweiya
+ffJ &apos;/NN
+Zongtong
+,&apos;-NA/NN
+Juxing
+*ff/VV
+Yu
+fj/CC
+Guohui
+P4�/NN
+Xuanju
+A*/NN
+s = (
+</figure>
+<page confidence="0.934861">
+123
+</page>
+<bodyText confidence="0.357087">
+Bolivia holds presidential and parliament elections
+</bodyText>
+<figureCaption confidence="0.993248">
+Figure 2: Example of a derivation. Underlined el-
+ements indicate leaf nodes.
+</figureCaption>
+<bodyText confidence="0.999325739130435">
+rules (the head node and leaf node are represented
+by words, while the internal nodes are replaced by
+variables constrained by word) and unlexicalized
+HD rules (nodes are replaced by variables con-
+strained by POS tags).
+In HD rules, an internal node denotes the whole
+sub-tree and is always a substitution site. The head
+node and leaf nodes can be represented by either
+words or variables. The target side corresponding
+to an HD fragment and the mapping between vari-
+ables are determined by the head span of the head
+node and the dependency spans of the dependents.
+A translation can be obtained by applying rules
+to the input dependency tree. Figure 2 shows a
+derivation for translating a Chinese sentence into
+an English string. The derivation proceeds from
+top to bottom. Variables in the higher-level HD
+rules are substituted by the translations of lower
+HD rules recursively.
+The final translation is obtained by finding the
+best derivation d* from all possible derivations
+D which convert the source dependency structure
+into a target string, as in Equation (1):
+</bodyText>
+<equation confidence="0.97187525">
+�
+d* = argmax p(d) ≈ argmax
+dED dED
+i
+</equation>
+<bodyText confidence="0.9995375">
+where Oi(d) is the ith feature defined in the deriva-
+tion d, and Ai is the weight of the feature.
+</bodyText>
+<sectionHeader confidence="0.867563" genericHeader="method">
+3 Transformation of Dependency Trees
+</sectionHeader>
+<bodyText confidence="0.999977212765958">
+In this section, we introduce an algorithm to trans-
+form a dependency tree into a corresponding con-
+stituent tree, where words of the source sentence
+are leaf nodes and internal nodes are labelled with
+head words or POS tags which are constrained by
+dependency information. Such a transformation
+makes it possible to use the traditional tree-based
+decoder to translate a dependency tree, so we can
+easily integrate the Dep2Str model into the popu-
+lar framework Moses.
+In a tree-based system, the CYK algorithm
+(Kasami, 1965; Younger, 1967; Cocke and
+Schwartz, 1970) is usually employed to translate
+the input sentence with a tree structure. Each time
+a continuous sequence of words (a phrase) in the
+source sentence is translated. Larger phrases can
+be translated by combining translations of smaller
+phrases.
+In a constituent tree, the source words are leaf
+nodes and all non-leaf nodes covering a phrase are
+labelled with categories which are usually vari-
+ables defined in the tree-based model. For trans-
+lating a phrase covered by a non-leaf node, the de-
+coder for the constituent tree can easily find ap-
+plied rules by directly matching variables in these
+rules to tree nodes. However, in a dependency tree,
+each internal node represents a word of the source
+sentence. Variables covering a phrase cannot be
+recognized directly. Therefore, to share the same
+decoder with the constituent tree, the dependency
+tree needs to be transformed into a constituent-
+style tree.
+As we described in Section 2, each variable in
+the Dep2Str model represents a word (for the head
+and leaf node) or a sequence of continuous words
+(for the internal node). Thus it is intuitive to use
+these variables to label non-leaf nodes of the pro-
+duced constituent tree. Furthermore, in order to
+preserve the dependency information of each HD
+fragment, the created constituent node needs to be
+constrained by the dependency information in the
+HD fragment.
+Our transformation algorithm is shown in Al-
+gorithm 1, which proceeds recursively from top to
+bottom on each HD fragment. There are a maxi-
+mum of three types of nodes in an HD fragment:
+head node, leaf nodes, and internal nodes. The
+</bodyText>
+<figure confidence="0.996849894736842">
+Juxing
+举行/VV
+Boliweiya
+玻利维亚/NN
+Guohui
+国会/NN
+Xuanju
+选举/NN
+Zongtong
+总统/NN
+Yu
+与/CC
+Boliweiya Juxing Xuanju
+Rule: (玻利维亚) 举行 (x1:选举) Bolivia holds x1
+Xuanju
+选举/NN
+Bolivia holds
+Guohui
+国会/NN
+Yu
+与/CC
+Zongtong
+总统/NN
+Xuanju
+Rule: (x1:NN) 选举 x1 elections
+Guohui
+Bolivia holds 国会/NN elections
+Zongtong
+总统/NN
+Yu
+与/CC
+Zongtong Yu Guohui
+Rule: (总统) (与) x1:国会 presidential and x1
+Guohui
+Bolivia holds presidential and 国会/NN elections
+Guohui
+Rule: 国会 parliament
+Oi(d)λi (1)
+</figure>
+<page confidence="0.98847">
+124
+</page>
+<bodyText confidence="0.870094428571428">
+Algorithm 1 Algorithm for transforming a depen-
+dency tree to constituent tree. Dnode means node
+in dependency tree. Cnode means node in con-
+stituent tree.
+function CNODE(label, span)
+create a new Cnode CN
+CN.label label
+CN.span span
+end function
+function TRANSFNODE(Dnode H)
+pos POS of H
+constrain pos D with H0, like: NN:H0
+CNODE(label,H.position)
+for each dependent N of H do
+pos POS of N
+word word of N
+constrain pos D with Li or Ri, like: NN:R1
+constrain word D with Li or Ri
+if N is leaf then
+CNODE(pos,N.position)
+else
+</bodyText>
+<listItem confidence="0.522061333333333">
+CNODE(word,H.span)
+CNODE(pos,H.span)
+TRANSFNODE(N)
+end if
+end for
+end function
+</listItem>
+<bodyText confidence="0.999941714285714">
+leaf nodes and internal nodes are dependents of
+the head node. For the leaf node and head node,
+we create constituent nodes that just cover one
+word. For an internal node N, we create con-
+stituent nodes that cover all the words in the sub-
+tree rooted at N. In Algorithm 1, N.position
+means the position of the word represented by the
+node N. N.span denotes indexes of words cov-
+ered by the sub-tree rooted at node N.
+Taking the dependency tree in Figure 1 as an
+example, its transformation result for integration
+with Moses is shown in Figure 3. In the Dep2Str
+model, leaf nodes can be replaced by a vari-
+able constrained by its POS tag, so for leaf node
+</bodyText>
+<figure confidence="0.679619333333333">
+NN:L1 VV:H0 NN:L2 CC:L1 NN:H0 NN:H0
+Boliweiya
+FOOCE
+</figure>
+<figureCaption confidence="0.971529">
+Figure 3: The corresponding constituent tree af-
+</figureCaption>
+<bodyText confidence="0.962795346153846">
+ter transforming the dependency tree in Figure 1.
+Note in our implementation, we do not distinguish
+the leaf node and internal node of a dependency
+tree in the produced constituent tree and induced
+rules.
+which cover all words in the dependency sub-tree
+rooted at this node, with one of them labelled by
+the word itself. Both nodes are constrained by de-
+pendency information “L1”. After such a transfor-
+mation is conducted on each HD fragment recur-
+sively, we obtain a constituent tree.
+This transformation makes our implementation
+of the Dep2Str model easier, because we can use
+the tree-to-string decoder in Moses. All we need
+to do is to write a new rule extractor which extracts
+head rules and HD rules (see Section 2) from the
+word-aligned source dependency trees and target
+strings, and represents these rules in the format de-
+fined in Moses.4
+Note that while this conversion is performed
+on an input dependency tree during decoding, the
+training part, including extracting rules and cal-
+culating translation probabilities, does not change,
+so the model is still a dependency-to-string model.
+4Taking the rule in Section 2 as an example, its represen-
+tation in Moses is:
+</bodyText>
+<figure confidence="0.930936709677419">
+Xuanju
+[�#:R1][X] [H1]
+NN:R1
+Xuanju
+i&amp;*:R1
+NN:L1
+Guohui
+W :L1
+S
+Yu
+�
+Zongtong
+,g-qt
+Guohui
+W
+Juxing
+*TT
+Xuanju
+i&amp;*
+s =
+Boliweiya
+a�[f1J,
+Juxing
+#rT
+Zongtong Zongtong Yu
+0, ” in HD fragment “ (0,�) (-1:j)
+Guohui
+Q ”,
+Xuanju
+t = Bolivia holds [i�g#:R1][X] [X]
+“
+</figure>
+<footnote confidence="0.434434">
+we create a constituent node “NN:L2”, where
+“NN” is the POS tag and “L2” denotes that the leaf
+node is the second left dependent of the head node.
+</footnote>
+<table confidence="0.377386">
+Guohui
+For the internal node “ Q ” in the HD fragment
+“ Guohui Xuanju
+(�) A—#”, we create two constituent nodes
+</table>
+<equation confidence="0.984181">
+0 = {2 → 2}
+</equation>
+<bodyText confidence="0.998197166666667">
+where “H1” denotes the position of the head word is 1, “R1”
+indicates the first right dependent of the head word, “X” is the
+general label for the target side and 0 is the set of alignments
+(the index-correspondences between s and t). The format has
+been described in detail at http://www.statmt.org/
+moses/?n=Moses.SyntaxTutorial.
+</bodyText>
+<page confidence="0.994235">
+125
+</page>
+<bodyText confidence="0.999989923076923">
+In addition, our transformation is different from
+other works which transform a dependency tree
+into a constituent tree (Collins et al., 1999; Xia and
+Palmer, 2001). In this paper, the produced con-
+stituent tree still preserves dependency relations
+between words, and the phrasal structure is di-
+rectly derived from the dependency structure with-
+out refinement. Accordingly, the constituent tree
+may not be a linguistically well-formed syntactic
+structure. However, it is not a problem for our
+model, because in this paper what matters is the
+dependency structure which has already been en-
+coded into the (ill-formed) constituent tree.
+</bodyText>
+<sectionHeader confidence="0.962429" genericHeader="method">
+4 Decomposition of Dependency
+Structure
+</sectionHeader>
+<bodyText confidence="0.999813909090909">
+The Dep2Str model treats a whole HD fragment
+as the basic unit, which may result in a sparse-
+data problem. For example, an HD fragment with
+a verb as head typically consists of more than four
+nodes (Xie et al., 2011). Thus in this section, in-
+spired by the treelet approach, we describe a de-
+composition method to make use of smaller frag-
+ments.
+In an HD fragment of a dependency tree, the
+head determines the semantic category, while
+the dependent gives the semantic specification
+(Zwicky, 1985; Hudson, 1990). Accordingly, it
+is reasonable to assume that in an HD fragment,
+dependents could be removed or new dependents
+could be attached as needed. Thus, in this paper,
+we assume that a large HD fragment is formed by
+attaching dependents to a small HD fragment. For
+simplicity and reuse of the decoder, such an at-
+tachment is carried out in one step. This means
+that an HD fragment is decomposed into two
+smaller parts in a possible decomposition. This
+decomposition can be formulated as Equation (2):
+</bodyText>
+<equation confidence="0.996680142857143">
+LZ ··· L1HR1 ··· Rj
+= Lm ··· L1HR1 ··· Rn
++ LZ ··· Lm+1HRn+1 ··· Rj
+subject to (2)
+i &gt; 0,j &gt; 0
+i&gt;m&gt;0,j&gt;n&gt;0
+i+j&gt;m+n&gt;0
+</equation>
+<bodyText confidence="0.999821">
+where H denotes the head node, LZ denotes the ith
+left dependent and Rj denotes the jth right depen-
+dent. Figure 4 shows an example.
+</bodyText>
+<equation confidence="0.518456333333333">
+smart/JJ
+She/PRP is/VBZ very/RB
++
+</equation>
+<figureCaption confidence="0.9952935">
+Figure 4: An example of decomposition on a head-
+dependent fragment.
+</figureCaption>
+<bodyText confidence="0.908334333333333">
+Algorithm 2 Algorithm for the decomposition of
+an HD fragment into two sub-fragments. Index of
+nodes in a fragment starts from 0.
+</bodyText>
+<equation confidence="0.636631666666667">
+function DECOMP(HD fragment frag)
+fset +— {}
+len +— number of nodes in frag
+hidx +— the index of head node in frag
+for s = 0 to hidx do
+for e = hidx to len − 1 do
+</equation>
+<construct confidence="0.364467">
+if 0 &lt; e − s &lt; len − 1 then
+</construct>
+<figure confidence="0.823165857142857">
+create sub-fragment core
+core +— nodes from s to e
+add core to fset
+create sub-fragment shell
+initialize shell with head node
+shell +— nodes not in core
+add shell to fset
+</figure>
+<tableCaption confidence="0.549749">
+end if
+end for
+end for
+end function
+</tableCaption>
+<bodyText confidence="0.8892678">
+Such a decomposition of an HD fragment en-
+ables us to create translation rules extracted from
+sub-structures and create a pseudo-forest from
+the input dependency tree to make better use of
+smaller rules.
+</bodyText>
+<subsectionHeader confidence="0.96117">
+4.1 Sub-structural Rules
+</subsectionHeader>
+<bodyText confidence="0.99767575">
+In the Dep2Str model, rules are extracted on
+an entire HD fragment. In this paper, when
+the decomposition is considered, we also extract
+sub-structural rules by taking each possible sub-
+fragment as a new HD fragment. The algorithm
+for recognizing the sub-fragments is shown in Al-
+gorithm 2.
+In Algorithm 2, we find all possible decom-
+</bodyText>
+<equation confidence="0.68824675">
+smart/JJ
+She/PRP is/VBZ
+smart/JJ
+very/RB
+</equation>
+<page confidence="0.986025">
+126
+</page>
+<bodyText confidence="0.999954333333333">
+positions of an HD fragment. Each decom-
+position produces two sub-fragments: core and
+shell. Both core and shell include the head node.
+core contains the dependents surrounding the head
+node, with the remaining dependents belonging to
+shell. Taking Figure 4 as an example, the bottom-
+right part is core, while the bottom-left part is
+shell. Each core and shell could be seen as a
+new HD fragment. Then HD rules are extracted as
+defined in the Dep2Str model.
+Note that different from the augmented HD
+rules, where Meng et al. (2013) annotate rules with
+combined variables and Xie et al. (2014) create
+special rules from HD rules at runtime by com-
+bining several nodes, our sub-structural rules are
+standard HD rules, which are extracted from the
+connected sub-structures of a larger HD fragment
+and can be used directly in the model.
+</bodyText>
+<subsectionHeader confidence="0.997726">
+4.2 Pseudo-Forest
+</subsectionHeader>
+<bodyText confidence="0.999967838709677">
+Although sub-structural rules are effective in our
+experiments (see Section 5), we still do not use
+them to their best advantage, because we only en-
+rich smaller rules in our model. During decod-
+ing, for a large input HD fragment, the model is
+still more likely to resort to glue rules. However,
+the idea of decomposition allows us to create a
+pseudo-forest directly from the dependency tree to
+alleviate this problem to some extent.
+As described above, an HD fragment can be
+seen as being created by combining two smaller
+fragments. This means, for an HD fragment in the
+input dependency tree, we can translate one of its
+sub-fragments first, then obtain the whole trans-
+lation by combining with translations of another
+sub-fragment. From Algorithm 2, we know that
+the sub-fragment core covers a continuous phrase
+of the source sentence. Accordingly, we can trans-
+late this fragment first and then build the whole
+translation by translating another sub-fragment
+shell. Figure 5 gives an example of translating
+an HD fragment by combining the translations of
+its sub-fragments.
+Instead of taking the dependency tree as the in-
+put and looking for all rules for translating sub-
+fragments of a whole HD, we directly encode the
+decomposition into the input dependency tree with
+the result being a pseudo-forest. Based on the
+transformation algorithm in Section 3, the pseudo-
+forest can also be represented in the constituent-
+tree style, as shown in Figure 6.
+</bodyText>
+<figure confidence="0.865045">
+Zongtong presidential x1
+Rule: (总统) x1:NN
+presidential and parliament
+</figure>
+<figureCaption confidence="0.9751915">
+Figure 5: An example of translating a large HD
+fragment with the help of translations of its de-
+composed fragments.
+Figure 6: An example of a pseudo-forest for the
+dependency tree in Figure 1. It is represented us-
+ing the constituent-tree style described in Section
+3. Edges drawn in the same type of line are owned
+by the same sub-tree. Solid lines are shared edges.
+</figureCaption>
+<bodyText confidence="0.99994875">
+In the pseudo-forest, we actually only create a
+forest structure for each HD fragment. For ex-
+ample, based on Figure 5, we create a constituent
+node labelled with “NN:H0” that covers the sub-
+</bodyText>
+<subsectionHeader confidence="0.682495">
+Yu Guohui
+</subsectionHeader>
+<bodyText confidence="0.85917775">
+fragment “ (-1:j) Q�”. In so doing, a new node la-
+belled with “NN:L1” is also created, which covers
+Zongtong
+the Node “ L ”, because it is now the first left
+</bodyText>
+<subsectionHeader confidence="0.756559">
+Zongtong Guohui
+</subsectionHeader>
+<bodyText confidence="0.9909778">
+dependent in the sub-fragment “(,&apos;W_PL) Q� ”.
+Compared to the forest-based model (Mi et al.,
+2008), such a pseudo-forest cannot efficiently re-
+duce the influence of parsing errors, but it is easily
+available and compatible with the Dep2Str Model.
+</bodyText>
+<figure confidence="0.999469621621622">
+Zongtong
+总统/NN
+Guohui
+国会/NN
+Yu
+与/CC
+Yu Guohui
+Rule: (与) 国会 and parliment
+Zongtong
+总统 and parliament
+Guohui
+国会/NN
+VV:H0
+NN:R1
+Xuanju
+选举:R1
+VV:H0
+NN:L1 VV:H0
+NN:L1
+Guohui
+国会:L1
+NN:H0
+NN:L2 CC:L1 NN:H0 NN:H0
+NN:L1
+Boliweiya
+玻利维亚
+Juxing
+举行
+Zongtong
+总统
+Yu
+与
+Guohui
+国会
+Xuanju
+选举
+S
+</figure>
+<page confidence="0.973055">
+127
+</page>
+<table confidence="0.9978776">
+corpus sentences words(ch) words(en)
+train 1,501,652 38,388,118 44,901,788
+dev 878 22,655 26,905
+MT04 1,597 43,719 52,705
+MT05 1,082 29,880 35,326
+</table>
+<tableCaption confidence="0.9984185">
+Table 1: Chinese–English corpus. For the English
+dev and test sets, words counts are averaged across
+</tableCaption>
+<table confidence="0.918060333333333">
+4 references.
+corpus sentences words(de) words(en)
+train 2,037,209 52,671,991 55,023,999
+dev 3,003 72,661 74,753
+test12 3,003 72,603 72,988
+test13 3,000 63,412 64,810
+</table>
+<tableCaption confidence="0.848633333333333">
+Table 2: German–English corpus. In the dev and
+test sets, there is only one English reference for
+each German sentence.
+</tableCaption>
+<sectionHeader confidence="0.997395" genericHeader="evaluation">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.999100333333333">
+We conduct large-scale experiments to exam-
+ine our methods on the Chinese–English and
+German–English translation tasks.
+</bodyText>
+<subsectionHeader confidence="0.99441">
+5.1 Data
+</subsectionHeader>
+<bodyText confidence="0.99994775">
+The Chinese–English training corpus is from
+the LDC data, including LDC2002E18,
+LDC2003E07, LDC2003E14, LDC2004T07,
+the Hansards portion of LDC2004T08 and
+LDC2005T06. We take NIST 2002 as the de-
+velopment set to tune weights, and NIST 2004
+(MT04) and NIST 2005 (MT05) as the test data to
+evaluate the systems. Table 1 provides a summary
+of the Chinese–English corpus.
+The German–English training corpus is from
+WMT 2014, including Europarl V7 and News
+Commentary. News-test 2011 is taken as the de-
+velopment set, while News-test 2012 (test12) and
+News-test 2013 (test13) are our test sets. Table 2
+provides a summary of the German–English cor-
+pus.
+</bodyText>
+<subsectionHeader confidence="0.997124">
+5.2 Baseline
+</subsectionHeader>
+<bodyText confidence="0.998793714285714">
+For both language pairs, we filter sentence pairs
+longer than 80 words and keep the length ratio
+less than or equal to 3. English sentences are to-
+kenized with scripts in Moses. Word alignment is
+performed by GIZA++ (Och and Ney, 2003) with
+the heuristic function grow-diag-final-and (Koehn
+et al., 2003). We use SRILM (Stolcke, 2002) to
+</bodyText>
+<table confidence="0.694689333333333">
+Systems MT05
+XJ 33.91
+D2S 33.79
+</table>
+<tableCaption confidence="0.844903">
+Table 3: BLEU score [%] of the Dep2Str model
+before (XJ) and after (D2S) dependency tree be-
+ing transformed. Systems are trained on a selected
+1.2M Chinese–English corpus.
+</tableCaption>
+<bodyText confidence="0.99993190625">
+train a 5-gram language model on the Xinhua por-
+tion of the English Gigaword corpus 5th edition
+with modified Kneser-Ney discounting (Chen and
+Goodman, 1996). Minimum Error Rate Train-
+ing (Och, 2003) is used to tune weights. Case-
+insensitive BLEU (Papineni et al., 2002) is used to
+evaluate the translation results. Bootstrap resam-
+pling (Koehn, 2004) is also performed to compute
+statistical significance with 1000 iterations.
+We implement the baseline Dep2Str model
+in Moses with methods described in this paper,
+which is denoted as D2S. The first experiment we
+do is to sanity check our implementation. Thus
+we take a separate system (denoted as XJ) for
+comparison which implements the Dep2Str model
+based on (Xie et al., 2011). As shown in Table
+3, using the transformation of dependency trees,
+the Dep2Str model implemented in Moses (D2S)
+is comparable with the standard implementation
+(XJ).
+In the rest of this section, we describe exper-
+iments which compare our system with Moses
+HPB (default setting), and test whether our de-
+composition approach improves performance over
+the baseline D2S.
+As described in Section 2, the Dep2Str model
+only extracts phrase rules for translating a source
+word (head rule). This model could be enhanced
+by including phrase rules that cover more than one
+source word. Thus we also conduct experiments
+where phrase pairs5 are added into our system. We
+set the length limit for phrase 7.
+</bodyText>
+<subsectionHeader confidence="0.999677">
+5.3 Chinese–English
+</subsectionHeader>
+<bodyText confidence="0.999372666666667">
+In the Chinese–English translation task, the Stan-
+ford Chinese word segmenter (Chang et al., 2008)
+is used to segment Chinese sentences into words.
+The Stanford dependency parser (Chang et al.,
+2009) parses a Chinese sentence into the projec-
+tive dependency tree.
+</bodyText>
+<footnote confidence="0.9983305">
+5In this paper, the use of phrasal rules is similar to that of
+the HPB model, so they can be handled by Moses directly.
+</footnote>
+<page confidence="0.980731">
+128
+</page>
+<table confidence="0.999580428571429">
+Systems MT04 MT05
+Moses HPB 35.56 33.99
+D2S 33.93 32.56
++pseudo-forest 34.28 34.10
++sub-structural rules 34.78 33.63
++pseudo-forest 35.46 34.13
++phrase 36.76* 34.67*
+</table>
+<tableCaption confidence="0.993859">
+Table 4: BLEU score [%] of our method and
+</tableCaption>
+<bodyText confidence="0.972222125">
+Moses HPB on the Chinese–English task. We use
+bold font to indicate that the result of our method
+is significantly better than D2S at p &lt; 0.01 level,
+and * to indicate the result is significantly better
+than Moses HPB at p &lt; 0.01 level.
+Table 4 shows the translation results. We find
+that the decomposition approach proposed in this
+paper, including sub-structural rules and pseudo-
+forest, improves the baseline system D2S sig-
+nificantly (absolute improvement of +1.53/+1.57
+(4.5%/4.8%, relative)). As a result, our sys-
+tem achieves comparable (-0.1/+0.14) results with
+Moses HPB. After including phrasal rules, our
+system performs significantly better (absolute im-
+provement of +1.2/+0.68 (3.4%/2.0%, relative))
+than Moses HPB on both test sets.6
+</bodyText>
+<subsectionHeader confidence="0.998412">
+5.4 German–English
+</subsectionHeader>
+<bodyText confidence="0.999843294117647">
+We tokenize German sentences with scripts in
+Moses and use mate-tools7 to perform morpho-
+logical analysis and parse the sentence (Bohnet,
+2010). Then the MaltParser8 converts the parse
+result into the projective dependency tree (Nivre
+and Nilsson, 2005).
+Experimental results in Table 5 show that incor-
+porating sub-structural rules improves the base-
+line D2S system significantly (absolute improve-
+ment of +0.47/+0.63, (2.3%/2.8%, relative)), and
+achieves a slightly better (+0.08) result on test12
+than Moses HPB. However, in the German–
+English task, the pseudo-forest produces a neg-
+ative effect on the baseline system (-0.07/-0.45),
+despite the fact that our system combining both
+methods together is still better (+0.2/+0.11) than
+the baseline D2S. In the end, by resorting to
+</bodyText>
+<footnote confidence="0.906952142857143">
+6In our preliminary experiments, phrasal rules are also
+able to significantly improve our system on their own on both
+Chinese–English and German–English tasks, but the best per-
+formance is achieved by combining them with sub-structural
+rules and/or pseudo-forest.
+7http://code.google.com/p/mate-tools/
+8http://www.maltparser.org/
+</footnote>
+<table confidence="0.99848125">
+Systems test12 test13
+Moses HPB 20.44 22.77
+D2S 20.05 22.13
++pseudo-forest 19.98 21.68
++sub-structural rules 20.52 22.76
++phrase 20.91* 23.46*
++pseudo-forest 20.25 22.24
++phrase 20.75* 23.20*
+</table>
+<tableCaption confidence="0.6505275">
+Table 5: BLEU score [%] of our method and
+Moses HPB on German–English task. We use
+bold font to indicate that the result of our method
+is significantly better than baseline D2S at p &lt;
+0.01 level, and * to indicate the result is signifi-
+cantly better than Moses HPB at p &lt; 0.01 level.
+</tableCaption>
+<table confidence="0.998965166666667">
+Systems # Rules
+CE task DE task
+Moses HPB 388M 684M
+D2S 27M 41M
++sub-structural rules 116M 121M
++phrase 215M 274M
+</table>
+<tableCaption confidence="0.971846">
+Table 6: The number of rules in different sys-
+</tableCaption>
+<bodyText confidence="0.783219857142857">
+tems On the Chinese–English (CE) and German–
+English (DE) corpus. Note that pseudo-forest (not
+listed) does not influence the number of rules.
+phrasal rules, our system achieves the best perfor-
+mance overall which is significantly better (abso-
+lute improvement of +0.47/+0.59 (2.3%/2.6%, rel-
+ative)) than Moses HPB.
+</bodyText>
+<subsectionHeader confidence="0.724943">
+5.5 Discussion
+</subsectionHeader>
+<bodyText confidence="0.999932235294118">
+Besides long-distance reordering (Xie et al.,
+2011), another attraction of the Dep2Str model is
+its simplicity. It can perform fast translation with
+fewer rules than HPB. Table 6 shows the number
+of rules in each system. It is easy to see that all of
+our systems use fewer rules than HPB. However,
+the number of rules is not proportional to transla-
+tion quality, as shown in Tables 4 and 5.
+Experiments on the Chinese–English corpus
+show that it is feasible to translate the dependency
+tree via transformation for the Dep2Str model de-
+scribed in Section 2. Such a transformation causes
+the model to be easily integrated into Moses with-
+out making changes to the decoder, while at the
+same time producing comparable results with the
+standard implementation (shown in Table 3).
+The decomposition approach proposed in this
+</bodyText>
+<page confidence="0.995843">
+129
+</page>
+<bodyText confidence="0.999217625">
+paper also shows a positive effect on the base-
+line Dep2Str system. Especially, sub-structural
+rules significantly improve the Dep2Str model on
+both Chinese–English and German–English tasks.
+However, experiments show that the pseudo-forest
+significantly improves the D2S system on the
+Chinese–English data, while it causes translation
+quality to decline on the German–English data.
+Since using the pseudo-forest in our system is
+aimed at translating larger HD fragments via split-
+ting it into pieces, we hypothesize that when trans-
+lating German sentences, the pseudo-forest ap-
+proach more likely results in much worse rules be-
+ing applied. This is probably due to the shorter
+Mean Dependency Distance (MDD) and freer
+word order of German sentences(Eppler, 2013).
+</bodyText>
+<sectionHeader confidence="0.999434" genericHeader="conclusions">
+6 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999479">
+In this paper, we present an open source mod-
+ule which integrates a dependency-to-string model
+into Moses.
+This module transforms an input depen-
+dency tree into a corresponding constituent tree
+during decoding which makes Moses perform
+dependency-based translation without necessitat-
+ing any changes to the decoder. Experiments on
+Chinese–English show that the performance if our
+system is comparable with that of the standard
+dependency-based decoder.
+Furthermore, we enhance the model by de-
+composing head-dependent fragments into smaller
+pieces. This decomposition enriches the Dep2Str
+model with more rules during training and allows
+us to create a pseudo-forest as input instead of
+a dependency tree during decoding. Large-scale
+experiments on Chinese–English and German–
+English tasks show that this decomposition can
+significantly improve the baseline dependency-
+to-string model on both language pairs. On
+the German–English task, sub-structural rules are
+more useful than the pseudo-forest input. In the
+end, by resorting to phrasal rules, our system
+performs significantly better than the hierarchical
+phrase-based model in Moses.
+Our implementation of the dependency-to-
+string model with methods described in this pa-
+per is available at http://computing.dcu.
+ie/˜liangyouli/dep2str.zip. In the fu-
+ture, we would like to conduct more experiments
+on other language pairs to examine this model,
+as well as reducing the restrictions on decompo-
+sition.
+</bodyText>
+<sectionHeader confidence="0.995432" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9998637">
+This research has received funding from the Peo-
+ple Programme (Marie Curie Actions) of the Eu-
+ropean Union’s Seventh Framework Programme
+FP7/2007-2013/ under REA grant agreement no.
+317471. This research is also supported by the
+Science Foundation Ireland (Grant 12/CE/I2267)
+as part of the Centre for Next Generation Local-
+isation at Dublin City University. The authors of
+this paper also thank the reviewers for helping to
+improve this paper.
+</bodyText>
+<sectionHeader confidence="0.998347" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999823051282051">
+Bernd Bohnet. 2010. Very High Accuracy and Fast
+Dependency Parsing is Not a Contradiction. In Pro-
+ceedings of the 23rd International Conference on
+Computational Linguistics, pages 89–97, Beijing,
+China.
+Pi-Chuan Chang, Michel Galley, and Christopher D.
+Manning. 2008. Optimizing Chinese Word Seg-
+mentation for Machine Translation Performance. In
+Proceedings of the Third Workshop on Statistical
+Machine Translation, pages 224–232, Columbus,
+Ohio.
+Pi-Chuan Chang, Huihsin Tseng, Dan Jurafsky, and
+Christopher D. Manning. 2009. Discriminative Re-
+ordering with Chinese Grammatical Relations Fea-
+tures. In Proceedings of the Third Workshop on Syn-
+tax and Structure in Statistical Translation, pages
+51–59, Boulder, Colorado.
+Stanley F. Chen and Joshua Goodman. 1996. An
+Empirical Study of Smoothing Techniques for Lan-
+guage Modeling. In Proceedings of the 34th Annual
+Meeting on Association for Computational Linguis-
+tics, pages 310–318, Santa Cruz, California.
+John Cocke and Jacob T. Schwartz. 1970. Program-
+ming Languages and Their Compilers: Preliminary
+Notes. Technical report, Courant Institute of Math-
+ematical Sciences, New York University, New York,
+NY.
+Michael Collins, Lance Ramshaw, Jan Hajiˇc, and
+Christoph Tillmann. 1999. A Statistical Parser for
+Czech. In Proceedings of the 37th Annual Meeting
+of the Association for Computational Linguistics on
+Computational Linguistics, pages 505–512, College
+Park, Maryland.
+Eva M. Duran Eppler. 2013. Dependency Distance
+and Bilingual Language Use: Evidence from Ger-
+man/English and Chinese/English Data. In Proceed-
+ings of the Second International Conference on De-
+pendency Linguistics (DepLing 2013), pages 78–87,
+Prague, August.
+</reference>
+<page confidence="0.970974">
+130
+</page>
+<reference confidence="0.999920743119266">
+Heidi J. Fox. 2002. Phrasal Cohesion and Statis-
+tical Machine Translation. In Proceedings of the
+ACL-02 Conference on Empirical Methods in Nat-
+ural Language Processing - Volume 10, pages 304–
+3111, Philadelphia.
+Liang Huang, Kevin Knight, and Aravind Joshi. 2006.
+A Syntax-directed Translator with Extended Do-
+main of Locality. In Proceedings of the Workshop
+on Computationally Hard Problems and Joint Infer-
+ence in Speech and Language Processing, pages 1–
+8, New York City, New York.
+Richard Hudson. 1990. English Word Grammar.
+Blackwell, Oxford, UK.
+Tadao Kasami. 1965. An Efficient Recognition and
+Syntax-Analysis Algorithm for Context-Free Lan-
+guages. Technical report, Air Force Cambridge Re-
+search Lab, Bedford, MA.
+Philipp Koehn. 2004. Statistical Significance Tests
+for Machine Translation Evaluation. In Proceedings
+of EMNLP 2004, pages 388–395, Barcelona, Spain,
+July.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: Open
+Source Toolkit for Statistical Machine Translation.
+In Proceedings of the 45th Annual Meeting of the
+ACL on Interactive Poster and Demonstration Ses-
+sions, pages 177–180, Prague, Czech Republic.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical Phrase-Based Translation. In Pro-
+ceedings of the 2003 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics on Human Language Technology - Vol-
+ume 1, pages 48–54, Edmonton, Canada.
+Arul Menezes and Chris Quirk. 2005. Dependency
+Treelet Translation: The Convergence of Statistical
+and Example-Based Machine-translation? In Pro-
+ceedings of the Workshop on Example-based Ma-
+chine Translation at MT Summit X, September.
+Fandong Meng, Jun Xie, Linfeng Song, Yajuan L¨u,
+and Qun Liu. 2013. Translation with Source Con-
+stituency and Dependency Trees. In Proceedings of
+the 2013 Conference on Empirical Methods in Natu-
+ral Language Processing, pages 1066–1076, Seattle,
+Washington, USA, October.
+Haitao Mi, Liang Huang, and Qun Liu. 2008. Forest-
+Based Translation. In Proceedings ofACL-08: HLT,
+pages 192–199, June.
+Joakim Nivre and Jens Nilsson. 2005. Pseudo-
+Projective Dependency Parsing. In Proceedings of
+the 43rd Annual Meeting on Association for Com-
+putational Linguistics, pages 99–106, Ann Arbor,
+Michigan.
+Franz Josef Och. 2003. Minimum Error Rate Training
+in Statistical Machine Translation. In Proceedings
+of the 41st Annual Meeting on Association for Com-
+putational Linguistics - Volume 1, pages 160–167,
+Sapporo, Japan.
+Franz Josef Och and Hermann Ney. 2003. A System-
+atic Comparison of Various Statistical Alignment
+Models. Computational Linguistics, 29(1):19–51,
+March.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. BLEU: A Method for Automatic
+Evaluation of Machine Translation. In Proceedings
+of the 40th Annual Meeting on Association for Com-
+putational Linguistics, pages 311–318, Philadelphia,
+Pennsylvania.
+Chris Quirk, Arul Menezes, and Colin Cherry. 2005.
+Dependency Treelet Translation: Syntactically In-
+formed Phrasal SMT. In Proceedings of the 43rd
+Annual Meeting of the Association for Computa-
+tional Linguistics (ACL’05), pages 271–279, Ann
+Arbor, Michigan, June.
+Libin Shen, Jinxi Xu, and Ralph Weischedel. 2010.
+String-to-Dependency Statistical Machine Transla-
+tion. Computational Linguistics, 36(4):649–671,
+December.
+Andreas Stolcke. 2002. SRILM-an Extensible Lan-
+guage Modeling Toolkit. In Proceedings Interna-
+tional Conference on Spoken Language Processing,
+pages 257–286, November.
+Fei Xia and Martha Palmer. 2001. Converting De-
+pendency Structures to Phrase Structures. In Pro-
+ceedings of the First International Conference on
+Human Language Technology Research, pages 1–5,
+San Diego.
+Jun Xie, Haitao Mi, and Qun Liu. 2011. A Novel
+Dependency-to-string Model for Statistical Machine
+Translation. In Proceedings of the Conference on
+Empirical Methods in Natural Language Process-
+ing, pages 216–226, Edinburgh, United Kingdom.
+Jun Xie, Jinan Xu, and Qun Liu. 2014. Augment
+Dependency-to-String Translation with Fixed and
+Floating Structures. In Proceedings of the 25th In-
+ternational Conference on Computational Linguis-
+tics, pages 2217–2226, Dublin, Ireland.
+Deyi Xiong, Qun Liu, and Shouxun Lin. 2007. A De-
+pendency Treelet String Correspondence Model for
+Statistical Machine Translation. In Proceedings of
+the Second Workshop on Statistical Machine Trans-
+lation, pages 40–47, Prague, June.
+Daniel H. Younger. 1967. Recognition and Parsing of
+Context-Free Languages in Time n3. Information
+and Control, 10(2):189–208.
+Arnold M. Zwicky. 1985. Heads. Journal of Linguis-
+tics, 21:1–29, 3.
+</reference>
+<page confidence="0.998309">
+131
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.211813">
+<title confidence="0.961676">Transformation and Decomposition for Efficiently Implementing Improving Dependency-to-String Model In Moses</title>
+<author confidence="0.872124">Jun Andy Qun Centre for Global Intelligent Content</author>
+<author confidence="0.872124">School of</author>
+<affiliation confidence="0.801301333333333">Dublin City University, Dublin 9, Laboratory of Intelligent Information Processing, Institute of Computing Chinese Academy of Sciences, Beijing,</affiliation>
+<email confidence="0.985813">junxie@ict.ac.cn</email>
+<abstract confidence="0.999249551724138">Dependency structure provides grammatical relations between words, which have shown to be effective in Statistical Machine Translation (SMT). In this paper, we present an open source module in Moses which implements a dependency-to-string model. We propose a method to transform the input dependency tree into a corresponding constituent tree for reusing the tree-based decoder in Moses. In our experiments, this method achieves comparable results with the standard model. Furthermore, we enrich this model via the decomposition of dependency structure, including extracting rules from the substructures of the dependency tree during training and creating a pseudo-forest instead of the tree per se as the input during decoding. Large-scale experiments on Chinese–English and German–English tasks show that the decomposition approach improves the baseline dependencyto-string model significantly. Our system achieves comparable results with the state-of-the-art hierarchical phrase-based model (HPB). Finally, when resorting to phrasal rules, the dependency-to-string model performs significantly better than</abstract>
+<author confidence="0.517249">Moses HPB</author>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Bernd Bohnet</author>
+</authors>
+<title>Very High Accuracy and Fast Dependency Parsing is Not a Contradiction.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 23rd International Conference on Computational Linguistics,</booktitle>
+<pages>89--97</pages>
+<location>Beijing, China.</location>
+<contexts>
+<context position="26734" citStr="Bohnet, 2010" startWordPosition="4426" endWordPosition="4427"> decomposition approach proposed in this paper, including sub-structural rules and pseudoforest, improves the baseline system D2S significantly (absolute improvement of +1.53/+1.57 (4.5%/4.8%, relative)). As a result, our system achieves comparable (-0.1/+0.14) results with Moses HPB. After including phrasal rules, our system performs significantly better (absolute improvement of +1.2/+0.68 (3.4%/2.0%, relative)) than Moses HPB on both test sets.6 5.4 German–English We tokenize German sentences with scripts in Moses and use mate-tools7 to perform morphological analysis and parse the sentence (Bohnet, 2010). Then the MaltParser8 converts the parse result into the projective dependency tree (Nivre and Nilsson, 2005). Experimental results in Table 5 show that incorporating sub-structural rules improves the baseline D2S system significantly (absolute improvement of +0.47/+0.63, (2.3%/2.8%, relative)), and achieves a slightly better (+0.08) result on test12 than Moses HPB. However, in the German– English task, the pseudo-forest produces a negative effect on the baseline system (-0.07/-0.45), despite the fact that our system combining both methods together is still better (+0.2/+0.11) than the baseli</context>
+</contexts>
+<marker>Bohnet, 2010</marker>
+<rawString>Bernd Bohnet. 2010. Very High Accuracy and Fast Dependency Parsing is Not a Contradiction. In Proceedings of the 23rd International Conference on Computational Linguistics, pages 89–97, Beijing, China.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pi-Chuan Chang</author>
+<author>Michel Galley</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Optimizing Chinese Word Segmentation for Machine Translation Performance.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Third Workshop on Statistical Machine Translation,</booktitle>
+<pages>224--232</pages>
+<location>Columbus, Ohio.</location>
+<contexts>
+<context position="25332" citStr="Chang et al., 2008" startWordPosition="4201" endWordPosition="4204">ion, we describe experiments which compare our system with Moses HPB (default setting), and test whether our decomposition approach improves performance over the baseline D2S. As described in Section 2, the Dep2Str model only extracts phrase rules for translating a source word (head rule). This model could be enhanced by including phrase rules that cover more than one source word. Thus we also conduct experiments where phrase pairs5 are added into our system. We set the length limit for phrase 7. 5.3 Chinese–English In the Chinese–English translation task, the Stanford Chinese word segmenter (Chang et al., 2008) is used to segment Chinese sentences into words. The Stanford dependency parser (Chang et al., 2009) parses a Chinese sentence into the projective dependency tree. 5In this paper, the use of phrasal rules is similar to that of the HPB model, so they can be handled by Moses directly. 128 Systems MT04 MT05 Moses HPB 35.56 33.99 D2S 33.93 32.56 +pseudo-forest 34.28 34.10 +sub-structural rules 34.78 33.63 +pseudo-forest 35.46 34.13 +phrase 36.76* 34.67* Table 4: BLEU score [%] of our method and Moses HPB on the Chinese–English task. We use bold font to indicate that the result of our method is si</context>
+</contexts>
+<marker>Chang, Galley, Manning, 2008</marker>
+<rawString>Pi-Chuan Chang, Michel Galley, and Christopher D. Manning. 2008. Optimizing Chinese Word Segmentation for Machine Translation Performance. In Proceedings of the Third Workshop on Statistical Machine Translation, pages 224–232, Columbus, Ohio.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pi-Chuan Chang</author>
+<author>Huihsin Tseng</author>
+<author>Dan Jurafsky</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Discriminative Reordering with Chinese Grammatical Relations Features.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Third Workshop on Syntax and Structure in Statistical Translation,</booktitle>
+<pages>51--59</pages>
+<location>Boulder, Colorado.</location>
+<contexts>
+<context position="25433" citStr="Chang et al., 2009" startWordPosition="4217" endWordPosition="4220">her our decomposition approach improves performance over the baseline D2S. As described in Section 2, the Dep2Str model only extracts phrase rules for translating a source word (head rule). This model could be enhanced by including phrase rules that cover more than one source word. Thus we also conduct experiments where phrase pairs5 are added into our system. We set the length limit for phrase 7. 5.3 Chinese–English In the Chinese–English translation task, the Stanford Chinese word segmenter (Chang et al., 2008) is used to segment Chinese sentences into words. The Stanford dependency parser (Chang et al., 2009) parses a Chinese sentence into the projective dependency tree. 5In this paper, the use of phrasal rules is similar to that of the HPB model, so they can be handled by Moses directly. 128 Systems MT04 MT05 Moses HPB 35.56 33.99 D2S 33.93 32.56 +pseudo-forest 34.28 34.10 +sub-structural rules 34.78 33.63 +pseudo-forest 35.46 34.13 +phrase 36.76* 34.67* Table 4: BLEU score [%] of our method and Moses HPB on the Chinese–English task. We use bold font to indicate that the result of our method is significantly better than D2S at p &lt; 0.01 level, and * to indicate the result is significantly better t</context>
+</contexts>
+<marker>Chang, Tseng, Jurafsky, Manning, 2009</marker>
+<rawString>Pi-Chuan Chang, Huihsin Tseng, Dan Jurafsky, and Christopher D. Manning. 2009. Discriminative Reordering with Chinese Grammatical Relations Features. In Proceedings of the Third Workshop on Syntax and Structure in Statistical Translation, pages 51–59, Boulder, Colorado.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stanley F Chen</author>
+<author>Joshua Goodman</author>
+</authors>
+<title>An Empirical Study of Smoothing Techniques for Language Modeling.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the 34th Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>310--318</pages>
+<location>Santa Cruz, California.</location>
+<contexts>
+<context position="23952" citStr="Chen and Goodman, 1996" startWordPosition="3978" endWordPosition="3981">d keep the length ratio less than or equal to 3. English sentences are tokenized with scripts in Moses. Word alignment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical significance with 1000 iterations. We implement the baseline Dep2Str model in Moses with methods described in this paper, which is denoted as D2S. The first experiment we do is to sanity check our implementation. Thus we take a separate system (denoted as XJ) for comparison which implements the Dep2Str model based on (Xie et al., 2011). As shown in Table 3, using t</context>
+</contexts>
+<marker>Chen, Goodman, 1996</marker>
+<rawString>Stanley F. Chen and Joshua Goodman. 1996. An Empirical Study of Smoothing Techniques for Language Modeling. In Proceedings of the 34th Annual Meeting on Association for Computational Linguistics, pages 310–318, Santa Cruz, California.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Cocke</author>
+<author>Jacob T Schwartz</author>
+</authors>
+<title>Programming Languages and Their Compilers: Preliminary Notes.</title>
+<date>1970</date>
+<tech>Technical report,</tech>
+<institution>Courant Institute of Mathematical Sciences, New York University,</institution>
+<location>New York, NY.</location>
+<contexts>
+<context position="9697" citStr="Cocke and Schwartz, 1970" startWordPosition="1564" endWordPosition="1567">he weight of the feature. 3 Transformation of Dependency Trees In this section, we introduce an algorithm to transform a dependency tree into a corresponding constituent tree, where words of the source sentence are leaf nodes and internal nodes are labelled with head words or POS tags which are constrained by dependency information. Such a transformation makes it possible to use the traditional tree-based decoder to translate a dependency tree, so we can easily integrate the Dep2Str model into the popular framework Moses. In a tree-based system, the CYK algorithm (Kasami, 1965; Younger, 1967; Cocke and Schwartz, 1970) is usually employed to translate the input sentence with a tree structure. Each time a continuous sequence of words (a phrase) in the source sentence is translated. Larger phrases can be translated by combining translations of smaller phrases. In a constituent tree, the source words are leaf nodes and all non-leaf nodes covering a phrase are labelled with categories which are usually variables defined in the tree-based model. For translating a phrase covered by a non-leaf node, the decoder for the constituent tree can easily find applied rules by directly matching variables in these rules to </context>
+</contexts>
+<marker>Cocke, Schwartz, 1970</marker>
+<rawString>John Cocke and Jacob T. Schwartz. 1970. Programming Languages and Their Compilers: Preliminary Notes. Technical report, Courant Institute of Mathematical Sciences, New York University, New York, NY.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+<author>Lance Ramshaw</author>
+<author>Jan Hajiˇc</author>
+<author>Christoph Tillmann</author>
+</authors>
+<title>A Statistical Parser for Czech.</title>
+<date>1999</date>
+<booktitle>In Proceedings of the 37th Annual Meeting of the Association for Computational Linguistics on Computational Linguistics,</booktitle>
+<pages>505--512</pages>
+<location>College Park, Maryland.</location>
+<marker>Collins, Ramshaw, Hajiˇc, Tillmann, 1999</marker>
+<rawString>Michael Collins, Lance Ramshaw, Jan Hajiˇc, and Christoph Tillmann. 1999. A Statistical Parser for Czech. In Proceedings of the 37th Annual Meeting of the Association for Computational Linguistics on Computational Linguistics, pages 505–512, College Park, Maryland.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eva M Duran Eppler</author>
+</authors>
+<title>Dependency Distance and Bilingual Language Use: Evidence from German/English and Chinese/English Data.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Second International Conference on Dependency Linguistics (DepLing</booktitle>
+<pages>78--87</pages>
+<location>Prague,</location>
+<contexts>
+<context position="30239" citStr="Eppler, 2013" startWordPosition="4972" endWordPosition="4973">oth Chinese–English and German–English tasks. However, experiments show that the pseudo-forest significantly improves the D2S system on the Chinese–English data, while it causes translation quality to decline on the German–English data. Since using the pseudo-forest in our system is aimed at translating larger HD fragments via splitting it into pieces, we hypothesize that when translating German sentences, the pseudo-forest approach more likely results in much worse rules being applied. This is probably due to the shorter Mean Dependency Distance (MDD) and freer word order of German sentences(Eppler, 2013). 6 Conclusion In this paper, we present an open source module which integrates a dependency-to-string model into Moses. This module transforms an input dependency tree into a corresponding constituent tree during decoding which makes Moses perform dependency-based translation without necessitating any changes to the decoder. Experiments on Chinese–English show that the performance if our system is comparable with that of the standard dependency-based decoder. Furthermore, we enhance the model by decomposing head-dependent fragments into smaller pieces. This decomposition enriches the Dep2Str </context>
+</contexts>
+<marker>Eppler, 2013</marker>
+<rawString>Eva M. Duran Eppler. 2013. Dependency Distance and Bilingual Language Use: Evidence from German/English and Chinese/English Data. In Proceedings of the Second International Conference on Dependency Linguistics (DepLing 2013), pages 78–87, Prague, August.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Heidi J Fox</author>
+</authors>
+<title>Phrasal Cohesion and Statistical Machine Translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the ACL-02 Conference on Empirical Methods in Natural Language Processing - Volume 10,</booktitle>
+<pages>304--3111</pages>
+<location>Philadelphia.</location>
+<contexts>
+<context position="1877" citStr="Fox, 2002" startWordPosition="258" endWordPosition="259">w that the decomposition approach improves the baseline dependencyto-string model significantly. Our system achieves comparable results with the state-of-the-art hierarchical phrase-based model (HPB). Finally, when resorting to phrasal rules, the dependency-to-string model performs significantly better than Moses HPB. 1 Introduction Dependency structure models relations between words in a sentence. Such relations indicate the syntactic function of one word to another word. As dependency structure directly encodes semantic information and has the best inter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to </context>
+</contexts>
+<marker>Fox, 2002</marker>
+<rawString>Heidi J. Fox. 2002. Phrasal Cohesion and Statistical Machine Translation. In Proceedings of the ACL-02 Conference on Empirical Methods in Natural Language Processing - Volume 10, pages 304– 3111, Philadelphia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Kevin Knight</author>
+<author>Aravind Joshi</author>
+</authors>
+<title>A Syntax-directed Translator with Extended Domain of Locality.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Workshop on Computationally Hard Problems and Joint Inference in Speech and Language Processing,</booktitle>
+<volume>1</volume>
+<pages>pages</pages>
+<location>New York City, New York.</location>
+<contexts>
+<context position="2285" citStr="Huang et al., 2006" startWordPosition="325" endWordPosition="328">e. Such relations indicate the syntactic function of one word to another word. As dependency structure directly encodes semantic information and has the best inter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion operations are adopted for decoding. However, as translation rules based on the treelets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words.</context>
+</contexts>
+<marker>Huang, Knight, Joshi, 2006</marker>
+<rawString>Liang Huang, Kevin Knight, and Aravind Joshi. 2006. A Syntax-directed Translator with Extended Domain of Locality. In Proceedings of the Workshop on Computationally Hard Problems and Joint Inference in Speech and Language Processing, pages 1– 8, New York City, New York.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Hudson</author>
+</authors>
+<title>English Word Grammar.</title>
+<date>1990</date>
+<publisher>Blackwell,</publisher>
+<location>Oxford, UK.</location>
+<contexts>
+<context position="16317" citStr="Hudson, 1990" startWordPosition="2684" endWordPosition="2685">h has already been encoded into the (ill-formed) constituent tree. 4 Decomposition of Dependency Structure The Dep2Str model treats a whole HD fragment as the basic unit, which may result in a sparsedata problem. For example, an HD fragment with a verb as head typically consists of more than four nodes (Xie et al., 2011). Thus in this section, inspired by the treelet approach, we describe a decomposition method to make use of smaller fragments. In an HD fragment of a dependency tree, the head determines the semantic category, while the dependent gives the semantic specification (Zwicky, 1985; Hudson, 1990). Accordingly, it is reasonable to assume that in an HD fragment, dependents could be removed or new dependents could be attached as needed. Thus, in this paper, we assume that a large HD fragment is formed by attaching dependents to a small HD fragment. For simplicity and reuse of the decoder, such an attachment is carried out in one step. This means that an HD fragment is decomposed into two smaller parts in a possible decomposition. This decomposition can be formulated as Equation (2): LZ ··· L1HR1 ··· Rj = Lm ··· L1HR1 ··· Rn + LZ ··· Lm+1HRn+1 ··· Rj subject to (2) i &gt; 0,j &gt; 0 i&gt;m&gt;0,j&gt;n&gt;0</context>
+</contexts>
+<marker>Hudson, 1990</marker>
+<rawString>Richard Hudson. 1990. English Word Grammar. Blackwell, Oxford, UK.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tadao Kasami</author>
+</authors>
+<title>An Efficient Recognition and Syntax-Analysis Algorithm for Context-Free Languages. Technical report, Air Force Cambridge Research Lab,</title>
+<date>1965</date>
+<location>Bedford, MA.</location>
+<contexts>
+<context position="9655" citStr="Kasami, 1965" startWordPosition="1560" endWordPosition="1561">the derivation d, and Ai is the weight of the feature. 3 Transformation of Dependency Trees In this section, we introduce an algorithm to transform a dependency tree into a corresponding constituent tree, where words of the source sentence are leaf nodes and internal nodes are labelled with head words or POS tags which are constrained by dependency information. Such a transformation makes it possible to use the traditional tree-based decoder to translate a dependency tree, so we can easily integrate the Dep2Str model into the popular framework Moses. In a tree-based system, the CYK algorithm (Kasami, 1965; Younger, 1967; Cocke and Schwartz, 1970) is usually employed to translate the input sentence with a tree structure. Each time a continuous sequence of words (a phrase) in the source sentence is translated. Larger phrases can be translated by combining translations of smaller phrases. In a constituent tree, the source words are leaf nodes and all non-leaf nodes covering a phrase are labelled with categories which are usually variables defined in the tree-based model. For translating a phrase covered by a non-leaf node, the decoder for the constituent tree can easily find applied rules by dire</context>
+</contexts>
+<marker>Kasami, 1965</marker>
+<rawString>Tadao Kasami. 1965. An Efficient Recognition and Syntax-Analysis Algorithm for Context-Free Languages. Technical report, Air Force Cambridge Research Lab, Bedford, MA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Statistical Significance Tests for Machine Translation Evaluation.</title>
+<date>2004</date>
+<booktitle>In Proceedings of EMNLP 2004,</booktitle>
+<pages>388--395</pages>
+<location>Barcelona, Spain,</location>
+<contexts>
+<context position="24143" citStr="Koehn, 2004" startWordPosition="4011" endWordPosition="4012">nal-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical significance with 1000 iterations. We implement the baseline Dep2Str model in Moses with methods described in this paper, which is denoted as D2S. The first experiment we do is to sanity check our implementation. Thus we take a separate system (denoted as XJ) for comparison which implements the Dep2Str model based on (Xie et al., 2011). As shown in Table 3, using the transformation of dependency trees, the Dep2Str model implemented in Moses (D2S) is comparable with the standard implementation (XJ). In the rest of this section, we describe experiments w</context>
+</contexts>
+<marker>Koehn, 2004</marker>
+<rawString>Philipp Koehn. 2004. Statistical Significance Tests for Machine Translation Evaluation. In Proceedings of EMNLP 2004, pages 388–395, Barcelona, Spain, July.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+</authors>
+<title>Chris Dyer, Ondˇrej Bojar,</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions,</booktitle>
+<pages>177--180</pages>
+<location>Alexandra</location>
+<contexts>
+<context position="4062" citStr="Koehn et al., 2007" startWordPosition="599" endWordPosition="602">010). Augmented rules are created by the combination of two or more nodes in 122 Proceedings of SSST-8, Eighth Workshop on Syntax, Semantics and Structure in Statistical Translation, pages 122–131, October 25, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics the HD fragment, and are capable of capturing translations of non-syntactic phrases. However, the decoder needs to be changed correspondingly to handle these rules. Attracted by the simplicity of the Dep2Str model, in this paper we describe an easy way to integrate the model into the popular translation framework Moses (Koehn et al., 2007). In order to share the same decoder with the conventional syntax-based model, we present an algorithm which transforms a dependency tree into a corresponding constituent tree which encodes dependency information in its non-leaf nodes and is compatible with the Dep2Str model. In addition, we present a method to decompose a dependency structure (HD fragment) into smaller parts which enrich translation rules and also allow us to create a pseudo-forest as the input. “Pseudo” means the forest is not obtained by combining several trees from a parser, but rather that it is created based on the decom</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: Open Source Toolkit for Statistical Machine Translation. In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, pages 177–180, Prague, Czech Republic.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical Phrase-Based Translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology -</booktitle>
+<volume>1</volume>
+<pages>48--54</pages>
+<location>Edmonton, Canada.</location>
+<contexts>
+<context position="23559" citStr="Koehn et al., 2003" startWordPosition="3913" endWordPosition="3916"> Chinese–English corpus. The German–English training corpus is from WMT 2014, including Europarl V7 and News Commentary. News-test 2011 is taken as the development set, while News-test 2012 (test12) and News-test 2013 (test13) are our test sets. Table 2 provides a summary of the German–English corpus. 5.2 Baseline For both language pairs, we filter sentence pairs longer than 80 words and keep the length ratio less than or equal to 3. English sentences are tokenized with scripts in Moses. Word alignment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also perform</context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical Phrase-Based Translation. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, pages 48–54, Edmonton, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Arul Menezes</author>
+<author>Chris Quirk</author>
+</authors>
+<title>Dependency Treelet Translation: The Convergence of Statistical and Example-Based Machine-translation?</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Workshop on Example-based Machine Translation at MT Summit X,</booktitle>
+<contexts>
+<context position="2351" citStr="Menezes and Quirk, 2005" startWordPosition="335" endWordPosition="338">to another word. As dependency structure directly encodes semantic information and has the best inter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion operations are adopted for decoding. However, as translation rules based on the treelets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependenc</context>
+</contexts>
+<marker>Menezes, Quirk, 2005</marker>
+<rawString>Arul Menezes and Chris Quirk. 2005. Dependency Treelet Translation: The Convergence of Statistical and Example-Based Machine-translation? In Proceedings of the Workshop on Example-based Machine Translation at MT Summit X, September.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fandong Meng</author>
+<author>Jun Xie</author>
+<author>Linfeng Song</author>
+<author>Yajuan L¨u</author>
+<author>Qun Liu</author>
+</authors>
+<title>Translation with Source Constituency and Dependency Trees.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1066--1076</pages>
+<location>Seattle, Washington, USA,</location>
+<marker>Meng, Xie, Song, L¨u, Liu, 2013</marker>
+<rawString>Fandong Meng, Jun Xie, Linfeng Song, Yajuan L¨u, and Qun Liu. 2013. Translation with Source Constituency and Dependency Trees. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1066–1076, Seattle, Washington, USA, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+<author>Qun Liu</author>
+</authors>
+<title>ForestBased Translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings ofACL-08: HLT,</booktitle>
+<pages>192--199</pages>
+<contexts>
+<context position="21494" citStr="Mi et al., 2008" startWordPosition="3587" endWordPosition="3590">constituent-tree style described in Section 3. Edges drawn in the same type of line are owned by the same sub-tree. Solid lines are shared edges. In the pseudo-forest, we actually only create a forest structure for each HD fragment. For example, based on Figure 5, we create a constituent node labelled with “NN:H0” that covers the subYu Guohui fragment “ (-1:j) Q�”. In so doing, a new node labelled with “NN:L1” is also created, which covers Zongtong the Node “ L ”, because it is now the first left Zongtong Guohui dependent in the sub-fragment “(,&apos;W_PL) Q� ”. Compared to the forest-based model (Mi et al., 2008), such a pseudo-forest cannot efficiently reduce the influence of parsing errors, but it is easily available and compatible with the Dep2Str Model. Zongtong 总统/NN Guohui 国会/NN Yu 与/CC Yu Guohui Rule: (与) 国会 and parliment Zongtong 总统 and parliament Guohui 国会/NN VV:H0 NN:R1 Xuanju 选举:R1 VV:H0 NN:L1 VV:H0 NN:L1 Guohui 国会:L1 NN:H0 NN:L2 CC:L1 NN:H0 NN:H0 NN:L1 Boliweiya 玻利维亚 Juxing 举行 Zongtong 总统 Yu 与 Guohui 国会 Xuanju 选举 S 127 corpus sentences words(ch) words(en) train 1,501,652 38,388,118 44,901,788 dev 878 22,655 26,905 MT04 1,597 43,719 52,705 MT05 1,082 29,880 35,326 Table 1: Chinese–English c</context>
+</contexts>
+<marker>Mi, Huang, Liu, 2008</marker>
+<rawString>Haitao Mi, Liang Huang, and Qun Liu. 2008. ForestBased Translation. In Proceedings ofACL-08: HLT, pages 192–199, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joakim Nivre</author>
+<author>Jens Nilsson</author>
+</authors>
+<title>PseudoProjective Dependency Parsing.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>99--106</pages>
+<location>Ann Arbor, Michigan.</location>
+<contexts>
+<context position="26844" citStr="Nivre and Nilsson, 2005" startWordPosition="4440" endWordPosition="4443">proves the baseline system D2S significantly (absolute improvement of +1.53/+1.57 (4.5%/4.8%, relative)). As a result, our system achieves comparable (-0.1/+0.14) results with Moses HPB. After including phrasal rules, our system performs significantly better (absolute improvement of +1.2/+0.68 (3.4%/2.0%, relative)) than Moses HPB on both test sets.6 5.4 German–English We tokenize German sentences with scripts in Moses and use mate-tools7 to perform morphological analysis and parse the sentence (Bohnet, 2010). Then the MaltParser8 converts the parse result into the projective dependency tree (Nivre and Nilsson, 2005). Experimental results in Table 5 show that incorporating sub-structural rules improves the baseline D2S system significantly (absolute improvement of +0.47/+0.63, (2.3%/2.8%, relative)), and achieves a slightly better (+0.08) result on test12 than Moses HPB. However, in the German– English task, the pseudo-forest produces a negative effect on the baseline system (-0.07/-0.45), despite the fact that our system combining both methods together is still better (+0.2/+0.11) than the baseline D2S. In the end, by resorting to 6In our preliminary experiments, phrasal rules are also able to significan</context>
+</contexts>
+<marker>Nivre, Nilsson, 2005</marker>
+<rawString>Joakim Nivre and Jens Nilsson. 2005. PseudoProjective Dependency Parsing. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, pages 99–106, Ann Arbor, Michigan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+</authors>
+<title>Minimum Error Rate Training in Statistical Machine Translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics -</booktitle>
+<volume>1</volume>
+<pages>160--167</pages>
+<location>Sapporo, Japan.</location>
+<contexts>
+<context position="23993" citStr="Och, 2003" startWordPosition="3987" endWordPosition="3988">sh sentences are tokenized with scripts in Moses. Word alignment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical significance with 1000 iterations. We implement the baseline Dep2Str model in Moses with methods described in this paper, which is denoted as D2S. The first experiment we do is to sanity check our implementation. Thus we take a separate system (denoted as XJ) for comparison which implements the Dep2Str model based on (Xie et al., 2011). As shown in Table 3, using the transformation of dependency trees, th</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Josef Och. 2003. Minimum Error Rate Training in Statistical Machine Translation. In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics - Volume 1, pages 160–167, Sapporo, Japan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Hermann Ney</author>
+</authors>
+<title>A Systematic Comparison of Various Statistical Alignment Models.</title>
+<date>2003</date>
+<journal>Computational Linguistics,</journal>
+<volume>29</volume>
+<issue>1</issue>
+<contexts>
+<context position="23490" citStr="Och and Ney, 2003" startWordPosition="3904" endWordPosition="3907">test data to evaluate the systems. Table 1 provides a summary of the Chinese–English corpus. The German–English training corpus is from WMT 2014, including Europarl V7 and News Commentary. News-test 2011 is taken as the development set, while News-test 2012 (test12) and News-test 2013 (test13) are our test sets. Table 2 provides a summary of the German–English corpus. 5.2 Baseline For both language pairs, we filter sentence pairs longer than 80 words and keep the length ratio less than or equal to 3. English sentences are tokenized with scripts in Moses. Word alignment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the tr</context>
+</contexts>
+<marker>Och, Ney, 2003</marker>
+<rawString>Franz Josef Och and Hermann Ney. 2003. A Systematic Comparison of Various Statistical Alignment Models. Computational Linguistics, 29(1):19–51, March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>BLEU: A Method for Automatic Evaluation of Machine Translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>311--318</pages>
+<location>Philadelphia, Pennsylvania.</location>
+<contexts>
+<context position="24063" citStr="Papineni et al., 2002" startWordPosition="3997" endWordPosition="4000">gnment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical significance with 1000 iterations. We implement the baseline Dep2Str model in Moses with methods described in this paper, which is denoted as D2S. The first experiment we do is to sanity check our implementation. Thus we take a separate system (denoted as XJ) for comparison which implements the Dep2Str model based on (Xie et al., 2011). As shown in Table 3, using the transformation of dependency trees, the Dep2Str model implemented in Moses (D2S) is comparable with the stan</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2002. BLEU: A Method for Automatic Evaluation of Machine Translation. In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics, pages 311–318, Philadelphia, Pennsylvania.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Quirk</author>
+<author>Arul Menezes</author>
+<author>Colin Cherry</author>
+</authors>
+<title>Dependency Treelet Translation: Syntactically Informed Phrasal SMT.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05),</booktitle>
+<pages>271--279</pages>
+<location>Ann Arbor, Michigan,</location>
+<contexts>
+<context position="2372" citStr="Quirk et al., 2005" startWordPosition="339" endWordPosition="342">dency structure directly encodes semantic information and has the best inter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion operations are adopted for decoding. However, as translation rules based on the treelets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependency-to-string (Dep2Str)</context>
+</contexts>
+<marker>Quirk, Menezes, Cherry, 2005</marker>
+<rawString>Chris Quirk, Arul Menezes, and Colin Cherry. 2005. Dependency Treelet Translation: Syntactically Informed Phrasal SMT. In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05), pages 271–279, Ann Arbor, Michigan, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Libin Shen</author>
+<author>Jinxi Xu</author>
+<author>Ralph Weischedel</author>
+</authors>
+<date>2010</date>
+<journal>String-to-Dependency Statistical Machine Translation. Computational Linguistics,</journal>
+<volume>36</volume>
+<issue>4</issue>
+<contexts>
+<context position="2022" citStr="Shen et al. (2010)" startWordPosition="282" endWordPosition="285">ith the state-of-the-art hierarchical phrase-based model (HPB). Finally, when resorting to phrasal rules, the dependency-to-string model performs significantly better than Moses HPB. 1 Introduction Dependency structure models relations between words in a sentence. Such relations indicate the syntactic function of one word to another word. As dependency structure directly encodes semantic information and has the best inter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion op</context>
+<context position="3447" citStr="Shen et al., 2010" startWordPosition="505" endWordPosition="508">o decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependency-to-string (Dep2Str) model, which extracts head-dependent (HD) rules from word-aligned source dependency trees and target strings. As this model specifies reordering information in the HD rules, during translation only the substitution operation is needed, because words are reordered simultaneously with the rule being applied. Meng et al. (2013) and Xie et al. (2014) extend the model by augmenting HD rules with the help of either constituent tree or fixed/float structure (Shen et al., 2010). Augmented rules are created by the combination of two or more nodes in 122 Proceedings of SSST-8, Eighth Workshop on Syntax, Semantics and Structure in Statistical Translation, pages 122–131, October 25, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics the HD fragment, and are capable of capturing translations of non-syntactic phrases. However, the decoder needs to be changed correspondingly to handle these rules. Attracted by the simplicity of the Dep2Str model, in this paper we describe an easy way to integrate the model into the popular translation framework Moses (Koeh</context>
+</contexts>
+<marker>Shen, Xu, Weischedel, 2010</marker>
+<rawString>Libin Shen, Jinxi Xu, and Ralph Weischedel. 2010. String-to-Dependency Statistical Machine Translation. Computational Linguistics, 36(4):649–671, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+</authors>
+<title>SRILM-an Extensible Language Modeling Toolkit.</title>
+<date>2002</date>
+<booktitle>In Proceedings International Conference on Spoken Language Processing,</booktitle>
+<pages>257--286</pages>
+<contexts>
+<context position="23589" citStr="Stolcke, 2002" startWordPosition="3920" endWordPosition="3921">–English training corpus is from WMT 2014, including Europarl V7 and News Commentary. News-test 2011 is taken as the development set, while News-test 2012 (test12) and News-test 2013 (test13) are our test sets. Table 2 provides a summary of the German–English corpus. 5.2 Baseline For both language pairs, we filter sentence pairs longer than 80 words and keep the length ratio less than or equal to 3. English sentences are tokenized with scripts in Moses. Word alignment is performed by GIZA++ (Och and Ney, 2003) with the heuristic function grow-diag-final-and (Koehn et al., 2003). We use SRILM (Stolcke, 2002) to Systems MT05 XJ 33.91 D2S 33.79 Table 3: BLEU score [%] of the Dep2Str model before (XJ) and after (D2S) dependency tree being transformed. Systems are trained on a selected 1.2M Chinese–English corpus. train a 5-gram language model on the Xinhua portion of the English Gigaword corpus 5th edition with modified Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical sign</context>
+</contexts>
+<marker>Stolcke, 2002</marker>
+<rawString>Andreas Stolcke. 2002. SRILM-an Extensible Language Modeling Toolkit. In Proceedings International Conference on Spoken Language Processing, pages 257–286, November.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fei Xia</author>
+<author>Martha Palmer</author>
+</authors>
+<title>Converting Dependency Structures to Phrase Structures.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the First International Conference on Human Language Technology Research,</booktitle>
+<pages>1--5</pages>
+<location>San Diego.</location>
+<contexts>
+<context position="15303" citStr="Xia and Palmer, 2001" startWordPosition="2517" endWordPosition="2520">hui For the internal node “ Q ” in the HD fragment “ Guohui Xuanju (�) A—#”, we create two constituent nodes 0 = {2 → 2} where “H1” denotes the position of the head word is 1, “R1” indicates the first right dependent of the head word, “X” is the general label for the target side and 0 is the set of alignments (the index-correspondences between s and t). The format has been described in detail at http://www.statmt.org/ moses/?n=Moses.SyntaxTutorial. 125 In addition, our transformation is different from other works which transform a dependency tree into a constituent tree (Collins et al., 1999; Xia and Palmer, 2001). In this paper, the produced constituent tree still preserves dependency relations between words, and the phrasal structure is directly derived from the dependency structure without refinement. Accordingly, the constituent tree may not be a linguistically well-formed syntactic structure. However, it is not a problem for our model, because in this paper what matters is the dependency structure which has already been encoded into the (ill-formed) constituent tree. 4 Decomposition of Dependency Structure The Dep2Str model treats a whole HD fragment as the basic unit, which may result in a sparse</context>
+</contexts>
+<marker>Xia, Palmer, 2001</marker>
+<rawString>Fei Xia and Martha Palmer. 2001. Converting Dependency Structures to Phrase Structures. In Proceedings of the First International Conference on Human Language Technology Research, pages 1–5, San Diego.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jun Xie</author>
+<author>Haitao Mi</author>
+<author>Qun Liu</author>
+</authors>
+<title>A Novel Dependency-to-string Model for Statistical Machine Translation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>216--226</pages>
+<location>Edinburgh, United Kingdom.</location>
+<contexts>
+<context position="2931" citStr="Xie et al. (2011)" startWordPosition="427" endWordPosition="430">let approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion operations are adopted for decoding. However, as translation rules based on the treelets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependency-to-string (Dep2Str) model, which extracts head-dependent (HD) rules from word-aligned source dependency trees and target strings. As this model specifies reordering information in the HD rules, during translation only the substitution operation is needed, because words are reordered simultaneously with the rule being applied. Meng et al. (2013) and Xie et al. (2014) extend the model by augmenting HD rules with the help of either constituent tree or fixed/float structure (Shen et al., 2010). Augmented rules are created by the combination of two or more nodes in 122 Proceed</context>
+<context position="5429" citStr="Xie et al., 2011" startWordPosition="819" endWordPosition="822">ective for translation. In the remainder of the paper, we first describe the Dep2Str model (Section 2). Then we describe how to transform a dependency tree into a constituent tree which is compatible with the Dep2Str model (Section 3). The idea of decomposition including extracting sub-structural rules and creating a pseudo-forest is presented in Section 4. Then experiments are conducted to compare translation results of our approach with the state-of-the-art HPB model (Section 5). We conclude in Section 6 and present avenues for future work. 2 Dependency-to-String Model In the Dep2Str model (Xie et al., 2011), the HD fragment is the basic unit. As shown in Figure 1, in a dependency tree, each non-leaf node is the head of some other nodes (dependents), so an HD fragment is composed of a head node and all of its dependents.1 In this model, there are two kinds of rules for translation. One is the head rule which specifies the translation of a source word: Juxing #T7, holds 1In this paper, HD fragment of a node means the HD fragment with this node as the head. Leaf nodes have no HD fragments. Figure 1: Example of a dependency tree, with head-dependent fragments being indicated by dotted lines. The oth</context>
+<context position="16026" citStr="Xie et al., 2011" startWordPosition="2634" endWordPosition="2637"> phrasal structure is directly derived from the dependency structure without refinement. Accordingly, the constituent tree may not be a linguistically well-formed syntactic structure. However, it is not a problem for our model, because in this paper what matters is the dependency structure which has already been encoded into the (ill-formed) constituent tree. 4 Decomposition of Dependency Structure The Dep2Str model treats a whole HD fragment as the basic unit, which may result in a sparsedata problem. For example, an HD fragment with a verb as head typically consists of more than four nodes (Xie et al., 2011). Thus in this section, inspired by the treelet approach, we describe a decomposition method to make use of smaller fragments. In an HD fragment of a dependency tree, the head determines the semantic category, while the dependent gives the semantic specification (Zwicky, 1985; Hudson, 1990). Accordingly, it is reasonable to assume that in an HD fragment, dependents could be removed or new dependents could be attached as needed. Thus, in this paper, we assume that a large HD fragment is formed by attaching dependents to a small HD fragment. For simplicity and reuse of the decoder, such an attac</context>
+<context position="24522" citStr="Xie et al., 2011" startWordPosition="4071" endWordPosition="4074">Kneser-Ney discounting (Chen and Goodman, 1996). Minimum Error Rate Training (Och, 2003) is used to tune weights. Caseinsensitive BLEU (Papineni et al., 2002) is used to evaluate the translation results. Bootstrap resampling (Koehn, 2004) is also performed to compute statistical significance with 1000 iterations. We implement the baseline Dep2Str model in Moses with methods described in this paper, which is denoted as D2S. The first experiment we do is to sanity check our implementation. Thus we take a separate system (denoted as XJ) for comparison which implements the Dep2Str model based on (Xie et al., 2011). As shown in Table 3, using the transformation of dependency trees, the Dep2Str model implemented in Moses (D2S) is comparable with the standard implementation (XJ). In the rest of this section, we describe experiments which compare our system with Moses HPB (default setting), and test whether our decomposition approach improves performance over the baseline D2S. As described in Section 2, the Dep2Str model only extracts phrase rules for translating a source word (head rule). This model could be enhanced by including phrase rules that cover more than one source word. Thus we also conduct expe</context>
+<context position="28712" citStr="Xie et al., 2011" startWordPosition="4726" endWordPosition="4729"> indicate the result is significantly better than Moses HPB at p &lt; 0.01 level. Systems # Rules CE task DE task Moses HPB 388M 684M D2S 27M 41M +sub-structural rules 116M 121M +phrase 215M 274M Table 6: The number of rules in different systems On the Chinese–English (CE) and German– English (DE) corpus. Note that pseudo-forest (not listed) does not influence the number of rules. phrasal rules, our system achieves the best performance overall which is significantly better (absolute improvement of +0.47/+0.59 (2.3%/2.6%, relative)) than Moses HPB. 5.5 Discussion Besides long-distance reordering (Xie et al., 2011), another attraction of the Dep2Str model is its simplicity. It can perform fast translation with fewer rules than HPB. Table 6 shows the number of rules in each system. It is easy to see that all of our systems use fewer rules than HPB. However, the number of rules is not proportional to translation quality, as shown in Tables 4 and 5. Experiments on the Chinese–English corpus show that it is feasible to translate the dependency tree via transformation for the Dep2Str model described in Section 2. Such a transformation causes the model to be easily integrated into Moses without making changes</context>
+</contexts>
+<marker>Xie, Mi, Liu, 2011</marker>
+<rawString>Jun Xie, Haitao Mi, and Qun Liu. 2011. A Novel Dependency-to-string Model for Statistical Machine Translation. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 216–226, Edinburgh, United Kingdom.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jun Xie</author>
+<author>Jinan Xu</author>
+<author>Qun Liu</author>
+</authors>
+<title>Augment Dependency-to-String Translation with Fixed and Floating Structures.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 25th International Conference on Computational Linguistics,</booktitle>
+<pages>2217--2226</pages>
+<location>Dublin, Ireland.</location>
+<contexts>
+<context position="3321" citStr="Xie et al. (2014)" startWordPosition="483" endWordPosition="486">lets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependency-to-string (Dep2Str) model, which extracts head-dependent (HD) rules from word-aligned source dependency trees and target strings. As this model specifies reordering information in the HD rules, during translation only the substitution operation is needed, because words are reordered simultaneously with the rule being applied. Meng et al. (2013) and Xie et al. (2014) extend the model by augmenting HD rules with the help of either constituent tree or fixed/float structure (Shen et al., 2010). Augmented rules are created by the combination of two or more nodes in 122 Proceedings of SSST-8, Eighth Workshop on Syntax, Semantics and Structure in Statistical Translation, pages 122–131, October 25, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics the HD fragment, and are capable of capturing translations of non-syntactic phrases. However, the decoder needs to be changed correspondingly to handle these rules. Attracted by the simplicity of the </context>
+<context position="18883" citStr="Xie et al. (2014)" startWordPosition="3146" endWordPosition="3149">s/VBZ smart/JJ very/RB 126 positions of an HD fragment. Each decomposition produces two sub-fragments: core and shell. Both core and shell include the head node. core contains the dependents surrounding the head node, with the remaining dependents belonging to shell. Taking Figure 4 as an example, the bottomright part is core, while the bottom-left part is shell. Each core and shell could be seen as a new HD fragment. Then HD rules are extracted as defined in the Dep2Str model. Note that different from the augmented HD rules, where Meng et al. (2013) annotate rules with combined variables and Xie et al. (2014) create special rules from HD rules at runtime by combining several nodes, our sub-structural rules are standard HD rules, which are extracted from the connected sub-structures of a larger HD fragment and can be used directly in the model. 4.2 Pseudo-Forest Although sub-structural rules are effective in our experiments (see Section 5), we still do not use them to their best advantage, because we only enrich smaller rules in our model. During decoding, for a large input HD fragment, the model is still more likely to resort to glue rules. However, the idea of decomposition allows us to create a </context>
+</contexts>
+<marker>Xie, Xu, Liu, 2014</marker>
+<rawString>Jun Xie, Jinan Xu, and Qun Liu. 2014. Augment Dependency-to-String Translation with Fixed and Floating Structures. In Proceedings of the 25th International Conference on Computational Linguistics, pages 2217–2226, Dublin, Ireland.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Deyi Xiong</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>A Dependency Treelet String Correspondence Model for Statistical Machine Translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Second Workshop on Statistical Machine Translation,</booktitle>
+<pages>40--47</pages>
+<location>Prague,</location>
+<contexts>
+<context position="2445" citStr="Xiong et al. (2007)" startWordPosition="351" endWordPosition="354">ter-lingual phrasal cohesion properties (Fox, 2002), it is believed to be helpful to translation. In recent years, dependency structure has been widely used in SMT. For example, Shen et al. (2010) present a string-to-dependency model by using the dependency fragments of the neighbouring words on the target side, which makes it easier to integrate a dependency language model. However such string-to-tree systems run slowly in cubic time (Huang et al., 2006). Another example is the treelet approach (Menezes and Quirk, 2005; Quirk et al., 2005), which uses dependency structure on the source side. Xiong et al. (2007) extend the treelet approach to allow dependency fragments with gaps. As the treelet is defined as an arbitrary connected sub-graph, typically both substitution and insertion operations are adopted for decoding. However, as translation rules based on the treelets do not encode enough reordering information directly, another heuristic or separate reordering model is usually needed to decide the best target position of the inserted words. Different from these works, Xie et al. (2011) present a dependency-to-string (Dep2Str) model, which extracts head-dependent (HD) rules from word-aligned source</context>
+</contexts>
+<marker>Xiong, Liu, Lin, 2007</marker>
+<rawString>Deyi Xiong, Qun Liu, and Shouxun Lin. 2007. A Dependency Treelet String Correspondence Model for Statistical Machine Translation. In Proceedings of the Second Workshop on Statistical Machine Translation, pages 40–47, Prague, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel H Younger</author>
+</authors>
+<title>Recognition and Parsing of Context-Free Languages</title>
+<date>1967</date>
+<booktitle>in Time n3. Information and Control,</booktitle>
+<volume>10</volume>
+<issue>2</issue>
+<contexts>
+<context position="9670" citStr="Younger, 1967" startWordPosition="1562" endWordPosition="1563"> d, and Ai is the weight of the feature. 3 Transformation of Dependency Trees In this section, we introduce an algorithm to transform a dependency tree into a corresponding constituent tree, where words of the source sentence are leaf nodes and internal nodes are labelled with head words or POS tags which are constrained by dependency information. Such a transformation makes it possible to use the traditional tree-based decoder to translate a dependency tree, so we can easily integrate the Dep2Str model into the popular framework Moses. In a tree-based system, the CYK algorithm (Kasami, 1965; Younger, 1967; Cocke and Schwartz, 1970) is usually employed to translate the input sentence with a tree structure. Each time a continuous sequence of words (a phrase) in the source sentence is translated. Larger phrases can be translated by combining translations of smaller phrases. In a constituent tree, the source words are leaf nodes and all non-leaf nodes covering a phrase are labelled with categories which are usually variables defined in the tree-based model. For translating a phrase covered by a non-leaf node, the decoder for the constituent tree can easily find applied rules by directly matching v</context>
+</contexts>
+<marker>Younger, 1967</marker>
+<rawString>Daniel H. Younger. 1967. Recognition and Parsing of Context-Free Languages in Time n3. Information and Control, 10(2):189–208.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Arnold M Zwicky</author>
+</authors>
+<date>1985</date>
+<journal>Heads. Journal of Linguistics,</journal>
+<volume>21</volume>
+<pages>3</pages>
+<contexts>
+<context position="16302" citStr="Zwicky, 1985" startWordPosition="2682" endWordPosition="2683">structure which has already been encoded into the (ill-formed) constituent tree. 4 Decomposition of Dependency Structure The Dep2Str model treats a whole HD fragment as the basic unit, which may result in a sparsedata problem. For example, an HD fragment with a verb as head typically consists of more than four nodes (Xie et al., 2011). Thus in this section, inspired by the treelet approach, we describe a decomposition method to make use of smaller fragments. In an HD fragment of a dependency tree, the head determines the semantic category, while the dependent gives the semantic specification (Zwicky, 1985; Hudson, 1990). Accordingly, it is reasonable to assume that in an HD fragment, dependents could be removed or new dependents could be attached as needed. Thus, in this paper, we assume that a large HD fragment is formed by attaching dependents to a small HD fragment. For simplicity and reuse of the decoder, such an attachment is carried out in one step. This means that an HD fragment is decomposed into two smaller parts in a possible decomposition. This decomposition can be formulated as Equation (2): LZ ··· L1HR1 ··· Rj = Lm ··· L1HR1 ··· Rn + LZ ··· Lm+1HRn+1 ··· Rj subject to (2) i &gt; 0,j </context>
+</contexts>
+<marker>Zwicky, 1985</marker>
+<rawString>Arnold M. Zwicky. 1985. Heads. Journal of Linguistics, 21:1–29, 3.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

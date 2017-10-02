@@ -1,0 +1,980 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.002336">
+<title confidence="0.985605">
+Hierarchical Phrase-based Stream Decoding
+</title>
+<author confidence="0.962739">
+Andrew Finch and Xiaolin Wang and Masao Utiyama and Eiichiro Sumita
+</author>
+<affiliation confidence="0.88021">
+Advanced Speech Translation Research and Development Promotion Center
+Advanced Translation Technology Laboratory
+National Institute of Information and Communications Technology
+Kyoto, Japan
+</affiliation>
+<email confidence="0.999067">
+{andrew.finch,xiaolin.wang,mutiyama,eiichiro.sumita}@nict.go.jp
+</email>
+<sectionHeader confidence="0.993903" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999926676470588">
+This paper proposes a method for hierar-
+chical phrase-based stream decoding. A
+stream decoder is able to take a contin-
+uous stream of tokens as input, and seg-
+ments this stream into word sequences that
+are translated and output as a stream of tar-
+get word sequences. Phrase-based stream
+decoding techniques have been shown to
+be effective as a means of simultaneous in-
+terpretation. In this paper we transfer the
+essence of this idea into the framework of
+hierarchical machine translation. The hi-
+erarchical decoding framework organizes
+the decoding process into a chart; this
+structure is naturally suited to the process
+of stream decoding, leading to an efficient
+stream decoding algorithm that searches
+a restricted subspace containing only rel-
+evant hypotheses. Furthermore, the de-
+coder allows more explicit access to the
+word re-ordering process that is of crit-
+ical importance in decoding while inter-
+preting. The decoder was evaluated on
+TED talk data for English-Spanish and
+English-Chinese. Our results show that
+like the phrase-based stream decoder, the
+hierarchical is capable of approaching the
+performance of the underlying hierarchi-
+cal phrase-based machine translation de-
+coder, at useful levels of latency. In ad-
+dition the hierarchical approach appeared
+to be robust to the difficulties presented
+by the more challenging English-Chinese
+task.
+</bodyText>
+<sectionHeader confidence="0.999335" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999869619047619">
+Statistical machine translation traditionally oper-
+ates on sentence segmented input. This technol-
+ogy has advanced to the point where it is becom-
+ing capable enough to be useful for many applica-
+tions. However, this approach may be unsuitable
+for simultaneous interpretation where the machine
+translation system is required to provide transla-
+tions within a reasonably short space of time after
+words have been spoken. Under this type of con-
+straint, it may not be possible to wait for the end
+of the sentence before translating, and segmenta-
+tion at the sub-sentential level may be required
+as a consequence. This segmentation process is
+difficult, even for skilled human interpreters, and
+presents a major challenge to a machine since in
+addition to the translation process, decisions need
+to be made about when to commit to outputting
+a partial translation. Such decisions are critical
+since once such an output is made it can be dif-
+ficult and highly undesirable to correct it later if it
+is in error.
+</bodyText>
+<sectionHeader confidence="0.999748" genericHeader="related work">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999918269230769">
+In order to automatically perform segmentation
+for interpretation, two types of strategy have be
+proposed. In the first, which we will call pre-
+segmentation, the stream is segmented prior to the
+start of the machine translation decoding process,
+and the machine translation system is constrained
+to translate using the given segmentation. This
+approach has the advantage that it can be imple-
+mented without the need to modify the machine
+translation decoding software. In the second type
+of strategy, which we will call incremental decod-
+ing, the segmentation process is performed during
+the decoding of the input stream. In this approach
+the segmentation process is able to exploit seg-
+mentation cues arising from the decoding process
+itself. That is to say, the order in which the de-
+coder would prefer to generate the target sequence
+is taken into account.
+A number of diverse strategies for pre-
+segmentation were studied in (Sridhar et al.,
+2013). They studied both non-linguistic tech-
+niques, that included fixed-length segments, and a
+“hold-output” method which identifies contiguous
+blocks of text that do not contain alignments to
+words outside them, and linguistically-motivated
+segmentation techniques beased on segmenting on
+</bodyText>
+<page confidence="0.973366">
+1089
+</page>
+<note confidence="0.656154">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1089–1094,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.999842310344827">
+conjunctions, sentence boundaries and commas.
+Commas were the most effective segmentation cue
+in their investigation.
+In (Oda et al., 2014) a strategy for segmentation
+prior to decoding based on searching for segmen-
+tation points while optimizing the BLEU score
+was presented. An attractive characteristic of this
+approach is that the granularity of the segmenta-
+tion could be controlled by choosing the number
+of segmentation boundaries to be inserted, prior
+to the segmentation process. In (Matusov et al.,
+2007) it was shown that the prediction and use of
+soft boundaries in the source language text, when
+used as re-ordering constraints can improve the
+quality of a speech translation system.
+(Siahbani et al., 2014) used a pre-segmenter in
+combination with a left-to-right hierarchical de-
+coder (Watanabe et al., 2006) to achieve a consid-
+erably faster decoder in return for a small cost in
+terms of BLEU score.
+A phrase-based incremental decoder called the
+stream decoder was introduced in (Kolss et al.,
+2008b), and further studied in (Finch et al., 2014).
+Their results, conducted on translation between
+European languages, and also on English-Chinese,
+showed that this approach was able to maintain
+a high level of translation quality for practically
+useful levels of latency. The hierarchical decoding
+strategy proposed here is based on this work.
+</bodyText>
+<subsectionHeader confidence="0.997506">
+2.1 Stream Decoding
+</subsectionHeader>
+<bodyText confidence="0.999960896551724">
+The reader is referred to the original paper (Kolss
+et al., 2008a) for a complete description of the
+stream decoding process; in this section we pro-
+vide a brief summary.
+Figure 1 depicts a stream decoding process, and
+the figure applies to both the original phrase-based
+technique, and the proposed hierarchical method.
+The input to the stream decoder is a stream of to-
+kens (it is also possible for the decoder to oper-
+ate on tuples of confusable token sequences from
+a speech recognition decoder). As new tokens ar-
+rive, states in the search graph are extended with
+the new possible translation options arising from
+the new tokens. Periodically the stream decoder
+will commit to outputting a sequence of target to-
+kens. At this point a state from the search graph is
+selected, the search graph leading from this state
+is kept, and the remainder discarded. The search
+then continues using the pruned search graph. The
+language model context is preserved at this state
+for use during the subsequent decoding. In this
+manner the stream decoder is able to jointly seg-
+ment and translate a continuous stream of tokens
+that contains no segment boundary information;
+the segmentation occurs as a natural by-product of
+the decoding process. Re-ordering occurs in ex-
+actly the same manner as the sentence-by-sentence
+hierarchical decoder, and word re-ordering within
+segments is possible.
+</bodyText>
+<subsectionHeader confidence="0.748854">
+2.1.1 Latency Parameters
+</subsectionHeader>
+<bodyText confidence="0.99999592">
+The stream decoding process is governed by two
+parameters Lmax and Lmin. These parameters are
+illustrated in Figure 1. The Lmax parameter con-
+trols the maximum latency of the system. That is,
+the maximum number of tokens the system is per-
+mitted to fall behind the current position. If in-
+terpreting from speech, the parameter represents
+the number of words the system is allowed to fall
+behind the speaker, before being required to pro-
+vide an output translation. This parameter is a hard
+constraint that guarantees the system will always
+be within Lmax tokens of the current last token in
+the stream of input tokens. The parameter Lmin
+represents the minimum number of words the sys-
+tem will lag behind the last word spoken. It serves
+as a means of preventing the decoder from com-
+mitting to a translation too early.
+Both the phrase-based and hierarchical phrase-
+based stream decoders maintain a sequence of to-
+kens that represent the sequence of untranslated
+tokens from the input stream (see Figure 1). As
+new tokens arrive from the input stream, they are
+added to the end of the sequence. When the length
+of this sequence reaches Lmax, the decoder is
+forced to provide an output.
+</bodyText>
+<subsubsectionHeader confidence="0.665976">
+2.1.2 Phrase-based Segmentation
+</subsubsectionHeader>
+<bodyText confidence="0.999926190476191">
+When forced to commit to a translation, the
+phrase-based decoder rolls back the best hypoth-
+esis state by state, until the remaining state se-
+quence translates a contiguous sequence of source
+words starting from beginning of the sequence
+of untranslated words, and the number of words
+that would remain in the sequence of untranslated
+words after the translation is made, is at least
+Lmin. It is possible that no such state exists, in
+which case since the stream decoder is required to
+make an output, it must use an alternative strategy.
+In this alternative strategy, the stream decoder
+will undertake a new decoding pass in which it is
+forced to make a monotonic step as the first step
+in the decoding process. Then, a state is selected
+from the best hypothesis using the roll-back strat-
+egy above. This process may also fail if the mono-
+tonic step would lead to the violation of Lmin.
+In the implementation of (Finch et al., 2014), the
+decoder is permitted to violate Lmin only in this
+case.
+</bodyText>
+<page confidence="0.932293">
+1090
+</page>
+<figure confidence="0.891042">
+Current Position
+</figure>
+<figureCaption confidence="0.999854">
+Figure 1: The stream decoding process.
+</figureCaption>
+<figure confidence="0.99764325">
+Future
+Tokens
+Translated
+Tokens
+Untranslated
+Tokens
+t1 t2 t3 t4 t5 t6 t7 t8 t9 t10 t11
+t12 t13
+Lmin
+Lmax
+2.1.3 The Proposed Method
+Lmin
+</figure>
+<figureCaption confidence="0.9888665">
+Figure 2: Selecting a segmentation point during
+hierarchical decoding.
+</figureCaption>
+<bodyText confidence="0.999975712121212">
+The proposed hierarchical method attempts to
+capture the spirit of the phrase-based method.
+When forced to commit to a translation of a se-
+quence of n words, the segmentation process is
+simple and guided direcly by the chart.
+As in the phrase-based approach, the best hy-
+pothesis at the top of the chart is used to pro-
+vide the partial translation and segmentation point.
+This hypothesis has a span of [1, n] over the source
+words. The left child of the rule (defined in accor-
+dance with the binarized grammar used by the de-
+coder) that was applied to create this hypothesis is
+examined; let its span be [1, k]. If n − k &gt; Lmin,
+then this partial hypothesis represents a translation
+of the first k words of the sentence that leaves at
+least Lmin words untranslated, and therefore the
+target word sequence from this partial hypothesis
+is output, and the associated source words are re-
+moved from the sequence of untranslated words.
+If this hypothesis is not able to meet the constraint,
+the parse tree traversal continues in the same man-
+ner: depth first along the left children until either a
+translation can be made, or no further traversal is
+possible.
+Following the translation of of word sequence,
+similar to the phrase-based stream decoder of
+(Finch et al., 2014), the hierarchical stream de-
+coder proceeds from an initial state in which the
+language model context is preserved. The decod-
+ing process relies on an implicit application of
+the glue grammar to connect the past and future
+nodes. An visual example of this selection pro-
+cess is given in Figure 2. In this example, the
+neither the root of the tree (spanning t1t2t3t4t5tO
+nor its left child (spanning t1t2t3t4) are not able to
+generate an output since they both span sequences
+of words that would violate Lmin, which is 3 in
+this example. The left child two levels down from
+the root node spans only t1t2 and would leave 4
+words untranslated, therefore it defines an accept-
+able segmentation point.
+Instead of forcing a monotonic decoding step in
+the event of a failure to find a segmentation point
+during the decoding, the hierarchical stream de-
+coder directly eliminates hypotheses that would
+lead to such a failure. The search process is con-
+strained such that all parse trees that cover the first
+word of the source sentence, must contain a sub-
+tree that can give rise to a translation that does
+not violate Lmin (constituents that can produce
+translations cannot span more than Lmax − Lmin
+words). Any search state that would violate this
+constraint is not allowed to enter the chart. This
+property is recursively propagated up the chart
+during the parsing process ensuring that each entry
+placed into the first column of the chart contains a
+constituent that could be used to produce a trans-
+lation.
+This approach is more appealing than the forced
+monotonic step in that it will also allow non-
+monotonic translations that are guaranteed to be
+usable. Similar to the phrase-based approach, in
+some circumstances it may not be possible to pro-
+duce a parse that does not violate Lmin, and only
+in this rare case is the decoder allowed to violate
+Lmin in order to guarantee maximum latency.
+</bodyText>
+<figure confidence="0.977672717741936">
+X
+t5 t6
+X
+S
+X
+t4
+S
+t3
+S
+t1 t2
+1091
+(Talk level) BLEU (%)
+0 1 2 3 4 5 6 7 8 9
+Minimum Latency
+(a) English-to-French.
+0 1 2 3 4 5 6 7 8 9
+Minimum Latency
+(c) English-to-Arabic.
+0 1 2 3 4 5 6 7 8 9
+Minimum Latency
+(e) English-to-Russian.
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+0 1 2 3 4 5 6 7 8 9
+Minimum P Latency
+(b) English-to-Spanish.
+0 1 2 3 4 5 6 7 8 9
+Minimum Latency
+(d) English-to-Hebrew.
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+0 1 2 3 4 5 6 7 8 9
+Minimum Latency
+(f) English-to-Chinese.
+45
+40
+25
+20
+35
+30
+15
+10
+5
+0
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+(Talk level) BLEU (%)
+16
+14
+12
+10
+4
+2
+8
+6
+0
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+(Talk level) BLEU (%)
+22
+20
+18
+16
+14
+12
+10
+4
+2
+8
+6
+0
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+(Talk level) BLEU (%)
+25
+20
+15
+10
+5
+0
+Baseline
+Maximum Latency=10
+Maximum Latency=8
+Maximum Latency=6
+Maximum Latency=4
+Maximum Latency=2
+(Talk level) BLEU (%) 35
+30
+25
+20
+15
+10
+5
+0
+(Talk level) BLEU (%) 20
+18
+16
+14
+12
+10
+8
+6
+4
+2
+</figure>
+<figureCaption confidence="0.997914">
+Figure 3: Stream decoding performance for several language pairs. The baseline was the same hierar-
+</figureCaption>
+<bodyText confidence="0.5855825">
+chical phrase-based decoder, but decoded in the usual manner sentence-by-sentence without the stream
+decoding process. The baseline used the sentence segmentation provided by the corpus.
+</bodyText>
+<sectionHeader confidence="0.997499" genericHeader="method">
+3 Experiments
+</sectionHeader>
+<subsectionHeader confidence="0.995638">
+3.1 Corpora
+</subsectionHeader>
+<bodyText confidence="0.999683333333333">
+In all experiments, we used the TED1 talks
+data sets from the IWSLT2014 campaign. We
+evaluated on English-to-Spanish, and English-to-
+Chinese translation using the same data sets that
+were used in (Finch et al., 2014). These pairs were
+chosen to include language pairs with a relatively
+monotonic translation process (English-Spanish)
+and (English-French), and also language pairs that
+required a greater amount of word re-ordering for
+</bodyText>
+<footnote confidence="0.988459">
+1http://www.ted.com
+</footnote>
+<listItem confidence="0.4514885">
+example (English-Chinese). The Chinese corpus
+was segmented using the Stanford Chinese word
+segmenter (Tseng et al., 2005) according to the
+Chinese Penn Treebank standard.
+</listItem>
+<subsectionHeader confidence="0.998311">
+3.2 Experimental Methodology
+</subsectionHeader>
+<bodyText confidence="0.99997525">
+Our stream decoder was implemented within the
+framework of the AUGUSTUS decoder, a hierar-
+chical statistical machine translation decoder (Chi-
+ang, 2007) that operates in a similar manner to the
+moses-chart decoder provided in the Moses ma-
+chine translation toolkit (Koehn et al., 2007). The
+training procedure was quite typical: 5-gram lan-
+guage models were used, trained with modified
+</bodyText>
+<page confidence="0.988669">
+1092
+</page>
+<bodyText confidence="0.95472075">
+English input stream:
+... we want to encourage a world of creators of inventors
+of contributors because this world that we live in this
+interactive world is ours ...
+</bodyText>
+<note confidence="0.272313">
+Sequence of translated segments:
+</note>
+<figureCaption confidence="0.883173444444445">
+Segment 1: queremos [we want to]
+Segment 2: animar a un mundo de [encourage a world of]
+Segment 3: creadores de inventores [creators of inventors]
+Segment 4: de colaboradores [of collaborators]
+Segment 5: porque este mundo [because this world]
+Segment 6: en el que vivimos [in which we live]
+Segment 7: este interactiva mundo [this interactive world]
+Segment 8: es la nuestra [is ours]
+Figure 4: Example translation segmentation from the English-Spanish task (Lor�� = 8 and Lorin = 4).
+</figureCaption>
+<bodyText confidence="0.994441875">
+Kneser-Ney smoothing; MERT (Och, 2003) was
+used to train the log-linear weights of the models;
+the decoding was performed with a distortion limit
+of 20 words.
+To allow the results to be directly comparable to
+those in (Finch et al., 2014), the talk level BLEU
+score (Papineni et al., 2001) was used to evaluate
+the machine translation quality in all experiments.
+</bodyText>
+<subsectionHeader confidence="0.680794">
+3.3 Results
+</subsectionHeader>
+<bodyText confidence="0.99999434375">
+The results for decoding with various values of
+the latency parameters are shown in Figure 3 for
+English-French, English-Spanish, English-Arabic,
+English-Hebrew, English-Russian and English-
+Chinese. Overall the behavior of the system was
+quite similar in character to the published results
+for phrase-based stream decoding for English-
+Spanish (Kolss et al., 2008b; Finch et al., 2014).
+The hierarchical system seemed to be more sen-
+sitive to small values of minimum latency, and
+less sensitive to larger values. The results for
+the more challenging English-Chinese pair were
+more surprising. In (Finch et al., 2014), the per-
+formance of the phrase-based decoder suffered as
+expected in comparison to pairs of European lan-
+guages. This was in line with the increase in dif-
+ficulty of the task due to word order differences.
+However, in comparison to prior results published
+on the phrase-based stream decoder, the hierarchi-
+cal stream decoder seems less affected by the dif-
+ferences between these languages; the curves are
+higher at the optimal values of minimum latency,
+and seem less sensitive to its value. The character
+of the results appears to be very similar to those
+from English-Spanish. This result is encouraging
+and suggests that the hierarchical method may be
+better suited to interpreting between the more dif-
+ficult language pairs. Figure 4 shows the segmen-
+tation given by the system with Lor�� = 8 and
+Lorin = 4, on a sequence of English words which
+is a subsequence of an unseen test stream of words
+being decoded.
+</bodyText>
+<sectionHeader confidence="0.9993" genericHeader="conclusions">
+4 Conclusion
+</sectionHeader>
+<bodyText confidence="0.99968868">
+In this paper we propose and evaluate the first hi-
+erarchical phrase-based steam decoder. The stan-
+dard hierarchical phrase-based decoding process
+generates from the source in left-to-right order,
+making it naturally suited for incremental decod-
+ing. The hierarchical decoder organizes the search
+process in a chart which can be directly exploited
+to perform stream decoding. The proposed hier-
+archical stream decoding process only searches a
+subset of the search space that is capable of gen-
+erating useful partial translation hypothesis. This
+eliminates the necessity for the forced monotonic
+step necessary in the phrase-based counterpart.
+Hypotheses that are not useful are discarded, and
+are therefore not able to compete with useful hy-
+potheses in the search. Additionally, a benefi-
+cial side-effect of the pruning of the search space
+is that decoding speed increased by a factor of
+approximately 8 over the baseline sentence-by-
+sentence decoder. Looking to the future, one im-
+portant benefit of taking a hierarchical approach is
+that the re-ordering process is made explicit, and
+in further research we wish to explore the possi-
+bility of introducing of new interpretation-oriented
+rules into the stream decoding process.
+</bodyText>
+<sectionHeader confidence="0.996511" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.998237">
+We would like to thank the reviewers for their
+valuable comments.
+</bodyText>
+<page confidence="0.987418">
+1093
+</page>
+<sectionHeader confidence="0.990176" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999942544303798">
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Computational Linguistics, 33(2):201–228.
+Andrew Finch, Xiaolin Wang, and Eiichiro Sumita.
+2014. An Exploration of Segmentation Strategies
+in Stream Decoding. In Proceedings of the Inter-
+national Workshop on Spoken Language Translation
+(IWSLT), pages 139–142, South Lake Tahoe, USA.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowa, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: open
+source toolkit for statistical machine translation. In
+Proceedings of the 45th Annual Meeting of the Asso-
+ciation for Computational Linguistics (ACL 2007):
+demo and poster sessions, pages 177–180, Prague,
+Czeck Republic, June.
+Muntsin Kolss, Stephan Vogel, and Alex Waibel.
+2008a. Stream decoding for simultaneous spoken
+language translation. In Proceedings of Interspeech,
+pages 2735–2738, Brisbane, Australia.
+Muntsin Kolss, Matthias Wölfel, Florian Kraft, Jan
+Niehues, Matthias Paulik, and Alex Waibel. 2008b.
+Simultaneous German-English lecture translation.
+In Proceedings of the International Workshop on
+Spoken Language Translation (IWSLT), pages 174–
+181, Waikiki, Hawai’i, USA.
+Evgeny Matusov, Dustin Hillard, Mathew Magimai-
+Doss, Dilek Hakkani-Tur, Mari Ostendorf, and Her-
+mann Ney. 2007. Improving speech translation with
+automatic boundary prediction. In Proceedings of
+Interspeech, pages 2449–2452, Antwerp.
+Franz J. Och. 2003. Minimum error rate training for
+statistical machine translation. In Proceedings of the
+41st Meeting of the Association for Computational
+Linguistics (ACL 2003), volume 1, pages 160–167,
+Sapporo, Japan.
+Yusuke Oda, Graham Neubig, Sakriani Sakti Tomoki
+Toda, and Satoshi Nakamura. 2014. Optimiz-
+ing segmentation strategies for simultaneous speech
+translation. In Proceedings of the 52nd Annual
+Meeting of the Association for Computational Lin-
+guistics, Baltimore, USA, June. Association for
+Computational Linguistics.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2001. BLEU: a method for automatic
+evaluation of machine translation. In Proceedings
+of the 40th Annual Meeting on Association for Com-
+putational Linguistics, pages 311–318, Morristown,
+NJ, USA. Association for Computational Linguis-
+tics.
+Maryam Siahbani, Ramtin Mehdizadeh Seraj,
+Baskaran Sankaran, and Anoop Sarkar. 2014.
+Incremental translation using hierarchichal phrase-
+based translation system. In Spoken Language
+Technology Workshop (SLT), 2014 IEEE, pages
+71–76. IEEE.
+Vivek Kumar Rangarajan Sridhar, John Chen, Srinivas
+Bangalore, Andrej Ljolje, and Rathinavelu Chengal-
+varayan. 2013. Segmentation strategies for stream-
+ing speech translation. In Proceedings of the Con-
+ference of the North American Chapter of the Asso-
+ciation for Computational Linguistics – Human Lan-
+guage Technologies (HLT-NAACL), pages 230–238,
+Atlanta, USA.
+Huihsin Tseng, Pichuan Chang, Galen Andrew, Daniel
+Jurafsky, and Christopher Manning. 2005. A condi-
+tional random field word segmenter for sighan bake-
+off 2005. In Proceedings of the Fourth SIGHAN
+Workshop on Chinese Language Processing, volume
+171. Jeju Island, Korea.
+Taro Watanabe, Hajime Tsukada, and Hideki Isozaki.
+2006. Left-to-right target generation for hierar-
+chical phrase-based translation. In Proceedings of
+the 21st International Conference on Computational
+Linguistics and the 44th Annual Meeting of the As-
+sociation for Computational Linguistics, ACL-44,
+pages 777–784, Stroudsburg, PA, USA. Association
+for Computational Linguistics.
+</reference>
+<page confidence="0.994582">
+1094
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.314120">
+<title confidence="0.999915">Hierarchical Phrase-based Stream Decoding</title>
+<author confidence="0.920578">Finch Wang Utiyama</author>
+<affiliation confidence="0.901023">Advanced Speech Translation Research and Development Promotion Advanced Translation Technology National Institute of Information and Communications</affiliation>
+<address confidence="0.409474">Kyoto,</address>
+<email confidence="0.967651">andrew.finch@nict.go.jp</email>
+<email confidence="0.967651">xiaolin.wang@nict.go.jp</email>
+<email confidence="0.967651">mutiyama@nict.go.jp</email>
+<email confidence="0.967651">eiichiro.sumita@nict.go.jp</email>
+<abstract confidence="0.996571685714286">This paper proposes a method for hierarchical phrase-based stream decoding. A stream decoder is able to take a continuous stream of tokens as input, and segments this stream into word sequences that are translated and output as a stream of target word sequences. Phrase-based stream decoding techniques have been shown to be effective as a means of simultaneous interpretation. In this paper we transfer the essence of this idea into the framework of hierarchical machine translation. The hierarchical decoding framework organizes the decoding process into a chart; this structure is naturally suited to the process of stream decoding, leading to an efficient stream decoding algorithm that searches a restricted subspace containing only relevant hypotheses. Furthermore, the decoder allows more explicit access to the word re-ordering process that is of critical importance in decoding while interpreting. The decoder was evaluated on TED talk data for English-Spanish and English-Chinese. Our results show that like the phrase-based stream decoder, the hierarchical is capable of approaching the performance of the underlying hierarchical phrase-based machine translation decoder, at useful levels of latency. In addition the hierarchical approach appeared to be robust to the difficulties presented by the more challenging English-Chinese task.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Computational Linguistics,</journal>
+<volume>33</volume>
+<issue>2</issue>
+<contexts>
+<context position="14950" citStr="Chiang, 2007" startWordPosition="2442" endWordPosition="2444">in (Finch et al., 2014). These pairs were chosen to include language pairs with a relatively monotonic translation process (English-Spanish) and (English-French), and also language pairs that required a greater amount of word re-ordering for 1http://www.ted.com example (English-Chinese). The Chinese corpus was segmented using the Stanford Chinese word segmenter (Tseng et al., 2005) according to the Chinese Penn Treebank standard. 3.2 Experimental Methodology Our stream decoder was implemented within the framework of the AUGUSTUS decoder, a hierarchical statistical machine translation decoder (Chiang, 2007) that operates in a similar manner to the moses-chart decoder provided in the Moses machine translation toolkit (Koehn et al., 2007). The training procedure was quite typical: 5-gram language models were used, trained with modified 1092 English input stream: ... we want to encourage a world of creators of inventors of contributors because this world that we live in this interactive world is ours ... Sequence of translated segments: Segment 1: queremos [we want to] Segment 2: animar a un mundo de [encourage a world of] Segment 3: creadores de inventores [creators of inventors] Segment 4: de col</context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Computational Linguistics, 33(2):201–228.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew Finch</author>
+<author>Xiaolin Wang</author>
+<author>Eiichiro Sumita</author>
+</authors>
+<title>An Exploration of Segmentation Strategies in Stream Decoding.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the International Workshop on Spoken Language Translation (IWSLT),</booktitle>
+<pages>139--142</pages>
+<location>South Lake Tahoe, USA.</location>
+<contexts>
+<context position="5236" citStr="Finch et al., 2014" startWordPosition="796" endWordPosition="799">be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between European languages, and also on English-Chinese, showed that this approach was able to maintain a high level of translation quality for practically useful levels of latency. The hierarchical decoding strategy proposed here is based on this work. 2.1 Stream Decoding The reader is referred to the original paper (Kolss et al., 2008a) for a complete description of the stream decoding process; in this section we provide a brief summary. Figure 1 depicts a stream decoding process, and the figure applies to both the original phrase-based technique, an</context>
+<context position="9091" citStr="Finch et al., 2014" startWordPosition="1439" endWordPosition="1442">quence of untranslated words after the translation is made, is at least Lmin. It is possible that no such state exists, in which case since the stream decoder is required to make an output, it must use an alternative strategy. In this alternative strategy, the stream decoder will undertake a new decoding pass in which it is forced to make a monotonic step as the first step in the decoding process. Then, a state is selected from the best hypothesis using the roll-back strategy above. This process may also fail if the monotonic step would lead to the violation of Lmin. In the implementation of (Finch et al., 2014), the decoder is permitted to violate Lmin only in this case. 1090 Current Position Figure 1: The stream decoding process. Future Tokens Translated Tokens Untranslated Tokens t1 t2 t3 t4 t5 t6 t7 t8 t9 t10 t11 t12 t13 Lmin Lmax 2.1.3 The Proposed Method Lmin Figure 2: Selecting a segmentation point during hierarchical decoding. The proposed hierarchical method attempts to capture the spirit of the phrase-based method. When forced to commit to a translation of a sequence of n words, the segmentation process is simple and guided direcly by the chart. As in the phrase-based approach, the best hyp</context>
+<context position="10682" citStr="Finch et al., 2014" startWordPosition="1715" endWordPosition="1718">hypothesis represents a translation of the first k words of the sentence that leaves at least Lmin words untranslated, and therefore the target word sequence from this partial hypothesis is output, and the associated source words are removed from the sequence of untranslated words. If this hypothesis is not able to meet the constraint, the parse tree traversal continues in the same manner: depth first along the left children until either a translation can be made, or no further traversal is possible. Following the translation of of word sequence, similar to the phrase-based stream decoder of (Finch et al., 2014), the hierarchical stream decoder proceeds from an initial state in which the language model context is preserved. The decoding process relies on an implicit application of the glue grammar to connect the past and future nodes. An visual example of this selection process is given in Figure 2. In this example, the neither the root of the tree (spanning t1t2t3t4t5tO nor its left child (spanning t1t2t3t4) are not able to generate an output since they both span sequences of words that would violate Lmin, which is 3 in this example. The left child two levels down from the root node spans only t1t2 </context>
+<context position="14360" citStr="Finch et al., 2014" startWordPosition="2361" endWordPosition="2364"> (Talk level) BLEU (%) 35 30 25 20 15 10 5 0 (Talk level) BLEU (%) 20 18 16 14 12 10 8 6 4 2 Figure 3: Stream decoding performance for several language pairs. The baseline was the same hierarchical phrase-based decoder, but decoded in the usual manner sentence-by-sentence without the stream decoding process. The baseline used the sentence segmentation provided by the corpus. 3 Experiments 3.1 Corpora In all experiments, we used the TED1 talks data sets from the IWSLT2014 campaign. We evaluated on English-to-Spanish, and English-toChinese translation using the same data sets that were used in (Finch et al., 2014). These pairs were chosen to include language pairs with a relatively monotonic translation process (English-Spanish) and (English-French), and also language pairs that required a greater amount of word re-ordering for 1http://www.ted.com example (English-Chinese). The Chinese corpus was segmented using the Stanford Chinese word segmenter (Tseng et al., 2005) according to the Chinese Penn Treebank standard. 3.2 Experimental Methodology Our stream decoder was implemented within the framework of the AUGUSTUS decoder, a hierarchical statistical machine translation decoder (Chiang, 2007) that oper</context>
+<context position="16110" citStr="Finch et al., 2014" startWordPosition="2633" endWordPosition="2636">res de inventores [creators of inventors] Segment 4: de colaboradores [of collaborators] Segment 5: porque este mundo [because this world] Segment 6: en el que vivimos [in which we live] Segment 7: este interactiva mundo [this interactive world] Segment 8: es la nuestra [is ours] Figure 4: Example translation segmentation from the English-Spanish task (Lor�� = 8 and Lorin = 4). Kneser-Ney smoothing; MERT (Och, 2003) was used to train the log-linear weights of the models; the decoding was performed with a distortion limit of 20 words. To allow the results to be directly comparable to those in (Finch et al., 2014), the talk level BLEU score (Papineni et al., 2001) was used to evaluate the machine translation quality in all experiments. 3.3 Results The results for decoding with various values of the latency parameters are shown in Figure 3 for English-French, English-Spanish, English-Arabic, English-Hebrew, English-Russian and EnglishChinese. Overall the behavior of the system was quite similar in character to the published results for phrase-based stream decoding for EnglishSpanish (Kolss et al., 2008b; Finch et al., 2014). The hierarchical system seemed to be more sensitive to small values of minimum </context>
+</contexts>
+<marker>Finch, Wang, Sumita, 2014</marker>
+<rawString>Andrew Finch, Xiaolin Wang, and Eiichiro Sumita. 2014. An Exploration of Segmentation Strategies in Stream Decoding. In Proceedings of the International Workshop on Spoken Language Translation (IWSLT), pages 139–142, South Lake Tahoe, USA.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowa</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+<author>Chris Dyer</author>
+<author>Ondrej Bojar</author>
+<author>Alexandra Constantin</author>
+<author>Evan Herbst</author>
+</authors>
+<title>Moses: open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics (ACL</booktitle>
+<pages>177--180</pages>
+<location>Prague, Czeck Republic,</location>
+<contexts>
+<context position="15082" citStr="Koehn et al., 2007" startWordPosition="2463" endWordPosition="2466">glish-Spanish) and (English-French), and also language pairs that required a greater amount of word re-ordering for 1http://www.ted.com example (English-Chinese). The Chinese corpus was segmented using the Stanford Chinese word segmenter (Tseng et al., 2005) according to the Chinese Penn Treebank standard. 3.2 Experimental Methodology Our stream decoder was implemented within the framework of the AUGUSTUS decoder, a hierarchical statistical machine translation decoder (Chiang, 2007) that operates in a similar manner to the moses-chart decoder provided in the Moses machine translation toolkit (Koehn et al., 2007). The training procedure was quite typical: 5-gram language models were used, trained with modified 1092 English input stream: ... we want to encourage a world of creators of inventors of contributors because this world that we live in this interactive world is ours ... Sequence of translated segments: Segment 1: queremos [we want to] Segment 2: animar a un mundo de [encourage a world of] Segment 3: creadores de inventores [creators of inventors] Segment 4: de colaboradores [of collaborators] Segment 5: porque este mundo [because this world] Segment 6: en el que vivimos [in which we live] Segm</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowa, Shen, Moran, Zens, Dyer, Bojar, Constantin, Herbst, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowa, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: open source toolkit for statistical machine translation. In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics (ACL 2007): demo and poster sessions, pages 177–180, Prague, Czeck Republic, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Muntsin Kolss</author>
+<author>Stephan Vogel</author>
+<author>Alex Waibel</author>
+</authors>
+<title>Stream decoding for simultaneous spoken language translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of Interspeech,</booktitle>
+<pages>2735--2738</pages>
+<location>Brisbane, Australia.</location>
+<contexts>
+<context position="5189" citStr="Kolss et al., 2008" startWordPosition="788" endWordPosition="791">sing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between European languages, and also on English-Chinese, showed that this approach was able to maintain a high level of translation quality for practically useful levels of latency. The hierarchical decoding strategy proposed here is based on this work. 2.1 Stream Decoding The reader is referred to the original paper (Kolss et al., 2008a) for a complete description of the stream decoding process; in this section we provide a brief summary. Figure 1 depicts a stream decoding process, and the figure applies </context>
+<context position="16607" citStr="Kolss et al., 2008" startWordPosition="2706" endWordPosition="2709">rmed with a distortion limit of 20 words. To allow the results to be directly comparable to those in (Finch et al., 2014), the talk level BLEU score (Papineni et al., 2001) was used to evaluate the machine translation quality in all experiments. 3.3 Results The results for decoding with various values of the latency parameters are shown in Figure 3 for English-French, English-Spanish, English-Arabic, English-Hebrew, English-Russian and EnglishChinese. Overall the behavior of the system was quite similar in character to the published results for phrase-based stream decoding for EnglishSpanish (Kolss et al., 2008b; Finch et al., 2014). The hierarchical system seemed to be more sensitive to small values of minimum latency, and less sensitive to larger values. The results for the more challenging English-Chinese pair were more surprising. In (Finch et al., 2014), the performance of the phrase-based decoder suffered as expected in comparison to pairs of European languages. This was in line with the increase in difficulty of the task due to word order differences. However, in comparison to prior results published on the phrase-based stream decoder, the hierarchical stream decoder seems less affected by th</context>
+</contexts>
+<marker>Kolss, Vogel, Waibel, 2008</marker>
+<rawString>Muntsin Kolss, Stephan Vogel, and Alex Waibel. 2008a. Stream decoding for simultaneous spoken language translation. In Proceedings of Interspeech, pages 2735–2738, Brisbane, Australia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Muntsin Kolss</author>
+<author>Matthias Wölfel</author>
+<author>Florian Kraft</author>
+<author>Jan Niehues</author>
+<author>Matthias Paulik</author>
+<author>Alex Waibel</author>
+</authors>
+<title>Simultaneous German-English lecture translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the International Workshop on Spoken Language Translation (IWSLT),</booktitle>
+<pages>174--181</pages>
+<location>Waikiki, Hawai’i, USA.</location>
+<contexts>
+<context position="5189" citStr="Kolss et al., 2008" startWordPosition="788" endWordPosition="791">sing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between European languages, and also on English-Chinese, showed that this approach was able to maintain a high level of translation quality for practically useful levels of latency. The hierarchical decoding strategy proposed here is based on this work. 2.1 Stream Decoding The reader is referred to the original paper (Kolss et al., 2008a) for a complete description of the stream decoding process; in this section we provide a brief summary. Figure 1 depicts a stream decoding process, and the figure applies </context>
+<context position="16607" citStr="Kolss et al., 2008" startWordPosition="2706" endWordPosition="2709">rmed with a distortion limit of 20 words. To allow the results to be directly comparable to those in (Finch et al., 2014), the talk level BLEU score (Papineni et al., 2001) was used to evaluate the machine translation quality in all experiments. 3.3 Results The results for decoding with various values of the latency parameters are shown in Figure 3 for English-French, English-Spanish, English-Arabic, English-Hebrew, English-Russian and EnglishChinese. Overall the behavior of the system was quite similar in character to the published results for phrase-based stream decoding for EnglishSpanish (Kolss et al., 2008b; Finch et al., 2014). The hierarchical system seemed to be more sensitive to small values of minimum latency, and less sensitive to larger values. The results for the more challenging English-Chinese pair were more surprising. In (Finch et al., 2014), the performance of the phrase-based decoder suffered as expected in comparison to pairs of European languages. This was in line with the increase in difficulty of the task due to word order differences. However, in comparison to prior results published on the phrase-based stream decoder, the hierarchical stream decoder seems less affected by th</context>
+</contexts>
+<marker>Kolss, Wölfel, Kraft, Niehues, Paulik, Waibel, 2008</marker>
+<rawString>Muntsin Kolss, Matthias Wölfel, Florian Kraft, Jan Niehues, Matthias Paulik, and Alex Waibel. 2008b. Simultaneous German-English lecture translation. In Proceedings of the International Workshop on Spoken Language Translation (IWSLT), pages 174– 181, Waikiki, Hawai’i, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Evgeny Matusov</author>
+<author>Dustin Hillard</author>
+<author>Mathew MagimaiDoss</author>
+<author>Dilek Hakkani-Tur</author>
+<author>Mari Ostendorf</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Improving speech translation with automatic boundary prediction.</title>
+<date>2007</date>
+<booktitle>In Proceedings of Interspeech,</booktitle>
+<pages>2449--2452</pages>
+<location>Antwerp.</location>
+<contexts>
+<context position="4690" citStr="Matusov et al., 2007" startWordPosition="706" endWordPosition="709">, pages 1089–1094, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. conjunctions, sentence boundaries and commas. Commas were the most effective segmentation cue in their investigation. In (Oda et al., 2014) a strategy for segmentation prior to decoding based on searching for segmentation points while optimizing the BLEU score was presented. An attractive characteristic of this approach is that the granularity of the segmentation could be controlled by choosing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between Euro</context>
+</contexts>
+<marker>Matusov, Hillard, MagimaiDoss, Hakkani-Tur, Ostendorf, Ney, 2007</marker>
+<rawString>Evgeny Matusov, Dustin Hillard, Mathew MagimaiDoss, Dilek Hakkani-Tur, Mari Ostendorf, and Hermann Ney. 2007. Improving speech translation with automatic boundary prediction. In Proceedings of Interspeech, pages 2449–2452, Antwerp.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz J Och</author>
+</authors>
+<title>Minimum error rate training for statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Meeting of the Association for Computational Linguistics (ACL</booktitle>
+<volume>1</volume>
+<pages>160--167</pages>
+<location>Sapporo, Japan.</location>
+<contexts>
+<context position="15910" citStr="Och, 2003" startWordPosition="2599" endWordPosition="2600">d that we live in this interactive world is ours ... Sequence of translated segments: Segment 1: queremos [we want to] Segment 2: animar a un mundo de [encourage a world of] Segment 3: creadores de inventores [creators of inventors] Segment 4: de colaboradores [of collaborators] Segment 5: porque este mundo [because this world] Segment 6: en el que vivimos [in which we live] Segment 7: este interactiva mundo [this interactive world] Segment 8: es la nuestra [is ours] Figure 4: Example translation segmentation from the English-Spanish task (Lor�� = 8 and Lorin = 4). Kneser-Ney smoothing; MERT (Och, 2003) was used to train the log-linear weights of the models; the decoding was performed with a distortion limit of 20 words. To allow the results to be directly comparable to those in (Finch et al., 2014), the talk level BLEU score (Papineni et al., 2001) was used to evaluate the machine translation quality in all experiments. 3.3 Results The results for decoding with various values of the latency parameters are shown in Figure 3 for English-French, English-Spanish, English-Arabic, English-Hebrew, English-Russian and EnglishChinese. Overall the behavior of the system was quite similar in character</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz J. Och. 2003. Minimum error rate training for statistical machine translation. In Proceedings of the 41st Meeting of the Association for Computational Linguistics (ACL 2003), volume 1, pages 160–167, Sapporo, Japan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yusuke Oda</author>
+<author>Graham Neubig</author>
+<author>Sakriani Sakti Tomoki Toda</author>
+<author>Satoshi Nakamura</author>
+</authors>
+<title>Optimizing segmentation strategies for simultaneous speech translation.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, USA,</location>
+<contexts>
+<context position="4317" citStr="Oda et al., 2014" startWordPosition="648" endWordPosition="651">studied both non-linguistic techniques, that included fixed-length segments, and a “hold-output” method which identifies contiguous blocks of text that do not contain alignments to words outside them, and linguistically-motivated segmentation techniques beased on segmenting on 1089 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1089–1094, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. conjunctions, sentence boundaries and commas. Commas were the most effective segmentation cue in their investigation. In (Oda et al., 2014) a strategy for segmentation prior to decoding based on searching for segmentation points while optimizing the BLEU score was presented. An attractive characteristic of this approach is that the granularity of the segmentation could be controlled by choosing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter</context>
+</contexts>
+<marker>Oda, Neubig, Toda, Nakamura, 2014</marker>
+<rawString>Yusuke Oda, Graham Neubig, Sakriani Sakti Tomoki Toda, and Satoshi Nakamura. 2014. Optimizing segmentation strategies for simultaneous speech translation. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics, Baltimore, USA, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>BLEU: a method for automatic evaluation of machine translation.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>311--318</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Morristown, NJ, USA.</location>
+<contexts>
+<context position="16161" citStr="Papineni et al., 2001" startWordPosition="2642" endWordPosition="2645">t 4: de colaboradores [of collaborators] Segment 5: porque este mundo [because this world] Segment 6: en el que vivimos [in which we live] Segment 7: este interactiva mundo [this interactive world] Segment 8: es la nuestra [is ours] Figure 4: Example translation segmentation from the English-Spanish task (Lor�� = 8 and Lorin = 4). Kneser-Ney smoothing; MERT (Och, 2003) was used to train the log-linear weights of the models; the decoding was performed with a distortion limit of 20 words. To allow the results to be directly comparable to those in (Finch et al., 2014), the talk level BLEU score (Papineni et al., 2001) was used to evaluate the machine translation quality in all experiments. 3.3 Results The results for decoding with various values of the latency parameters are shown in Figure 3 for English-French, English-Spanish, English-Arabic, English-Hebrew, English-Russian and EnglishChinese. Overall the behavior of the system was quite similar in character to the published results for phrase-based stream decoding for EnglishSpanish (Kolss et al., 2008b; Finch et al., 2014). The hierarchical system seemed to be more sensitive to small values of minimum latency, and less sensitive to larger values. The r</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2001</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2001. BLEU: a method for automatic evaluation of machine translation. In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics, pages 311–318, Morristown, NJ, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Maryam Siahbani</author>
+<author>Ramtin Mehdizadeh Seraj</author>
+<author>Baskaran Sankaran</author>
+<author>Anoop Sarkar</author>
+</authors>
+<title>Incremental translation using hierarchichal phrasebased translation system.</title>
+<date>2014</date>
+<booktitle>In Spoken Language Technology Workshop (SLT), 2014 IEEE,</booktitle>
+<pages>71--76</pages>
+<publisher>IEEE.</publisher>
+<contexts>
+<context position="4896" citStr="Siahbani et al., 2014" startWordPosition="740" endWordPosition="743"> their investigation. In (Oda et al., 2014) a strategy for segmentation prior to decoding based on searching for segmentation points while optimizing the BLEU score was presented. An attractive characteristic of this approach is that the granularity of the segmentation could be controlled by choosing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between European languages, and also on English-Chinese, showed that this approach was able to maintain a high level of translation quality for practically useful levels of latency. The hierarchical decoding strategy p</context>
+</contexts>
+<marker>Siahbani, Seraj, Sankaran, Sarkar, 2014</marker>
+<rawString>Maryam Siahbani, Ramtin Mehdizadeh Seraj, Baskaran Sankaran, and Anoop Sarkar. 2014. Incremental translation using hierarchichal phrasebased translation system. In Spoken Language Technology Workshop (SLT), 2014 IEEE, pages 71–76. IEEE.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Vivek Kumar Rangarajan Sridhar</author>
+<author>John Chen</author>
+<author>Srinivas Bangalore</author>
+<author>Andrej Ljolje</author>
+<author>Rathinavelu Chengalvarayan</author>
+</authors>
+<title>Segmentation strategies for streaming speech translation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics – Human Language Technologies (HLT-NAACL),</booktitle>
+<pages>230--238</pages>
+<location>Atlanta, USA.</location>
+<contexts>
+<context position="3693" citStr="Sridhar et al., 2013" startWordPosition="566" endWordPosition="569"> segmentation. This approach has the advantage that it can be implemented without the need to modify the machine translation decoding software. In the second type of strategy, which we will call incremental decoding, the segmentation process is performed during the decoding of the input stream. In this approach the segmentation process is able to exploit segmentation cues arising from the decoding process itself. That is to say, the order in which the decoder would prefer to generate the target sequence is taken into account. A number of diverse strategies for presegmentation were studied in (Sridhar et al., 2013). They studied both non-linguistic techniques, that included fixed-length segments, and a “hold-output” method which identifies contiguous blocks of text that do not contain alignments to words outside them, and linguistically-motivated segmentation techniques beased on segmenting on 1089 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1089–1094, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. conjunctions, sentence boundaries and commas. Commas were the most effective segmentation cue in their investigatio</context>
+</contexts>
+<marker>Sridhar, Chen, Bangalore, Ljolje, Chengalvarayan, 2013</marker>
+<rawString>Vivek Kumar Rangarajan Sridhar, John Chen, Srinivas Bangalore, Andrej Ljolje, and Rathinavelu Chengalvarayan. 2013. Segmentation strategies for streaming speech translation. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics – Human Language Technologies (HLT-NAACL), pages 230–238, Atlanta, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Huihsin Tseng</author>
+<author>Pichuan Chang</author>
+<author>Galen Andrew</author>
+<author>Daniel Jurafsky</author>
+<author>Christopher Manning</author>
+</authors>
+<title>A conditional random field word segmenter for sighan bakeoff</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Fourth SIGHAN Workshop on Chinese Language Processing,</booktitle>
+<volume>171</volume>
+<location>Island,</location>
+<contexts>
+<context position="14721" citStr="Tseng et al., 2005" startWordPosition="2409" endWordPosition="2412">d by the corpus. 3 Experiments 3.1 Corpora In all experiments, we used the TED1 talks data sets from the IWSLT2014 campaign. We evaluated on English-to-Spanish, and English-toChinese translation using the same data sets that were used in (Finch et al., 2014). These pairs were chosen to include language pairs with a relatively monotonic translation process (English-Spanish) and (English-French), and also language pairs that required a greater amount of word re-ordering for 1http://www.ted.com example (English-Chinese). The Chinese corpus was segmented using the Stanford Chinese word segmenter (Tseng et al., 2005) according to the Chinese Penn Treebank standard. 3.2 Experimental Methodology Our stream decoder was implemented within the framework of the AUGUSTUS decoder, a hierarchical statistical machine translation decoder (Chiang, 2007) that operates in a similar manner to the moses-chart decoder provided in the Moses machine translation toolkit (Koehn et al., 2007). The training procedure was quite typical: 5-gram language models were used, trained with modified 1092 English input stream: ... we want to encourage a world of creators of inventors of contributors because this world that we live in thi</context>
+</contexts>
+<marker>Tseng, Chang, Andrew, Jurafsky, Manning, 2005</marker>
+<rawString>Huihsin Tseng, Pichuan Chang, Galen Andrew, Daniel Jurafsky, and Christopher Manning. 2005. A conditional random field word segmenter for sighan bakeoff 2005. In Proceedings of the Fourth SIGHAN Workshop on Chinese Language Processing, volume 171. Jeju Island, Korea.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taro Watanabe</author>
+<author>Hajime Tsukada</author>
+<author>Hideki Isozaki</author>
+</authors>
+<title>Left-to-right target generation for hierarchical phrase-based translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th Annual Meeting of the Association for Computational Linguistics, ACL-44,</booktitle>
+<pages>777--784</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="4998" citStr="Watanabe et al., 2006" startWordPosition="755" endWordPosition="758">rching for segmentation points while optimizing the BLEU score was presented. An attractive characteristic of this approach is that the granularity of the segmentation could be controlled by choosing the number of segmentation boundaries to be inserted, prior to the segmentation process. In (Matusov et al., 2007) it was shown that the prediction and use of soft boundaries in the source language text, when used as re-ordering constraints can improve the quality of a speech translation system. (Siahbani et al., 2014) used a pre-segmenter in combination with a left-to-right hierarchical decoder (Watanabe et al., 2006) to achieve a considerably faster decoder in return for a small cost in terms of BLEU score. A phrase-based incremental decoder called the stream decoder was introduced in (Kolss et al., 2008b), and further studied in (Finch et al., 2014). Their results, conducted on translation between European languages, and also on English-Chinese, showed that this approach was able to maintain a high level of translation quality for practically useful levels of latency. The hierarchical decoding strategy proposed here is based on this work. 2.1 Stream Decoding The reader is referred to the original paper (</context>
+</contexts>
+<marker>Watanabe, Tsukada, Isozaki, 2006</marker>
+<rawString>Taro Watanabe, Hajime Tsukada, and Hideki Isozaki. 2006. Left-to-right target generation for hierarchical phrase-based translation. In Proceedings of the 21st International Conference on Computational Linguistics and the 44th Annual Meeting of the Association for Computational Linguistics, ACL-44, pages 777–784, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

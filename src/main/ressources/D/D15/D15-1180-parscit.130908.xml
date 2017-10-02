@@ -1,0 +1,1758 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000008">
+<title confidence="0.835762">
+Molding CNNs for text: non-linear, non-consecutive convolutions
+</title>
+<author confidence="0.939869">
+Tao Lei, Regina Barzilay, and Tommi Jaakkola
+</author>
+<affiliation confidence="0.969655">
+Computer Science and Artificial Intelligence Laboratory
+Massachusetts Institute of Technology
+</affiliation>
+<email confidence="0.960665">
+{taolei, regina, tommi}@csail.mit.edu
+</email>
+<sectionHeader confidence="0.994203" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999914043478261">
+The success of deep learning often de-
+rives from well-chosen operational build-
+ing blocks. In this work, we revise the
+temporal convolution operation in CNNs
+to better adapt it to text processing. In-
+stead of concatenating word representa-
+tions, we appeal to tensor algebra and use
+low-rank n-gram tensors to directly exploit
+interactions between words already at the
+convolution stage. Moreover, we extend
+the n-gram convolution to non-consecutive
+words to recognize patterns with interven-
+ing words. Through a combination of low-
+rank tensors, and pattern weighting, we
+can efficiently evaluate the resulting con-
+volution operation via dynamic program-
+ming. We test the resulting architecture on
+standard sentiment classification and news
+categorization tasks. Our model achieves
+state-of-the-art performance both in terms
+of accuracy and training speed. For in-
+stance, we obtain 51.2% accuracy on the
+fine-grained sentiment classification task.1
+</bodyText>
+<sectionHeader confidence="0.998878" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999543076923077">
+Deep learning methods and convolutional neural
+networks (CNNs) among them have become de
+facto top performing techniques across a range
+of NLP tasks such as sentiment classification,
+question-answering, and semantic parsing. As
+methods, they require only limited domain knowl-
+edge to reach respectable performance with in-
+creasing data and computation, yet permit easy
+architectural and operational variations so as to
+fine tune them to specific applications to reach top
+performance. Indeed, their success is often con-
+tingent on specific architectural and operational
+choices.
+</bodyText>
+<footnote confidence="0.983442">
+1Our code and data are available at https://github.
+com/taolei87/text_convnet
+</footnote>
+<bodyText confidence="0.999869292682927">
+CNNs for text applications make use of tem-
+poral convolution operators or filters. Similar
+to image processing, they are applied at multi-
+ple resolutions, interspersed with non-linearities
+and pooling. The convolution operation itself is
+a linear mapping over “n-gram vectors” obtained
+by concatenating consecutive word (or character)
+representations. We argue that this basic build-
+ing block can be improved in two important re-
+spects. First, the power of n-grams derives pre-
+cisely from multi-way interactions and these are
+clearly missed (initially) with linear operations on
+stacked n-gram vectors. Non-linear interactions
+within a local context have been shown to improve
+empirical performance in various tasks (Mitchell
+and Lapata, 2008; Kartsaklis et al., 2012; Socher
+et al., 2013). Second, many useful patterns are
+expressed as non-consecutive phrases, such as se-
+mantically close multi-word expressions (e.g.,“not
+that good”, “not nearly as good”). In typical
+CNNs, such expressions would have to come to-
+gether and emerge as useful patterns after several
+layers of processing.
+We propose to use a feature mapping operation
+based on tensor products instead of linear opera-
+tions on stacked vectors. This enables us to di-
+rectly tap into non-linear interactions between ad-
+jacent word feature vectors (Socher et al., 2013;
+Lei et al., 2014). To offset the accompanying
+parametric explosion we maintain a low-rank rep-
+resentation of the tensor parameters. Moreover,
+we show that this feature mapping can be applied
+to all possible non-consecutive n-grams in the se-
+quence with an exponentially decaying weight de-
+pending on the length of the span. Owing to the
+low rank representation of the tensor, this oper-
+ation can be performed efficiently in linear time
+with respect to the sequence length via dynamic
+programming. Similar to traditional convolution
+operations, our non-linear feature mapping can be
+applied successively at multiple levels.
+</bodyText>
+<page confidence="0.932199">
+1565
+</page>
+<note confidence="0.984668">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1565–1575,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.999929214285714">
+We evaluate the proposed architecture in the
+context of sentence sentiment classification and
+news categorization. On the Stanford Sentiment
+Treebank dataset, our model obtains state-of-the-
+art performance among a variety of neural net-
+works in terms of both accuracy and training
+cost. Our model achieves 51.2% accuracy on fine-
+grained classification and 88.6% on binary clas-
+sification, outperforming the best published num-
+bers obtained by a deep recursive model (Tai et al.,
+2015) and a convolutional model (Kim, 2014). On
+the Chinese news categorization task, our model
+achieves 80.0% accuracy, while the closest base-
+line achieves 79.2%.
+</bodyText>
+<sectionHeader confidence="0.999832" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999972642857143">
+Deep neural networks have recently brought about
+significant advancements in various natural lan-
+guage processing tasks, such as language model-
+ing (Bengio et al., 2003; Mikolov et al., 2010),
+sentiment analysis (Socher et al., 2013; Iyyer
+et al., 2015; Le and Zuidema, 2015), syntactic
+parsing (Collobert and Weston, 2008; Socher et
+al., 2011a; Chen and Manning, 2014) and ma-
+chine translation (Bahdanau et al., 2014; Devlin
+et al., 2014; Sutskever et al., 2014). Models
+applied in these tasks exhibit significant archi-
+tectural differences, ranging from recurrent neu-
+ral networks (Mikolov et al., 2010; Kalchbrenner
+and Blunsom, 2013) to recursive models (Pollack,
+1990; K¨uchler and Goller, 1996), and including
+convolutional neural nets (Collobert and Weston,
+2008; Collobert et al., 2011; Yih et al., 2014; Shen
+et al., 2014; Kalchbrenner et al., 2014; Zhang and
+LeCun, 2015).
+Our model most closely relates to the latter.
+Since these models have originally been developed
+for computer vision (LeCun et al., 1998), their
+application to NLP tasks introduced a number of
+modifications. For instance, Collobert et al. (2011)
+use the max-over-time pooling operation to aggre-
+gate the features over the input sequence. This
+variant has been successfully applied to seman-
+tic parsing (Yih et al., 2014) and information re-
+trieval (Shen et al., 2014; Gao et al., 2014). Kalch-
+brenner et al. (2014) instead propose (dynamic)
+k-max pooling operation for modeling sentences.
+In addition, Kim (2014) combines CNNs of dif-
+ferent filter widths and either static or fine-tuned
+word vectors. In contrast to the traditional CNN
+models, our method considers non-consecutive n-
+grams thereby expanding the representation ca-
+pacity of the model. Moreover, our model cap-
+tures non-linear interactions within n-gram snip-
+pets through the use of tensors, moving beyond
+direct linear projection operator used in standard
+CNNs. As our experiments demonstrate these ad-
+vancements result in improved performance.
+</bodyText>
+<sectionHeader confidence="0.992583" genericHeader="method">
+3 Background
+</sectionHeader>
+<bodyText confidence="0.999488333333333">
+Let x E RLxd be the input sequence such as a
+document or sentence. Here L is the length of the
+sequence and each xi E Rd is a vector represent-
+ing the ith word. The (consecutive) n-gram vector
+ending at position j is obtained by simply concate-
+nating the corresponding word vectors
+</bodyText>
+<equation confidence="0.897753">
+vj = [xj−n+1; xj−n+2; ··· ; xj]
+</equation>
+<bodyText confidence="0.997576375">
+Out-of-index words are simply set to all zeros.
+The traditional convolution operator is parame-
+terized by filter matrix m E Rndxh which can be
+thought of as n smaller filter matrices applied to
+each xi in vector vj. The operator maps each n-
+gram vector vj in the input sequence to mTvj E
+Rh so that the input sequence x is transformed into
+a sequence of feature representations,
+</bodyText>
+<equation confidence="0.994495">
+� i
+mTv1,···,mTvL E RLxh
+</equation>
+<bodyText confidence="0.999935818181818">
+The resulting feature values are often passed
+through non-linearities such as the hyper-tangent
+(element-wise) as well as aggregated or reduced
+by “sum-over” or “max-pooling” operations for
+later (similar stages) of processing.
+The overall architecture can be easily modified
+by replacing the basic n-gram vectors and the con-
+volution operation with other feature mappings.
+Indeed, we appeal to tensor algebra to introduce a
+non-linear feature mapping that operates on non-
+consecutive n-grams.
+</bodyText>
+<sectionHeader confidence="0.99055" genericHeader="method">
+4 Model
+</sectionHeader>
+<bodyText confidence="0.999491555555556">
+N-gram tensor Typical n−gram feature map-
+pings where concatenated word vectors are
+mapped linearly to feature coordinates may be in-
+sufficient to directly capture relevant information
+in the n−gram. As a remedy, we replace concate-
+nation with a tensor product. Consider a 3-gram
+(x1, x2, x3) and the corresponding tensor product
+x1 ® x2 ® x3. The tensor product is a 3-way ar-
+ray of coordinate interactions such that each ijk
+</bodyText>
+<page confidence="0.98625">
+1566
+</page>
+<bodyText confidence="0.9837145">
+entry of the tensor is given by the product of the
+corresponding coordinates of the word vectors
+</bodyText>
+<equation confidence="0.988331">
+(x1 ⊗ x2 ⊗ x3)ijk = x1i · x2j · x3k
+</equation>
+<bodyText confidence="0.998017217391304">
+Here ⊗ denotes the tensor product operator. The
+tensor product of a 2-gram analogously gives a
+two-way array or matrix x1 ⊗ x2 ∈ Rdxd. The n-
+gram tensor can be seen as a direct generalization
+of the typical concatenated vector2.
+Tensor-based feature mapping Since each n-
+gram in the sequence is now expanded into a
+high-dimensional tensor using tensor products, the
+set of filters are analogously maintained as high-
+order tensors. In other words, our filters are linear
+mappings over the higher dimensional interaction
+terms rather than the original word coordinates.
+Consider again mapping a 3-gram (x1, x2, x3)
+into a feature representation. Each filter is a 3-way
+tensor with dimensions d × d × d. The set of h fil-
+ters, denoted as T, is a 4-way tensor of dimension
+d × d × d × h, where each d3 slice of T repre-
+sents a single filter and h is the number of such
+filters, i.e., the feature dimension. The resulting
+h−dimensional feature representation z ∈ Rh for
+the 3-gram (x1, x2, x3) is obtained by multiplying
+the filter T and the 3-gram tensor as follows. The
+lth coordinate of z is given by
+</bodyText>
+<equation confidence="0.9902405">
+�zl = Tijkl · (x1 ⊗ x2 ⊗ x3)ijk
+ijk
+�= Tijkl · x1i · x2j · x3k (1)
+ijk
+</equation>
+<bodyText confidence="0.998359090909091">
+The formula is equivalent to summing over all
+the third-order polynomial interaction terms where
+tensor T stores the coefficients.
+Directly maintaining the filters as full tensors
+leads to parametric explosion. Indeed, the size of
+the tensor T (i.e. h × dn) would be too large even
+for typical low-dimensional word vectors where,
+e.g., d = 300. To this end, we assume a low-rank
+factorization of the tensor T, represented in the
+Kruskal form. Specifically, T is decomposed into
+a sum of h rank-1 tensors
+</bodyText>
+<equation confidence="0.74368">
+Pi ⊗ Qi ⊗ Ri ⊗ Oi
+</equation>
+<bodyText confidence="0.869899916666667">
+2To see this, consider word vectors with a “bias” term
+xi&apos; = [xi; 1]. The tensor product of n such vectors includes
+the concatenated vector as a subset of tensor entries but, in
+addition, contains all up to nth-order interaction terms.
+where P, Q, R ∈ Rhxd and O ∈ Rhxh are four
+smaller parameter matrices. Pi (similarly Qi, Ri
+and Oi) denotes the ith row of the matrix. Note
+that, for simplicity, we have assumed that the num-
+ber of rank-1 components in the decomposition
+is equal to the feature dimension h. Plugging
+the low-rank factorization into Eq.(1), the feature-
+mapping can be rewritten in a vector form as
+</bodyText>
+<equation confidence="0.992654">
+z = OT (Px1 O Qx2 (D Rx3) (2)
+</equation>
+<bodyText confidence="0.9917375625">
+where O is the element-wise product such that,
+e.g., (a O b)k = ak × bk for a, b ∈ Rm. Note
+that while Px1 (similarly Qx2 and Rx3) is a lin-
+ear mapping from each word x1 (similarly x2 and
+x3) into a h-dimensional feature space, higher or-
+der terms arise from the element-wise products.
+Non-consecutive n-gram features Traditional
+convolution uses consecutive n-grams in the fea-
+ture map. Non-consecutive n-grams may nev-
+ertheless be helpful since phrases such as “not
+good”, “not so good” and “not nearly as good” ex-
+press similar sentiments but involve variable spac-
+ings between the key words. Variable spacings are
+not effectively captured by fixed n-grams.
+We apply the feature-mapping in a weighted
+manner to all n-grams thereby gaining access to
+patterns such as “not ... good”. Let z[i, j, k] ∈ Rh
+denote the feature representation corresponding to
+a 3-gram (xi, xj, xk) of words in positions i, j,
+and k along the sequence. This vector is calcu-
+lated analogously to Eq.(2),
+z[i,j, k] = OT (Pxi O Qxj (D Rxk)
+We will aggregate these vectors into an
+h−dimensional feature representation at each
+position in the sequence. The idea is similar to
+neural bag-of-words models where the feature
+representation for a document or sentence is
+obtained by averaging (or summing) of all the
+word vectors. In our case, we define the aggregate
+representation z3[k] in position k as the weighted
+sum of all 3-gram feature representations ending
+at position k, i.e.,
+</bodyText>
+<equation confidence="0.97514425">
+�z3[k] = z[i,j,k] · A(k−j−1)+(j−i−1)
+iGjGk
+�= z[i,j,k] · Ak−i−2 (3)
+iGjGk
+</equation>
+<bodyText confidence="0.989393">
+where A ∈ [0, 1) is a decay factor that down-
+weights 3-grams with longer spans (i.e., 3-grams
+</bodyText>
+<equation confidence="0.7068345">
+T= h
+i=1
+</equation>
+<page confidence="0.900503">
+1567
+</page>
+<bodyText confidence="0.999704375">
+that skip more in-between words). As λ → 0
+all non-consecutive 3-grams are omitted, z3[k] =
+z[k − 2, k − 1, k], and the model acts like a
+traditional model with only consecutive n-grams.
+When λ &gt; 0, however, z3[k] is a weighted aver-
+age of many 3-grams with variable spans.
+Aggregating features via dynamic program-
+ming Directly calculating z3[·] according to
+Eq.(3) by enumerating all 3-grams would require
+O(L3) feature-mapping operations. We can, how-
+ever, evaluate the features more efficiently by re-
+lying on the associative and distributive properties
+of the feature operation in Eq.(2).
+Let f3[k] be a dynamic programming table rep-
+resenting the sum of 3-gram feature representa-
+tions before multiplying with matrix O. That is,
+</bodyText>
+<equation confidence="0.970460666666667">
+z3[k] = OTf3[k] or, equivalently,
+f3[k] = E λk−i−2 · (Pxi O Qxj (D Rxk)
+i&lt;j&lt;k
+</equation>
+<bodyText confidence="0.611793">
+We can analogously define f1[i] and f2[j] for 1-
+grams and 2-grams,
+</bodyText>
+<equation confidence="0.9810835">
+f1[i] = Pxi
+E
+f2[j] =
+i&lt;j
+</equation>
+<bodyText confidence="0.999424">
+These dynamic programming tables can be calcu-
+lated recursively according to the following for-
+mulas:
+</bodyText>
+<equation confidence="0.999883">
+f1[i] = Pxi
+s1[i] = λ · s1[i − 1] + f1[i]
+f2[j] = s1[j − 1] 0 Qxj
+s2[j] = λ · s2[j − 1] + f2[j]
+f3[k] = s2[k − 1] O Rxk
+z[k] = OT (f1[k] + f2[k] + f3[k])
+</equation>
+<bodyText confidence="0.999988727272727">
+where s1[·] and s2[·] are two auxiliary tables. The
+resulting z[·] is the sum of 1, 2, and 3-gram fea-
+tures. We found that aggregating the 1,2 and 3-
+gram features in this manner works better than us-
+ing 3-gram features alone. Overall, the n-gram
+feature aggregation can be performed in O(Ln)
+matrix multiplication/addition operations, and re-
+mains linear in the sequence length.
+The overall architecture The dynamic pro-
+gramming algorithm described above maps the
+original input sequence to a sequence of feature
+representations z = z[1 : L] ∈ RL&amp;quot;h. As in
+standard convolutional architectures, the resulting
+sequence can be used in multiple ways. One can
+directly aggregate it to a classifier or expose it to
+non-linear element-wise transformations and use
+it as an input to another sequence-to-sequence fea-
+ture mapping.
+The simplest strategy (adopted in neural bag-
+of-words models) would be to average the fea-
+ture representations and pass the resulting aver-
+aged vector directly to a softmax output unit
+</bodyText>
+<equation confidence="0.992658">
+� �
+y˜ = softmax WT¯z
+</equation>
+<bodyText confidence="0.999971578947369">
+Our architecture, as illustrated in Figure 1, in-
+cludes two additional refinements. First, we add
+a non-linear activation function after each feature
+representation, i.e. z&apos; = ReLU (z + b), where b
+is a bias vector and ReLU is the rectified linear
+unit function. Second, we stack multiple tensor-
+based feature mapping layers. That is, the input
+sequence x is first processed into a feature se-
+quence and passed through the non-linear trans-
+formation to obtain z(1). The resulting feature
+sequence z(1) is then analogously processed by
+another layer, parameterized by a different set of
+feature-mapping matrices P, · · · , O, to obtain a
+higher-level feature sequence z(2), and so on. The
+output feature representations of all these layers
+are averaged within each layer and concatenated
+as shown in Figure 1. The final prediction is there-
+fore obtained on the basis of features across the
+levels.
+</bodyText>
+<sectionHeader confidence="0.971203" genericHeader="method">
+5 Learning the Model
+</sectionHeader>
+<bodyText confidence="0.9998936">
+Following standard practices, we train our model
+by minimizing the cross-entropy error on a given
+training set. For a single training sequence x and
+the corresponding gold label y ∈ [0,1]m, the error
+is defined as,
+</bodyText>
+<equation confidence="0.996395">
+loss (x, y) = Em yl log (˜yl)
+l=1
+</equation>
+<bodyText confidence="0.920901333333333">
+where m is the number of possible output label.
+The set of model parameters (e.g. P, · · · , O
+in each layer) are updated via stochastic gradient
+</bodyText>
+<figure confidence="0.849546866666667">
+1
+L
+z¯=
+z[i]
+EL
+i=1
+λj−i−1 · (Pxi (D Qxj)
+1568
+softmax output
+input x feature maps
+low-level features high-level features
+average and
+concatenate
+...
+...
+</figure>
+<figureCaption confidence="0.999963">
+Figure 1: Illustration of the model architecture. The input is represented as a matrix where each row is a
+</figureCaption>
+<bodyText confidence="0.872635333333333">
+d-dimensional word vector. Several feature map layers (as described in Section 4) are stacked, mapping
+the input into different levels of feature representations. The features are averaged within each layer and
+then concatenated. Finally a softmax layer is applied to obtain the prediction output.
+descent using AdaGrad algorithm (Duchi et al.,
+2011).
+Initialization We initialize matrices P, Q, R
+</bodyText>
+<equation confidence="0.987735">
+� / / �
+from uniform distribution � 3/d, 3/d and
+� / / �
+similarly O � U � 3/h, 3/h . In this way,
+</equation>
+<bodyText confidence="0.999893666666667">
+each row of the matrices is an unit vector in expec-
+tation, and each rank-1 filter slice has unit variance
+as well,
+</bodyText>
+<equation confidence="0.741258">
+E [11PZ ® QZ ® RZ ® OZ112] = 1
+</equation>
+<bodyText confidence="0.999981454545455">
+In addition, the parameter matrix W in the soft-
+max output layer is initialized as zeros, and the
+bias vectors b for ReLU activation units are ini-
+tialized to a small positive constant 0.01.
+Regularization We apply two common tech-
+niques to avoid overfitting during training. First,
+we add L2 regularization to all parameter values
+with the same regularization weight. In addition,
+we randomly dropout (Hinton et al., 2012) units
+on the output feature representations z(z) at each
+level.
+</bodyText>
+<sectionHeader confidence="0.998985" genericHeader="method">
+6 Experimental Setup
+</sectionHeader>
+<bodyText confidence="0.999961526315789">
+Datasets We evaluate our model on sentence
+sentiment classification task and news categoriza-
+tion task. For sentiment classification, we use the
+Stanford Sentiment Treebank benchmark (Socher
+et al., 2013). The dataset consists of 11855
+parsed English sentences annotated at both the
+root (i.e. sentence) level and the phrase level us-
+ing 5-class fine-grained labels. We use the stan-
+dard 8544/1101/2210 split for training, develop-
+ment and testing respectively. Following previ-
+ous work, we also evaluate our model on the bi-
+nary classification variant of this benchmark, ig-
+noring all neutral sentences. The binary version
+has 6920/872/1821 sentences for training, devel-
+opment and testing.
+For the news categorization task, we evaluate on
+Sogou Chinese news corpora.3 The dataset con-
+tains 10 different news categories in total, includ-
+ing Finance, Sports, Technology and Automobile
+etc. We use 79520 documents for training, 9940
+for development and 9940 for testing. To obtain
+Chinese word boundaries, we use LTP-Cloud4, an
+open-source Chinese NLP platform.
+Baselines We implement the standard SVM
+method and the neural bag-of-words model
+NBoW as baseline methods in both tasks. To as-
+sess the proposed tensor-based feature map, we
+also implement a convolutional neural network
+model CNN by replacing our filter with traditional
+linear filter. The rest of the framework (such as
+feature averaging and concatenation) remains the
+same.
+In addition, we compare our model with a wide
+range of top-performing models on the sentence
+sentiment classification task. Most of these mod-
+els fall into either the category of recursive neural
+networks (RNNs) or the category of convolutional
+neural networks (CNNs). The recursive neural
+</bodyText>
+<footnote confidence="0.999368666666667">
+3http://www.sogou.com/labs/dl/c.html
+4http://www.ltp-cloud.com/intro/en/
+https://github.com/HIT-SCIR/ltp
+</footnote>
+<page confidence="0.899259">
+1569
+</page>
+<table confidence="0.9999366">
+Model Fine-grained Binary Time (in seconds)
+Dev Test Dev Test per epoch per 10k samples
+RNN 43.2 82.4 - -
+RNTN 45.7 85.4 1657 1939
+DRNN 49.8 86.8 431 504
+RLSTM 51.0 88.0 140 164
+DCNN 48.5 86.9 - -
+CNN-MC 47.4 88.1 2452 156
+CNN 48.8 47.2 85.7 86.2 32 37
+PVEC 48.7 87.8 - -
+DAN 48.2 86.8 73 5
+SVM 40.1 38.3 78.6 81.3 - -
+NBoW 45.1 44.5 80.7 82.0 1 1
+Ours 49.5 50.6 87.0 87.0 28 33
++ phrase labels 53.4 51.2 88.9 88.6 445 28
+</table>
+<tableCaption confidence="0.99987">
+Table 1: Comparison between our model and other baseline methods on Stanford Sentiment Treebank.
+</tableCaption>
+<bodyText confidence="0.998870433333334">
+The top block lists recursive neural network models, the second block are convolutional network mod-
+els and the third block contains other baseline methods, including the paragraph-vector model (Le and
+Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural
+bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from
+the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7
+processor.
+network baselines include standard RNN (Socher
+et al., 2011b), RNTN with a small core tensor in
+the composition function (Socher et al., 2013), the
+deep recursive model DRNN (Irsoy and Cardie,
+2014) and the most recent recursive model using
+long-short-term-memory units RLSTM (Tai et al.,
+2015). These recursive models assume the in-
+put sentences are represented as parse trees. As
+a benefit, they can readily utilize annotations at
+the phrase level. In contrast, convolutional neu-
+ral networks are trained on sequence-level, taking
+the original sequence and its label as training in-
+put. Such convolutional baselines include the dy-
+namic CNN with k-max pooling DCNN (Kalch-
+brenner et al., 2014) and the convolutional model
+with multi-channel CNN-MC by Kim (2014). To
+leverage the phrase-level annotations in the Stan-
+ford Sentiment Treebank, all phrases and the cor-
+responding labels are added as separate instances
+when training the sequence models. We follow
+this strategy and report results with and without
+phrase annotations.
+Word vectors The word vectors are pre-trained
+on much larger unannotated corpora to achieve
+better generalization given limited amount of
+training data (Turian et al., 2010). In particu-
+lar, for the English sentiment classification task,
+we use the publicly available 300-dimensional
+GloVe word vectors trained on the Common Crawl
+with 840B tokens (Pennington et al., 2014). This
+choice of word vectors follows most recent work,
+such as DAN (Iyyer et al., 2015) and RLSTM (Tai
+et al., 2015). For Chinese news categorization,
+there is no widely-used publicly available word
+vectors. Therefore, we run word2vec (Mikolov
+et al., 2013) to train 200-dimensional word vec-
+tors on the 1.6 million Chinese news articles. Both
+word vectors are normalized to unit norm (i.e.
+kwk22 = 1) and are fixed in the experiments with-
+out fine-tuning.
+Hyperparameter setting We perform an exten-
+sive search on the hyperparameters of our full
+model, our implementation of the CNN model
+(with linear filters), and the SVM baseline. For
+our model and the CNN model, the initial learn-
+ing rate of AdaGrad is fixed to 0.01 for sentiment
+classification and 0.1 for news categorization, and
+the L2 regularization weight is fixed to 1e − 5
+and 1e − 6 respectively based on preliminary runs.
+The rest of the hyperparameters are randomly cho-
+sen as follows: number of feature-mapping lay-
+ers ∈ {1, 2, 3}, n-gram order n ∈ {2, 3}, hidden
+feature dimension h ∈ {50,100, 200}, dropout
+probability ∈ {0.0, 0.1, 0.3, 0.5}, and length de-
+</bodyText>
+<page confidence="0.97808">
+1570
+</page>
+<bodyText confidence="0.999722">
+cay A E 10.0, 0.3, 0.5}. We run each config-
+uration 3 times to explore different random ini-
+tializations. For the SVM baseline, we tune L2
+regularization weight C E 10.01, 0.1,1.0,10.0},
+word cut-off frequency E 11, 2, 3, 5} (i.e. pruning
+words appearing less than this times) and n-gram
+feature order n E 11, 2, 3}.
+Implementation details The source code is
+implemented in Python using the Theano li-
+brary (Bergstra et al., 2010), a flexible lin-
+ear algebra compiler that can optimize user-
+specified computations (models) with efficient
+automatic low-level implementations, including
+(back-propagated) gradient calculation.
+</bodyText>
+<sectionHeader confidence="0.999977" genericHeader="evaluation">
+7 Results
+</sectionHeader>
+<subsectionHeader confidence="0.998838">
+7.1 Overall Performance
+</subsectionHeader>
+<bodyText confidence="0.999931161290323">
+Table 1 presents the performance of our model
+and other baseline methods on Stanford Sentiment
+Treebank benchmark. Our full model obtains the
+highest accuracy on both the development and test
+sets. Specifically, it achieves 51.2% and 88.6%
+test accuracies on fine-grained and binary tasks re-
+spectively5. As shown in Table 2, our model per-
+formance is relatively stable – it remains high ac-
+curacies with around 0.5% standard deviation un-
+der different initializations and dropout rates.
+Our full model is also several times faster than
+other top-performing models. For example, the
+convolutional model with multi-channel (CNN-
+MC) runs over 2400 seconds per training epoch.
+In contrast, our full model (with 3 feature layers)
+runs on average 28 seconds with only root labels
+and on average 445 seconds with all labels.
+Our results also show that the CNN model,
+where our feature map is replaced with traditional
+linear map, performs worse than our full model.
+This observation confirms the importance of the
+proposed non-linear, tensor-based feature map-
+ping. The CNN model also lags behind the DCNN
+and CNN-MC baselines, since the latter two pro-
+pose several advancements over standard CNN.
+Table 3 reports the results of SVM, NBoW and
+our model on the news categorization task. Since
+the dataset is much larger compared to the senti-
+ment dataset (80K documents vs. 8.5K sentences),
+the SVM method is a competitive baseline. It
+achieves 78.5% accuracy compared to 74.4% and
+</bodyText>
+<footnote confidence="0.98184">
+5Best hyperparameter configuration based on dev accu-
+racy: 3 layers, 3-gram tensors (n=3), feature dimension d =
+200 and length decay λ = 0.5
+</footnote>
+<table confidence="0.4574564">
+Dataset Accuracy
+52.5 (f0.5) %
+51.4 (f0.6) %
+88.4 (f0.3) %
+88.4 (f0.5) %
+</table>
+<tableCaption confidence="0.963009">
+Table 2: Analysis of average accuracy and stan-
+dard deviation of our model on sentiment classifi-
+cation task.
+</tableCaption>
+<table confidence="0.999489">
+Model Dev Acc. Test Acc.
+SVM (1-gram) 77.5 77.4
+SVM (2-gram) 78.2 78.0
+SVM (3-gram) 78.2 78.5
+NBoW 74.4 74.4
+CNN 79.5 79.2
+Ours 80.0 80.0
+</table>
+<tableCaption confidence="0.998763">
+Table 3: Performance of various methods on Chi-
+</tableCaption>
+<bodyText confidence="0.9185646">
+nese news categorization task. Our model obtains
+better results than the SVM, NBoW and traditional
+CNN baselines.
+79.2% obtained by the neural bag-of-words model
+and CNN model. In contrast, our model obtains
+80.0% accuracy on both the development and test
+sets, outperforming the three baselines by a 0.8%
+absolute margin. The best hyperparameter con-
+figuration in this task uses less feature layers and
+lower n-gram order (specifically, 2 layers and n =
+2) compared to the sentiment classification task.
+We hypothesize that the difference is due to the
+nature of the two tasks: the document classifica-
+tion task requires to handle less compositions or
+context interactions than sentiment analysis.
+</bodyText>
+<subsectionHeader confidence="0.999291">
+7.2 Hyperparameter Analysis
+</subsectionHeader>
+<bodyText confidence="0.988374785714286">
+We next investigate the impact of hyperparame-
+ters in our model performance. We use the mod-
+els trained on fine-grained sentiment classification
+task with only root labels.
+Number of layers We plot the fine-grained sen-
+timent classification accuracies obtained during
+hyperparameter grid search. Figure 2 illustrates
+how the number of feature layers impacts the
+model performance. As shown in the figure,
+adding higher-level features clearly improves the
+classification accuracy across various hyperpa-
+rameter settings and initializations.
+Non-consecutive n-gram features We also an-
+alyze the effect of modeling non-consecutive n-
+</bodyText>
+<figure confidence="0.985216583333333">
+Fine-grained Dev
+Binary Test
+Dev
+Test
+1571
+2
+1
+0
+-1
+-2
+the move is good
+moe is god
+2
+1
+0
+-1
+-2
+the movie is bad
+he mvie s
+2
+1
+0
+-1
+-2
+2
+1
+0
+_1
+_2
+movieoiso onot good
+ethe
+th
+r
+e movie
+is not bad
+n b
+(1) positive prediction (2) negative prediction (3) negative prediction (4) positive prediction
+it 042 #101
+(5) negative prediction (6) negative prediction (ground truth: negative)
+no movement no yuks not much of anything .
+2 0
+1
+0 2
+_1
+_2
+the movie is neither goodnor bad
+97
+2
+1
+0
+_1
+is
+_2
+2
+1
+0
+-1
+-2
+too bad , but thanks to some lovely .. .. and several fine .. , it ‘s not a total loss .
+(7) positive prediction (ground truth: positive)
+</figure>
+<figureCaption confidence="0.99540025">
+Figure 5: Example sentences and their sentiments predicted by our model trained with root labels. The
+predicted sentiment scores at each word position are plotted. Examples (1)-(5) are synthetic inputs, (6)
+and (7) are two real inputs from the test set. Our model successfully identifies negation, double negation
+and phrases with different sentiment in one sentence.
+</figureCaption>
+<figure confidence="0.93512">
+1 layer 2 layers 3 layers decay--0.0 decay--0.3 decay--0.5
+0462 04774
+51.0%
+49.4%
+47.8%
+46.1%
+44.5%
+43.5% 04723
+45.1% 46.8%
+04982 48.4% 50.0%
+</figure>
+<figureCaption confidence="0.995327">
+Figure 2: Dev accuracy (x-axis) and test accuracy
+</figureCaption>
+<bodyText confidence="0.74566775">
+0.4723 0.4606
+(y-axis) of independent runs of our model on fine-
+grained sentiment classification task. Deeper ar-
+chitectures achieve better accuracies.
+</bodyText>
+<figure confidence="0.68105912">
+04759 4661
+grams. Figure 3 splits the model accuracies ac-
+047 0458
+cording to the choice of span decaying factor A.
+.4777 .4688
+7 86
+Note when A = 0, the model applies feature ex-
+704633
+tractions to consecutive n-grams only. As shown
+0.4796 0471
+in Figure 3, this setting leads to consistent perfor-
+0 9
+mance drop. This result confirms the importance
+0.4668 0.492
+of handling non-consecutive n-gram patterns.
+0.696 04724
+Non-linear activation Finally, we verify the ef-
+0.4714 049
+fectiveness of rectified linear unit activation func-
+51.0%
+49.4%
+47.8%
+46.1%
+44.5%
+45.0% 46.3% 47.5% 48.8% 50.0%
+</figure>
+<figureCaption confidence="0.996002">
+Figure 3: Comparison of our model variations
+</figureCaption>
+<bodyText confidence="0.974744666666667">
+in sentiment classification task when considering
+consecutive n-grams only (decaying factor A = 0)
+and when considering non-consecutive n-grams
+(A &gt; 0). Modeling non-consecutive n-gram fea-
+tures leads to better performance.
+tion (ReLU) by comparing it with no activation (or
+identity activation f(x) = x). As shown in Fig-
+ure 4, our model with ReLU activation generally
+outperforms its variant without ReLU. The obser-
+vation is consistent with previous work on convo-
+lutional neural networks and other neural network
+models.
+</bodyText>
+<page confidence="0.9762">
+1572
+</page>
+<figure confidence="0.9907255">
+51.0%
+49.4%
+47.8%
+46.1%
+44.5%
+None ReLU
+</figure>
+<bodyText confidence="0.9450807">
+acknowledge the support of the U.S. Army Re-
+search Office under grant number W911NF-10-1-
+0533. The work is developed in collaboration with
+the Arabic Language Technologies (ALT) group at
+Qatar Computing Research Institute (QCRI). Any
+opinions, findings, conclusions, or recommenda-
+tions expressed in this paper are those of the au-
+thors, and do not necessarily reflect the views of
+the funding organizations.
+46.0% 47.0% 48.0% 49.0% 50.0%
+</bodyText>
+<figureCaption confidence="0.987419">
+Figure 4: Applying ReLU activation on top of
+tensor-based feature mapping leads to better per-
+formance in sentiment classification task. Runs
+with no activation are plotted as blue circles.
+</figureCaption>
+<subsectionHeader confidence="0.950853">
+7.3 Example Predictions
+</subsectionHeader>
+<bodyText confidence="0.9660021875">
+Figure 5 gives examples of input sentences and
+the corresponding predictions of our model in
+fine-grained sentiment classification. To see how
+our model captures the sentiment at different lo-
+cal context, we apply the learned softmax ac-
+tivation to the extracted features at each posi-
+tion without taking the average. That is, for
+each index i, we obtain the local sentiment p =
+softmax (WT (z(1)[i] ® z(2)[i] ® z(3)[i])). We
+plot the expected sentiment scores E2s=−2 s·p(s),
+where a score of 2 means “very positive”, 0 means
+“neutral” and -2 means “very negative”. As shown
+in the figure, our model successfully learns nega-
+tion and double negation. The model also iden-
+tifies positive and negative segments appearing in
+the sentence.
+</bodyText>
+<sectionHeader confidence="0.997499" genericHeader="conclusions">
+8 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999996">
+We proposed a feature mapping operator for con-
+volutional neural networks by modeling n-gram
+interactions based on tensor product and evaluat-
+ing all non-consecutive n-gram vectors. The as-
+sociated parameters are maintained as a low-rank
+tensor, which leads to efficient feature extraction
+via dynamic programming. The model achieves
+top performance on standard sentiment classifica-
+tion and document categorization tasks.
+</bodyText>
+<sectionHeader confidence="0.998027" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.99996">
+We thank Kai Sheng Tai, Mohit Iyyer and Jordan
+Boyd-Graber for answering questions about their
+paper. We also thank Yoon Kim, the MIT NLP
+group and the reviewers for their comments. We
+</bodyText>
+<sectionHeader confidence="0.997707" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.998354952380952">
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Ben-
+gio. 2014. Neural machine translation by jointly
+learning to align and translate. arXiv preprint
+arXiv:1409.0473.
+Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and
+Christian Janvin. 2003. A neural probabilistic lan-
+guage model. The Journal of Machine Learning Re-
+search, 3:1137–1155.
+James Bergstra, Olivier Breuleux, Fr´ed´eric Bastien,
+Pascal Lamblin, Razvan Pascanu, Guillaume Des-
+jardins, Joseph Turian, David Warde-Farley, and
+Yoshua Bengio. 2010. Theano: a CPU and
+GPU math expression compiler. In Proceedings
+of the Python for Scientific Computing Conference
+(SciPy).
+Danqi Chen and Christopher D Manning. 2014. A fast
+and accurate dependency parser using neural net-
+works. In Proceedings of the 2014 Conference on
+Empirical Methods in Natural Language Processing
+(EMNLP), pages 740–750.
+R. Collobert and J. Weston. 2008. A unified architec-
+ture for natural language processing: Deep neural
+networks with multitask learning. In International
+Conference on Machine Learning, ICML.
+Ronan Collobert, Jason Weston, L´eon Bottou, Michael
+Karlen, Koray Kavukcuoglu, and Pavel Kuksa.
+2011. Natural language processing (almost) from
+scratch. The Journal of Machine Learning Re-
+search, 12:2493–2537.
+Jacob Devlin, Rabih Zbib, Zhongqiang Huang, Thomas
+Lamar, Richard Schwartz, and John Makhoul. 2014.
+Fast and robust neural network joint models for sta-
+tistical machine translation. In 52nd Annual Meet-
+ing of the Association for Computational Linguis-
+tics.
+John Duchi, Elad Hazan, and Yoram Singer. 2011.
+Adaptive subgradient methods for online learning
+and stochastic optimization. The Journal of Ma-
+chine Learning Research, 12:2121–2159.
+Jianfeng Gao, Patrick Pantel, Michael Gamon, Xi-
+aodong He, Li Deng, and Yelong Shen. 2014. Mod-
+eling interestingness with deep neural networks. In
+</reference>
+<page confidence="0.971708">
+1573
+</page>
+<note confidence="0.9513375">
+Proceedings of the 2013 Conference on Empirical
+Methods in Natural Language Processing.
+</note>
+<reference confidence="0.999779140186916">
+Geoffrey E Hinton, Nitish Srivastava, Alex Krizhevsky,
+Ilya Sutskever, and Ruslan R Salakhutdinov. 2012.
+Improving neural networks by preventing co-
+adaptation of feature detectors. arXiv preprint
+arXiv:1207.0580.
+Ozan Irsoy and Claire Cardie. 2014. Deep recursive
+neural networks for compositionality in language.
+In Advances in Neural Information Processing Sys-
+tems.
+Mohit Iyyer, Varun Manjunatha, Jordan Boyd-Graber,
+and Hal Daume III. 2015. Deep unordered compo-
+sition rivals syntactic methods for text classification.
+In Association for Computational Linguistics.
+Nal Kalchbrenner and Phil Blunsom. 2013. Recurrent
+continuous translation models. In Proceedings of
+the 2013 Conference on Empirical Methods in Nat-
+ural Language Processing (EMNLP 2013), pages
+1700–1709.
+Nal Kalchbrenner, Edward Grefenstette, and Phil Blun-
+som. 2014. A convolutional neural network for
+modelling sentences. In Proceedings of the 52th An-
+nual Meeting of the Association for Computational
+Linguistics.
+Dimitri Kartsaklis, Mehrnoosh Sadrzadeh, and Stephen
+Pulman. 2012. A unified sentence space for
+categorical distributional-compositional semantics:
+Theory and experiments. In In Proceedings of COL-
+ING: Posters.
+Yoon Kim. 2014. Convolutional neural networks for
+sentence classification. In Proceedings of the Em-
+piricial Methods in Natural Language Processing
+(EMNLP 2014).
+Andreas K¨uchler and Christoph Goller. 1996. Induc-
+tive learning in symbolic domains using structure-
+driven recurrent neural networks. In KI-96: Ad-
+vances in Artificial Intelligence, pages 183–197.
+Quoc Le and Tomas Mikolov. 2014. Distributed repre-
+sentations of sentences and documents. In Proceed-
+ings of the 31st International Conference on Ma-
+chine Learning (ICML-14), pages 1188–1196.
+Phong Le and Willem Zuidema. 2015. Compositional
+distributional semantics with long short term mem-
+ory. In Proceedings of Joint Conference on Lexical
+and Computational Semantics (*SEM).
+Y. LeCun, L. Bottou, Y. Bengio, and P. Haffner. 1998.
+Gradient-based learning applied to document recog-
+nition. Proceedings of the IEEE, 86(11):2278–2324,
+November.
+Tao Lei, Yu Xin, Yuan Zhang, Regina Barzilay, and
+Tommi Jaakkola. 2014. Low-rank tensors for scor-
+ing dependency structures. In Proceedings of the
+52th Annual Meeting of the Association for Compu-
+tational Linguistics. Association for Computational
+Linguistics.
+Tomas Mikolov, Martin Karafi´at, Lukas Burget, Jan
+Cernock`y, and Sanjeev Khudanpur. 2010. Recur-
+rent neural network based language model. In IN-
+TERSPEECH 2010, 11th Annual Conference of the
+International Speech Communication Association,
+Makuhari, Chiba, Japan, September 26-30, 2010,
+pages 1045–1048.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey
+Dean. 2013. Efficient estimation of word represen-
+tations in vector space. CoRR.
+Jeff Mitchell and Mirella Lapata. 2008. Vector-based
+models of semantic composition. In ACL, pages
+236–244.
+Jeffrey Pennington, Richard Socher, and Christopher D
+Manning. 2014. Glove: Global vectors for word
+representation. volume 12.
+Jordan B Pollack. 1990. Recursive distributed repre-
+sentations. Artificial Intelligence, 46:77–105.
+Yelong Shen, Xiaodong He, Jianfeng Gao, Li Deng,
+and Gr´egoire Mesnil. 2014. Learning semantic rep-
+resentations using convolutional neural networks for
+web search. In Proceedings of the companion publi-
+cation of the 23rd international conference on World
+wide web companion, pages 373–374. International
+World Wide Web Conferences Steering Committee.
+Richard Socher, Cliff C. Lin, Andrew Y. Ng, and
+Christopher D. Manning. 2011a. Parsing natural
+scenes and natural language with recursive neural
+networks. In Proceedings of the 26th International
+Conference on Machine Learning (ICML).
+Richard Socher, Jeffrey Pennington, Eric H Huang,
+Andrew Y Ng, and Christopher D Manning. 2011b.
+Semi-supervised recursive autoencoders for predict-
+ing sentiment distributions. In Proceedings of the
+Conference on Empirical Methods in Natural Lan-
+guage Processing, pages 151–161. Association for
+Computational Linguistics.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D. Manning, Andrew Y. Ng,
+and Christopher Potts. 2013. Recursive deep mod-
+els for semantic compositionality over a sentiment
+treebank. In Proceedings of the 2013 Conference on
+Empirical Methods in Natural Language Process-
+ing, pages 1631–1642, October.
+Ilya Sutskever, Oriol Vinyals, and Quoc VV Le. 2014.
+Sequence to sequence learning with neural net-
+works. In Advances in Neural Information Process-
+ing Systems, pages 3104–3112.
+Kai Sheng Tai, Richard Socher, and Christopher D
+Manning. 2015. Improved semantic representations
+from tree-structured long short-term memory net-
+works. In Proceedings of the 53th Annual Meeting
+of the Association for Computational Linguistics.
+</reference>
+<page confidence="0.866484">
+1574
+</page>
+<reference confidence="0.998618636363636">
+Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010.
+Word representations: A simple and general method
+for semi-supervised learning. In Proceedings of the
+48th Annual Meeting of the Association for Compu-
+tational Linguistics, ACL ’10. Association for Com-
+putational Linguistics.
+Wen-tau Yih, Xiaodong He, and Christopher Meek.
+2014. Semantic parsing for single-relation question
+answering. In Proceedings of ACL.
+Xiang Zhang and Yann LeCun. 2015. Text understand-
+ing from scratch. arXiv preprint arXiv:1502.01710.
+</reference>
+<page confidence="0.991412">
+1575
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.245653">
+<title confidence="0.99982">Molding CNNs for text: non-linear, non-consecutive convolutions</title>
+<author confidence="0.999192">Tao Lei</author>
+<author confidence="0.999192">Regina Barzilay</author>
+<author confidence="0.999192">Tommi</author>
+<affiliation confidence="0.98769">Computer Science and Artificial Intelligence Massachusetts Institute of</affiliation>
+<address confidence="0.357203">regina,</address>
+<abstract confidence="0.999527173913043">The success of deep learning often derives from well-chosen operational building blocks. In this work, we revise the temporal convolution operation in CNNs to better adapt it to text processing. Instead of concatenating word representations, we appeal to tensor algebra and use low-rank n-gram tensors to directly exploit interactions between words already at the convolution stage. Moreover, we extend the n-gram convolution to non-consecutive words to recognize patterns with intervening words. Through a combination of lowrank tensors, and pattern weighting, we can efficiently evaluate the resulting convolution operation via dynamic programming. We test the resulting architecture on standard sentiment classification and news categorization tasks. Our model achieves state-of-the-art performance both in terms of accuracy and training speed. For instance, we obtain 51.2% accuracy on the</abstract>
+<intro confidence="0.704865">sentiment classification</intro>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Dzmitry Bahdanau</author>
+<author>Kyunghyun Cho</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473.</title>
+<date>2014</date>
+<contexts>
+<context position="5066" citStr="Bahdanau et al., 2014" startWordPosition="742" endWordPosition="745">ecursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998)</context>
+</contexts>
+<marker>Bahdanau, Cho, Bengio, 2014</marker>
+<rawString>Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. 2014. Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoshua Bengio</author>
+<author>R´ejean Ducharme</author>
+<author>Pascal Vincent</author>
+<author>Christian Janvin</author>
+</authors>
+<title>A neural probabilistic language model.</title>
+<date>2003</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<pages>3--1137</pages>
+<contexts>
+<context position="4818" citStr="Bengio et al., 2003" startWordPosition="702" endWordPosition="705">ance among a variety of neural networks in terms of both accuracy and training cost. Our model achieves 51.2% accuracy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; </context>
+</contexts>
+<marker>Bengio, Ducharme, Vincent, Janvin, 2003</marker>
+<rawString>Yoshua Bengio, R´ejean Ducharme, Pascal Vincent, and Christian Janvin. 2003. A neural probabilistic language model. The Journal of Machine Learning Research, 3:1137–1155.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Bergstra</author>
+<author>Olivier Breuleux</author>
+<author>Fr´ed´eric Bastien</author>
+<author>Pascal Lamblin</author>
+<author>Razvan Pascanu</author>
+<author>Guillaume Desjardins</author>
+<author>Joseph Turian</author>
+<author>David Warde-Farley</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Theano: a CPU and GPU math expression compiler.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Python for Scientific Computing Conference (SciPy).</booktitle>
+<contexts>
+<context position="23086" citStr="Bergstra et al., 2010" startWordPosition="3787" endWordPosition="3790">hosen as follows: number of feature-mapping layers ∈ {1, 2, 3}, n-gram order n ∈ {2, 3}, hidden feature dimension h ∈ {50,100, 200}, dropout probability ∈ {0.0, 0.1, 0.3, 0.5}, and length de1570 cay A E 10.0, 0.3, 0.5}. We run each configuration 3 times to explore different random initializations. For the SVM baseline, we tune L2 regularization weight C E 10.01, 0.1,1.0,10.0}, word cut-off frequency E 11, 2, 3, 5} (i.e. pruning words appearing less than this times) and n-gram feature order n E 11, 2, 3}. Implementation details The source code is implemented in Python using the Theano library (Bergstra et al., 2010), a flexible linear algebra compiler that can optimize userspecified computations (models) with efficient automatic low-level implementations, including (back-propagated) gradient calculation. 7 Results 7.1 Overall Performance Table 1 presents the performance of our model and other baseline methods on Stanford Sentiment Treebank benchmark. Our full model obtains the highest accuracy on both the development and test sets. Specifically, it achieves 51.2% and 88.6% test accuracies on fine-grained and binary tasks respectively5. As shown in Table 2, our model performance is relatively stable – it </context>
+</contexts>
+<marker>Bergstra, Breuleux, Bastien, Lamblin, Pascanu, Desjardins, Turian, Warde-Farley, Bengio, 2010</marker>
+<rawString>James Bergstra, Olivier Breuleux, Fr´ed´eric Bastien, Pascal Lamblin, Razvan Pascanu, Guillaume Desjardins, Joseph Turian, David Warde-Farley, and Yoshua Bengio. 2010. Theano: a CPU and GPU math expression compiler. In Proceedings of the Python for Scientific Computing Conference (SciPy).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Danqi Chen</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>A fast and accurate dependency parser using neural networks.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP),</booktitle>
+<pages>740--750</pages>
+<contexts>
+<context position="5019" citStr="Chen and Manning, 2014" startWordPosition="734" endWordPosition="737">g the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been dev</context>
+</contexts>
+<marker>Chen, Manning, 2014</marker>
+<rawString>Danqi Chen and Christopher D Manning. 2014. A fast and accurate dependency parser using neural networks. In Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 740–750.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Collobert</author>
+<author>J Weston</author>
+</authors>
+<title>A unified architecture for natural language processing: Deep neural networks with multitask learning.</title>
+<date>2008</date>
+<booktitle>In International Conference on Machine Learning, ICML.</booktitle>
+<contexts>
+<context position="4972" citStr="Collobert and Weston, 2008" startWordPosition="726" endWordPosition="729">n and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latt</context>
+</contexts>
+<marker>Collobert, Weston, 2008</marker>
+<rawString>R. Collobert and J. Weston. 2008. A unified architecture for natural language processing: Deep neural networks with multitask learning. In International Conference on Machine Learning, ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ronan Collobert</author>
+<author>Jason Weston</author>
+<author>L´eon Bottou</author>
+<author>Michael Karlen</author>
+<author>Koray Kavukcuoglu</author>
+<author>Pavel Kuksa</author>
+</authors>
+<title>Natural language processing (almost) from scratch.</title>
+<date>2011</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<pages>12--2493</pages>
+<contexts>
+<context position="5440" citStr="Collobert et al., 2011" startWordPosition="796" endWordPosition="799">; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) </context>
+</contexts>
+<marker>Collobert, Weston, Bottou, Karlen, Kavukcuoglu, Kuksa, 2011</marker>
+<rawString>Ronan Collobert, Jason Weston, L´eon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel Kuksa. 2011. Natural language processing (almost) from scratch. The Journal of Machine Learning Research, 12:2493–2537.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Devlin</author>
+<author>Rabih Zbib</author>
+<author>Zhongqiang Huang</author>
+<author>Thomas Lamar</author>
+<author>Richard Schwartz</author>
+<author>John Makhoul</author>
+</authors>
+<title>Fast and robust neural network joint models for statistical machine translation.</title>
+<date>2014</date>
+<booktitle>In 52nd Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="5087" citStr="Devlin et al., 2014" startWordPosition="746" endWordPosition="749">al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application t</context>
+</contexts>
+<marker>Devlin, Zbib, Huang, Lamar, Schwartz, Makhoul, 2014</marker>
+<rawString>Jacob Devlin, Rabih Zbib, Zhongqiang Huang, Thomas Lamar, Richard Schwartz, and John Makhoul. 2014. Fast and robust neural network joint models for statistical machine translation. In 52nd Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2011</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<pages>12--2121</pages>
+<contexts>
+<context position="16475" citStr="Duchi et al., 2011" startWordPosition="2703" endWordPosition="2706">radient 1 L z¯= z[i] EL i=1 λj−i−1 · (Pxi (D Qxj) 1568 softmax output input x feature maps low-level features high-level features average and concatenate ... ... Figure 1: Illustration of the model architecture. The input is represented as a matrix where each row is a d-dimensional word vector. Several feature map layers (as described in Section 4) are stacked, mapping the input into different levels of feature representations. The features are averaged within each layer and then concatenated. Finally a softmax layer is applied to obtain the prediction output. descent using AdaGrad algorithm (Duchi et al., 2011). Initialization We initialize matrices P, Q, R � / / � from uniform distribution � 3/d, 3/d and � / / � similarly O � U � 3/h, 3/h . In this way, each row of the matrices is an unit vector in expectation, and each rank-1 filter slice has unit variance as well, E [11PZ ® QZ ® RZ ® OZ112] = 1 In addition, the parameter matrix W in the softmax output layer is initialized as zeros, and the bias vectors b for ReLU activation units are initialized to a small positive constant 0.01. Regularization We apply two common techniques to avoid overfitting during training. First, we add L2 regularization to</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2011</marker>
+<rawString>John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. The Journal of Machine Learning Research, 12:2121–2159.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jianfeng Gao</author>
+<author>Patrick Pantel</author>
+<author>Michael Gamon</author>
+<author>Xiaodong He</author>
+<author>Li Deng</author>
+<author>Yelong Shen</author>
+</authors>
+<title>Modeling interestingness with deep neural networks. In</title>
+<date>2014</date>
+<contexts>
+<context position="6011" citStr="Gao et al., 2014" startWordPosition="890" endWordPosition="893">obert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooling operation for modeling sentences. In addition, Kim (2014) combines CNNs of different filter widths and either static or fine-tuned word vectors. In contrast to the traditional CNN models, our method considers non-consecutive ngrams thereby expanding the representation capacity of the model. Moreover, our model captures non-linear interactions within n-gram snippets through the use of tensors, moving beyond direct linear projection operator used in standard CNNs. As our experiments demonstrate these advancements result in impr</context>
+</contexts>
+<marker>Gao, Pantel, Gamon, He, Deng, Shen, 2014</marker>
+<rawString>Jianfeng Gao, Patrick Pantel, Michael Gamon, Xiaodong He, Li Deng, and Yelong Shen. 2014. Modeling interestingness with deep neural networks. In</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Geoffrey E Hinton</author>
+<author>Nitish Srivastava</author>
+<author>Alex Krizhevsky</author>
+<author>Ilya Sutskever</author>
+<author>Ruslan R Salakhutdinov</author>
+</authors>
+<title>Improving neural networks by preventing coadaptation of feature detectors. arXiv preprint arXiv:1207.0580.</title>
+<date>2012</date>
+<contexts>
+<context position="17188" citStr="Hinton et al., 2012" startWordPosition="2837" endWordPosition="2840">and � / / � similarly O � U � 3/h, 3/h . In this way, each row of the matrices is an unit vector in expectation, and each rank-1 filter slice has unit variance as well, E [11PZ ® QZ ® RZ ® OZ112] = 1 In addition, the parameter matrix W in the softmax output layer is initialized as zeros, and the bias vectors b for ReLU activation units are initialized to a small positive constant 0.01. Regularization We apply two common techniques to avoid overfitting during training. First, we add L2 regularization to all parameter values with the same regularization weight. In addition, we randomly dropout (Hinton et al., 2012) units on the output feature representations z(z) at each level. 6 Experimental Setup Datasets We evaluate our model on sentence sentiment classification task and news categorization task. For sentiment classification, we use the Stanford Sentiment Treebank benchmark (Socher et al., 2013). The dataset consists of 11855 parsed English sentences annotated at both the root (i.e. sentence) level and the phrase level using 5-class fine-grained labels. We use the standard 8544/1101/2210 split for training, development and testing respectively. Following previous work, we also evaluate our model on t</context>
+</contexts>
+<marker>Hinton, Srivastava, Krizhevsky, Sutskever, Salakhutdinov, 2012</marker>
+<rawString>Geoffrey E Hinton, Nitish Srivastava, Alex Krizhevsky, Ilya Sutskever, and Ruslan R Salakhutdinov. 2012. Improving neural networks by preventing coadaptation of feature detectors. arXiv preprint arXiv:1207.0580.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ozan Irsoy</author>
+<author>Claire Cardie</author>
+</authors>
+<title>Deep recursive neural networks for compositionality in language.</title>
+<date>2014</date>
+<booktitle>In Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="20334" citStr="Irsoy and Cardie, 2014" startWordPosition="3335" endWordPosition="3338">rk models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-MC by Kim (2014). To leverage the phrase-level annotatio</context>
+</contexts>
+<marker>Irsoy, Cardie, 2014</marker>
+<rawString>Ozan Irsoy and Claire Cardie. 2014. Deep recursive neural networks for compositionality in language. In Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mohit Iyyer</author>
+<author>Varun Manjunatha</author>
+<author>Jordan Boyd-Graber</author>
+<author>Hal Daume</author>
+</authors>
+<title>Deep unordered composition rivals syntactic methods for text classification. In Association for Computational Linguistics.</title>
+<date>2015</date>
+<contexts>
+<context position="4902" citStr="Iyyer et al., 2015" startWordPosition="716" endWordPosition="719">Our model achieves 51.2% accuracy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 20</context>
+<context position="19888" citStr="Iyyer et al., 2015" startWordPosition="3263" endWordPosition="3266">140 164 DCNN 48.5 86.9 - - CNN-MC 47.4 88.1 2452 156 CNN 48.8 47.2 85.7 86.2 32 37 PVEC 48.7 87.8 - - DAN 48.2 86.8 73 5 SVM 40.1 38.3 78.6 81.3 - - NBoW 45.1 44.5 80.7 82.0 1 1 Ours 49.5 50.6 87.0 87.0 28 33 + phrase labels 53.4 51.2 88.9 88.6 445 28 Table 1: Comparison between our model and other baseline methods on Stanford Sentiment Treebank. The top block lists recursive neural network models, the second block are convolutional network models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are re</context>
+<context position="21621" citStr="Iyyer et al., 2015" startWordPosition="3534" endWordPosition="3537">ding labels are added as separate instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl with 840B tokens (Pennington et al., 2014). This choice of word vectors follows most recent work, such as DAN (Iyyer et al., 2015) and RLSTM (Tai et al., 2015). For Chinese news categorization, there is no widely-used publicly available word vectors. Therefore, we run word2vec (Mikolov et al., 2013) to train 200-dimensional word vectors on the 1.6 million Chinese news articles. Both word vectors are normalized to unit norm (i.e. kwk22 = 1) and are fixed in the experiments without fine-tuning. Hyperparameter setting We perform an extensive search on the hyperparameters of our full model, our implementation of the CNN model (with linear filters), and the SVM baseline. For our model and the CNN model, the initial learning r</context>
+</contexts>
+<marker>Iyyer, Manjunatha, Boyd-Graber, Daume, 2015</marker>
+<rawString>Mohit Iyyer, Varun Manjunatha, Jordan Boyd-Graber, and Hal Daume III. 2015. Deep unordered composition rivals syntactic methods for text classification. In Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nal Kalchbrenner</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>Recurrent continuous translation models.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP</booktitle>
+<pages>1700--1709</pages>
+<contexts>
+<context position="5284" citStr="Kalchbrenner and Blunsom, 2013" startWordPosition="774" endWordPosition="777">eep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has b</context>
+</contexts>
+<marker>Kalchbrenner, Blunsom, 2013</marker>
+<rawString>Nal Kalchbrenner and Phil Blunsom. 2013. Recurrent continuous translation models. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing (EMNLP 2013), pages 1700–1709.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nal Kalchbrenner</author>
+<author>Edward Grefenstette</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>A convolutional neural network for modelling sentences.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52th Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="5504" citStr="Kalchbrenner et al., 2014" startWordPosition="808" endWordPosition="811">013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooling operation for modeling s</context>
+<context position="20826" citStr="Kalchbrenner et al., 2014" startWordPosition="3411" endWordPosition="3415">NTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-MC by Kim (2014). To leverage the phrase-level annotations in the Stanford Sentiment Treebank, all phrases and the corresponding labels are added as separate instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly availabl</context>
+</contexts>
+<marker>Kalchbrenner, Grefenstette, Blunsom, 2014</marker>
+<rawString>Nal Kalchbrenner, Edward Grefenstette, and Phil Blunsom. 2014. A convolutional neural network for modelling sentences. In Proceedings of the 52th Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dimitri Kartsaklis</author>
+<author>Mehrnoosh Sadrzadeh</author>
+<author>Stephen Pulman</author>
+</authors>
+<title>A unified sentence space for categorical distributional-compositional semantics: Theory and experiments.</title>
+<date>2012</date>
+<booktitle>In In Proceedings of COLING:</booktitle>
+<publisher>Posters.</publisher>
+<contexts>
+<context position="2620" citStr="Kartsaklis et al., 2012" startWordPosition="368" endWordPosition="371"> resolutions, interspersed with non-linearities and pooling. The convolution operation itself is a linear mapping over “n-gram vectors” obtained by concatenating consecutive word (or character) representations. We argue that this basic building block can be improved in two important respects. First, the power of n-grams derives precisely from multi-way interactions and these are clearly missed (initially) with linear operations on stacked n-gram vectors. Non-linear interactions within a local context have been shown to improve empirical performance in various tasks (Mitchell and Lapata, 2008; Kartsaklis et al., 2012; Socher et al., 2013). Second, many useful patterns are expressed as non-consecutive phrases, such as semantically close multi-word expressions (e.g.,“not that good”, “not nearly as good”). In typical CNNs, such expressions would have to come together and emerge as useful patterns after several layers of processing. We propose to use a feature mapping operation based on tensor products instead of linear operations on stacked vectors. This enables us to directly tap into non-linear interactions between adjacent word feature vectors (Socher et al., 2013; Lei et al., 2014). To offset the accompa</context>
+</contexts>
+<marker>Kartsaklis, Sadrzadeh, Pulman, 2012</marker>
+<rawString>Dimitri Kartsaklis, Mehrnoosh Sadrzadeh, and Stephen Pulman. 2012. A unified sentence space for categorical distributional-compositional semantics: Theory and experiments. In In Proceedings of COLING: Posters.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoon Kim</author>
+</authors>
+<title>Convolutional neural networks for sentence classification.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Empiricial Methods in Natural Language Processing (EMNLP</booktitle>
+<contexts>
+<context position="4516" citStr="Kim, 2014" startWordPosition="658" endWordPosition="659">5, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. We evaluate the proposed architecture in the context of sentence sentiment classification and news categorization. On the Stanford Sentiment Treebank dataset, our model obtains state-of-theart performance among a variety of neural networks in terms of both accuracy and training cost. Our model achieves 51.2% accuracy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Mo</context>
+<context position="6137" citStr="Kim (2014)" startWordPosition="910" endWordPosition="911">). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooling operation for modeling sentences. In addition, Kim (2014) combines CNNs of different filter widths and either static or fine-tuned word vectors. In contrast to the traditional CNN models, our method considers non-consecutive ngrams thereby expanding the representation capacity of the model. Moreover, our model captures non-linear interactions within n-gram snippets through the use of tensors, moving beyond direct linear projection operator used in standard CNNs. As our experiments demonstrate these advancements result in improved performance. 3 Background Let x E RLxd be the input sequence such as a document or sentence. Here L is the length of the </context>
+<context position="20894" citStr="Kim (2014)" startWordPosition="3424" endWordPosition="3425">deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-MC by Kim (2014). To leverage the phrase-level annotations in the Stanford Sentiment Treebank, all phrases and the corresponding labels are added as separate instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl wit</context>
+</contexts>
+<marker>Kim, 2014</marker>
+<rawString>Yoon Kim. 2014. Convolutional neural networks for sentence classification. In Proceedings of the Empiricial Methods in Natural Language Processing (EMNLP 2014).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas K¨uchler</author>
+<author>Christoph Goller</author>
+</authors>
+<title>Inductive learning in symbolic domains using structuredriven recurrent neural networks.</title>
+<date>1996</date>
+<booktitle>In KI-96: Advances in Artificial Intelligence,</booktitle>
+<pages>183--197</pages>
+<marker>K¨uchler, Goller, 1996</marker>
+<rawString>Andreas K¨uchler and Christoph Goller. 1996. Inductive learning in symbolic domains using structuredriven recurrent neural networks. In KI-96: Advances in Artificial Intelligence, pages 183–197.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Quoc Le and Tomas Mikolov</author>
+</authors>
+<title>Distributed representations of sentences and documents.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 31st International Conference on Machine Learning (ICML-14),</booktitle>
+<pages>1188--1196</pages>
+<contexts>
+<context position="19833" citStr="Mikolov, 2014" startWordPosition="3256" endWordPosition="3257"> 1657 1939 DRNN 49.8 86.8 431 504 RLSTM 51.0 88.0 140 164 DCNN 48.5 86.9 - - CNN-MC 47.4 88.1 2452 156 CNN 48.8 47.2 85.7 86.2 32 37 PVEC 48.7 87.8 - - DAN 48.2 86.8 73 5 SVM 40.1 38.3 78.6 81.3 - - NBoW 45.1 44.5 80.7 82.0 1 1 Ours 49.5 50.6 87.0 87.0 28 33 + phrase labels 53.4 51.2 88.9 88.6 445 28 Table 1: Comparison between our model and other baseline methods on Stanford Sentiment Treebank. The top block lists recursive neural network models, the second block are convolutional network models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). T</context>
+</contexts>
+<marker>Mikolov, 2014</marker>
+<rawString>Quoc Le and Tomas Mikolov. 2014. Distributed representations of sentences and documents. In Proceedings of the 31st International Conference on Machine Learning (ICML-14), pages 1188–1196.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Phong Le and Willem Zuidema</author>
+</authors>
+<title>Compositional distributional semantics with long short term memory.</title>
+<date>2015</date>
+<booktitle>In Proceedings of Joint Conference on Lexical and Computational Semantics (*SEM).</booktitle>
+<contexts>
+<context position="4925" citStr="Zuidema, 2015" startWordPosition="722" endWordPosition="723">curacy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 20</context>
+</contexts>
+<marker>Zuidema, 2015</marker>
+<rawString>Phong Le and Willem Zuidema. 2015. Compositional distributional semantics with long short term memory. In Proceedings of Joint Conference on Lexical and Computational Semantics (*SEM).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y LeCun</author>
+<author>L Bottou</author>
+<author>Y Bengio</author>
+<author>P Haffner</author>
+</authors>
+<title>Gradient-based learning applied to document recognition.</title>
+<date>1998</date>
+<booktitle>Proceedings of the IEEE,</booktitle>
+<volume>86</volume>
+<issue>11</issue>
+<contexts>
+<context position="5666" citStr="LeCun et al., 1998" startWordPosition="834" endWordPosition="837">hdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooling operation for modeling sentences. In addition, Kim (2014) combines CNNs of different filter widths and either static or fine-tuned word vectors. In contrast to the traditional CNN models</context>
+</contexts>
+<marker>LeCun, Bottou, Bengio, Haffner, 1998</marker>
+<rawString>Y. LeCun, L. Bottou, Y. Bengio, and P. Haffner. 1998. Gradient-based learning applied to document recognition. Proceedings of the IEEE, 86(11):2278–2324, November.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tao Lei</author>
+<author>Yu Xin</author>
+<author>Yuan Zhang</author>
+<author>Regina Barzilay</author>
+<author>Tommi Jaakkola</author>
+</authors>
+<title>Low-rank tensors for scoring dependency structures.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52th Annual Meeting of the Association for Computational Linguistics. Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="3197" citStr="Lei et al., 2014" startWordPosition="460" endWordPosition="463">nd Lapata, 2008; Kartsaklis et al., 2012; Socher et al., 2013). Second, many useful patterns are expressed as non-consecutive phrases, such as semantically close multi-word expressions (e.g.,“not that good”, “not nearly as good”). In typical CNNs, such expressions would have to come together and emerge as useful patterns after several layers of processing. We propose to use a feature mapping operation based on tensor products instead of linear operations on stacked vectors. This enables us to directly tap into non-linear interactions between adjacent word feature vectors (Socher et al., 2013; Lei et al., 2014). To offset the accompanying parametric explosion we maintain a low-rank representation of the tensor parameters. Moreover, we show that this feature mapping can be applied to all possible non-consecutive n-grams in the sequence with an exponentially decaying weight depending on the length of the span. Owing to the low rank representation of the tensor, this operation can be performed efficiently in linear time with respect to the sequence length via dynamic programming. Similar to traditional convolution operations, our non-linear feature mapping can be applied successively at multiple levels</context>
+</contexts>
+<marker>Lei, Xin, Zhang, Barzilay, Jaakkola, 2014</marker>
+<rawString>Tao Lei, Yu Xin, Yuan Zhang, Regina Barzilay, and Tommi Jaakkola. 2014. Low-rank tensors for scoring dependency structures. In Proceedings of the 52th Annual Meeting of the Association for Computational Linguistics. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Martin Karafi´at</author>
+<author>Lukas Burget</author>
+<author>Jan Cernock`y</author>
+<author>Sanjeev Khudanpur</author>
+</authors>
+<title>Recurrent neural network based language model.</title>
+<date>2010</date>
+<booktitle>In INTERSPEECH 2010, 11th Annual Conference of the International Speech Communication Association,</booktitle>
+<pages>1045--1048</pages>
+<location>Makuhari, Chiba, Japan,</location>
+<marker>Mikolov, Karafi´at, Burget, Cernock`y, Khudanpur, 2010</marker>
+<rawString>Tomas Mikolov, Martin Karafi´at, Lukas Burget, Jan Cernock`y, and Sanjeev Khudanpur. 2010. Recurrent neural network based language model. In INTERSPEECH 2010, 11th Annual Conference of the International Speech Communication Association, Makuhari, Chiba, Japan, September 26-30, 2010, pages 1045–1048.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Kai Chen</author>
+<author>Greg Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Efficient estimation of word representations in vector space.</title>
+<date>2013</date>
+<publisher>CoRR.</publisher>
+<contexts>
+<context position="21791" citStr="Mikolov et al., 2013" startWordPosition="3560" endWordPosition="3563">ors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl with 840B tokens (Pennington et al., 2014). This choice of word vectors follows most recent work, such as DAN (Iyyer et al., 2015) and RLSTM (Tai et al., 2015). For Chinese news categorization, there is no widely-used publicly available word vectors. Therefore, we run word2vec (Mikolov et al., 2013) to train 200-dimensional word vectors on the 1.6 million Chinese news articles. Both word vectors are normalized to unit norm (i.e. kwk22 = 1) and are fixed in the experiments without fine-tuning. Hyperparameter setting We perform an extensive search on the hyperparameters of our full model, our implementation of the CNN model (with linear filters), and the SVM baseline. For our model and the CNN model, the initial learning rate of AdaGrad is fixed to 0.01 for sentiment classification and 0.1 for news categorization, and the L2 regularization weight is fixed to 1e − 5 and 1e − 6 respectively </context>
+</contexts>
+<marker>Mikolov, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Efficient estimation of word representations in vector space. CoRR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeff Mitchell</author>
+<author>Mirella Lapata</author>
+</authors>
+<title>Vector-based models of semantic composition.</title>
+<date>2008</date>
+<booktitle>In ACL,</booktitle>
+<pages>236--244</pages>
+<contexts>
+<context position="2595" citStr="Mitchell and Lapata, 2008" startWordPosition="364" endWordPosition="367">hey are applied at multiple resolutions, interspersed with non-linearities and pooling. The convolution operation itself is a linear mapping over “n-gram vectors” obtained by concatenating consecutive word (or character) representations. We argue that this basic building block can be improved in two important respects. First, the power of n-grams derives precisely from multi-way interactions and these are clearly missed (initially) with linear operations on stacked n-gram vectors. Non-linear interactions within a local context have been shown to improve empirical performance in various tasks (Mitchell and Lapata, 2008; Kartsaklis et al., 2012; Socher et al., 2013). Second, many useful patterns are expressed as non-consecutive phrases, such as semantically close multi-word expressions (e.g.,“not that good”, “not nearly as good”). In typical CNNs, such expressions would have to come together and emerge as useful patterns after several layers of processing. We propose to use a feature mapping operation based on tensor products instead of linear operations on stacked vectors. This enables us to directly tap into non-linear interactions between adjacent word feature vectors (Socher et al., 2013; Lei et al., 201</context>
+</contexts>
+<marker>Mitchell, Lapata, 2008</marker>
+<rawString>Jeff Mitchell and Mirella Lapata. 2008. Vector-based models of semantic composition. In ACL, pages 236–244.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Pennington</author>
+<author>Richard Socher</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Glove: Global vectors for word representation.</title>
+<date>2014</date>
+<volume>12</volume>
+<contexts>
+<context position="21533" citStr="Pennington et al., 2014" startWordPosition="3518" endWordPosition="3521">he phrase-level annotations in the Stanford Sentiment Treebank, all phrases and the corresponding labels are added as separate instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl with 840B tokens (Pennington et al., 2014). This choice of word vectors follows most recent work, such as DAN (Iyyer et al., 2015) and RLSTM (Tai et al., 2015). For Chinese news categorization, there is no widely-used publicly available word vectors. Therefore, we run word2vec (Mikolov et al., 2013) to train 200-dimensional word vectors on the 1.6 million Chinese news articles. Both word vectors are normalized to unit norm (i.e. kwk22 = 1) and are fixed in the experiments without fine-tuning. Hyperparameter setting We perform an extensive search on the hyperparameters of our full model, our implementation of the CNN model (with linear</context>
+</contexts>
+<marker>Pennington, Socher, Manning, 2014</marker>
+<rawString>Jeffrey Pennington, Richard Socher, and Christopher D Manning. 2014. Glove: Global vectors for word representation. volume 12.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jordan B Pollack</author>
+</authors>
+<title>Recursive distributed representations.</title>
+<date>1990</date>
+<journal>Artificial Intelligence,</journal>
+<pages>46--77</pages>
+<contexts>
+<context position="5319" citStr="Pollack, 1990" startWordPosition="781" endWordPosition="782">ficant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semanti</context>
+</contexts>
+<marker>Pollack, 1990</marker>
+<rawString>Jordan B Pollack. 1990. Recursive distributed representations. Artificial Intelligence, 46:77–105.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yelong Shen</author>
+<author>Xiaodong He</author>
+<author>Jianfeng Gao</author>
+<author>Li Deng</author>
+<author>Gr´egoire Mesnil</author>
+</authors>
+<title>Learning semantic representations using convolutional neural networks for web search.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the companion publication of the 23rd international conference on World wide web companion,</booktitle>
+<pages>373--374</pages>
+<institution>International World Wide Web Conferences Steering Committee.</institution>
+<contexts>
+<context position="5477" citStr="Shen et al., 2014" startWordPosition="804" endWordPosition="807">s (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooli</context>
+</contexts>
+<marker>Shen, He, Gao, Deng, Mesnil, 2014</marker>
+<rawString>Yelong Shen, Xiaodong He, Jianfeng Gao, Li Deng, and Gr´egoire Mesnil. 2014. Learning semantic representations using convolutional neural networks for web search. In Proceedings of the companion publication of the 23rd international conference on World wide web companion, pages 373–374. International World Wide Web Conferences Steering Committee.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Cliff C Lin</author>
+<author>Andrew Y Ng</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Parsing natural scenes and natural language with recursive neural networks.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 26th International Conference on Machine Learning (ICML).</booktitle>
+<contexts>
+<context position="4993" citStr="Socher et al., 2011" startWordPosition="730" endWordPosition="733">fication, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these model</context>
+<context position="20195" citStr="Socher et al., 2011" startWordPosition="3312" endWordPosition="3315">e methods on Stanford Sentiment Treebank. The top block lists recursive neural network models, the second block are convolutional network models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling D</context>
+</contexts>
+<marker>Socher, Lin, Ng, Manning, 2011</marker>
+<rawString>Richard Socher, Cliff C. Lin, Andrew Y. Ng, and Christopher D. Manning. 2011a. Parsing natural scenes and natural language with recursive neural networks. In Proceedings of the 26th International Conference on Machine Learning (ICML).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Jeffrey Pennington</author>
+<author>Eric H Huang</author>
+<author>Andrew Y Ng</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Semi-supervised recursive autoencoders for predicting sentiment distributions.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>151--161</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4993" citStr="Socher et al., 2011" startWordPosition="730" endWordPosition="733">fication, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these model</context>
+<context position="20195" citStr="Socher et al., 2011" startWordPosition="3312" endWordPosition="3315">e methods on Stanford Sentiment Treebank. The top block lists recursive neural network models, the second block are convolutional network models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling D</context>
+</contexts>
+<marker>Socher, Pennington, Huang, Ng, Manning, 2011</marker>
+<rawString>Richard Socher, Jeffrey Pennington, Eric H Huang, Andrew Y Ng, and Christopher D Manning. 2011b. Semi-supervised recursive autoencoders for predicting sentiment distributions. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 151–161. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Alex Perelygin</author>
+<author>Jean Wu</author>
+<author>Jason Chuang</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+<author>Christopher Potts</author>
+</authors>
+<title>Recursive deep models for semantic compositionality over a sentiment treebank.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1631--1642</pages>
+<contexts>
+<context position="2642" citStr="Socher et al., 2013" startWordPosition="372" endWordPosition="375">d with non-linearities and pooling. The convolution operation itself is a linear mapping over “n-gram vectors” obtained by concatenating consecutive word (or character) representations. We argue that this basic building block can be improved in two important respects. First, the power of n-grams derives precisely from multi-way interactions and these are clearly missed (initially) with linear operations on stacked n-gram vectors. Non-linear interactions within a local context have been shown to improve empirical performance in various tasks (Mitchell and Lapata, 2008; Kartsaklis et al., 2012; Socher et al., 2013). Second, many useful patterns are expressed as non-consecutive phrases, such as semantically close multi-word expressions (e.g.,“not that good”, “not nearly as good”). In typical CNNs, such expressions would have to come together and emerge as useful patterns after several layers of processing. We propose to use a feature mapping operation based on tensor products instead of linear operations on stacked vectors. This enables us to directly tap into non-linear interactions between adjacent word feature vectors (Socher et al., 2013; Lei et al., 2014). To offset the accompanying parametric explo</context>
+<context position="4882" citStr="Socher et al., 2013" startWordPosition="712" endWordPosition="715">y and training cost. Our model achieves 51.2% accuracy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kal</context>
+<context position="17477" citStr="Socher et al., 2013" startWordPosition="2879" endWordPosition="2882">and the bias vectors b for ReLU activation units are initialized to a small positive constant 0.01. Regularization We apply two common techniques to avoid overfitting during training. First, we add L2 regularization to all parameter values with the same regularization weight. In addition, we randomly dropout (Hinton et al., 2012) units on the output feature representations z(z) at each level. 6 Experimental Setup Datasets We evaluate our model on sentence sentiment classification task and news categorization task. For sentiment classification, we use the Stanford Sentiment Treebank benchmark (Socher et al., 2013). The dataset consists of 11855 parsed English sentences annotated at both the root (i.e. sentence) level and the phrase level using 5-class fine-grained labels. We use the standard 8544/1101/2210 split for training, development and testing respectively. Following previous work, we also evaluate our model on the binary classification variant of this benchmark, ignoring all neutral sentences. The binary version has 6920/872/1821 sentences for training, development and testing. For the news categorization task, we evaluate on Sogou Chinese news corpora.3 The dataset contains 10 different news ca</context>
+<context position="20278" citStr="Socher et al., 2013" startWordPosition="3326" endWordPosition="3329">work models, the second block are convolutional network models and the third block contains other baseline methods, including the paragraph-vector model (Le and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-</context>
+</contexts>
+<marker>Socher, Perelygin, Wu, Chuang, Manning, Ng, Potts, 2013</marker>
+<rawString>Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D. Manning, Andrew Y. Ng, and Christopher Potts. 2013. Recursive deep models for semantic compositionality over a sentiment treebank. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1631–1642, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ilya Sutskever</author>
+<author>Oriol Vinyals</author>
+<author>Quoc Le</author>
+</authors>
+<title>Sequence to sequence learning with neural networks.</title>
+<date>2014</date>
+<booktitle>In Advances in Neural Information Processing Systems,</booktitle>
+<pages>3104--3112</pages>
+<contexts>
+<context position="5112" citStr="Sutskever et al., 2014" startWordPosition="750" endWordPosition="753">olutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a </context>
+</contexts>
+<marker>Sutskever, Vinyals, Le, 2014</marker>
+<rawString>Ilya Sutskever, Oriol Vinyals, and Quoc VV Le. 2014. Sequence to sequence learning with neural networks. In Advances in Neural Information Processing Systems, pages 3104–3112.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kai Sheng Tai</author>
+<author>Richard Socher</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Improved semantic representations from tree-structured long short-term memory networks.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53th Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="4478" citStr="Tai et al., 2015" startWordPosition="650" endWordPosition="653">n Natural Language Processing, pages 1565–1575, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. We evaluate the proposed architecture in the context of sentence sentiment classification and news categorization. On the Stanford Sentiment Treebank dataset, our model obtains state-of-theart performance among a variety of neural networks in terms of both accuracy and training cost. Our model achieves 51.2% accuracy on finegrained classification and 88.6% on binary classification, outperforming the best published numbers obtained by a deep recursive model (Tai et al., 2015) and a convolutional model (Kim, 2014). On the Chinese news categorization task, our model achieves 80.0% accuracy, while the closest baseline achieves 79.2%. 2 Related Work Deep neural networks have recently brought about significant advancements in various natural language processing tasks, such as language modeling (Bengio et al., 2003; Mikolov et al., 2010), sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et </context>
+<context position="20430" citStr="Tai et al., 2015" startWordPosition="3349" endWordPosition="3352">e and Mikolov, 2014), the deep averaging network model (Iyyer et al., 2015) and our implementation of neural bag-of-words. The training time of baseline methods is taken from (Iyyer et al., 2015) or directly from the authors. For our implementations, timings were performed on a single core of a 2.6GHz Intel i7 processor. network baselines include standard RNN (Socher et al., 2011b), RNTN with a small core tensor in the composition function (Socher et al., 2013), the deep recursive model DRNN (Irsoy and Cardie, 2014) and the most recent recursive model using long-short-term-memory units RLSTM (Tai et al., 2015). These recursive models assume the input sentences are represented as parse trees. As a benefit, they can readily utilize annotations at the phrase level. In contrast, convolutional neural networks are trained on sequence-level, taking the original sequence and its label as training input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-MC by Kim (2014). To leverage the phrase-level annotations in the Stanford Sentiment Treebank, all phrases and the corresponding labels are added as sep</context>
+<context position="21650" citStr="Tai et al., 2015" startWordPosition="3540" endWordPosition="3543">te instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl with 840B tokens (Pennington et al., 2014). This choice of word vectors follows most recent work, such as DAN (Iyyer et al., 2015) and RLSTM (Tai et al., 2015). For Chinese news categorization, there is no widely-used publicly available word vectors. Therefore, we run word2vec (Mikolov et al., 2013) to train 200-dimensional word vectors on the 1.6 million Chinese news articles. Both word vectors are normalized to unit norm (i.e. kwk22 = 1) and are fixed in the experiments without fine-tuning. Hyperparameter setting We perform an extensive search on the hyperparameters of our full model, our implementation of the CNN model (with linear filters), and the SVM baseline. For our model and the CNN model, the initial learning rate of AdaGrad is fixed to 0.</context>
+</contexts>
+<marker>Tai, Socher, Manning, 2015</marker>
+<rawString>Kai Sheng Tai, Richard Socher, and Christopher D Manning. 2015. Improved semantic representations from tree-structured long short-term memory networks. In Proceedings of the 53th Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joseph Turian</author>
+<author>Lev Ratinov</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Word representations: A simple and general method for semi-supervised learning.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 48th Annual Meeting of the Association for Computational Linguistics, ACL ’10. Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="21334" citStr="Turian et al., 2010" startWordPosition="3488" endWordPosition="3491"> input. Such convolutional baselines include the dynamic CNN with k-max pooling DCNN (Kalchbrenner et al., 2014) and the convolutional model with multi-channel CNN-MC by Kim (2014). To leverage the phrase-level annotations in the Stanford Sentiment Treebank, all phrases and the corresponding labels are added as separate instances when training the sequence models. We follow this strategy and report results with and without phrase annotations. Word vectors The word vectors are pre-trained on much larger unannotated corpora to achieve better generalization given limited amount of training data (Turian et al., 2010). In particular, for the English sentiment classification task, we use the publicly available 300-dimensional GloVe word vectors trained on the Common Crawl with 840B tokens (Pennington et al., 2014). This choice of word vectors follows most recent work, such as DAN (Iyyer et al., 2015) and RLSTM (Tai et al., 2015). For Chinese news categorization, there is no widely-used publicly available word vectors. Therefore, we run word2vec (Mikolov et al., 2013) to train 200-dimensional word vectors on the 1.6 million Chinese news articles. Both word vectors are normalized to unit norm (i.e. kwk22 = 1)</context>
+</contexts>
+<marker>Turian, Ratinov, Bengio, 2010</marker>
+<rawString>Joseph Turian, Lev Ratinov, and Yoshua Bengio. 2010. Word representations: A simple and general method for semi-supervised learning. In Proceedings of the 48th Annual Meeting of the Association for Computational Linguistics, ACL ’10. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wen-tau Yih</author>
+<author>Xiaodong He</author>
+<author>Christopher Meek</author>
+</authors>
+<title>Semantic parsing for single-relation question answering.</title>
+<date>2014</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="5458" citStr="Yih et al., 2014" startWordPosition="800" endWordPosition="803"> sentiment analysis (Socher et al., 2013; Iyyer et al., 2015; Le and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (d</context>
+</contexts>
+<marker>Yih, He, Meek, 2014</marker>
+<rawString>Wen-tau Yih, Xiaodong He, and Christopher Meek. 2014. Semantic parsing for single-relation question answering. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiang Zhang</author>
+<author>Yann LeCun</author>
+</authors>
+<title>Text understanding from scratch. arXiv preprint arXiv:1502.01710.</title>
+<date>2015</date>
+<contexts>
+<context position="5528" citStr="Zhang and LeCun, 2015" startWordPosition="812" endWordPosition="815"> and Zuidema, 2015), syntactic parsing (Collobert and Weston, 2008; Socher et al., 2011a; Chen and Manning, 2014) and machine translation (Bahdanau et al., 2014; Devlin et al., 2014; Sutskever et al., 2014). Models applied in these tasks exhibit significant architectural differences, ranging from recurrent neural networks (Mikolov et al., 2010; Kalchbrenner and Blunsom, 2013) to recursive models (Pollack, 1990; K¨uchler and Goller, 1996), and including convolutional neural nets (Collobert and Weston, 2008; Collobert et al., 2011; Yih et al., 2014; Shen et al., 2014; Kalchbrenner et al., 2014; Zhang and LeCun, 2015). Our model most closely relates to the latter. Since these models have originally been developed for computer vision (LeCun et al., 1998), their application to NLP tasks introduced a number of modifications. For instance, Collobert et al. (2011) use the max-over-time pooling operation to aggregate the features over the input sequence. This variant has been successfully applied to semantic parsing (Yih et al., 2014) and information retrieval (Shen et al., 2014; Gao et al., 2014). Kalchbrenner et al. (2014) instead propose (dynamic) k-max pooling operation for modeling sentences. In addition, K</context>
+</contexts>
+<marker>Zhang, LeCun, 2015</marker>
+<rawString>Xiang Zhang and Yann LeCun. 2015. Text understanding from scratch. arXiv preprint arXiv:1502.01710.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

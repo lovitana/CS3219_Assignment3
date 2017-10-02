@@ -1,0 +1,946 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.001741">
+<title confidence="0.986699">
+Efficient Hyper-parameter Optimization for NLP Applications
+</title>
+<author confidence="0.86418">
+Lidan Wang1, Minwei Feng1, Bowen Zhou1, Bing Xiang1, Sridhar Mahadevan2,1
+</author>
+<note confidence="0.4973785">
+1IBM Watson, T. J. Watson Research Center, NY
+2College of Information and Computer Sciences, U. of Massachusetts Amherst, MA
+</note>
+<email confidence="0.924891">
+twangli,mfeng,zhou,bingxial@us.ibm.com
+mahadeva@cs.umass.edu
+</email>
+<sectionHeader confidence="0.993874" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999879619047619">
+Hyper-parameter optimization is an im-
+portant problem in natural language pro-
+cessing (NLP) and machine learning. Re-
+cently, a group of studies has focused on
+using sequential Bayesian Optimization to
+solve this problem, which aims to reduce
+the number of iterations and trials required
+during the optimization process. In this
+paper, we explore this problem from a dif-
+ferent angle, and propose a multi-stage
+hyper-parameter optimization that breaks
+the problem into multiple stages with in-
+creasingly amounts of data. Early stage
+provides fast estimates of good candidates
+which are used to initialize later stages for
+better performance and speed. We demon-
+strate the utility of this new algorithm by
+evaluating its speed and accuracy against
+state-of-the-art Bayesian Optimization al-
+gorithms on classification and prediction
+tasks.
+</bodyText>
+<sectionHeader confidence="0.998991" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.998908771929825">
+Hyper-parameter optimization has been receiv-
+ing an increasingly amount of attention in the
+NLP and machine learning communities (Thorn-
+ton et al., 2013; Komer et al., 2014; Bergstra et
+al., 2011; Bardenet et al., 2013; Zheng et al.,
+2013). The performance of learning algorithms
+depend on the correct instantiations of their hyper-
+parameters, ranging from algorithms such as lo-
+gistic regression and support vector machines, to
+more complex model families such as boosted
+regression trees and neural networks. While
+hyper-parameter settings often make the differ-
+ence between mediocre and state-of-the-art per-
+formance (Hutter et al., 2014), it is typically very
+time-consuming to find an optimal setting due to
+the complexity of model classes, and the amount
+of training data available for tuning. The issue
+is particularly important in large-scale problems
+where the size of the data can be so large that even
+a quadratic running time is prohibitively large.
+Recently several sequential Bayesian Op-
+timization methods have been proposed for
+hyper-parameter search (Snoek et al., 2012;
+Eggensperger et al., 2015; Brochu et al., 2010;
+Hutter et al., 2011; Eggensperger et al., 2014).
+The common theme is to perform a set of it-
+erative hyper-parameter optimizations, where in
+each round, these methods fit a hyper-parameter
+response surface using a probabilistic regression
+function such as Gaussian Process (Snoek et al.,
+2012) or tree-based models (Hutter et al., 2011),
+where the response surface maps each hyper-
+parameter setting to an approximated accuracy.
+The learned regression model is then used as a
+cheap surrogate of the response surface to quickly
+explore the search space and identify promising
+hyper-parameter candidates to evaluate next in or-
+der to enhance validation accuracy.
+While these methods have enjoyed great
+success compared to conventional random
+search (Bergstra et al., 2012; Bengio et al., 2013)
+and grid search algorithms by significantly reduc-
+ing the number of iterations and trials required
+during the process, the focus and starting point
+of these work have largely been on dealing with
+many dimensions of hyper-parameters, rather
+than scaling to large amount of data as typical in
+many NLP tasks, where the efficiency bottleneck
+stems from the size of the training data in addition
+to hyper-parameter dimensions. For example,
+as dataset size grows, even simple models (with
+few hyper-parameters) such as logistic regression
+can require more training time per iteration in
+these algorithms, leading to increased overall time
+complexity.
+In this work, we introduce a multi-stage
+Bayesian Optimization framework for efficient
+</bodyText>
+<page confidence="0.948803">
+2112
+</page>
+<note confidence="0.6532225">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2112–2117,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.999888741935484">
+hyper-parameter optimization, and empirically
+study the impact of the multi-stage algorithm
+on hyper-parameter tuning. Unlike the previous
+approaches, the multi-stage approach considers
+hyper-parameter optimization in successive stages
+with increasingly amounts of training data. The
+first stage uses a small subset of training data,
+applies sequential optimization to quickly iden-
+tify an initial set of promising hyper-parameter
+settings, and these promising candidates are then
+used to initialize Bayesian Optimization on later
+stages with full training dataset to enable the ex-
+pensive stages operate with better prior knowledge
+and converge to optimal solution faster.
+The key intuition behind the proposed approach
+is that both dataset size and search space of hyper-
+parameter can be large, and applying the Bayesian
+Optimization algorithm on the data can be both
+expensive and unnecessary, since many evaluated
+candidates may not even be within range of best
+final settings. We note our approach is orthogo-
+nal and complementary to parallel Bayesian Opti-
+mization (Snoek et al., 2012) and multi-task learn-
+ing (Yogatama et al., 2014; Swersky et al., 2012),
+because the improved efficiency per iteration, as
+achieved by our algorithm, is a basic building
+block of the other algorithms, thus can directly
+help the efficiency of multiple parallel runs (Snoek
+et al., 2012), as well as runs across different
+datasets (Yogatama et al., 2014; Swersky et al.,
+2012).
+</bodyText>
+<sectionHeader confidence="0.994205" genericHeader="introduction">
+2 Methodology
+</sectionHeader>
+<bodyText confidence="0.999889111111111">
+The new multi-stage Bayesian Optimization is a
+generalization of the standard Bayesian Optimiza-
+tion for hyper-parameter learning (Snoek et al.,
+2012; Feurer et al., 2015). It is designed to scale
+standard Bayesian Optimization to large amounts
+of training data. Before delving into the de-
+tails, we first describe hyper-parameter optimiza-
+tion and give a quick overview on the standard
+Bayesian Optimization solution for it.
+</bodyText>
+<subsectionHeader confidence="0.906563">
+2.1 Hyper-parameter Optimization
+</subsectionHeader>
+<bodyText confidence="0.9999762">
+Let A = {A1, ... , Am} denote the hyper-
+parameters of a machine learning algorithm, and
+let {Ai, ... , Am} denote their respective domains.
+When trained with A on training data Ttrain,
+the validation accuracy on Tvalid is denoted as
+L(A, Ttrain, Tvalid). The goal of hyper-parameter
+optimization is to find a hyper-parameter setting
+A* such that the validation accuracy L is maxi-
+mized. Current state-of-the-art methods have fo-
+cused on using model-based Bayesian Optimiza-
+tion (Snoek et al., 2012; Hutter et al., 2011) to
+solve this problem due to its ability to identify
+good solutions within a small number of iterations
+as compared to conventional methods such as grid
+search.
+</bodyText>
+<subsectionHeader confidence="0.999359">
+2.2 Bayesian Optimization for
+Hyper-parameter Learning
+</subsectionHeader>
+<bodyText confidence="0.999930470588235">
+Model-based Bayesian Optimization (Brochu et
+al., 2010) starts with an initial set of hyper-
+parameter settings A1,... An, where each set-
+ting denotes a set of assignments to all hyper-
+parameters. These initial settings are then eval-
+uated on the validation data and their accuracies
+are recorded. The algorithm then proceeds in
+rounds to iteratively fit a probabilistic regression
+model V to the recorded accuracies. A new hyper-
+parameter configuration is then suggested by the
+regression model V with the help of acquisition
+function (Brochu et al., 2010). Then the accu-
+racy of the new setting is evaluated on validation
+data, which leads to the next iteration. A common
+acquisition function is the expected improvement,
+EI (Brochu et al., 2010), over best validation accu-
+racy seen so far L*:
+</bodyText>
+<equation confidence="0.918029666666667">
+� �
+a(A, V ) =max(L − L*, 0)pV (L|A)dL
+��
+</equation>
+<bodyText confidence="0.999987823529412">
+where pV (L|A) denotes the probability of accu-
+racy L given configuration A, which is encoded by
+the probabilistic regression model V . The acquisi-
+tion function is used to identify the next candidate
+(the one with the highest expected improvement
+over current best L*). More details of acquisition
+functions can be found in (Brochu et al., 2010).
+The most common probabilistic regression
+model V is the Gaussian Process prior (Snoek et
+al., 2012), which is a convenient and powerful
+prior distribution on functions. For the purpose
+of our experiments, we also use Gaussian Process
+prior as the regression model. However, we would
+like to note the fact that the proposed multi-stage
+Bayesian Optimization is agnostic of the regres-
+sion model used, and can easily handle other in-
+stantiations of the regression model.
+</bodyText>
+<page confidence="0.9547">
+2113
+</page>
+<bodyText confidence="0.70461175">
+Algorithm 1: Multi-stage Bayesian Optimiza-
+tion for Hyper-parameter Tuning
+Input: Loss function L, number of stages 5,
+iterations per stage
+</bodyText>
+<equation confidence="0.960483333333333">
+Y = �Y1, ... , YS), training data per
+stage Ttrain =
+T 1 �,
+</equation>
+<bodyText confidence="0.53146">
+train, . . . , T S train
+</bodyText>
+<figure confidence="0.49539">
+validation data Tvalid, initialization
+A1:k
+Output: hyper-parameter A*
+for stage s=1 to 5 do
+for i=1 to k do
+Li = Evaluate L(Ai, Tstrain, Tvalid)
+end
+for j=k+1 to Ys do
+</figure>
+<equation confidence="0.852590111111111">
+V : regression model on �Ai, Li)j−1
+i=1
+Aj = arg maxXCΛ a(A, V )
+Lj = Evaluate L(Aj, Tstrain, Tvalid)
+end
+reset A1:k=best k configs E �A1, ... AY3 �
+based on validation accuracy L
+end
+return A* = arg maxXiC{XY.,...,XYS} Lj
+</equation>
+<subsectionHeader confidence="0.992398">
+2.3 Multi-stage Bayesian Optimization for
+Hyper-parameter Tuning
+</subsectionHeader>
+<bodyText confidence="0.999966">
+The multi-stage algorithm as shown in Algo-
+rithm 1 is an extension of the standard Bayesian
+Optimization (Section 2.2) to enable speed on
+large-scale datasets. It proceeds in multiple
+stages of Bayesian Optimization with increas-
+ingly amounts of training data |T1train |&lt; . . . , &lt;
+|TStrain|. During each stage s, the k best configu-
+rations (based on validation accuracy) passed from
+the previous stage1 are first evaluated on the cur-
+rent stage’s training data Tstrain, and then the stan-
+dard Bayesian Optimization algorithm are initial-
+ized with these k settings and applied for Ys − k
+iterations on Tstrain (discounting the k evaluations
+done earlier in the stage), where Ys is the total
+number of iterations for stage s. Then the top
+k configurations based on validation accuracy are
+used to initialize the next stage’s run.
+We note after the initial stage, rather than only
+considering candidates passed from the previous
+stage, the algorithm expands from these points on
+larger data. Continued exploration using larger
+</bodyText>
+<footnote confidence="0.95699925">
+1A special case is the initial stage. We adopt the con-
+vention that a Sobol sequence is used to initialize the first
+stage (Snoek et al., 2012). The value k for the first stage is
+the number of points in the Sobol sequence.
+</footnote>
+<table confidence="0.99832825">
+Hyper-parameters
+SVM bias, cost parameter, and
+regularization parameter
+Boosted feature sampling rate,
+regression data sampling rate, learn-
+trees ingrate, # trees, # leaves,
+and minimum # instance
+per leaf
+</table>
+<tableCaption confidence="0.994271">
+Table 1: Hyper-parameters used in SVM and
+boosted regression trees.
+</tableCaption>
+<bodyText confidence="0.999963413793103">
+data allows the algorithm to eliminate any po-
+tential sensitivity the hyper-parameters may have
+with respect to dataset size. After running all 5
+stages the algorithm terminates, and outputs the
+configuration with the highest validation accuracy
+from all hyper-parameters explored by all stages
+(including the initialization points explored by the
+first stage).
+This multi-stage algorithm subsumes the stan-
+dard Bayesian optimization algorithm as a special
+case when the total number of stages 5 = 1. In
+our case, for datasets used at stages 1, ... , 5 − 1,
+we use random sampling of full training data to
+get subsets of data required at these initial stages,
+while stage 5 has full data. For the number of top
+configurations k used to initialize each following
+stage, we know the larger k is, the better results in
+the next stage since Bayesian Optimization relies
+on good initial knowledge to fit good regression
+models (Feurer et al., 2015). However, larger k
+value also leads to high computation cost at the
+next stage, since these initial settings will have to
+be evaluated first. In practice, the number of stages
+5 and the value of k depend on the quantity of the
+data and the quality of stage-wise model. In our
+experiments, we empirically choose their values
+to be 5 = 2 and k = 3 which result in a good
+balance between accuracy and speed on the given
+datasets.
+</bodyText>
+<sectionHeader confidence="0.998892" genericHeader="method">
+3 Experiment
+</sectionHeader>
+<bodyText confidence="0.999987666666667">
+We empirically evaluate the algorithm on two
+tasks: classification and question answering. For
+classification we use the Yelp dataset (Yelp, 2014)
+which is a customer review dataset. Each review
+contains a star/rating (1-5) for a business, and the
+task is to predict the rating based on the textual in-
+formation in the review. The training data contains
+half-million feature vectors, and unique unigrams
+are used as features (after standard stop-word re-
+</bodyText>
+<page confidence="0.987608">
+2114
+</page>
+<bodyText confidence="0.999988615384615">
+moval and stemming (Manning et al., 2008)). For
+question answering (QA), the task is to identify
+correct answers for a given question. We use
+a commercial QA dataset containing about 3800
+unique training questions and a total of 900, 000
+feature vectors. Each feature vector corresponds to
+an answer candidate for a given question, the vec-
+tor consists of a binary label (1=correct, 0=incor-
+rect) and values from standard unigram/bigram,
+syntactic, and linguistic features used in typical
+QA applications (Voorhees et al., 2011). Both QA
+and Yelp datasets contain independent training,
+validation, and test data, from which the machine
+learning models are built, accuracies are evalu-
+ated, and test results are reported, respectively.
+We evaluate our multi-stage method against
+two methods: 1) state-of-the-art Bayesian Opti-
+mization for hyper-parameter learning (Snoek et
+al., 2012)), and 2) the same Bayesian Optimiza-
+tion but only applied on a small subset of data
+for speed. For experiments, we consider learn-
+ing hyper-parameters for two machine learning
+algorithms: SVM implementation for classifica-
+tion (Fan et al., 2008) and boosted regression trees
+for question answering (Ganjisaffar et al., 2011) as
+shown in Table 1.
+</bodyText>
+<subsectionHeader confidence="0.999251">
+3.1 Accuracy vs time
+</subsectionHeader>
+<bodyText confidence="0.999780565217391">
+Figures 1 and 2 compare the test accuracy of our
+proposed multi-stage Bayesian optimization as a
+function of tuning time for QA and Yelp, respec-
+tively. The state-of-the-art Bayesian optimiza-
+tion (Snoek et al., 2012) is applied on full train-
+ing data, and the fast variant of Bayesian Opti-
+mization is applied with 30% of training data (ran-
+domly sampled from full dataset). The top-1 and
+classification accuracies on test data are reported
+on the y-axis for QA and Yelp, respectively, and
+the tuning time is reported on the x-axis. For fair-
+ness of comparison, the multi-stage method uses
+the same 30% training data at the initial stage, and
+full training data at the subsequent stage.
+From these figures, while in general both of
+the comparison methods produce more effective
+results when given more time, the multi-stage
+method consistently achieves higher test accuracy
+than the other two methods across all optimiza-
+tion time values. For example, best test accu-
+racy is achieved by the multi-stage algorithm at
+time (45 min) for the QA task, while both the
+full Bayesian Optimization and the subset variant
+</bodyText>
+<figure confidence="0.997911">
+0 10 20 30 40 50 60 70
+Time (min)
+Time (min)
+</figure>
+<figureCaption confidence="0.999848">
+Figure 2: Yelp classification: test accuracy vs tuning time.
+</figureCaption>
+<bodyText confidence="0.999975333333333">
+can only achieve a fraction of the best value at
+the same time value. We also note in general the
+multi-stage algorithm approaches the upper bound
+more rapidly as more time is given. This shows
+that the new algorithm is superior across a wide
+range of time values.
+</bodyText>
+<subsectionHeader confidence="0.999898">
+3.2 Expected accuracy and cost per iteration
+</subsectionHeader>
+<bodyText confidence="0.9999549">
+To investigate the average accuracy and cost per
+iteration achieved by different methods across dif-
+ferent time points, we compare their mean ex-
+pected accuracy (according to precision@1 for
+QA and classification accuracy for Yelp) in Ta-
+ble 2, and their average speed in Table 3. In
+terms of average accuracy, we see that the state-
+of-the-art Bayesian optimization on full training
+data and the multi-stage algorithm achieve similar
+test accuracy, and they both outperform the sub-
+</bodyText>
+<table confidence="0.988204">
+QA Yelp
+Bayes opt on small subset 0.633 0.530
+Bayes opt on full data 0.639 0.543
+Multi-stage algorithm 0.641 0.542
+</table>
+<tableCaption confidence="0.9955535">
+Table 2: Average test accuracy for QA (preci-
+sion@1) and Yelp dataset (classif. accuracy).
+</tableCaption>
+<note confidence="0.744628">
+Bayes Opt on subset of data
+Bayes Opt on full data
+Multi-stage Bayes Opt
+</note>
+<figureCaption confidence="0.996551">
+Figure 1: QA task: test accuracy vs tuning time.
+</figureCaption>
+<figure confidence="0.99778805">
+0 1 2 3 4 5 6 7 8 9
+Classification accuracy
+0.58
+0.56
+0.54
+0.52
+0.48
+0.46
+0.44
+0.5
+Bayes Opt on subset of data
+Bayes Opt on full data
+Multi-stage Bayes Opt
+Precision@1 0.65
+0.645
+0.64
+0.635
+0.63
+0.625
+0.62
+</figure>
+<page confidence="0.966036">
+2115
+</page>
+<table confidence="0.960244">
+QA Yelp
+Bayes opt on small subset 3.2 min 0.4 min
+Bayes opt on full data 7.8 min 1.2 min
+Multi-stage algorithm 6 min 0.6 min
+</table>
+<tableCaption confidence="0.999816">
+Table 3: Average time (min) per iteration.
+</tableCaption>
+<bodyText confidence="0.9995785">
+set variant of Bayesian Optimization. However,
+in terms of time per iteration, the full Bayesian
+Optimization is the most expensive, taking more
+than twice amount of time over subset variant al-
+gorithm, while the multi-stage is 23% and 50%
+faster than standard Bayesian Optimization on QA
+and Yelp (Table 3), respectively, while maintain-
+ing the same accuracy as full Bayesian Optimiza-
+tion. This demonstrates the multi-stage approach
+achieves a good balance between the two baselines
+and can simultaneously delivers good speedup and
+accuracy.
+</bodyText>
+<sectionHeader confidence="0.999584" genericHeader="conclusions">
+4 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999875222222222">
+We introduced a multi-stage optimization algo-
+rithm for hyper-parameter optimization. The pro-
+posed algorithm breaks the problem into multiple
+stages with increasingly amounts of data for effi-
+cient optimization. We demonstrated its improved
+performance as compared to the state-of-the-art
+Bayesian optimization algorithm and fast variants
+of Bayesian optimization on sentiment classifica-
+tion and QA tasks.
+</bodyText>
+<sectionHeader confidence="0.998577" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999665207792208">
+Remi Bardenet, Matyas Brendel, Balazs Kegls, and
+Michele Sebag. 2013. Collaborative hyperparam-
+eter tuning. In ICML 2013: Proceedings of the 30th
+International Conference on Machine Learning.
+Yoshua Bengio, Aaron Courville, and Pascal Vincent.
+2013. Representation Learning: A Review and New
+Perspectives. In Pattern Analysis and Machine In-
+telligence, Volume:35 , Issue: 8, 2013.
+James Bergstra, Remi Bardenet, Yoshua Bengio, and
+Balazs Kegl. 2011. Algorithms for Hyper-
+Parameter Optimization. In NIPS 2011: Advances
+in Neural Information Processing Systems.
+James Bergstra, and Yoshua Bengio. 2012. Random
+search for hyper-parameter optimization. In The
+Journal of Machine Learning Research, Volume 13
+Issue 1, January 2012.
+Eric Brochu, Vlad M. Cora, and Nando de Freitas.
+2010. A Tutorial on Bayesian Optimization of Ex-
+pensive Cost Functions, with Application to Ac-
+tive User Modeling and Hierarchical Reinforcement
+Learning. In arXiv:1012.2599v1, Dec 12, 2010.
+Katharina Eggensperger, Frank Hutter, Holger H.
+Hoos, and Kevin Leyton-Brown 2014. Surrogate
+Benchmarks for Hyperparameter Optimization. In
+Meta-Learning and Algorithm Selection Workshop,
+2014.
+Katharina Eggensperger, Frank Hutter, Holger H.
+Hoos, and Kevin Leyton-Brown. 2015. Efficient
+Benchmarking of Hyperparameter Optimizers via
+Surrogates. In AAAI 2015: Twenty-ninth AAAI Con-
+ference.
+Rong-En Fan, Kai-Wei Chang, Cho-Jui Hsieh, Xiang-
+Rui Wang, and Chih-Jen Lin. 2008. LIBLINEAR:
+A Library for Large Linear Classification. In Jour-
+nal of Machine Learning Research: 2008, 1871-
+1874.
+Matthias Feurer, Jost Tobias Springenberg, and Frank
+Hutter. 2015. Initializing Bayesian Hyperparame-
+ter Optimization via Meta-Learning. In AAAI 2015:
+Twenty-ninth AAAI Conference.
+Yasser Ganjisaffar, Rich Caruana, and Cristina Lopes.
+2011. Bagging Gradient-Boosted Trees for High
+Precision, Low Variance Ranking Models. In SIGIR
+2011: Proceedings of the 34th international ACM
+SIGIR conference on Research and development in
+Information.
+Frank Hutter, Holger H. Hoos and Kevin Leyton-
+Brown. 2011. Sequential Model-Based Opti-
+mization for General Algorithm Configuration. In
+LION4, 2011.
+Frank Hutter, Holger Hoos and Kevin Leyton-brown.
+2014. An Efficient Approach for Assessing Hyper-
+parameter Importance. In ICML 2014: Proceed-
+ings of the 31st International Conference on Ma-
+chine Learning
+Brent Komer, James Bergstra, and Chris Eliasmith.
+2014. Hyperopt-Sklearn: Automatic Hyperparam-
+eter Configuration for Scikit-Learn. In SCIPY2014:
+Proceedings of the 13th Python In Science Confer-
+ence.
+Christopher D. Manning, Prabhakar Raghavan, and
+Hinrich Schutze. 2008. Introduction to Information
+Retrieval. In Cambridge University Press, 2008.
+Jasper Snoek, Hugo Larochelle, and Ryan Adams.
+2012. Practical Bayesian Optimization of Machine
+Learning Algorithms. In NIPS 2012: Advances in
+Neural Information Processing Systems.
+Kevin Swersky, Jasper Snoek, and Ryan Adams. 2013.
+Multi-Task Bayesian Optimization. In NIPS 2013:
+Advances in Neural Information Processing Sys-
+tems.
+Chris Thornton, Frank Hutter, Holger H. Hoos, and
+Kevin Leyton-Brown. 2013. Auto-WEKA: com-
+bined selection and hyperparameter optimization of
+classification algorithms. In KDD 2013: Proceed-
+ings of the 19th ACM SIGKDD international con-
+ference on Knowledge discovery and data mining.
+</reference>
+<page confidence="0.816019">
+2116
+</page>
+<reference confidence="0.999202615384615">
+Ellen M. Voorhees. 2011. The TREC question an-
+swering track. In Natural Language Engineer-
+ing,Volume 7 Issue 4, December 2001
+Yelp Academic Challenge Dataset. http://www.
+yelp.com/dataset_challenge.
+Dani Yogatama, and Gideon Mann. 2014. Efficient
+Transfer Learning Method for Automatic Hyperpa-
+rameter Tuning. In AISTATS 2014: International
+Conference on Artificial Intelligence and Statistics.
+Alice X. Zheng, and Mikhail Bilenkoh. 2013. Lazy
+Paired Hyper-Parameter Tuning. In IJCAI 2013:
+Twenty-third International Joint Conference on Ar-
+tificial Intelligence.
+</reference>
+<page confidence="0.994666">
+2117
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.839773">
+<title confidence="0.999762">Efficient Hyper-parameter Optimization for NLP Applications</title>
+<author confidence="0.998037">Minwei Bowen Bing Sridhar</author>
+<affiliation confidence="0.9583925">Watson, T. J. Watson Research Center, of Information and Computer Sciences, U. of Massachusetts Amherst,</affiliation>
+<email confidence="0.999874">mahadeva@cs.umass.edu</email>
+<abstract confidence="0.994788590909091">Hyper-parameter optimization is an important problem in natural language processing (NLP) and machine learning. Recently, a group of studies has focused on using sequential Bayesian Optimization to solve this problem, which aims to reduce the number of iterations and trials required during the optimization process. In this paper, we explore this problem from a different angle, and propose a multi-stage hyper-parameter optimization that breaks the problem into multiple stages with increasingly amounts of data. Early stage provides fast estimates of good candidates which are used to initialize later stages for better performance and speed. We demonstrate the utility of this new algorithm by evaluating its speed and accuracy against state-of-the-art Bayesian Optimization algorithms on classification and prediction tasks.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Remi Bardenet</author>
+<author>Matyas Brendel</author>
+<author>Balazs Kegls</author>
+<author>Michele Sebag</author>
+</authors>
+<title>Collaborative hyperparameter tuning.</title>
+<date>2013</date>
+<booktitle>In ICML 2013: Proceedings of the 30th International Conference on Machine Learning.</booktitle>
+<contexts>
+<context position="1390" citStr="Bardenet et al., 2013" startWordPosition="196" endWordPosition="199">breaks the problem into multiple stages with increasingly amounts of data. Early stage provides fast estimates of good candidates which are used to initialize later stages for better performance and speed. We demonstrate the utility of this new algorithm by evaluating its speed and accuracy against state-of-the-art Bayesian Optimization algorithms on classification and prediction tasks. 1 Introduction Hyper-parameter optimization has been receiving an increasingly amount of attention in the NLP and machine learning communities (Thornton et al., 2013; Komer et al., 2014; Bergstra et al., 2011; Bardenet et al., 2013; Zheng et al., 2013). The performance of learning algorithms depend on the correct instantiations of their hyperparameters, ranging from algorithms such as logistic regression and support vector machines, to more complex model families such as boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particula</context>
+</contexts>
+<marker>Bardenet, Brendel, Kegls, Sebag, 2013</marker>
+<rawString>Remi Bardenet, Matyas Brendel, Balazs Kegls, and Michele Sebag. 2013. Collaborative hyperparameter tuning. In ICML 2013: Proceedings of the 30th International Conference on Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoshua Bengio</author>
+<author>Aaron Courville</author>
+<author>Pascal Vincent</author>
+</authors>
+<title>Representation Learning: A Review and New Perspectives.</title>
+<date>2013</date>
+<booktitle>In Pattern Analysis and Machine Intelligence, Volume:35 , Issue:</booktitle>
+<volume>8</volume>
+<contexts>
+<context position="3089" citStr="Bengio et al., 2013" startWordPosition="456" endWordPosition="459">it a hyper-parameter response surface using a probabilistic regression function such as Gaussian Process (Snoek et al., 2012) or tree-based models (Hutter et al., 2011), where the response surface maps each hyperparameter setting to an approximated accuracy. The learned regression model is then used as a cheap surrogate of the response surface to quickly explore the search space and identify promising hyper-parameter candidates to evaluate next in order to enhance validation accuracy. While these methods have enjoyed great success compared to conventional random search (Bergstra et al., 2012; Bengio et al., 2013) and grid search algorithms by significantly reducing the number of iterations and trials required during the process, the focus and starting point of these work have largely been on dealing with many dimensions of hyper-parameters, rather than scaling to large amount of data as typical in many NLP tasks, where the efficiency bottleneck stems from the size of the training data in addition to hyper-parameter dimensions. For example, as dataset size grows, even simple models (with few hyper-parameters) such as logistic regression can require more training time per iteration in these algorithms, </context>
+</contexts>
+<marker>Bengio, Courville, Vincent, 2013</marker>
+<rawString>Yoshua Bengio, Aaron Courville, and Pascal Vincent. 2013. Representation Learning: A Review and New Perspectives. In Pattern Analysis and Machine Intelligence, Volume:35 , Issue: 8, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Bergstra</author>
+<author>Remi Bardenet</author>
+<author>Yoshua Bengio</author>
+<author>Balazs Kegl</author>
+</authors>
+<title>Algorithms for HyperParameter Optimization.</title>
+<date>2011</date>
+<booktitle>In NIPS 2011: Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="1367" citStr="Bergstra et al., 2011" startWordPosition="192" endWordPosition="195">eter optimization that breaks the problem into multiple stages with increasingly amounts of data. Early stage provides fast estimates of good candidates which are used to initialize later stages for better performance and speed. We demonstrate the utility of this new algorithm by evaluating its speed and accuracy against state-of-the-art Bayesian Optimization algorithms on classification and prediction tasks. 1 Introduction Hyper-parameter optimization has been receiving an increasingly amount of attention in the NLP and machine learning communities (Thornton et al., 2013; Komer et al., 2014; Bergstra et al., 2011; Bardenet et al., 2013; Zheng et al., 2013). The performance of learning algorithms depend on the correct instantiations of their hyperparameters, ranging from algorithms such as logistic regression and support vector machines, to more complex model families such as boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning.</context>
+</contexts>
+<marker>Bergstra, Bardenet, Bengio, Kegl, 2011</marker>
+<rawString>James Bergstra, Remi Bardenet, Yoshua Bengio, and Balazs Kegl. 2011. Algorithms for HyperParameter Optimization. In NIPS 2011: Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Bergstra</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Random search for hyper-parameter optimization.</title>
+<date>2012</date>
+<journal>In The Journal of Machine Learning Research, Volume</journal>
+<volume>13</volume>
+<marker>Bergstra, Bengio, 2012</marker>
+<rawString>James Bergstra, and Yoshua Bengio. 2012. Random search for hyper-parameter optimization. In The Journal of Machine Learning Research, Volume 13 Issue 1, January 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brochu</author>
+<author>Vlad M Cora</author>
+<author>Nando de Freitas</author>
+</authors>
+<title>A Tutorial on Bayesian Optimization of Expensive Cost Functions, with Application to Active User Modeling and Hierarchical Reinforcement Learning.</title>
+<date>2010</date>
+<booktitle>In arXiv:1012.2599v1,</booktitle>
+<marker>Brochu, Cora, de Freitas, 2010</marker>
+<rawString>Eric Brochu, Vlad M. Cora, and Nando de Freitas. 2010. A Tutorial on Bayesian Optimization of Expensive Cost Functions, with Application to Active User Modeling and Hierarchical Reinforcement Learning. In arXiv:1012.2599v1, Dec 12, 2010.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katharina Eggensperger</author>
+<author>Frank Hutter</author>
+<author>Holger H Hoos</author>
+<author>Kevin Leyton-Brown</author>
+</authors>
+<title>Surrogate Benchmarks for Hyperparameter Optimization. In Meta-Learning and Algorithm Selection Workshop,</title>
+<date>2014</date>
+<contexts>
+<context position="2350" citStr="Eggensperger et al., 2014" startWordPosition="343" endWordPosition="346">he difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particularly important in large-scale problems where the size of the data can be so large that even a quadratic running time is prohibitively large. Recently several sequential Bayesian Optimization methods have been proposed for hyper-parameter search (Snoek et al., 2012; Eggensperger et al., 2015; Brochu et al., 2010; Hutter et al., 2011; Eggensperger et al., 2014). The common theme is to perform a set of iterative hyper-parameter optimizations, where in each round, these methods fit a hyper-parameter response surface using a probabilistic regression function such as Gaussian Process (Snoek et al., 2012) or tree-based models (Hutter et al., 2011), where the response surface maps each hyperparameter setting to an approximated accuracy. The learned regression model is then used as a cheap surrogate of the response surface to quickly explore the search space and identify promising hyper-parameter candidates to evaluate next in order to enhance validation a</context>
+</contexts>
+<marker>Eggensperger, Hutter, Hoos, Leyton-Brown, 2014</marker>
+<rawString>Katharina Eggensperger, Frank Hutter, Holger H. Hoos, and Kevin Leyton-Brown 2014. Surrogate Benchmarks for Hyperparameter Optimization. In Meta-Learning and Algorithm Selection Workshop, 2014.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katharina Eggensperger</author>
+<author>Frank Hutter</author>
+<author>Holger H Hoos</author>
+<author>Kevin Leyton-Brown</author>
+</authors>
+<title>Efficient Benchmarking of Hyperparameter Optimizers via Surrogates. In</title>
+<date>2015</date>
+<booktitle>AAAI 2015: Twenty-ninth AAAI Conference.</booktitle>
+<contexts>
+<context position="2280" citStr="Eggensperger et al., 2015" startWordPosition="331" endWordPosition="334">rees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particularly important in large-scale problems where the size of the data can be so large that even a quadratic running time is prohibitively large. Recently several sequential Bayesian Optimization methods have been proposed for hyper-parameter search (Snoek et al., 2012; Eggensperger et al., 2015; Brochu et al., 2010; Hutter et al., 2011; Eggensperger et al., 2014). The common theme is to perform a set of iterative hyper-parameter optimizations, where in each round, these methods fit a hyper-parameter response surface using a probabilistic regression function such as Gaussian Process (Snoek et al., 2012) or tree-based models (Hutter et al., 2011), where the response surface maps each hyperparameter setting to an approximated accuracy. The learned regression model is then used as a cheap surrogate of the response surface to quickly explore the search space and identify promising hyper-</context>
+</contexts>
+<marker>Eggensperger, Hutter, Hoos, Leyton-Brown, 2015</marker>
+<rawString>Katharina Eggensperger, Frank Hutter, Holger H. Hoos, and Kevin Leyton-Brown. 2015. Efficient Benchmarking of Hyperparameter Optimizers via Surrogates. In AAAI 2015: Twenty-ninth AAAI Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rong-En Fan</author>
+<author>Kai-Wei Chang</author>
+<author>Cho-Jui Hsieh</author>
+<author>XiangRui Wang</author>
+<author>Chih-Jen Lin</author>
+</authors>
+<title>LIBLINEAR: A Library for Large Linear Classification.</title>
+<date>2008</date>
+<journal>In Journal of Machine Learning Research:</journal>
+<pages>1871--1874</pages>
+<contexts>
+<context position="13491" citStr="Fan et al., 2008" startWordPosition="2130" endWordPosition="2133">oorhees et al., 2011). Both QA and Yelp datasets contain independent training, validation, and test data, from which the machine learning models are built, accuracies are evaluated, and test results are reported, respectively. We evaluate our multi-stage method against two methods: 1) state-of-the-art Bayesian Optimization for hyper-parameter learning (Snoek et al., 2012)), and 2) the same Bayesian Optimization but only applied on a small subset of data for speed. For experiments, we consider learning hyper-parameters for two machine learning algorithms: SVM implementation for classification (Fan et al., 2008) and boosted regression trees for question answering (Ganjisaffar et al., 2011) as shown in Table 1. 3.1 Accuracy vs time Figures 1 and 2 compare the test accuracy of our proposed multi-stage Bayesian optimization as a function of tuning time for QA and Yelp, respectively. The state-of-the-art Bayesian optimization (Snoek et al., 2012) is applied on full training data, and the fast variant of Bayesian Optimization is applied with 30% of training data (randomly sampled from full dataset). The top-1 and classification accuracies on test data are reported on the y-axis for QA and Yelp, respective</context>
+</contexts>
+<marker>Fan, Chang, Hsieh, Wang, Lin, 2008</marker>
+<rawString>Rong-En Fan, Kai-Wei Chang, Cho-Jui Hsieh, XiangRui Wang, and Chih-Jen Lin. 2008. LIBLINEAR: A Library for Large Linear Classification. In Journal of Machine Learning Research: 2008, 1871-1874.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthias Feurer</author>
+<author>Jost Tobias Springenberg</author>
+<author>Frank Hutter</author>
+</authors>
+<title>Initializing Bayesian Hyperparameter Optimization via Meta-Learning. In</title>
+<date>2015</date>
+<booktitle>AAAI 2015: Twenty-ninth AAAI Conference.</booktitle>
+<contexts>
+<context position="5667" citStr="Feurer et al., 2015" startWordPosition="840" endWordPosition="843">entary to parallel Bayesian Optimization (Snoek et al., 2012) and multi-task learning (Yogatama et al., 2014; Swersky et al., 2012), because the improved efficiency per iteration, as achieved by our algorithm, is a basic building block of the other algorithms, thus can directly help the efficiency of multiple parallel runs (Snoek et al., 2012), as well as runs across different datasets (Yogatama et al., 2014; Swersky et al., 2012). 2 Methodology The new multi-stage Bayesian Optimization is a generalization of the standard Bayesian Optimization for hyper-parameter learning (Snoek et al., 2012; Feurer et al., 2015). It is designed to scale standard Bayesian Optimization to large amounts of training data. Before delving into the details, we first describe hyper-parameter optimization and give a quick overview on the standard Bayesian Optimization solution for it. 2.1 Hyper-parameter Optimization Let A = {A1, ... , Am} denote the hyperparameters of a machine learning algorithm, and let {Ai, ... , Am} denote their respective domains. When trained with A on training data Ttrain, the validation accuracy on Tvalid is denoted as L(A, Ttrain, Tvalid). The goal of hyper-parameter optimization is to find a hyper-</context>
+<context position="11471" citStr="Feurer et al., 2015" startWordPosition="1804" endWordPosition="1807">on points explored by the first stage). This multi-stage algorithm subsumes the standard Bayesian optimization algorithm as a special case when the total number of stages 5 = 1. In our case, for datasets used at stages 1, ... , 5 − 1, we use random sampling of full training data to get subsets of data required at these initial stages, while stage 5 has full data. For the number of top configurations k used to initialize each following stage, we know the larger k is, the better results in the next stage since Bayesian Optimization relies on good initial knowledge to fit good regression models (Feurer et al., 2015). However, larger k value also leads to high computation cost at the next stage, since these initial settings will have to be evaluated first. In practice, the number of stages 5 and the value of k depend on the quantity of the data and the quality of stage-wise model. In our experiments, we empirically choose their values to be 5 = 2 and k = 3 which result in a good balance between accuracy and speed on the given datasets. 3 Experiment We empirically evaluate the algorithm on two tasks: classification and question answering. For classification we use the Yelp dataset (Yelp, 2014) which is a c</context>
+</contexts>
+<marker>Feurer, Springenberg, Hutter, 2015</marker>
+<rawString>Matthias Feurer, Jost Tobias Springenberg, and Frank Hutter. 2015. Initializing Bayesian Hyperparameter Optimization via Meta-Learning. In AAAI 2015: Twenty-ninth AAAI Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yasser Ganjisaffar</author>
+<author>Rich Caruana</author>
+<author>Cristina Lopes</author>
+</authors>
+<title>Bagging Gradient-Boosted Trees for High Precision, Low Variance Ranking Models.</title>
+<date>2011</date>
+<booktitle>In SIGIR 2011: Proceedings of the 34th international ACM SIGIR conference on Research and development in Information.</booktitle>
+<contexts>
+<context position="13570" citStr="Ganjisaffar et al., 2011" startWordPosition="2141" endWordPosition="2144">aining, validation, and test data, from which the machine learning models are built, accuracies are evaluated, and test results are reported, respectively. We evaluate our multi-stage method against two methods: 1) state-of-the-art Bayesian Optimization for hyper-parameter learning (Snoek et al., 2012)), and 2) the same Bayesian Optimization but only applied on a small subset of data for speed. For experiments, we consider learning hyper-parameters for two machine learning algorithms: SVM implementation for classification (Fan et al., 2008) and boosted regression trees for question answering (Ganjisaffar et al., 2011) as shown in Table 1. 3.1 Accuracy vs time Figures 1 and 2 compare the test accuracy of our proposed multi-stage Bayesian optimization as a function of tuning time for QA and Yelp, respectively. The state-of-the-art Bayesian optimization (Snoek et al., 2012) is applied on full training data, and the fast variant of Bayesian Optimization is applied with 30% of training data (randomly sampled from full dataset). The top-1 and classification accuracies on test data are reported on the y-axis for QA and Yelp, respectively, and the tuning time is reported on the x-axis. For fairness of comparison, </context>
+</contexts>
+<marker>Ganjisaffar, Caruana, Lopes, 2011</marker>
+<rawString>Yasser Ganjisaffar, Rich Caruana, and Cristina Lopes. 2011. Bagging Gradient-Boosted Trees for High Precision, Low Variance Ranking Models. In SIGIR 2011: Proceedings of the 34th international ACM SIGIR conference on Research and development in Information.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Frank Hutter</author>
+<author>Holger H Hoos</author>
+<author>Kevin LeytonBrown</author>
+</authors>
+<title>Sequential Model-Based Optimization for General Algorithm Configuration. In</title>
+<date>2011</date>
+<booktitle>LION4,</booktitle>
+<contexts>
+<context position="2322" citStr="Hutter et al., 2011" startWordPosition="339" endWordPosition="342">settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particularly important in large-scale problems where the size of the data can be so large that even a quadratic running time is prohibitively large. Recently several sequential Bayesian Optimization methods have been proposed for hyper-parameter search (Snoek et al., 2012; Eggensperger et al., 2015; Brochu et al., 2010; Hutter et al., 2011; Eggensperger et al., 2014). The common theme is to perform a set of iterative hyper-parameter optimizations, where in each round, these methods fit a hyper-parameter response surface using a probabilistic regression function such as Gaussian Process (Snoek et al., 2012) or tree-based models (Hutter et al., 2011), where the response surface maps each hyperparameter setting to an approximated accuracy. The learned regression model is then used as a cheap surrogate of the response surface to quickly explore the search space and identify promising hyper-parameter candidates to evaluate next in o</context>
+<context position="6468" citStr="Hutter et al., 2011" startWordPosition="968" endWordPosition="971">a quick overview on the standard Bayesian Optimization solution for it. 2.1 Hyper-parameter Optimization Let A = {A1, ... , Am} denote the hyperparameters of a machine learning algorithm, and let {Ai, ... , Am} denote their respective domains. When trained with A on training data Ttrain, the validation accuracy on Tvalid is denoted as L(A, Ttrain, Tvalid). The goal of hyper-parameter optimization is to find a hyper-parameter setting A* such that the validation accuracy L is maximized. Current state-of-the-art methods have focused on using model-based Bayesian Optimization (Snoek et al., 2012; Hutter et al., 2011) to solve this problem due to its ability to identify good solutions within a small number of iterations as compared to conventional methods such as grid search. 2.2 Bayesian Optimization for Hyper-parameter Learning Model-based Bayesian Optimization (Brochu et al., 2010) starts with an initial set of hyperparameter settings A1,... An, where each setting denotes a set of assignments to all hyperparameters. These initial settings are then evaluated on the validation data and their accuracies are recorded. The algorithm then proceeds in rounds to iteratively fit a probabilistic regression model </context>
+</contexts>
+<marker>Hutter, Hoos, LeytonBrown, 2011</marker>
+<rawString>Frank Hutter, Holger H. Hoos and Kevin LeytonBrown. 2011. Sequential Model-Based Optimization for General Algorithm Configuration. In LION4, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Frank Hutter</author>
+<author>Holger Hoos</author>
+<author>Kevin Leyton-brown</author>
+</authors>
+<title>An Efficient Approach for Assessing Hyperparameter Importance.</title>
+<date>2014</date>
+<booktitle>In ICML 2014: Proceedings of the 31st International Conference on Machine Learning</booktitle>
+<contexts>
+<context position="1809" citStr="Hutter et al., 2014" startWordPosition="257" endWordPosition="260"> optimization has been receiving an increasingly amount of attention in the NLP and machine learning communities (Thornton et al., 2013; Komer et al., 2014; Bergstra et al., 2011; Bardenet et al., 2013; Zheng et al., 2013). The performance of learning algorithms depend on the correct instantiations of their hyperparameters, ranging from algorithms such as logistic regression and support vector machines, to more complex model families such as boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particularly important in large-scale problems where the size of the data can be so large that even a quadratic running time is prohibitively large. Recently several sequential Bayesian Optimization methods have been proposed for hyper-parameter search (Snoek et al., 2012; Eggensperger et al., 2015; Brochu et al., 2010; Hutter et al., 2011; Eggensperger et al., 2014). The common theme is to perform a set of iterative hyper-p</context>
+</contexts>
+<marker>Hutter, Hoos, Leyton-brown, 2014</marker>
+<rawString>Frank Hutter, Holger Hoos and Kevin Leyton-brown. 2014. An Efficient Approach for Assessing Hyperparameter Importance. In ICML 2014: Proceedings of the 31st International Conference on Machine Learning</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Brent Komer</author>
+<author>James Bergstra</author>
+<author>Chris Eliasmith</author>
+</authors>
+<title>Hyperopt-Sklearn: Automatic Hyperparameter Configuration for Scikit-Learn.</title>
+<date>2014</date>
+<booktitle>In SCIPY2014: Proceedings of the 13th Python In Science Conference.</booktitle>
+<contexts>
+<context position="1344" citStr="Komer et al., 2014" startWordPosition="188" endWordPosition="191">ti-stage hyper-parameter optimization that breaks the problem into multiple stages with increasingly amounts of data. Early stage provides fast estimates of good candidates which are used to initialize later stages for better performance and speed. We demonstrate the utility of this new algorithm by evaluating its speed and accuracy against state-of-the-art Bayesian Optimization algorithms on classification and prediction tasks. 1 Introduction Hyper-parameter optimization has been receiving an increasingly amount of attention in the NLP and machine learning communities (Thornton et al., 2013; Komer et al., 2014; Bergstra et al., 2011; Bardenet et al., 2013; Zheng et al., 2013). The performance of learning algorithms depend on the correct instantiations of their hyperparameters, ranging from algorithms such as logistic regression and support vector machines, to more complex model families such as boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training dat</context>
+</contexts>
+<marker>Komer, Bergstra, Eliasmith, 2014</marker>
+<rawString>Brent Komer, James Bergstra, and Chris Eliasmith. 2014. Hyperopt-Sklearn: Automatic Hyperparameter Configuration for Scikit-Learn. In SCIPY2014: Proceedings of the 13th Python In Science Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christopher D Manning</author>
+<author>Prabhakar Raghavan</author>
+<author>Hinrich Schutze</author>
+</authors>
+<title>Introduction to Information Retrieval. In</title>
+<date>2008</date>
+<publisher>Cambridge University Press,</publisher>
+<contexts>
+<context position="12410" citStr="Manning et al., 2008" startWordPosition="1965" endWordPosition="1968">values to be 5 = 2 and k = 3 which result in a good balance between accuracy and speed on the given datasets. 3 Experiment We empirically evaluate the algorithm on two tasks: classification and question answering. For classification we use the Yelp dataset (Yelp, 2014) which is a customer review dataset. Each review contains a star/rating (1-5) for a business, and the task is to predict the rating based on the textual information in the review. The training data contains half-million feature vectors, and unique unigrams are used as features (after standard stop-word re2114 moval and stemming (Manning et al., 2008)). For question answering (QA), the task is to identify correct answers for a given question. We use a commercial QA dataset containing about 3800 unique training questions and a total of 900, 000 feature vectors. Each feature vector corresponds to an answer candidate for a given question, the vector consists of a binary label (1=correct, 0=incorrect) and values from standard unigram/bigram, syntactic, and linguistic features used in typical QA applications (Voorhees et al., 2011). Both QA and Yelp datasets contain independent training, validation, and test data, from which the machine learnin</context>
+</contexts>
+<marker>Manning, Raghavan, Schutze, 2008</marker>
+<rawString>Christopher D. Manning, Prabhakar Raghavan, and Hinrich Schutze. 2008. Introduction to Information Retrieval. In Cambridge University Press, 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jasper Snoek</author>
+<author>Hugo Larochelle</author>
+<author>Ryan Adams</author>
+</authors>
+<title>Practical Bayesian Optimization of Machine Learning Algorithms.</title>
+<date>2012</date>
+<booktitle>In NIPS 2012: Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="2253" citStr="Snoek et al., 2012" startWordPosition="327" endWordPosition="330">boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the amount of training data available for tuning. The issue is particularly important in large-scale problems where the size of the data can be so large that even a quadratic running time is prohibitively large. Recently several sequential Bayesian Optimization methods have been proposed for hyper-parameter search (Snoek et al., 2012; Eggensperger et al., 2015; Brochu et al., 2010; Hutter et al., 2011; Eggensperger et al., 2014). The common theme is to perform a set of iterative hyper-parameter optimizations, where in each round, these methods fit a hyper-parameter response surface using a probabilistic regression function such as Gaussian Process (Snoek et al., 2012) or tree-based models (Hutter et al., 2011), where the response surface maps each hyperparameter setting to an approximated accuracy. The learned regression model is then used as a cheap surrogate of the response surface to quickly explore the search space an</context>
+<context position="5108" citStr="Snoek et al., 2012" startWordPosition="752" endWordPosition="755">tes are then used to initialize Bayesian Optimization on later stages with full training dataset to enable the expensive stages operate with better prior knowledge and converge to optimal solution faster. The key intuition behind the proposed approach is that both dataset size and search space of hyperparameter can be large, and applying the Bayesian Optimization algorithm on the data can be both expensive and unnecessary, since many evaluated candidates may not even be within range of best final settings. We note our approach is orthogonal and complementary to parallel Bayesian Optimization (Snoek et al., 2012) and multi-task learning (Yogatama et al., 2014; Swersky et al., 2012), because the improved efficiency per iteration, as achieved by our algorithm, is a basic building block of the other algorithms, thus can directly help the efficiency of multiple parallel runs (Snoek et al., 2012), as well as runs across different datasets (Yogatama et al., 2014; Swersky et al., 2012). 2 Methodology The new multi-stage Bayesian Optimization is a generalization of the standard Bayesian Optimization for hyper-parameter learning (Snoek et al., 2012; Feurer et al., 2015). It is designed to scale standard Bayesi</context>
+<context position="6446" citStr="Snoek et al., 2012" startWordPosition="964" endWordPosition="967">timization and give a quick overview on the standard Bayesian Optimization solution for it. 2.1 Hyper-parameter Optimization Let A = {A1, ... , Am} denote the hyperparameters of a machine learning algorithm, and let {Ai, ... , Am} denote their respective domains. When trained with A on training data Ttrain, the validation accuracy on Tvalid is denoted as L(A, Ttrain, Tvalid). The goal of hyper-parameter optimization is to find a hyper-parameter setting A* such that the validation accuracy L is maximized. Current state-of-the-art methods have focused on using model-based Bayesian Optimization (Snoek et al., 2012; Hutter et al., 2011) to solve this problem due to its ability to identify good solutions within a small number of iterations as compared to conventional methods such as grid search. 2.2 Bayesian Optimization for Hyper-parameter Learning Model-based Bayesian Optimization (Brochu et al., 2010) starts with an initial set of hyperparameter settings A1,... An, where each setting denotes a set of assignments to all hyperparameters. These initial settings are then evaluated on the validation data and their accuracies are recorded. The algorithm then proceeds in rounds to iteratively fit a probabili</context>
+<context position="7961" citStr="Snoek et al., 2012" startWordPosition="1215" endWordPosition="1218"> A common acquisition function is the expected improvement, EI (Brochu et al., 2010), over best validation accuracy seen so far L*: � � a(A, V ) =max(L − L*, 0)pV (L|A)dL �� where pV (L|A) denotes the probability of accuracy L given configuration A, which is encoded by the probabilistic regression model V . The acquisition function is used to identify the next candidate (the one with the highest expected improvement over current best L*). More details of acquisition functions can be found in (Brochu et al., 2010). The most common probabilistic regression model V is the Gaussian Process prior (Snoek et al., 2012), which is a convenient and powerful prior distribution on functions. For the purpose of our experiments, we also use Gaussian Process prior as the regression model. However, we would like to note the fact that the proposed multi-stage Bayesian Optimization is agnostic of the regression model used, and can easily handle other instantiations of the regression model. 2113 Algorithm 1: Multi-stage Bayesian Optimization for Hyper-parameter Tuning Input: Loss function L, number of stages 5, iterations per stage Y = �Y1, ... , YS), training data per stage Ttrain = T 1 �, train, . . . , T S train val</context>
+<context position="10176" citStr="Snoek et al., 2012" startWordPosition="1593" endWordPosition="1596">these k settings and applied for Ys − k iterations on Tstrain (discounting the k evaluations done earlier in the stage), where Ys is the total number of iterations for stage s. Then the top k configurations based on validation accuracy are used to initialize the next stage’s run. We note after the initial stage, rather than only considering candidates passed from the previous stage, the algorithm expands from these points on larger data. Continued exploration using larger 1A special case is the initial stage. We adopt the convention that a Sobol sequence is used to initialize the first stage (Snoek et al., 2012). The value k for the first stage is the number of points in the Sobol sequence. Hyper-parameters SVM bias, cost parameter, and regularization parameter Boosted feature sampling rate, regression data sampling rate, learntrees ingrate, # trees, # leaves, and minimum # instance per leaf Table 1: Hyper-parameters used in SVM and boosted regression trees. data allows the algorithm to eliminate any potential sensitivity the hyper-parameters may have with respect to dataset size. After running all 5 stages the algorithm terminates, and outputs the configuration with the highest validation accuracy f</context>
+<context position="13248" citStr="Snoek et al., 2012" startWordPosition="2091" endWordPosition="2094">feature vector corresponds to an answer candidate for a given question, the vector consists of a binary label (1=correct, 0=incorrect) and values from standard unigram/bigram, syntactic, and linguistic features used in typical QA applications (Voorhees et al., 2011). Both QA and Yelp datasets contain independent training, validation, and test data, from which the machine learning models are built, accuracies are evaluated, and test results are reported, respectively. We evaluate our multi-stage method against two methods: 1) state-of-the-art Bayesian Optimization for hyper-parameter learning (Snoek et al., 2012)), and 2) the same Bayesian Optimization but only applied on a small subset of data for speed. For experiments, we consider learning hyper-parameters for two machine learning algorithms: SVM implementation for classification (Fan et al., 2008) and boosted regression trees for question answering (Ganjisaffar et al., 2011) as shown in Table 1. 3.1 Accuracy vs time Figures 1 and 2 compare the test accuracy of our proposed multi-stage Bayesian optimization as a function of tuning time for QA and Yelp, respectively. The state-of-the-art Bayesian optimization (Snoek et al., 2012) is applied on full </context>
+</contexts>
+<marker>Snoek, Larochelle, Adams, 2012</marker>
+<rawString>Jasper Snoek, Hugo Larochelle, and Ryan Adams. 2012. Practical Bayesian Optimization of Machine Learning Algorithms. In NIPS 2012: Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Swersky</author>
+<author>Jasper Snoek</author>
+<author>Ryan Adams</author>
+</authors>
+<title>Multi-Task Bayesian Optimization.</title>
+<date>2013</date>
+<booktitle>In NIPS 2013: Advances in Neural Information Processing Systems.</booktitle>
+<marker>Swersky, Snoek, Adams, 2013</marker>
+<rawString>Kevin Swersky, Jasper Snoek, and Ryan Adams. 2013. Multi-Task Bayesian Optimization. In NIPS 2013: Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Thornton</author>
+<author>Frank Hutter</author>
+<author>Holger H Hoos</author>
+<author>Kevin Leyton-Brown</author>
+</authors>
+<title>Auto-WEKA: combined selection and hyperparameter optimization of classification algorithms.</title>
+<date>2013</date>
+<booktitle>In KDD 2013: Proceedings of the 19th ACM SIGKDD international conference on Knowledge discovery and data mining.</booktitle>
+<contexts>
+<context position="1324" citStr="Thornton et al., 2013" startWordPosition="183" endWordPosition="187">ngle, and propose a multi-stage hyper-parameter optimization that breaks the problem into multiple stages with increasingly amounts of data. Early stage provides fast estimates of good candidates which are used to initialize later stages for better performance and speed. We demonstrate the utility of this new algorithm by evaluating its speed and accuracy against state-of-the-art Bayesian Optimization algorithms on classification and prediction tasks. 1 Introduction Hyper-parameter optimization has been receiving an increasingly amount of attention in the NLP and machine learning communities (Thornton et al., 2013; Komer et al., 2014; Bergstra et al., 2011; Bardenet et al., 2013; Zheng et al., 2013). The performance of learning algorithms depend on the correct instantiations of their hyperparameters, ranging from algorithms such as logistic regression and support vector machines, to more complex model families such as boosted regression trees and neural networks. While hyper-parameter settings often make the difference between mediocre and state-of-the-art performance (Hutter et al., 2014), it is typically very time-consuming to find an optimal setting due to the complexity of model classes, and the am</context>
+</contexts>
+<marker>Thornton, Hutter, Hoos, Leyton-Brown, 2013</marker>
+<rawString>Chris Thornton, Frank Hutter, Holger H. Hoos, and Kevin Leyton-Brown. 2013. Auto-WEKA: combined selection and hyperparameter optimization of classification algorithms. In KDD 2013: Proceedings of the 19th ACM SIGKDD international conference on Knowledge discovery and data mining.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ellen M Voorhees</author>
+</authors>
+<title>The TREC question answering track.</title>
+<date>2011</date>
+<journal>In Natural Language Engineering,Volume</journal>
+<volume>7</volume>
+<marker>Voorhees, 2011</marker>
+<rawString>Ellen M. Voorhees. 2011. The TREC question answering track. In Natural Language Engineering,Volume 7 Issue 4, December 2001</rawString>
+</citation>
+<citation valid="false">
+<title>Yelp Academic Challenge Dataset.</title>
+<note>http://www. yelp.com/dataset_challenge.</note>
+<marker></marker>
+<rawString>Yelp Academic Challenge Dataset. http://www. yelp.com/dataset_challenge.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dani Yogatama</author>
+<author>Gideon Mann</author>
+</authors>
+<title>Efficient Transfer Learning Method for Automatic Hyperparameter Tuning.</title>
+<date>2014</date>
+<booktitle>In AISTATS 2014: International Conference on Artificial Intelligence and Statistics.</booktitle>
+<marker>Yogatama, Mann, 2014</marker>
+<rawString>Dani Yogatama, and Gideon Mann. 2014. Efficient Transfer Learning Method for Automatic Hyperparameter Tuning. In AISTATS 2014: International Conference on Artificial Intelligence and Statistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alice X Zheng</author>
+<author>Mikhail Bilenkoh</author>
+</authors>
+<title>Lazy Paired Hyper-Parameter Tuning.</title>
+<date>2013</date>
+<booktitle>In IJCAI 2013: Twenty-third International Joint Conference on Artificial Intelligence.</booktitle>
+<marker>Zheng, Bilenkoh, 2013</marker>
+<rawString>Alice X. Zheng, and Mikhail Bilenkoh. 2013. Lazy Paired Hyper-Parameter Tuning. In IJCAI 2013: Twenty-third International Joint Conference on Artificial Intelligence.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

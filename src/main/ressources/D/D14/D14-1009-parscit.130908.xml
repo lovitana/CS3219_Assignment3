@@ -1,0 +1,1836 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000001">
+<title confidence="0.973753">
+Strongly Incremental Repair Detection
+</title>
+<author confidence="0.986208">
+Julian Hough&apos; ,2
+</author>
+<affiliation confidence="0.8845506">
+&apos;Dialogue Systems Group
+Faculty of Linguistics
+and Literature
+Bielefeld University
+julian.hough@uni-bielefeld.de
+</affiliation>
+<author confidence="0.746181">
+Matthew Purver2
+</author>
+<affiliation confidence="0.99410725">
+2Cognitive Science Research Group
+School of Electronic Engineering
+and Computer Science
+Queen Mary University of London
+</affiliation>
+<email confidence="0.994097">
+m.purver@qmul.ac.uk
+</email>
+<sectionHeader confidence="0.997348" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999832882352941">
+We present STIR (STrongly Incremen-
+tal Repair detection), a system that de-
+tects speech repairs and edit terms on
+transcripts incrementally with minimal la-
+tency. STIR uses information-theoretic
+measures from n-gram models as its prin-
+cipal decision features in a pipeline of
+classifiers detecting the different stages of
+repairs. Results on the Switchboard dis-
+fluency tagged corpus show utterance-final
+accuracy on a par with state-of-the-art in-
+cremental repair detection methods, but
+with better incremental accuracy, faster
+time-to-detection and less computational
+overhead. We evaluate its performance us-
+ing incremental metrics and propose new
+repair processing evaluation standards.
+</bodyText>
+<sectionHeader confidence="0.999517" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9997362">
+Self-repairs in spontaneous speech are annotated
+according to a well established three-phase struc-
+ture from (Shriberg, 1994) onwards, and as de-
+scribed in Meteer et al. (1995)’s Switchboard cor-
+pus annotation handbook:
+</bodyText>
+<equation confidence="0.932739333333333">
+John [ likes + {uh} loves ] Mary (1)
+ |{z }  |{z }  |{z }
+reparandum interregnum repair
+</equation>
+<bodyText confidence="0.998671125">
+From a dialogue systems perspective, detecting re-
+pairs and assigning them the appropriate structure
+is vital for robust natural language understanding
+(NLU) in interactive systems. Downgrading the
+commitment of reparandum phases and assigning
+appropriate interregnum and repair phases permits
+computation of the user’s intended meaning.
+Furthermore, the recent focus on incremental
+dialogue systems (see e.g. (Rieser and Schlangen,
+2011)) means that repair detection should oper-
+ate without unnecessary processing overhead, and
+function efficiently within an incremental frame-
+work. However, such left-to-right operability on
+its own is not sufficient: in line with the princi-
+ple of strong incremental interpretation (Milward,
+1991), a repair detector should give the best re-
+sults possible as early as possible. With one ex-
+ception (Zwarts et al., 2010), there has been no
+focus on evaluating or improving the incremental
+performance of repair detection.
+In this paper we present STIR (Strongly In-
+cremental Repair detection), a system which ad-
+dresses the challenges of incremental accuracy,
+computational complexity and latency in self-
+repair detection, by making local decisions based
+on relatively simple measures of fluency and sim-
+ilarity. Section 2 reviews state-of-the-art methods;
+Section 3 summarizes the challenges and explains
+our general approach; Section 4 explains STIR in
+detail; Section 5 explains our experimental set-up
+and novel evaluation metrics; Section 6 presents
+and discusses our results and Section 7 concludes.
+</bodyText>
+<sectionHeader confidence="0.998531" genericHeader="introduction">
+2 Previous work
+</sectionHeader>
+<bodyText confidence="0.999912388888889">
+Qian and Liu (2013) achieve the state of the art in
+Switchboard corpus self-repair detection, with an
+F-score for detecting reparandum words of 0.841
+using a three-step weighted Max-Margin Markov
+network approach. Similarly, Georgila (2009)
+uses Integer Linear Programming post-processing
+of a CRF to achieve F-scores over 0.8 for reparan-
+dum start and repair start detection. However nei-
+ther approach can operate incrementally.
+Recently, there has been increased interest
+in left-to-right repair detection: Rasooli and
+Tetreault (2014) and Honnibal and Johnson (2014)
+present dependency parsing systems with reparan-
+dum detection which perform similarly, the latter
+equalling Qian and Liu (2013)’s F-score at 0.841.
+However, while operating left-to-right, these sys-
+tems are not designed or evaluated for their incre-
+mental performance. The use of beam search over
+</bodyText>
+<page confidence="0.978844">
+78
+</page>
+<note confidence="0.9103805">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 78–89,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999972390625">
+different repair hypotheses in (Honnibal and John-
+son, 2014) is likely to lead to unstable repair label
+sequences, and they report repair hypothesis ‘jit-
+ter’. Both of these systems use a non-monotonic
+dependency parsing approach that immediately re-
+moves the reparandum from the linguistic anal-
+ysis of the utterance in terms of its dependency
+structure and repair-reparandum correspondence,
+which from a downstream NLU module’s perspec-
+tive is undesirable. Heeman and Allen (1999) and
+Miller and Schuler (2008) present earlier left-to-
+right operational detectors which are less accu-
+rate and again give no indication of the incremen-
+tal performance of their systems. While Heeman
+and Allen (1999) rely on repair structure template
+detection coupled with a multi-knowledge-source
+language model, the rarity of the tail of repair
+structures is likely to be the reason for lower per-
+formance: Hough and Purver (2013) show that
+only 39% of repair alignment structures appear
+at least twice in Switchboard, supported by the
+29% reported by Heeman and Allen (1999) on
+the smaller TRAINS corpus. Miller and Schuler
+(2008)’s encoding of repairs into a grammar also
+causes sparsity in training: repair is a general pro-
+cessing strategy not restricted to certain lexical
+items or POS tag sequences.
+The model we consider most suitable for in-
+cremental dialogue systems so far is Zwarts et
+al. (2010)’s incremental version of Johnson and
+Charniak (2004)’s noisy channel repair detector,
+as it incrementally applies structural repair anal-
+yses (rather than just identifying reparanda) and
+is evaluated for its incremental properties. Fol-
+lowing (Johnson and Charniak, 2004), their sys-
+tem uses an n-gram language model trained on
+roughly 100K utterances of reparandum-excised
+(‘cleaned’) Switchboard data. Its channel model is
+a statistically-trained S-TAG parser whose gram-
+mar has simple reparandum-repair alignment rule
+categories for its non-terminals (copy, delete, in-
+sert, substitute) and words for its terminals. The
+parser hypothesises all possible repair structures
+for the string consumed so far in a chart, before
+pruning the unlikely ones. It performs equally
+well to the non-incremental model by the end of
+each utterance (F-score = 0.778), and can make
+detections early via the addition of a speculative
+next-word repair completion category to their S-
+TAG non-terminals. In terms of incremental per-
+formance, they report the novel evaluation met-
+ric of time-to-detection for correctly identified re-
+pairs, achieving an average of 7.5 words from the
+start of the reparandum and 4.6 from the start of
+the repair phase. They also introduce delayed ac-
+curacy, a word-by-word evaluation against gold-
+standard disfluency tags up to the word before the
+current word being consumed (in their terms, the
+prefix boundary), giving a measure of the stability
+of the repair hypotheses. They report an F-score
+of 0.578 at one word back from the current prefix
+boundary, increasing word-by-word until 6 words
+back where it reaches 0.770. These results are the
+point-of-departure for our work.
+</bodyText>
+<sectionHeader confidence="0.991105" genericHeader="method">
+3 Challenges and Approach
+</sectionHeader>
+<bodyText confidence="0.9643152">
+In this section we summarize the challenges for
+incremental repair detection: computational com-
+plexity, repair hypothesis stability, latency of de-
+tection and repair structure identification. In 3.1
+we explain how we address these.
+Computational complexity Approaches to de-
+tecting repair structures often use chart storage
+(Zwarts et al., 2010; Johnson and Charniak, 2004;
+Heeman and Allen, 1999), which poses a com-
+putational overhead: if considering all possible
+boundary points for a repair structure’s 3 phases
+beginning on any word, for prefixes of length n
+the number of hypotheses can grow in the order
+O(n4). Exploring a subset of this space is nec-
+essary for assigning entire repair structures as in
+(1) above, rather than just detecting reparanda:
+the (Johnson and Charniak, 2004; Zwarts et al.,
+2010) noisy-channel detector is the only system
+that applies such structures but the potential run-
+time complexity in decoding these with their S-
+TAG repair parser is O(n5). In their approach,
+complexity is mitigated by imposing a maximum
+repair length (12 words), and also by using beam
+search with re-ranking (Lease et al., 2006; Zwarts
+and Johnson, 2011). If we wish to include full
+decoding of the repair’s structure (as argued by
+Hough and Purver (2013) as necessary for full in-
+terpretation) whilst taking a strictly incremental
+and time-critical perspective, reducing this com-
+plexity by minimizing the size of this search space
+is crucial.
+Stability of repair hypotheses and latency Us-
+ing a beam search of n-best hypotheses on a word-
+by-word basis can cause ‘jitter’ in the detector’s
+output. While utterance-final accuracy is desired,
+</bodyText>
+<page confidence="0.997577">
+79
+</page>
+<bodyText confidence="0.99995344">
+for a truly incremental system good intermedi-
+ate results are equally important. Zwarts et al.
+(2010)’s time-to-detection results show their sys-
+tem is only certain about a detection after process-
+ing the entire repair. This may be due to the string
+alignment-inspired S-TAG that matches repair and
+reparanda: a ‘rough copy’ dependency only be-
+comes likely once the entire repair has been con-
+sumed. The latency of 4.6 words to detection and
+a relatively slow rise to utterance-final accuracy up
+to 6 words back is undesirable given repairs have
+a mean reparandum length of ≈1.5 words (Hough
+and Purver, 2013; Shriberg and Stolcke, 1998).
+Structural identification Classifying repairs
+has been ignored in repair processing, despite the
+presence of distinct categories (e.g. repeats, sub-
+stitutions, deletes) with different pragmatic effects
+(Hough and Purver, 2013).1 This is perhaps due to
+lack of clarity in definition: even for human anno-
+tators, verbatim repeats withstanding, agreement
+is often poor (Hough and Purver, 2013; Shriberg,
+1994). Assigning and evaluating repair (not just
+reparandum) structures will allow repair interpre-
+tation in future; however, work to date evaluates
+only reparandum detection.
+</bodyText>
+<subsectionHeader confidence="0.999758">
+3.1 Our approach
+</subsectionHeader>
+<bodyText confidence="0.989669738461539">
+To address the above, we propose an alternative
+to (Johnson and Charniak, 2004; Zwarts et al.,
+2010)’s noisy channel model. While the model
+elegantly captures intuitions about parallelism in
+repairs and modelling fluency, it relies on string-
+matching, motivated in a similar way to automatic
+spelling correction (Brill and Moore, 2000): it as-
+sumes a speaker chooses to utter fluent utterance
+X according to some prior distribution P(X), but
+a noisy channel causes them instead to utter a
+noisy Y according to channel model P(Y  |X).
+Estimating P(Y |X) directly from observed data
+is difficult due to sparsity of repair instances, so a
+transducer is trained on the rough copy alignments
+between reparandum and repair. This approach
+succeeds because repetition and simple substitu-
+tion repairs are very common; but repair as a psy-
+chological process is not driven by string align-
+ment, and deletes, restarts and rarer substitution
+forms are not captured. Furthermore, the noisy
+channel model assumes an inherently utterance-
+global process for generating (and therefore find-
+1Though see (Germesin et al., 2008) for one approach,
+albeit using idiosyncratic repair categories.
+ing) an underlying ‘clean’ string — much as sim-
+ilar spelling correction models are word-global —
+we instead take a very local perspective here.
+In accordance with psycholinguistic evidence
+(Brennan and Schober, 2001), we assume charac-
+teristics of the repair onset allow hearers to detect
+it very quickly and solve the continuation prob-
+lem (Levelt, 1983) of integrating the repair into
+their linguistic context immediately, before pro-
+cessing or even hearing the end of the repair phase.
+While repair onsets may take the form of inter-
+regna, this is not a reliable signal, occurring in
+only ≈15% of repairs (Hough and Purver, 2013;
+Heeman and Allen, 1999). Our repair onset de-
+tection is therefore driven by departures from flu-
+ency, via information-theoretic features derived
+incrementally from a language model in line with
+recent psycholinguistic accounts of incremental
+parsing – see (Keller, 2004; Jaeger and Tily, 2011).
+Considering the time-linear way a repair is pro-
+cessed and the fact speakers are exponentially less
+likely to trace one word further back in repair as
+utterance length increases (Shriberg and Stolcke,
+1998), backwards search seems to be the most ef-
+ficient reparandum extent detection method.2 Fea-
+tures determining the detection of the reparan-
+dum extent in the backwards search can also be
+information-theoretic: entropy measures of dis-
+tributional parallelism can characterize not only
+rough copy dependencies, but distributionally sim-
+ilar or dissimilar correspondences between se-
+quences. Finally, when detecting the repair end
+and structure, distributional information allows
+computation of the similarity between reparan-
+dum and repair. We argue a local-detection-
+with-backtracking approach is more cognitively
+plausible than string-based left-to-right repair la-
+belling, and using this insight should allow an im-
+provement in incremental accuracy, stability and
+time-to-detection over string-alignment driven ap-
+proaches in repair detection.
+</bodyText>
+<sectionHeader confidence="0.99359" genericHeader="method">
+4 STIR: Strongly Incremental Repair
+detection
+</sectionHeader>
+<bodyText confidence="0.996830625">
+Our system, STIR (Strongly Incremental Repair
+detection), therefore takes a local incremental ap-
+2We acknowledge a purely position-based model for
+reparandum extent detection under-estimates prepositions,
+which speakers favour as the retrace start and over-estimates
+verbs, which speakers tend to avoid retracing back to, prefer-
+ring to begin the utterance again, as (Healey et al., 2011)’s
+experiments also demonstrate.
+</bodyText>
+<page confidence="0.736656">
+80
+</page>
+<equation confidence="0.8872845">
+S0 S1 S2
+“John” “likes”
+</equation>
+<bodyText confidence="0.982374857142857">
+proach to detecting repairs and isolated edit terms,
+assigning words the structures in (2). We in-
+clude interregnum recognition in the process, due
+to the inclusion of interregnum vocabulary within
+edit term vocabulary (Ginzburg, 2012; Hough and
+T0 Purver, 2013), a useful feature for repair detection
+(Lease et al., 2006; Qian and Liu, 2013).
+</bodyText>
+<figureCaption confidence="0.99057">
+Figure 1: Strongly Incremental Repair Detection
+</figureCaption>
+<equation confidence="0.887422333333333">
+�
+...[rmstart...rmend + {ed}rpstart...rpend]... (2)
+...{ed}...
+</equation>
+<bodyText confidence="0.999962071428571">
+Rather than detecting the repair structure in its
+left-to-right string order as above, STIR functions
+as in Figure 1: first detecting edit terms (possibly
+interregna) at step T1; then detecting repair onsets
+rpstart at T2; if one is found, backwards searching
+to find rmstart at T3; then finally finding the re-
+pair end rpend at T4. Step T1 relies mainly on
+lexical probabilities from an edit term language
+model; T2 exploits features of divergence from a
+fluent language model; T3 uses fluency of hypoth-
+esised repairs; and T4 the similarity between dis-
+tributions after reparandum and repair. However,
+each stage integrates these basic insights via mul-
+tiple related features in a statistical classifier.
+</bodyText>
+<subsectionHeader confidence="0.949445">
+4.1 Enriched incremental language models
+</subsectionHeader>
+<bodyText confidence="0.978161272727273">
+We derive the basic information-theoretic features
+required using n-gram language models, as they
+have a long history of information theoretic anal-
+ysis (Shannon, 1948) and provide reproducible re-
+sults without forcing commitment to one partic-
+ular grammar formalism. Following recent work
+on modelling grammaticality judgements (Clark
+et al., 2013), we implement several modifications
+to standard language models to develop our basic
+measures of fluency and uncertainty.
+For our main fluent language models we train
+a trigram model with Kneser-Ney smoothing
+(Kneser and Ney, 1995) on the words and POS
+tags of the standard Switchboard training data
+(all files with conversation numbers beginning
+sw2*,sw3* in the Penn Treebank III release), con-
+sisting of ≈100K utterances, ≈600K words. We
+follow (Johnson and Charniak, 2004) by clean-
+ing the data of disfluencies (i.e. edit terms and
+reparanda), to approximate a ‘fluent’ language
+model. We call these probabilities plex , ppos
+kn be-
+</bodyText>
+<footnote confidence="0.747763">
+low.3
+3We suppress the pos and lex superscripts below where we
+refer to measures from either model.
+</footnote>
+<figure confidence="0.997913939393939">
+rmstart rmend ed
+rpstart
+rpstart
+rmstart
+rmend
+T3
+“loves”
+ed rpstart rpsub
+end
+rpstart
+S0 S1
+Sq
+rmstart
+rmend
+sub
+rpend
+ed
+T4
+S2
+S3
+“loves”
+rpstart rpsub
+end
+“Mary”
+“uh”
+rmstart rmend
+ed
+“John” “likes”
+rpstart
+S0 S1
+Sq
+S5
+rmstart
+rmend
+sub
+pend
+ed
+T5
+S2
+S3
+“uh”
+rmstart rmend
+“John” “likes”
+ed
+S2
+S3
+S0 S1
+Sq
+“John” “likes” “uh”
+“loves”
+ed
+rpstart
+ed
+S0 S1 S2
+S3
+Sq
+T2
+ed
+ed
+S0 S1 S2
+S3
+T1
+“John” “likes” “uh”
+rpstart
+“John” “likes” “uh”
+“loves”
+</figure>
+<page confidence="0.99208">
+81
+</page>
+<bodyText confidence="0.999612">
+We then derive surprisal as our principal default
+lexical uncertainty measurement s (equation 3) in
+both models; and, following (Clark et al., 2013),
+the (unigram) Weighted Mean Log trigram prob-
+ability (WML, eq. 4)– the trigram logprob of the
+sequence divided by the inverse summed logprob
+of the component unigrams (apart from the first
+two words in the sequence, which serve as the
+first trigram history). As here we use a local ap-
+proach we restrict the WML measures to single
+trigrams (weighted by the inverse logprob of the
+final word). While use of standard n-gram prob-
+ability conflates syntactic with lexical probability,
+WML gives us an approximation to incremental
+syntactic probability by factoring out lexical fre-
+quency.
+</bodyText>
+<equation confidence="0.786279">
+(4)
+</equation>
+<bodyText confidence="0.999942333333333">
+Distributional measures To approximate un-
+certainty, we also derive the entropy H(w  |c) of
+the possible word continuations w given a context
+c, from p(wz  |c) for all words wz in the vocabu-
+lary – see (5). Calculating distributions over the
+entire lexicon incrementally is costly, so we ap-
+proximate this by constraining the calculation to
+words which are observed at least once in context
+c in training, we = {w|count(c, w) ≥ 1} , assum-
+ing a uniform distribution over the unseen suffixes
+by using the appropriate smoothing constant, and
+subtracting the latter from the former – see eq. (6).
+Manual inspection showed this approximation
+to be very close, and the trie structure of our n-
+gram models allows efficient calculation. We also
+make use of the Zipfian distribution of n-grams
+in corpora by storing entropy values for the 20%
+most common trigram contexts observed in train-
+ing, leaving entropy values of rare or unseen con-
+texts to be computed at decoding time with little
+search cost due to their small or empty we sets.
+</bodyText>
+<equation confidence="0.9998106">
+H(w  |c) = − � pkn(w  |c) log2 pkn(w  |c) (5)
+wEV ocab
+H(w  |c) Pz� L− E pkn(w  |c) log2 pkn(w  |c)J
+wEwc
+− [n x A log2 A]
+</equation>
+<bodyText confidence="0.924656">
+where n = |V ocab |− |wc|
+and A = 1 −EwEwc pkn(w  |c)
+n
+Given entropy estimates, we can also sim-
+ilarly approximate the Kullback-Leibler (KL)
+divergence (relative entropy) between distribu-
+tions in two different contexts c1 and c2, i.e.
+B(w|c1) and B(w|c2), by pair-wise computing
+</bodyText>
+<equation confidence="0.980392">
+p(w|c1) log2(p(w|e1)
+</equation>
+<bodyText confidence="0.962211416666667">
+p(w|e2)) only for words w E wc1 n
+wc2 , then approximating unseen values by assum-
+ing uniform distributions. Using pkn smoothed es-
+timates rather than raw maximum likelihood es-
+timations avoids infinite KL divergence values.
+Again, we found this approximation sufficiently
+close to the real values for our purposes. All such
+probability and distribution values are stored in
+incrementally constructed directed acyclic graph
+(DAG) structures (see Figure 1), exploiting the
+Markov assumption of n-gram models to allow ef-
+ficient calculation by avoiding re-computation.
+</bodyText>
+<subsectionHeader confidence="0.896563">
+4.2 Individual classifiers
+</subsectionHeader>
+<bodyText confidence="0.9998092">
+This section details the features used by the 4 indi-
+vidual classifiers. To investigate the utility of the
+features used in each classifier we obtain values
+on the standard Switchboard heldout data (PTB III
+files sw4[5-9]*: 6.4K utterances, 49K words).
+</bodyText>
+<subsubsectionHeader confidence="0.565302">
+4.2.1 Edit term detection
+</subsubsectionHeader>
+<bodyText confidence="0.99665547368421">
+In the first component, we utilise the well-known
+observation that edit terms have a distinctive
+vocabulary (Ginzburg, 2012), training a bigram
+model on a corpus of all edit words annotated in
+Switchboard’s training data. The classifier simply
+uses the surprisal slex from this edit word model,
+and the trigram surprisal slex from the standard
+fluent model of Section 4.1. At the current position
+wn, one, both or none of words wn and wn−1 are
+classified as edits. We found this simple approach
+effective and stable, although some delayed deci-
+sions occur in cases where slex and WMLlex are
+high in both models before the end of the edit, e.g.
+“I like” → “I {like} want...”. Words classified as
+ed are removed from the incremental processing
+graph (indicated by the dotted line transition in
+Figure 1) and the stack updated if repair hypothe-
+ses are cancelled due to a delayed edit hypothesis
+of wn−1.
+</bodyText>
+<subsubsectionHeader confidence="0.690614">
+4.2.2 Repair start detection
+</subsubsectionHeader>
+<bodyText confidence="0.99995325">
+Repair onset detection is arguably the most crucial
+component: the greater its accuracy, the better the
+input for downstream components and the lesser
+the overhead of filtering false positives required.
+</bodyText>
+<equation confidence="0.964617">
+WML(w0 ... wn) =
+− Enj=2 log2 pkn(wj)
+s(wi−2 ... wi) = [[-1og2 pkn (wi  |wi−2, wi−1) (3)
+Lei=2log2 pkn(wi  |wi−2, wi−1)
+(6)
+</equation>
+<page confidence="0.950227">
+82
+</page>
+<bodyText confidence="0.281367">
+i havent had any good really very good experience with child care
+</bodyText>
+<figureCaption confidence="0.981132">
+Figure 2: WMLlex values for trigrams for a repaired utterance exhibiting the drop at the repair onset
+</figureCaption>
+<figure confidence="0.9911085">
+0.0
+−0.2
+−0.4
+−0.6
+−0.8
+−1.0
+−1.2
+−1.4
+</figure>
+<bodyText confidence="0.999450511111111">
+We use Section 4.1’s information-theoretic fea-
+tures s, WML, H for words and POS, and intro-
+duce 5 additional information-theoretic features:
+ΔWML is the difference between the WML val-
+ues at wn−1 and wn; ΔH is the difference in en-
+tropy between wn−1 and wn; InformationGain
+is the difference between expected entropy at
+wn−1 and observed s at wn, a measure that
+factors out the effect of naturally high entropy
+contexts; BestEntropyReduce is the best reduc-
+tion in entropy possible by an early rough hy-
+pothesis of reparandum onsets within 3 words;
+and BestWMLBoost similarly speculates on the
+best improvement of WML possible by positing
+rmstart positions up to 3 words back. We also in-
+clude simple alignment features: binary features
+which indicate if the word wi−x is identical to the
+current word wi for x E {1, 2, 3}. With 6 align-
+ment features, 16 N-gram features and a single
+logical feature edit which indicates the presence
+of an edit word at position wi−1, rpstart detection
+uses 23 features– see Table 1.
+We hypothesised repair onsets rpstart would
+have significantly lower plex (lower lexical-
+syntactic probability) and WMLlex (lower syntac-
+tic probability) than other fluent trigrams. This
+was the case in the Switchboard heldout data
+for both measures, with the biggest difference
+obtained for WMLlex (non-repair-onsets: -0.736
+(sd=0.359); repair onsets: -1.457 (sd=0.359)). In
+the POS model, entropy of continuation Hpos was
+the strongest feature (non-repair-onsets: 3.141
+(sd=0.769); repair onsets: 3.444 (sd=0.899)). The
+trigram WMLlex measure for the repaired utter-
+ance “I haven’t had any [ good + really very good
+] experience with child care” can be seen in Fig-
+ure 2. The steep drop at the repair onset shows the
+usefulness of WML features for fluency measures.
+To compare n-gram measures against other lo-
+cal features, we ranked the features by Informa-
+tion Gain using 10-fold cross validation over the
+Switchboard heldout data– see Table 1. The lan-
+guage model features are far more discriminative
+than the alignment features, showing the potential
+of a general information-theoretic approach.
+</bodyText>
+<subsectionHeader confidence="0.592288">
+4.2.3 Reparandum start detection
+</subsectionHeader>
+<bodyText confidence="0.999402045454546">
+In detecting rmstart positions given a hypothe-
+sised rpstart (stage T3 in Figure 1), we use the
+noisy channel intuition that removing the reparan-
+dum (from rmstart to rpstart) increases fluency
+of the utterance, expressed here as WMLboost as
+described above. When using gold standard in-
+put we found this was the case on the heldout
+data, with a mean WMLboost of 0.223 (sd=0.267)
+for reparandum onsets and -0.058 (sd=0.224) for
+other words in the 6-word history- the negative
+boost for non-reparandum words captures the in-
+tuition that backtracking from those points would
+make the utterance less grammatical, and con-
+versely the boost afforded by the correct rmstart
+detection helps solve the continuation problem for
+the listener (and our detector).
+Parallelism in the onsets of rpstart and
+rmstart can also help solve the continuation
+problem, and in fact the KL divergence be-
+tween Bpos(w  |rmstart, rmstart−1) and Bpos(w |
+rpstart, rpstart−1) is the second most useful fea-
+ture with average merit 0.429 (+- 0.010) in cross-
+</bodyText>
+<page confidence="0.99751">
+83
+</page>
+<bodyText confidence="0.968521333333333">
+validation. The highest ranked feature is ΔWML
+(0.437 (+- 0.003)) which here encodes the drop in
+the WMLboost from one backtracked position to
+the next. In ranking the 32 features we use, again
+information-theoretic ones are higher ranked than
+the logical features.
+</bodyText>
+<table confidence="0.997652958333333">
+average merit average rank attribute
+0.139 (+- 0.002) 1 (+- 0.00) Hpos
+0.131 (+- 0.001) 2 (+- 0.00) WMLpos
+0.126 (+- 0.001) 3.4 (+- 0.66) WMLlex
+0.125 (+- 0.003) 4 (+- 1.10) 8pos
+0.122 (+- 0.001) 5.9 (+- 0.94) wi−1 = wi
+0.122 (+- 0.001) 5.9 (+- 0.70) BestWMLBoostlex
+0.122 (+- 0.002) 5.9 (+- 1.22) InformationGainpos
+0.119 (+- 0.001) 7.9 (+- 0.30) BestWMLBoostpos
+0.098 (+- 0.002) 9 (+- 0.00) Hlex
+0.08 (+- 0.001) 10.4 (+- 0.49) ΔWMLpos
+0.08 (+- 0.003) 10.6 (+- 0.49) ΔHpos
+0.072 (+- 0.001) 12 (+- 0.00) POSi−1 = POSi
+0.066 (+- 0.003) 13.1 (+- 0.30) 8lex
+0.059 (+- 0.000) 14.2 (+- 0.40) ΔWMLlex
+0.058 (+- 0.005) 14.7 (+- 0.64) BestEntropyReducepos
+0.049 (+- 0.001) 16.3 (+- 0.46) InformationGainlex
+0.047 (+- 0.004) 16.7 (+- 0.46) BestEntropyReducelex
+0.035 (+- 0.004) 18 (+- 0.00) ΔHlex
+0.024 (+- 0.000) 19 (+- 0.00) wi−2 = wi
+0.013 (+- 0.000) 20 (+- 0.00) POSi−2 = POSi
+0.01 (+- 0.000) 21 (+- 0.00) wi−3 = wi
+0.009 (+- 0.000) 22 (+- 0.00) edit
+0.006 (+- 0.000) 23 (+- 0.00) POSi−3 = POSi
+</table>
+<tableCaption confidence="0.904815666666667">
+Table 1: Feature ranker (Information Gain) for
+rpstart detection- 10-fold x-validation on Switch-
+board heldout data.
+</tableCaption>
+<bodyText confidence="0.938651263157895">
+4.2.4 Repair end detection and structure
+classification
+For rpend detection, using the notion of paral-
+lelism, we hypothesise an effect of divergence be-
+tween θlex at the reparandum-final word rmend
+and the repair-final word rpend: for repetition re-
+pairs, KL divergence will trivially be 0; for substi-
+tutions, it will be higher; for deletes, even higher.
+Upon inspection of our feature ranking this KL
+measure ranked 5th out of 23 features (merit=
+0.258 (+- 0.002)).
+We introduce another feature encoding paral-
+lelism ReparandumRepairDifference: the differ-
+ence in probability between an utterance cleaned
+of the reparandum and the utterance with its
+repair phase substituting its reparandum. In
+both the POS (merit=0.366 (+- 0.003)) and word
+(merit=0.352 (+- 0.002)) LMs, this was the most
+discriminative feature.
+</bodyText>
+<subsectionHeader confidence="0.998176">
+4.3 Classifier pipeline
+</subsectionHeader>
+<bodyText confidence="0.998233666666667">
+STIR effects a pipeline of classifiers as in Fig-
+ure 3, where the ed classifier only permits non
+ed words to be passed on to rpstart classification
+and for rpend classification of the active repair
+hypotheses, maintained in a stack. The rpstart
+classifier passes positive repair hypotheses to the
+rmstart classifier, which backwards searches up
+to 7 words back in the utterance. If a rmstart is
+classified, the output is passed on for rpend clas-
+sification at the end of the pipeline, and if not re-
+jected this is pushed onto the repair stack. Repair
+hypotheses are are popped off when the string is
+7 words beyond its rpstart position. Putting limits
+on the stack’s storage space is a way of controlling
+for processing overhead and complexity. Embed-
+ded repairs whose rmstart coincide with another’s
+rpstart are easily dealt with as they are added to
+the stack as separate hypotheses.4
+Classifiers Classifiers are implemented using
+Random Forests (Breiman, 2001) and we use dif-
+ferent error functions for each stage using Meta-
+Cost (Domingos, 1999). The flexibility afforded
+by implementing adjustable error functions in a
+pipelined incremental processor allows control of
+the trade-off of immediate accuracy against run-
+time and stability of the sequence classification.
+Processing complexity This pipeline avoids an
+exhaustive search all repair hypotheses. If we limit
+the search to within the (rmstarti rpstart) possibil-
+ities, this number of repairs grows approximately
+in the triangular number series– i.e. n(n+1)
+2 , a
+nested loop over previous words as n gets incre-
+mented – which in terms of a complexity class is
+a quadratic O(n2). If we allow more than one
+(rmstarti rpstart) hypothesis per word, the com-
+plexity goes up to O(n3), however in the tests that
+we describe below, we are able to achieve good de-
+tection results without permitting this extra search
+space. Under our assumption that reparandum on-
+set detection is only triggered after repair onset de-
+tection, and repair extent detection is dependent
+on positive reparandum onset detection, a pipeline
+with accurate components will allow us to limit
+processing to a small subset of this search space.
+</bodyText>
+<footnote confidence="0.978173333333333">
+4We constrain the problem not to include embedded
+deletes which may share their rpstart word with another re-
+pair – these are in practice very rare.
+</footnote>
+<page confidence="0.998162">
+84
+</page>
+<figureCaption confidence="0.999227">
+Figure 3: Classifier pipeline
+</figureCaption>
+<sectionHeader confidence="0.996624" genericHeader="method">
+5 Experimental set-up
+</sectionHeader>
+<bodyText confidence="0.99999425">
+We train STIR on the Switchboard data described
+above, and test it on the standard Switchboard test
+data (PTB III files 4[0-1]*). In order to avoid over-
+fitting of classifiers to the basic language models,
+we use a cross-fold training approach: we divide
+the corpus into 10 folds and use language mod-
+els trained on 9 folds to obtain feature values for
+the 10th fold, repeating for all 10. Classifiers are
+then trained as standard on the resulting feature-
+annotated corpus. This resulted in better feature
+utility for n-grams and better F-score results for
+detection in all components in the order of 5-6%.5
+Training the classifiers Each Random Forest
+classifier was limited to 20 trees of maximum
+depth 4 nodes, putting a ceiling on decoding time.
+In making the classifiers cost-sensitive, MetaCost
+resamples the data in accordance with the cost
+functions: we found using 10 iterations over a re-
+sample of 25% of the training data gave the most
+effective trade-off between training time and accu-
+racy.6 We use 8 different cost functions in rpstart
+with differing costs for false negatives and posi-
+tives of the form below, where R is a repair ele-
+ment word and F is a fluent onset:
+</bodyText>
+<subsectionHeader confidence="0.863932">
+Rhyp Fhyp
+</subsectionHeader>
+<bodyText confidence="0.9764302">
+� Rgold 0 2
+Fgold 1 0
+We adopt a similar technique in rmstart using 5
+different cost functions and in rpend using 8 dif-
+ferent settings, which when combined gives a to-
+tal of 320 different cost function configurations.
+We hypothesise that higher recall permitted in the
+pipeline’s first components would result in better
+overall accuracy as these hypotheses become re-
+fined, though at the cost of the stability of the hy-
+</bodyText>
+<footnote confidence="0.965905">
+5Zwarts and Johnson (2011) take a similar approach on
+Switchboard data to train a re-ranker of repair analyses.
+6As (Domingos, 1999) demonstrated, there are only rela-
+tively small accuracy gains when using more than this, with
+training time increasing in the order of the re-sample size.
+</footnote>
+<bodyText confidence="0.998693166666667">
+potheses of the sequence and extra downstream
+processing in pruning false positives.
+We also experiment with the number of repair
+hypotheses permitted per word, using limits of 1-
+best and 2-best hypotheses. We expect that allow-
+ing 2 hypotheses to be explored per rpstart should
+allow greater final accuracy, but with the trade-off
+of greater decoding and training complexity, and
+possible incremental instability.
+As we wish to explore the incrementality versus
+final accuracy trade-off that STIR can achieve we
+now describe the evaluation metrics we employ.
+</bodyText>
+<subsectionHeader confidence="0.982887">
+5.1 Incremental evaluation metrics
+</subsectionHeader>
+<bodyText confidence="0.999980818181818">
+Following (Baumann et al., 2011) we divide our
+evaluation metrics into similarity metrics (mea-
+sures of equality with or similarity to a gold stan-
+dard), timing metrics (measures of the timing of
+relevant phenomena detected from the gold stan-
+dard) and diachronic metrics (evolution of incre-
+mental hypotheses over time).
+Similarity metrics For direct comparison to
+previous approaches we use the standard measure
+of overall accuracy, the F-score over reparandum
+words, which we abbreviate Frm (see 7):
+</bodyText>
+<equation confidence="0.9918926">
+precision =
+recall = rmgold
+precision × recall
+Frm = 2 ×
+precision + recall
+</equation>
+<bodyText confidence="0.999706818181818">
+We are also interested in repair structural clas-
+sification, we also measure F-score over all repair
+components (rm words, ed words as interregna
+and rp words), a metric we abbreviate Fs. This
+is not measured in standard repair detection on
+Switchboard. To investigate incremental accuracy
+we evaluate the delayed accuracy (DA) introduced
+by (Zwarts et al., 2010), as described in section
+2 against the utterance-final gold standard disflu-
+ency annotations, and use the mean of the 6 word
+F-scores.
+</bodyText>
+<figure confidence="0.7524265">
+rmcorrect
+rmhyp
+rmcorrect
+(7)
+</figure>
+<page confidence="0.744238">
+85
+</page>
+<table confidence="0.483734">
+Input and current repair labels edits
+John (®rm) (®rp)
+(Grm) (Grp) ®ed
+®rm ®rp
+John likes
+rm rp
+John likes uh
+ed
+John likes uh loves
+rm ed rp
+John likes uh loves Mary
+rm ed rp
+</table>
+<figureCaption confidence="0.9998535">
+Figure 4: Edit Overhead- 4 unnecessary edits
+Figure 6: Delayed Accuracy Curves
+</figureCaption>
+<bodyText confidence="0.999983487804878">
+Timing and resource metrics Again for com-
+parative purposes we use Zwarts et al’s time-to-
+detection metrics, that is the two average distances
+(in numbers of words) consumed before first de-
+tection of gold standard repairs, one from rmstart,
+TDrm and one from rpstart, TDrp. In our 1-best
+detection system, before evaluation we know a pri-
+ori TDrp will be 1 token, and TDrm will be 1 more
+than the average length of rmstart − rpstart repair
+spans correctly detected. However when we in-
+troduce a beam where multiple rmstarts are pos-
+sible per rpstart with the most likely hypothesis
+committed as the current output, the latency may
+begin to increase: the initially most probable hy-
+pothesis may not be the correct one. In addition
+to output timing metrics, we account for intrinsic
+processing complexity with the metric processing
+overhead (PO), which is the number of classifica-
+tions made by all components per word of input.
+Diachronic metrics To measure stability of re-
+pair hypotheses over time we use (Baumann et al.,
+2011)’s edit overhead (EO) metric. EO measures
+the proportion of edits (add, revoke, substitute) ap-
+plied to a processor’s output structure that are un-
+necessary. STIR’s output is the repair label se-
+quence shown in Figure 1, however rather than
+evaluating its EO against the current gold stan-
+dard labels, we use a new mark-up we term the in-
+cremental repair gold standard: this does not pe-
+nalise lack of detection of a reparandum word rm
+as a bad edit until the corresponding rpstart of that
+rm has been consumed. While Frm, Fs and DA
+evaluate against what Baumann et al. (2011) call
+the current gold standard, the incremental gold
+standard reflects the repair processing approach
+we set out in 3. An example of a repaired utterance
+with an EO of 44% (y) can be seen in Figure 4: of
+the 9 edits (7 repair annotations and 2 correct flu-
+ent words), 4 are unnecessary (bracketed). Note
+the final ⊕rm is not counted as a bad edit for the
+reasons just given.
+</bodyText>
+<sectionHeader confidence="0.999925" genericHeader="evaluation">
+6 Results and Discussion
+</sectionHeader>
+<bodyText confidence="0.995929466666667">
+We evaluate on the Switchboard test data; Ta-
+ble 2 shows results of the best performing settings
+for each of the metrics described above, together
+with the setting achieving the highest total score
+(TS)– the average % achieved of the best per-
+forming system’s result in each metric.7 The set-
+tings found to achieve the highest Frm (the metric
+standardly used in disfluency detection), and that
+found to achieve the highest TS for each stage in
+the pipeline are shown in Figure 5.
+Our experiments showed that different system
+settings perform better in different metrics, and
+no individual setting achieved the best result in
+all of them. Our best utterance-final Frm reaches
+0.779, marginally though not significantly exceed-
+ing (Zwarts et al., 2010)’s measure and STIR
+achieves 0.736 on the previously unevaluated Fs.
+The setting with the best DA improves on (Zwarts
+et al., 2010)’s result significantly in terms of mean
+values (0.718 vs. 0.694), and also in terms of the
+steepness of the curves (Figure 6). The fastest av-
+erage time to detection is 1 word for TDrp and 2.6
+words for TDrm (Table 3), improving dramatically
+on the noisy channel model’s 4.6 and 7.5 words.
+Incrementality versus accuracy trade-off We
+aimed to investigate how well a system could do
+in terms of achieving both good final accuracy and
+incremental performance, and while the best Frm
+setting had a large PO and relatively slow DA in-
+crease, we find STIR can find a good trade-off set-
+</bodyText>
+<footnote confidence="0.69899325">
+7We do not include time-to-detection scores in TS as it
+did not vary enough between settings to be significant, how-
+ever there was a difference in this measure between the 1-best
+stack condition and the 2-best stack condition – see below.
+</footnote>
+<page confidence="0.986063">
+86
+</page>
+<table confidence="0.9996741">
+rphyp Fhyp  rmhyp Fhyp  rphyp 
+start start   end Fhyp  Stack depth = 2
+rpgold  0 64  rmgold  0 8 rpgold  0 2
+start   start  end Fgold 1 0
+F gold 1 0 Fgold 1 0
+ rphyp Fhyp  rmhyp Fhyp   rphyp 
+start start   end Fhyp  Stack depth = 1
+rpgold  0 2  rmgold  0 16 rpgold  0 8
+start   start  end Fgold 1 0
+F gold 1 0 Fgold 1 0
+</table>
+<figureCaption confidence="0.991345">
+Figure 5: The cost function settings for the MetaCost classifiers for each component, for the best Frm
+setting (top row) and best total score (TS) setting (bottom row)
+</figureCaption>
+<table confidence="0.999589714285714">
+Frm Fs DA EO PO
+Best Final rm F-score (Frm) 0.779 0.735 0.698 3.946 1.733
+Best Final repair structure F-score (Fs) 0.772 0.736 0.707 4.477 1.659
+Best Delayed Accuracy of rm (DA) 0.767 0.721 0.718 1.483 1.689
+Best (lowest) Edit Overhead (EO) 0.718 0.674 0.675 0.864 1.230
+Best (lowest) Processing Overhead (PO) 0.716 0.671 0.673 0.875 1.229
+Best Total Score (mean % of best scores) (TS) 0.754 0.708 0.711 0.931 1.255
+</table>
+<tableCaption confidence="0.996586">
+Table 2: Comparison of the best performing system settings using different measures
+</tableCaption>
+<table confidence="0.998278">
+Frm Fs DA EO PO TDrp TDrm
+1-best rmstart 0.745 0.707 0.699 3.780 1.650 1.0 2.6
+2-best rmstart 0.758 0.721 0.701 4.319 1.665 1.1 2.7
+</table>
+<tableCaption confidence="0.999949">
+Table 3: Comparison of performance of systems with different stack capacities
+</tableCaption>
+<bodyText confidence="0.99996436">
+ting: the highest TS scoring setting achieves an
+Frm of 0.754 whilst also exhibiting a very good
+DA (0.711) – over 98% of the best recorded score
+– and low PO and EO rates – over 96% of the best
+recorded scores. See the bottom row of Table 2.
+As can be seen in Figure 5, the cost functions for
+these winning settings are different in nature. The
+best non-incremental Frm measure setting requires
+high recall for the rest of the pipeline to work on,
+using the highest cost, 64, for false negative rpstart
+words and the highest stack depth of 2 (similar to a
+wider beam); but the best overall TS scoring sys-
+tem uses a less permissive setting to increase in-
+cremental performance.
+We make a preliminary investigation into the
+effect of increasing the stack capacity by com-
+paring stacks with 1-best rmstart hypotheses per
+rpstart and 2-best stacks. The average differences
+between the two conditions is shown in Table 3.
+Moving to the 2-stack condition results in gain in
+overall accuracy in Frm and Fs, but at the cost of
+EO and also time-to-detection scores TDrm and
+TDrp. The extent to which the stack can be in-
+creased without increasing jitter, latency and com-
+plexity will be investigated in future work.
+</bodyText>
+<sectionHeader confidence="0.99901" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999981714285714">
+We have presented STIR, an incremental repair
+detector that can be used to experiment with in-
+cremental performance and accuracy trade-offs. In
+future work we plan to include probabilistic and
+distributional features from a top-down incremen-
+tal parser e.g. Roark et al. (2009), and use STIR’s
+distributional features to classify repair type.
+</bodyText>
+<sectionHeader confidence="0.99649" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.999309142857143">
+We thank the three anonymous EMNLP review-
+ers for their helpful comments. Hough is sup-
+ported by the DUEL project, financially supported
+by the Agence Nationale de la Research (grant
+number ANR-13-FRAL-0001) and the Deutsche
+Forschungsgemainschaft. Much of the work was
+carried out with support from an EPSRC DTA
+scholarship at Queen Mary University of Lon-
+don. Purver is partly supported by ConCreTe:
+the project ConCreTe acknowledges the financial
+support of the Future and Emerging Technologies
+(FET) programme within the Seventh Framework
+Programme for Research of the European Com-
+mission, under FET grant number 611733.
+</bodyText>
+<page confidence="0.998669">
+87
+</page>
+<sectionHeader confidence="0.996399" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999799849056604">
+T. Baumann, O. Buß, and D. Schlangen. 2011. Eval-
+uation and optimisation of incremental processors.
+Dialogue &amp; Discourse, 2(1):113–141.
+Leo Breiman. 2001. Random forests. Machine learn-
+ing, 45(1):5–32.
+S.E. Brennan and M.F. Schober. 2001. How listeners
+compensate for disfluencies in spontaneous speech.
+Journal ofMemory and Language, 44(2):274–296.
+Eric Brill and Robert C Moore. 2000. An improved er-
+ror model for noisy channel spelling correction. In
+Proceedings of the 38th Annual Meeting on Associa-
+tion for Computational Linguistics, pages 286–293.
+Association for Computational Linguistics.
+Alexander Clark, Gianluca Giorgolo, and Shalom Lap-
+pin. 2013. Statistical representation of grammat-
+icality judgements: the limits of n-gram models.
+In Proceedings of the Fourth Annual Workshop on
+Cognitive Modeling and Computational Linguistics
+(CMCL), pages 28–36, Sofia, Bulgaria, August. As-
+sociation for Computational Linguistics.
+Pedro Domingos. 1999. Metacost: A general method
+for making classifiers cost-sensitive. In Proceed-
+ings of the fifth ACM SIGKDD international con-
+ference on Knowledge discovery and data mining,
+pages 155–164. ACM.
+Kallirroi Georgila. 2009. Using integer linear pro-
+gramming for detecting speech disfluencies. In Pro-
+ceedings of Human Language Technologies: The
+2009 Annual Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics, Companion Volume: Short Papers, pages
+109–112. Association for Computational Linguis-
+tics.
+Sebastian Germesin, Tilman Becker, and Peter Poller.
+2008. Hybrid multi-step disfluency detection.
+In Machine Learning for Multimodal Interaction,
+pages 185–195. Springer.
+Jonathan Ginzburg. 2012. The Interactive Stance:
+Meaning for Conversation. Oxford University
+Press.
+P. G. T. Healey, Arash Eshghi, Christine Howes, and
+Matthew Purver. 2011. Making a contribution: Pro-
+cessing clarification requests in dialogue. In Pro-
+ceedings of the 21st Annual Meeting of the Society
+for Text and Discourse, Poitiers, July.
+Peter Heeman and James Allen. 1999. Speech repairs,
+intonational phrases, and discourse markers: model-
+ing speakers’ utterances in spoken dialogue. Com-
+putational Linguistics, 25(4):527–571.
+Matthew Honnibal and Mark Johnson. 2014. Joint
+incremental disfluency detection and dependency
+parsing. Transactions of the Association of Com-
+putational Linugistics (TACL), 2:131–142.
+Julian Hough and Matthew Purver. 2013. Modelling
+expectation in the self-repair processing of annotat-,
+um, listeners. In Proceedings of the 17th SemDial
+Workshop on the Semantics and Pragmatics of Di-
+alogue (DialDam), pages 92–101, Amsterdam, De-
+cember.
+T Florian Jaeger and Harry Tily. 2011. On language
+utility: Processing complexity and communicative
+efficiency. Wiley Interdisciplinary Reviews: Cogni-
+tive Science, 2(3):323–335.
+Mark Johnson and Eugene Charniak. 2004. A TAG-
+based noisy channel model of speech repairs. In
+Proceedings of the 42nd Annual Meeting on Asso-
+ciation for Computational Linguistics, pages 33–39,
+Barcelona. Association for Computational Linguis-
+tics.
+Frank Keller. 2004. The entropy rate principle as a
+predictor of processing effort: An evaluation against
+eye-tracking data. In EMNLP, pages 317–324.
+Reinhard Kneser and Hermann Ney. 1995. Im-
+proved backing-off for m-gram language modeling.
+In Acoustics, Speech, and Signal Processing, 1995.
+ICASSP-95.,1995 International Conference on, vol-
+ume 1, pages 181–184. IEEE.
+Matthew Lease, Mark Johnson, and Eugene Charniak.
+2006. Recognizing disfluencies in conversational
+speech. Audio, Speech, and Language Processing,
+IEEE Transactions on, 14(5):1566–1573.
+W.J.M. Levelt. 1983. Monitoring and self-repair in
+speech. Cognition, 14(1):41–104.
+M. Meteer, A. Taylor, R. MacIntyre, and R. Iyer. 1995.
+Disfluency annotation stylebook for the switchboard
+corpus. ms. Technical report, Department of Com-
+puter and Information Science, University of Penn-
+sylvania.
+Tim Miller and William Schuler. 2008. A syntactic
+time-series model for parsing fluent and disfluent
+speech. In Proceedings of the 22nd International
+Conference on Computational Linguistics-Volume 1,
+pages 569–576. Association for Computational Lin-
+guistics.
+David Milward. 1991. Axiomatic Grammar, Non-
+Constituent Coordination and Incremental Interpre-
+tation. Ph.D. thesis, University of Cambridge.
+Xian Qian and Yang Liu. 2013. Disfluency detection
+using multi-step stacked learning. In Proceedings of
+NAACL-HLT, pages 820–825.
+Mohammad Sadegh Rasooli and Joel Tetreault. 2014.
+Non-monotonic parsing of fluent umm I mean dis-
+fluent sentences. EACL 2014, pages 48–53.
+Hannes Rieser and David Schlangen. 2011. Introduc-
+tion to the special issue on incremental processing in
+dialogue. Dialogue &amp; Discourse, 2(1):1–10.
+</reference>
+<page confidence="0.987158">
+88
+</page>
+<reference confidence="0.999563125">
+Brian Roark, Asaf Bachrach, Carlos Cardenas, and
+Christophe Pallier. 2009. Deriving lexical and
+syntactic expectation-based measures for psycholin-
+guistic modeling via incremental top-down parsing.
+In Proceedings of the 2009 Conference on Empirical
+Methods in Natural Language Processing: Volume
+1-Volume 1, pages 324–333. Association for Com-
+putational Linguistics.
+Claude E. Shannon. 1948. A mathematical theory
+of communication. technical journal. AT &amp; T Bell
+Labs.
+Elizabeth Shriberg and Andreas Stolcke. 1998. How
+far do speakers back up in repairs? A quantitative
+model. In Proceedings of the International Confer-
+ence on Spoken Language Processing, pages 2183–
+2186.
+Elizabeth Shriberg. 1994. Preliminaries to a Theory
+of Speech Disfluencies. Ph.D. thesis, University of
+California, Berkeley.
+Simon Zwarts and Mark Johnson. 2011. The impact of
+language models and loss functions on repair disflu-
+ency detection. In Proceedings of the 49th Annual
+Meeting of the Association for Computational Lin-
+guistics: Human Language Technologies - Volume
+1, HLT ’11, pages 703–711, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Simon Zwarts, Mark Johnson, and Robert Dale. 2010.
+Detecting speech repairs incrementally using a noisy
+channel approach. In Proceedings of the 23rd Inter-
+national Conference on Computational Linguistics,
+COLING ’10, pages 1371–1378, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+</reference>
+<page confidence="0.999753">
+89
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.431088">
+<title confidence="0.82285">Strongly Incremental Repair Detection Systems Faculty of and</title>
+<author confidence="0.67988">Bielefeld</author>
+<email confidence="0.978846">julian.hough@uni-bielefeld.de</email>
+<affiliation confidence="0.98769225">Science Research School of Electronic and Computer Queen Mary University of</affiliation>
+<email confidence="0.989103">m.purver@qmul.ac.uk</email>
+<abstract confidence="0.9997955">We present STIR (STrongly Incremental Repair detection), a system that detects speech repairs and edit terms on transcripts incrementally with minimal latency. STIR uses information-theoretic measures from n-gram models as its principal decision features in a pipeline of classifiers detecting the different stages of repairs. Results on the Switchboard disfluency tagged corpus show utterance-final accuracy on a par with state-of-the-art incremental repair detection methods, but with better incremental accuracy, faster time-to-detection and less computational overhead. We evaluate its performance using incremental metrics and propose new repair processing evaluation standards.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>T Baumann</author>
+<author>O Buß</author>
+<author>D Schlangen</author>
+</authors>
+<title>Evaluation and optimisation of incremental processors.</title>
+<date>2011</date>
+<journal>Dialogue &amp; Discourse,</journal>
+<volume>2</volume>
+<issue>1</issue>
+<contexts>
+<context position="31002" citStr="Baumann et al., 2011" startWordPosition="4900" endWordPosition="4903">es of the sequence and extra downstream processing in pruning false positives. We also experiment with the number of repair hypotheses permitted per word, using limits of 1- best and 2-best hypotheses. We expect that allowing 2 hypotheses to be explored per rpstart should allow greater final accuracy, but with the trade-off of greater decoding and training complexity, and possible incremental instability. As we wish to explore the incrementality versus final accuracy trade-off that STIR can achieve we now describe the evaluation metrics we employ. 5.1 Incremental evaluation metrics Following (Baumann et al., 2011) we divide our evaluation metrics into similarity metrics (measures of equality with or similarity to a gold standard), timing metrics (measures of the timing of relevant phenomena detected from the gold standard) and diachronic metrics (evolution of incremental hypotheses over time). Similarity metrics For direct comparison to previous approaches we use the standard measure of overall accuracy, the F-score over reparandum words, which we abbreviate Frm (see 7): precision = recall = rmgold precision × recall Frm = 2 × precision + recall We are also interested in repair structural classificatio</context>
+<context position="33350" citStr="Baumann et al., 2011" startWordPosition="5293" endWordPosition="5296">ge length of rmstart − rpstart repair spans correctly detected. However when we introduce a beam where multiple rmstarts are possible per rpstart with the most likely hypothesis committed as the current output, the latency may begin to increase: the initially most probable hypothesis may not be the correct one. In addition to output timing metrics, we account for intrinsic processing complexity with the metric processing overhead (PO), which is the number of classifications made by all components per word of input. Diachronic metrics To measure stability of repair hypotheses over time we use (Baumann et al., 2011)’s edit overhead (EO) metric. EO measures the proportion of edits (add, revoke, substitute) applied to a processor’s output structure that are unnecessary. STIR’s output is the repair label sequence shown in Figure 1, however rather than evaluating its EO against the current gold standard labels, we use a new mark-up we term the incremental repair gold standard: this does not penalise lack of detection of a reparandum word rm as a bad edit until the corresponding rpstart of that rm has been consumed. While Frm, Fs and DA evaluate against what Baumann et al. (2011) call the current gold standar</context>
+</contexts>
+<marker>Baumann, Buß, Schlangen, 2011</marker>
+<rawString>T. Baumann, O. Buß, and D. Schlangen. 2011. Evaluation and optimisation of incremental processors. Dialogue &amp; Discourse, 2(1):113–141.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Leo Breiman</author>
+</authors>
+<title>Random forests.</title>
+<date>2001</date>
+<booktitle>Machine learning,</booktitle>
+<pages>45--1</pages>
+<contexts>
+<context position="27081" citStr="Breiman, 2001" startWordPosition="4257" endWordPosition="4258">o 7 words back in the utterance. If a rmstart is classified, the output is passed on for rpend classification at the end of the pipeline, and if not rejected this is pushed onto the repair stack. Repair hypotheses are are popped off when the string is 7 words beyond its rpstart position. Putting limits on the stack’s storage space is a way of controlling for processing overhead and complexity. Embedded repairs whose rmstart coincide with another’s rpstart are easily dealt with as they are added to the stack as separate hypotheses.4 Classifiers Classifiers are implemented using Random Forests (Breiman, 2001) and we use different error functions for each stage using MetaCost (Domingos, 1999). The flexibility afforded by implementing adjustable error functions in a pipelined incremental processor allows control of the trade-off of immediate accuracy against runtime and stability of the sequence classification. Processing complexity This pipeline avoids an exhaustive search all repair hypotheses. If we limit the search to within the (rmstarti rpstart) possibilities, this number of repairs grows approximately in the triangular number series– i.e. n(n+1) 2 , a nested loop over previous words as n gets</context>
+</contexts>
+<marker>Breiman, 2001</marker>
+<rawString>Leo Breiman. 2001. Random forests. Machine learning, 45(1):5–32.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S E Brennan</author>
+<author>M F Schober</author>
+</authors>
+<title>How listeners compensate for disfluencies in spontaneous speech.</title>
+<date>2001</date>
+<journal>Journal ofMemory and Language,</journal>
+<volume>44</volume>
+<issue>2</issue>
+<contexts>
+<context position="11277" citStr="Brennan and Schober, 2001" startWordPosition="1702" endWordPosition="1705">n and simple substitution repairs are very common; but repair as a psychological process is not driven by string alignment, and deletes, restarts and rarer substitution forms are not captured. Furthermore, the noisy channel model assumes an inherently utteranceglobal process for generating (and therefore find1Though see (Germesin et al., 2008) for one approach, albeit using idiosyncratic repair categories. ing) an underlying ‘clean’ string — much as similar spelling correction models are word-global — we instead take a very local perspective here. In accordance with psycholinguistic evidence (Brennan and Schober, 2001), we assume characteristics of the repair onset allow hearers to detect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line </context>
+</contexts>
+<marker>Brennan, Schober, 2001</marker>
+<rawString>S.E. Brennan and M.F. Schober. 2001. How listeners compensate for disfluencies in spontaneous speech. Journal ofMemory and Language, 44(2):274–296.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric Brill</author>
+<author>Robert C Moore</author>
+</authors>
+<title>An improved error model for noisy channel spelling correction.</title>
+<date>2000</date>
+<booktitle>In Proceedings of the 38th Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>286--293</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="10230" citStr="Brill and Moore, 2000" startWordPosition="1538" endWordPosition="1541">tors, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To address the above, we propose an alternative to (Johnson and Charniak, 2004; Zwarts et al., 2010)’s noisy channel model. While the model elegantly captures intuitions about parallelism in repairs and modelling fluency, it relies on stringmatching, motivated in a similar way to automatic spelling correction (Brill and Moore, 2000): it assumes a speaker chooses to utter fluent utterance X according to some prior distribution P(X), but a noisy channel causes them instead to utter a noisy Y according to channel model P(Y |X). Estimating P(Y |X) directly from observed data is difficult due to sparsity of repair instances, so a transducer is trained on the rough copy alignments between reparandum and repair. This approach succeeds because repetition and simple substitution repairs are very common; but repair as a psychological process is not driven by string alignment, and deletes, restarts and rarer substitution forms are </context>
+</contexts>
+<marker>Brill, Moore, 2000</marker>
+<rawString>Eric Brill and Robert C Moore. 2000. An improved error model for noisy channel spelling correction. In Proceedings of the 38th Annual Meeting on Association for Computational Linguistics, pages 286–293. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexander Clark</author>
+<author>Gianluca Giorgolo</author>
+<author>Shalom Lappin</author>
+</authors>
+<title>Statistical representation of grammaticality judgements: the limits of n-gram models.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Fourth Annual Workshop on Cognitive Modeling and Computational Linguistics (CMCL),</booktitle>
+<pages>28--36</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="15057" citStr="Clark et al., 2013" startWordPosition="2264" endWordPosition="2267">model; T3 uses fluency of hypothesised repairs; and T4 the similarity between distributions after reparandum and repair. However, each stage integrates these basic insights via multiple related features in a statistical classifier. 4.1 Enriched incremental language models We derive the basic information-theoretic features required using n-gram language models, as they have a long history of information theoretic analysis (Shannon, 1948) and provide reproducible results without forcing commitment to one particular grammar formalism. Following recent work on modelling grammaticality judgements (Clark et al., 2013), we implement several modifications to standard language models to develop our basic measures of fluency and uncertainty. For our main fluent language models we train a trigram model with Kneser-Ney smoothing (Kneser and Ney, 1995) on the words and POS tags of the standard Switchboard training data (all files with conversation numbers beginning sw2*,sw3* in the Penn Treebank III release), consisting of ≈100K utterances, ≈600K words. We follow (Johnson and Charniak, 2004) by cleaning the data of disfluencies (i.e. edit terms and reparanda), to approximate a ‘fluent’ language model. We call the</context>
+<context position="16388" citStr="Clark et al., 2013" startWordPosition="2493" endWordPosition="2496">es from either model. rmstart rmend ed rpstart rpstart rmstart rmend T3 “loves” ed rpstart rpsub end rpstart S0 S1 Sq rmstart rmend sub rpend ed T4 S2 S3 “loves” rpstart rpsub end “Mary” “uh” rmstart rmend ed “John” “likes” rpstart S0 S1 Sq S5 rmstart rmend sub pend ed T5 S2 S3 “uh” rmstart rmend “John” “likes” ed S2 S3 S0 S1 Sq “John” “likes” “uh” “loves” ed rpstart ed S0 S1 S2 S3 Sq T2 ed ed S0 S1 S2 S3 T1 “John” “likes” “uh” rpstart “John” “likes” “uh” “loves” 81 We then derive surprisal as our principal default lexical uncertainty measurement s (equation 3) in both models; and, following (Clark et al., 2013), the (unigram) Weighted Mean Log trigram probability (WML, eq. 4)– the trigram logprob of the sequence divided by the inverse summed logprob of the component unigrams (apart from the first two words in the sequence, which serve as the first trigram history). As here we use a local approach we restrict the WML measures to single trigrams (weighted by the inverse logprob of the final word). While use of standard n-gram probability conflates syntactic with lexical probability, WML gives us an approximation to incremental syntactic probability by factoring out lexical frequency. (4) Distributiona</context>
+</contexts>
+<marker>Clark, Giorgolo, Lappin, 2013</marker>
+<rawString>Alexander Clark, Gianluca Giorgolo, and Shalom Lappin. 2013. Statistical representation of grammaticality judgements: the limits of n-gram models. In Proceedings of the Fourth Annual Workshop on Cognitive Modeling and Computational Linguistics (CMCL), pages 28–36, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pedro Domingos</author>
+</authors>
+<title>Metacost: A general method for making classifiers cost-sensitive.</title>
+<date>1999</date>
+<booktitle>In Proceedings of the fifth ACM SIGKDD international conference on Knowledge discovery and data mining,</booktitle>
+<pages>155--164</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="27165" citStr="Domingos, 1999" startWordPosition="4272" endWordPosition="4273">n for rpend classification at the end of the pipeline, and if not rejected this is pushed onto the repair stack. Repair hypotheses are are popped off when the string is 7 words beyond its rpstart position. Putting limits on the stack’s storage space is a way of controlling for processing overhead and complexity. Embedded repairs whose rmstart coincide with another’s rpstart are easily dealt with as they are added to the stack as separate hypotheses.4 Classifiers Classifiers are implemented using Random Forests (Breiman, 2001) and we use different error functions for each stage using MetaCost (Domingos, 1999). The flexibility afforded by implementing adjustable error functions in a pipelined incremental processor allows control of the trade-off of immediate accuracy against runtime and stability of the sequence classification. Processing complexity This pipeline avoids an exhaustive search all repair hypotheses. If we limit the search to within the (rmstarti rpstart) possibilities, this number of repairs grows approximately in the triangular number series– i.e. n(n+1) 2 , a nested loop over previous words as n gets incremented – which in terms of a complexity class is a quadratic O(n2). If we allo</context>
+<context position="30220" citStr="Domingos, 1999" startWordPosition="4782" endWordPosition="4783">ere R is a repair element word and F is a fluent onset: Rhyp Fhyp � Rgold 0 2 Fgold 1 0 We adopt a similar technique in rmstart using 5 different cost functions and in rpend using 8 different settings, which when combined gives a total of 320 different cost function configurations. We hypothesise that higher recall permitted in the pipeline’s first components would result in better overall accuracy as these hypotheses become refined, though at the cost of the stability of the hy5Zwarts and Johnson (2011) take a similar approach on Switchboard data to train a re-ranker of repair analyses. 6As (Domingos, 1999) demonstrated, there are only relatively small accuracy gains when using more than this, with training time increasing in the order of the re-sample size. potheses of the sequence and extra downstream processing in pruning false positives. We also experiment with the number of repair hypotheses permitted per word, using limits of 1- best and 2-best hypotheses. We expect that allowing 2 hypotheses to be explored per rpstart should allow greater final accuracy, but with the trade-off of greater decoding and training complexity, and possible incremental instability. As we wish to explore the incr</context>
+</contexts>
+<marker>Domingos, 1999</marker>
+<rawString>Pedro Domingos. 1999. Metacost: A general method for making classifiers cost-sensitive. In Proceedings of the fifth ACM SIGKDD international conference on Knowledge discovery and data mining, pages 155–164. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kallirroi Georgila</author>
+</authors>
+<title>Using integer linear programming for detecting speech disfluencies.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers,</booktitle>
+<pages>109--112</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="3122" citStr="Georgila (2009)" startWordPosition="444" endWordPosition="445">ns based on relatively simple measures of fluency and similarity. Section 2 reviews state-of-the-art methods; Section 3 summarizes the challenges and explains our general approach; Section 4 explains STIR in detail; Section 5 explains our experimental set-up and novel evaluation metrics; Section 6 presents and discusses our results and Section 7 concludes. 2 Previous work Qian and Liu (2013) achieve the state of the art in Switchboard corpus self-repair detection, with an F-score for detecting reparandum words of 0.841 using a three-step weighted Max-Margin Markov network approach. Similarly, Georgila (2009) uses Integer Linear Programming post-processing of a CRF to achieve F-scores over 0.8 for reparandum start and repair start detection. However neither approach can operate incrementally. Recently, there has been increased interest in left-to-right repair detection: Rasooli and Tetreault (2014) and Honnibal and Johnson (2014) present dependency parsing systems with reparandum detection which perform similarly, the latter equalling Qian and Liu (2013)’s F-score at 0.841. However, while operating left-to-right, these systems are not designed or evaluated for their incremental performance. The us</context>
+</contexts>
+<marker>Georgila, 2009</marker>
+<rawString>Kallirroi Georgila. 2009. Using integer linear programming for detecting speech disfluencies. In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers, pages 109–112. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sebastian Germesin</author>
+<author>Tilman Becker</author>
+<author>Peter Poller</author>
+</authors>
+<title>Hybrid multi-step disfluency detection.</title>
+<date>2008</date>
+<booktitle>In Machine Learning for Multimodal Interaction,</booktitle>
+<pages>185--195</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="10996" citStr="Germesin et al., 2008" startWordPosition="1661" endWordPosition="1664"> utter a noisy Y according to channel model P(Y |X). Estimating P(Y |X) directly from observed data is difficult due to sparsity of repair instances, so a transducer is trained on the rough copy alignments between reparandum and repair. This approach succeeds because repetition and simple substitution repairs are very common; but repair as a psychological process is not driven by string alignment, and deletes, restarts and rarer substitution forms are not captured. Furthermore, the noisy channel model assumes an inherently utteranceglobal process for generating (and therefore find1Though see (Germesin et al., 2008) for one approach, albeit using idiosyncratic repair categories. ing) an underlying ‘clean’ string — much as similar spelling correction models are word-global — we instead take a very local perspective here. In accordance with psycholinguistic evidence (Brennan and Schober, 2001), we assume characteristics of the repair onset allow hearers to detect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interreg</context>
+</contexts>
+<marker>Germesin, Becker, Poller, 2008</marker>
+<rawString>Sebastian Germesin, Tilman Becker, and Peter Poller. 2008. Hybrid multi-step disfluency detection. In Machine Learning for Multimodal Interaction, pages 185–195. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Ginzburg</author>
+</authors>
+<title>The Interactive Stance: Meaning for Conversation.</title>
+<date>2012</date>
+<publisher>Oxford University Press.</publisher>
+<contexts>
+<context position="13746" citStr="Ginzburg, 2012" startWordPosition="2068" endWordPosition="2069">re takes a local incremental ap2We acknowledge a purely position-based model for reparandum extent detection under-estimates prepositions, which speakers favour as the retrace start and over-estimates verbs, which speakers tend to avoid retracing back to, preferring to begin the utterance again, as (Healey et al., 2011)’s experiments also demonstrate. 80 S0 S1 S2 “John” “likes” proach to detecting repairs and isolated edit terms, assigning words the structures in (2). We include interregnum recognition in the process, due to the inclusion of interregnum vocabulary within edit term vocabulary (Ginzburg, 2012; Hough and T0 Purver, 2013), a useful feature for repair detection (Lease et al., 2006; Qian and Liu, 2013). Figure 1: Strongly Incremental Repair Detection � ...[rmstart...rmend + {ed}rpstart...rpend]... (2) ...{ed}... Rather than detecting the repair structure in its left-to-right string order as above, STIR functions as in Figure 1: first detecting edit terms (possibly interregna) at step T1; then detecting repair onsets rpstart at T2; if one is found, backwards searching to find rmstart at T3; then finally finding the repair end rpend at T4. Step T1 relies mainly on lexical probabilities </context>
+<context position="19415" citStr="Ginzburg, 2012" startWordPosition="2995" endWordPosition="2996">onstructed directed acyclic graph (DAG) structures (see Figure 1), exploiting the Markov assumption of n-gram models to allow efficient calculation by avoiding re-computation. 4.2 Individual classifiers This section details the features used by the 4 individual classifiers. To investigate the utility of the features used in each classifier we obtain values on the standard Switchboard heldout data (PTB III files sw4[5, 6, 7, 8, 9]*: 6.4K utterances, 49K words). 4.2.1 Edit term detection In the first component, we utilise the well-known observation that edit terms have a distinctive vocabulary (Ginzburg, 2012), training a bigram model on a corpus of all edit words annotated in Switchboard’s training data. The classifier simply uses the surprisal slex from this edit word model, and the trigram surprisal slex from the standard fluent model of Section 4.1. At the current position wn, one, both or none of words wn and wn−1 are classified as edits. We found this simple approach effective and stable, although some delayed decisions occur in cases where slex and WMLlex are high in both models before the end of the edit, e.g. “I like” → “I {like} want...”. Words classified as ed are removed from the increm</context>
+</contexts>
+<marker>Ginzburg, 2012</marker>
+<rawString>Jonathan Ginzburg. 2012. The Interactive Stance: Meaning for Conversation. Oxford University Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P G T Healey</author>
+<author>Arash Eshghi</author>
+<author>Christine Howes</author>
+<author>Matthew Purver</author>
+</authors>
+<title>Making a contribution: Processing clarification requests in dialogue.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 21st Annual Meeting of the Society for Text and Discourse,</booktitle>
+<location>Poitiers,</location>
+<contexts>
+<context position="13453" citStr="Healey et al., 2011" startWordPosition="2022" endWordPosition="2025"> repair labelling, and using this insight should allow an improvement in incremental accuracy, stability and time-to-detection over string-alignment driven approaches in repair detection. 4 STIR: Strongly Incremental Repair detection Our system, STIR (Strongly Incremental Repair detection), therefore takes a local incremental ap2We acknowledge a purely position-based model for reparandum extent detection under-estimates prepositions, which speakers favour as the retrace start and over-estimates verbs, which speakers tend to avoid retracing back to, preferring to begin the utterance again, as (Healey et al., 2011)’s experiments also demonstrate. 80 S0 S1 S2 “John” “likes” proach to detecting repairs and isolated edit terms, assigning words the structures in (2). We include interregnum recognition in the process, due to the inclusion of interregnum vocabulary within edit term vocabulary (Ginzburg, 2012; Hough and T0 Purver, 2013), a useful feature for repair detection (Lease et al., 2006; Qian and Liu, 2013). Figure 1: Strongly Incremental Repair Detection � ...[rmstart...rmend + {ed}rpstart...rpend]... (2) ...{ed}... Rather than detecting the repair structure in its left-to-right string order as above,</context>
+</contexts>
+<marker>Healey, Eshghi, Howes, Purver, 2011</marker>
+<rawString>P. G. T. Healey, Arash Eshghi, Christine Howes, and Matthew Purver. 2011. Making a contribution: Processing clarification requests in dialogue. In Proceedings of the 21st Annual Meeting of the Society for Text and Discourse, Poitiers, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter Heeman</author>
+<author>James Allen</author>
+</authors>
+<title>Speech repairs, intonational phrases, and discourse markers: modeling speakers’ utterances in spoken dialogue.</title>
+<date>1999</date>
+<journal>Computational Linguistics,</journal>
+<volume>25</volume>
+<issue>4</issue>
+<contexts>
+<context position="4416" citStr="Heeman and Allen (1999)" startWordPosition="631" endWordPosition="634">l Methods in Natural Language Processing (EMNLP), pages 78–89, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics different repair hypotheses in (Honnibal and Johnson, 2014) is likely to lead to unstable repair label sequences, and they report repair hypothesis ‘jitter’. Both of these systems use a non-monotonic dependency parsing approach that immediately removes the reparandum from the linguistic analysis of the utterance in terms of its dependency structure and repair-reparandum correspondence, which from a downstream NLU module’s perspective is undesirable. Heeman and Allen (1999) and Miller and Schuler (2008) present earlier left-toright operational detectors which are less accurate and again give no indication of the incremental performance of their systems. While Heeman and Allen (1999) rely on repair structure template detection coupled with a multi-knowledge-source language model, the rarity of the tail of repair structures is likely to be the reason for lower performance: Hough and Purver (2013) show that only 39% of repair alignment structures appear at least twice in Switchboard, supported by the 29% reported by Heeman and Allen (1999) on the smaller TRAINS cor</context>
+<context position="7421" citStr="Heeman and Allen, 1999" startWordPosition="1096" endWordPosition="1099">y report an F-score of 0.578 at one word back from the current prefix boundary, increasing word-by-word until 6 words back where it reaches 0.770. These results are the point-of-departure for our work. 3 Challenges and Approach In this section we summarize the challenges for incremental repair detection: computational complexity, repair hypothesis stability, latency of detection and repair structure identification. In 3.1 we explain how we address these. Computational complexity Approaches to detecting repair structures often use chart storage (Zwarts et al., 2010; Johnson and Charniak, 2004; Heeman and Allen, 1999), which poses a computational overhead: if considering all possible boundary points for a repair structure’s 3 phases beginning on any word, for prefixes of length n the number of hypotheses can grow in the order O(n4). Exploring a subset of this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with their STAG repair parser is O(n5). In their approach, c</context>
+<context position="11713" citStr="Heeman and Allen, 1999" startWordPosition="1776" endWordPosition="1779">ring — much as similar spelling correction models are word-global — we instead take a very local perspective here. In accordance with psycholinguistic evidence (Brennan and Schober, 2001), we assume characteristics of the repair onset allow hearers to detect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way a repair is processed and the fact speakers are exponentially less likely to trace one word further back in repair as utterance length increases (Shriberg and Stolcke, 1998), backwards search seems to be the most efficient reparandum extent detection method.2 Features determining the detection of </context>
+</contexts>
+<marker>Heeman, Allen, 1999</marker>
+<rawString>Peter Heeman and James Allen. 1999. Speech repairs, intonational phrases, and discourse markers: modeling speakers’ utterances in spoken dialogue. Computational Linguistics, 25(4):527–571.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Honnibal</author>
+<author>Mark Johnson</author>
+</authors>
+<title>Joint incremental disfluency detection and dependency parsing.</title>
+<date>2014</date>
+<journal>Transactions of the Association of Computational Linugistics (TACL),</journal>
+<pages>2--131</pages>
+<contexts>
+<context position="3449" citStr="Honnibal and Johnson (2014)" startWordPosition="489" endWordPosition="492">cusses our results and Section 7 concludes. 2 Previous work Qian and Liu (2013) achieve the state of the art in Switchboard corpus self-repair detection, with an F-score for detecting reparandum words of 0.841 using a three-step weighted Max-Margin Markov network approach. Similarly, Georgila (2009) uses Integer Linear Programming post-processing of a CRF to achieve F-scores over 0.8 for reparandum start and repair start detection. However neither approach can operate incrementally. Recently, there has been increased interest in left-to-right repair detection: Rasooli and Tetreault (2014) and Honnibal and Johnson (2014) present dependency parsing systems with reparandum detection which perform similarly, the latter equalling Qian and Liu (2013)’s F-score at 0.841. However, while operating left-to-right, these systems are not designed or evaluated for their incremental performance. The use of beam search over 78 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 78–89, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics different repair hypotheses in (Honnibal and Johnson, 2014) is likely to lead to unstable repair label sequenc</context>
+</contexts>
+<marker>Honnibal, Johnson, 2014</marker>
+<rawString>Matthew Honnibal and Mark Johnson. 2014. Joint incremental disfluency detection and dependency parsing. Transactions of the Association of Computational Linugistics (TACL), 2:131–142.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Julian Hough</author>
+<author>Matthew Purver</author>
+</authors>
+<title>Modelling expectation in the self-repair processing of annotat-, um, listeners.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 17th SemDial Workshop on the Semantics and Pragmatics of Dialogue (DialDam),</booktitle>
+<pages>92--101</pages>
+<location>Amsterdam,</location>
+<contexts>
+<context position="4845" citStr="Hough and Purver (2013)" startWordPosition="699" endWordPosition="702">stic analysis of the utterance in terms of its dependency structure and repair-reparandum correspondence, which from a downstream NLU module’s perspective is undesirable. Heeman and Allen (1999) and Miller and Schuler (2008) present earlier left-toright operational detectors which are less accurate and again give no indication of the incremental performance of their systems. While Heeman and Allen (1999) rely on repair structure template detection coupled with a multi-knowledge-source language model, the rarity of the tail of repair structures is likely to be the reason for lower performance: Hough and Purver (2013) show that only 39% of repair alignment structures appear at least twice in Switchboard, supported by the 29% reported by Heeman and Allen (1999) on the smaller TRAINS corpus. Miller and Schuler (2008)’s encoding of repairs into a grammar also causes sparsity in training: repair is a general processing strategy not restricted to certain lexical items or POS tag sequences. The model we consider most suitable for incremental dialogue systems so far is Zwarts et al. (2010)’s incremental version of Johnson and Charniak (2004)’s noisy channel repair detector, as it incrementally applies structural </context>
+<context position="8285" citStr="Hough and Purver (2013)" startWordPosition="1240" endWordPosition="1243"> this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with their STAG repair parser is O(n5). In their approach, complexity is mitigated by imposing a maximum repair length (12 words), and also by using beam search with re-ranking (Lease et al., 2006; Zwarts and Johnson, 2011). If we wish to include full decoding of the repair’s structure (as argued by Hough and Purver (2013) as necessary for full interpretation) whilst taking a strictly incremental and time-critical perspective, reducing this complexity by minimizing the size of this search space is crucial. Stability of repair hypotheses and latency Using a beam search of n-best hypotheses on a wordby-word basis can cause ‘jitter’ in the detector’s output. While utterance-final accuracy is desired, 79 for a truly incremental system good intermediate results are equally important. Zwarts et al. (2010)’s time-to-detection results show their system is only certain about a detection after processing the entire repai</context>
+<context position="9530" citStr="Hough and Purver, 2013" startWordPosition="1433" endWordPosition="1436">the string alignment-inspired S-TAG that matches repair and reparanda: a ‘rough copy’ dependency only becomes likely once the entire repair has been consumed. The latency of 4.6 words to detection and a relatively slow rise to utterance-final accuracy up to 6 words back is undesirable given repairs have a mean reparandum length of ≈1.5 words (Hough and Purver, 2013; Shriberg and Stolcke, 1998). Structural identification Classifying repairs has been ignored in repair processing, despite the presence of distinct categories (e.g. repeats, substitutions, deletes) with different pragmatic effects (Hough and Purver, 2013).1 This is perhaps due to lack of clarity in definition: even for human annotators, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To address the above, we propose an alternative to (Johnson and Charniak, 2004; Zwarts et al., 2010)’s noisy channel model. While the model elegantly captures intuitions about parallelism in repairs and modelling fluency, it relies on</context>
+<context position="11688" citStr="Hough and Purver, 2013" startWordPosition="1772" endWordPosition="1775">an underlying ‘clean’ string — much as similar spelling correction models are word-global — we instead take a very local perspective here. In accordance with psycholinguistic evidence (Brennan and Schober, 2001), we assume characteristics of the repair onset allow hearers to detect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way a repair is processed and the fact speakers are exponentially less likely to trace one word further back in repair as utterance length increases (Shriberg and Stolcke, 1998), backwards search seems to be the most efficient reparandum extent detection method.2 Features dete</context>
+</contexts>
+<marker>Hough, Purver, 2013</marker>
+<rawString>Julian Hough and Matthew Purver. 2013. Modelling expectation in the self-repair processing of annotat-, um, listeners. In Proceedings of the 17th SemDial Workshop on the Semantics and Pragmatics of Dialogue (DialDam), pages 92–101, Amsterdam, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Florian Jaeger</author>
+<author>Harry Tily</author>
+</authors>
+<title>On language utility: Processing complexity and communicative efficiency.</title>
+<date>2011</date>
+<journal>Wiley Interdisciplinary Reviews: Cognitive Science,</journal>
+<volume>2</volume>
+<issue>3</issue>
+<contexts>
+<context position="11981" citStr="Jaeger and Tily, 2011" startWordPosition="1815" endWordPosition="1818">ickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way a repair is processed and the fact speakers are exponentially less likely to trace one word further back in repair as utterance length increases (Shriberg and Stolcke, 1998), backwards search seems to be the most efficient reparandum extent detection method.2 Features determining the detection of the reparandum extent in the backwards search can also be information-theoretic: entropy measures of distributional parallelism can characterize not only rough copy dependencies, but distributionally similar or dissimilar correspondences between sequences. Finally, wh</context>
+</contexts>
+<marker>Jaeger, Tily, 2011</marker>
+<rawString>T Florian Jaeger and Harry Tily. 2011. On language utility: Processing complexity and communicative efficiency. Wiley Interdisciplinary Reviews: Cognitive Science, 2(3):323–335.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Johnson</author>
+<author>Eugene Charniak</author>
+</authors>
+<title>A TAGbased noisy channel model of speech repairs.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the 42nd Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>33--39</pages>
+<institution>Barcelona. Association for Computational Linguistics.</institution>
+<contexts>
+<context position="5372" citStr="Johnson and Charniak (2004)" startWordPosition="785" endWordPosition="788"> tail of repair structures is likely to be the reason for lower performance: Hough and Purver (2013) show that only 39% of repair alignment structures appear at least twice in Switchboard, supported by the 29% reported by Heeman and Allen (1999) on the smaller TRAINS corpus. Miller and Schuler (2008)’s encoding of repairs into a grammar also causes sparsity in training: repair is a general processing strategy not restricted to certain lexical items or POS tag sequences. The model we consider most suitable for incremental dialogue systems so far is Zwarts et al. (2010)’s incremental version of Johnson and Charniak (2004)’s noisy channel repair detector, as it incrementally applies structural repair analyses (rather than just identifying reparanda) and is evaluated for its incremental properties. Following (Johnson and Charniak, 2004), their system uses an n-gram language model trained on roughly 100K utterances of reparandum-excised (‘cleaned’) Switchboard data. Its channel model is a statistically-trained S-TAG parser whose grammar has simple reparandum-repair alignment rule categories for its non-terminals (copy, delete, insert, substitute) and words for its terminals. The parser hypothesises all possible r</context>
+<context position="7396" citStr="Johnson and Charniak, 2004" startWordPosition="1092" endWordPosition="1095">f the repair hypotheses. They report an F-score of 0.578 at one word back from the current prefix boundary, increasing word-by-word until 6 words back where it reaches 0.770. These results are the point-of-departure for our work. 3 Challenges and Approach In this section we summarize the challenges for incremental repair detection: computational complexity, repair hypothesis stability, latency of detection and repair structure identification. In 3.1 we explain how we address these. Computational complexity Approaches to detecting repair structures often use chart storage (Zwarts et al., 2010; Johnson and Charniak, 2004; Heeman and Allen, 1999), which poses a computational overhead: if considering all possible boundary points for a repair structure’s 3 phases beginning on any word, for prefixes of length n the number of hypotheses can grow in the order O(n4). Exploring a subset of this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with their STAG repair parser is O(</context>
+<context position="9974" citStr="Johnson and Charniak, 2004" startWordPosition="1500" endWordPosition="1503">rs has been ignored in repair processing, despite the presence of distinct categories (e.g. repeats, substitutions, deletes) with different pragmatic effects (Hough and Purver, 2013).1 This is perhaps due to lack of clarity in definition: even for human annotators, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To address the above, we propose an alternative to (Johnson and Charniak, 2004; Zwarts et al., 2010)’s noisy channel model. While the model elegantly captures intuitions about parallelism in repairs and modelling fluency, it relies on stringmatching, motivated in a similar way to automatic spelling correction (Brill and Moore, 2000): it assumes a speaker chooses to utter fluent utterance X according to some prior distribution P(X), but a noisy channel causes them instead to utter a noisy Y according to channel model P(Y |X). Estimating P(Y |X) directly from observed data is difficult due to sparsity of repair instances, so a transducer is trained on the rough copy align</context>
+<context position="15533" citStr="Johnson and Charniak, 2004" startWordPosition="2337" endWordPosition="2340">sults without forcing commitment to one particular grammar formalism. Following recent work on modelling grammaticality judgements (Clark et al., 2013), we implement several modifications to standard language models to develop our basic measures of fluency and uncertainty. For our main fluent language models we train a trigram model with Kneser-Ney smoothing (Kneser and Ney, 1995) on the words and POS tags of the standard Switchboard training data (all files with conversation numbers beginning sw2*,sw3* in the Penn Treebank III release), consisting of ≈100K utterances, ≈600K words. We follow (Johnson and Charniak, 2004) by cleaning the data of disfluencies (i.e. edit terms and reparanda), to approximate a ‘fluent’ language model. We call these probabilities plex , ppos kn below.3 3We suppress the pos and lex superscripts below where we refer to measures from either model. rmstart rmend ed rpstart rpstart rmstart rmend T3 “loves” ed rpstart rpsub end rpstart S0 S1 Sq rmstart rmend sub rpend ed T4 S2 S3 “loves” rpstart rpsub end “Mary” “uh” rmstart rmend ed “John” “likes” rpstart S0 S1 Sq S5 rmstart rmend sub pend ed T5 S2 S3 “uh” rmstart rmend “John” “likes” ed S2 S3 S0 S1 Sq “John” “likes” “uh” “loves” ed rp</context>
+</contexts>
+<marker>Johnson, Charniak, 2004</marker>
+<rawString>Mark Johnson and Eugene Charniak. 2004. A TAGbased noisy channel model of speech repairs. In Proceedings of the 42nd Annual Meeting on Association for Computational Linguistics, pages 33–39, Barcelona. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Frank Keller</author>
+</authors>
+<title>The entropy rate principle as a predictor of processing effort: An evaluation against eye-tracking data. In</title>
+<date>2004</date>
+<booktitle>EMNLP,</booktitle>
+<pages>317--324</pages>
+<contexts>
+<context position="11957" citStr="Keller, 2004" startWordPosition="1813" endWordPosition="1814">ect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way a repair is processed and the fact speakers are exponentially less likely to trace one word further back in repair as utterance length increases (Shriberg and Stolcke, 1998), backwards search seems to be the most efficient reparandum extent detection method.2 Features determining the detection of the reparandum extent in the backwards search can also be information-theoretic: entropy measures of distributional parallelism can characterize not only rough copy dependencies, but distributionally similar or dissimilar correspondences betwee</context>
+</contexts>
+<marker>Keller, 2004</marker>
+<rawString>Frank Keller. 2004. The entropy rate principle as a predictor of processing effort: An evaluation against eye-tracking data. In EMNLP, pages 317–324.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Reinhard Kneser</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Improved backing-off for m-gram language modeling.</title>
+<date>1995</date>
+<booktitle>In Acoustics, Speech, and Signal Processing,</booktitle>
+<volume>1</volume>
+<pages>181--184</pages>
+<publisher>IEEE.</publisher>
+<contexts>
+<context position="15289" citStr="Kneser and Ney, 1995" startWordPosition="2299" endWordPosition="2302">. 4.1 Enriched incremental language models We derive the basic information-theoretic features required using n-gram language models, as they have a long history of information theoretic analysis (Shannon, 1948) and provide reproducible results without forcing commitment to one particular grammar formalism. Following recent work on modelling grammaticality judgements (Clark et al., 2013), we implement several modifications to standard language models to develop our basic measures of fluency and uncertainty. For our main fluent language models we train a trigram model with Kneser-Ney smoothing (Kneser and Ney, 1995) on the words and POS tags of the standard Switchboard training data (all files with conversation numbers beginning sw2*,sw3* in the Penn Treebank III release), consisting of ≈100K utterances, ≈600K words. We follow (Johnson and Charniak, 2004) by cleaning the data of disfluencies (i.e. edit terms and reparanda), to approximate a ‘fluent’ language model. We call these probabilities plex , ppos kn below.3 3We suppress the pos and lex superscripts below where we refer to measures from either model. rmstart rmend ed rpstart rpstart rmstart rmend T3 “loves” ed rpstart rpsub end rpstart S0 S1 Sq rm</context>
+</contexts>
+<marker>Kneser, Ney, 1995</marker>
+<rawString>Reinhard Kneser and Hermann Ney. 1995. Improved backing-off for m-gram language modeling. In Acoustics, Speech, and Signal Processing, 1995. ICASSP-95.,1995 International Conference on, volume 1, pages 181–184. IEEE.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Lease</author>
+<author>Mark Johnson</author>
+<author>Eugene Charniak</author>
+</authors>
+<title>Recognizing disfluencies in conversational speech.</title>
+<date>2006</date>
+<journal>Audio, Speech, and Language Processing, IEEE Transactions on,</journal>
+<volume>14</volume>
+<issue>5</issue>
+<contexts>
+<context position="8157" citStr="Lease et al., 2006" startWordPosition="1218" endWordPosition="1221">beginning on any word, for prefixes of length n the number of hypotheses can grow in the order O(n4). Exploring a subset of this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with their STAG repair parser is O(n5). In their approach, complexity is mitigated by imposing a maximum repair length (12 words), and also by using beam search with re-ranking (Lease et al., 2006; Zwarts and Johnson, 2011). If we wish to include full decoding of the repair’s structure (as argued by Hough and Purver (2013) as necessary for full interpretation) whilst taking a strictly incremental and time-critical perspective, reducing this complexity by minimizing the size of this search space is crucial. Stability of repair hypotheses and latency Using a beam search of n-best hypotheses on a wordby-word basis can cause ‘jitter’ in the detector’s output. While utterance-final accuracy is desired, 79 for a truly incremental system good intermediate results are equally important. Zwarts</context>
+<context position="13833" citStr="Lease et al., 2006" startWordPosition="2081" endWordPosition="2084">parandum extent detection under-estimates prepositions, which speakers favour as the retrace start and over-estimates verbs, which speakers tend to avoid retracing back to, preferring to begin the utterance again, as (Healey et al., 2011)’s experiments also demonstrate. 80 S0 S1 S2 “John” “likes” proach to detecting repairs and isolated edit terms, assigning words the structures in (2). We include interregnum recognition in the process, due to the inclusion of interregnum vocabulary within edit term vocabulary (Ginzburg, 2012; Hough and T0 Purver, 2013), a useful feature for repair detection (Lease et al., 2006; Qian and Liu, 2013). Figure 1: Strongly Incremental Repair Detection � ...[rmstart...rmend + {ed}rpstart...rpend]... (2) ...{ed}... Rather than detecting the repair structure in its left-to-right string order as above, STIR functions as in Figure 1: first detecting edit terms (possibly interregna) at step T1; then detecting repair onsets rpstart at T2; if one is found, backwards searching to find rmstart at T3; then finally finding the repair end rpend at T4. Step T1 relies mainly on lexical probabilities from an edit term language model; T2 exploits features of divergence from a fluent lang</context>
+</contexts>
+<marker>Lease, Johnson, Charniak, 2006</marker>
+<rawString>Matthew Lease, Mark Johnson, and Eugene Charniak. 2006. Recognizing disfluencies in conversational speech. Audio, Speech, and Language Processing, IEEE Transactions on, 14(5):1566–1573.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>W J M Levelt</author>
+</authors>
+<title>Monitoring and self-repair in speech.</title>
+<date>1983</date>
+<journal>Cognition,</journal>
+<volume>14</volume>
+<issue>1</issue>
+<contexts>
+<context position="11414" citStr="Levelt, 1983" startWordPosition="1727" endWordPosition="1728">rarer substitution forms are not captured. Furthermore, the noisy channel model assumes an inherently utteranceglobal process for generating (and therefore find1Though see (Germesin et al., 2008) for one approach, albeit using idiosyncratic repair categories. ing) an underlying ‘clean’ string — much as similar spelling correction models are word-global — we instead take a very local perspective here. In accordance with psycholinguistic evidence (Brennan and Schober, 2001), we assume characteristics of the repair onset allow hearers to detect it very quickly and solve the continuation problem (Levelt, 1983) of integrating the repair into their linguistic context immediately, before processing or even hearing the end of the repair phase. While repair onsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way</context>
+</contexts>
+<marker>Levelt, 1983</marker>
+<rawString>W.J.M. Levelt. 1983. Monitoring and self-repair in speech. Cognition, 14(1):41–104.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Meteer</author>
+<author>A Taylor</author>
+<author>R MacIntyre</author>
+<author>R Iyer</author>
+</authors>
+<title>Disfluency annotation stylebook for the switchboard corpus. ms.</title>
+<date>1995</date>
+<tech>Technical report,</tech>
+<institution>Department of Computer and Information Science, University of Pennsylvania.</institution>
+<contexts>
+<context position="1206" citStr="Meteer et al. (1995)" startWordPosition="159" endWordPosition="162">s in a pipeline of classifiers detecting the different stages of repairs. Results on the Switchboard disfluency tagged corpus show utterance-final accuracy on a par with state-of-the-art incremental repair detection methods, but with better incremental accuracy, faster time-to-detection and less computational overhead. We evaluate its performance using incremental metrics and propose new repair processing evaluation standards. 1 Introduction Self-repairs in spontaneous speech are annotated according to a well established three-phase structure from (Shriberg, 1994) onwards, and as described in Meteer et al. (1995)’s Switchboard corpus annotation handbook: John [ likes + {uh} loves ] Mary (1) |{z } |{z } |{z } reparandum interregnum repair From a dialogue systems perspective, detecting repairs and assigning them the appropriate structure is vital for robust natural language understanding (NLU) in interactive systems. Downgrading the commitment of reparandum phases and assigning appropriate interregnum and repair phases permits computation of the user’s intended meaning. Furthermore, the recent focus on incremental dialogue systems (see e.g. (Rieser and Schlangen, 2011)) means that repair detection shoul</context>
+</contexts>
+<marker>Meteer, Taylor, MacIntyre, Iyer, 1995</marker>
+<rawString>M. Meteer, A. Taylor, R. MacIntyre, and R. Iyer. 1995. Disfluency annotation stylebook for the switchboard corpus. ms. Technical report, Department of Computer and Information Science, University of Pennsylvania.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tim Miller</author>
+<author>William Schuler</author>
+</authors>
+<title>A syntactic time-series model for parsing fluent and disfluent speech.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 22nd International Conference on Computational Linguistics-Volume 1,</booktitle>
+<pages>569--576</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4446" citStr="Miller and Schuler (2008)" startWordPosition="636" endWordPosition="639">e Processing (EMNLP), pages 78–89, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics different repair hypotheses in (Honnibal and Johnson, 2014) is likely to lead to unstable repair label sequences, and they report repair hypothesis ‘jitter’. Both of these systems use a non-monotonic dependency parsing approach that immediately removes the reparandum from the linguistic analysis of the utterance in terms of its dependency structure and repair-reparandum correspondence, which from a downstream NLU module’s perspective is undesirable. Heeman and Allen (1999) and Miller and Schuler (2008) present earlier left-toright operational detectors which are less accurate and again give no indication of the incremental performance of their systems. While Heeman and Allen (1999) rely on repair structure template detection coupled with a multi-knowledge-source language model, the rarity of the tail of repair structures is likely to be the reason for lower performance: Hough and Purver (2013) show that only 39% of repair alignment structures appear at least twice in Switchboard, supported by the 29% reported by Heeman and Allen (1999) on the smaller TRAINS corpus. Miller and Schuler (2008)</context>
+</contexts>
+<marker>Miller, Schuler, 2008</marker>
+<rawString>Tim Miller and William Schuler. 2008. A syntactic time-series model for parsing fluent and disfluent speech. In Proceedings of the 22nd International Conference on Computational Linguistics-Volume 1, pages 569–576. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Milward</author>
+</authors>
+<title>Axiomatic Grammar, NonConstituent Coordination and Incremental Interpretation.</title>
+<date>1991</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of Cambridge.</institution>
+<contexts>
+<context position="2064" citStr="Milward, 1991" startWordPosition="284" endWordPosition="285">ust natural language understanding (NLU) in interactive systems. Downgrading the commitment of reparandum phases and assigning appropriate interregnum and repair phases permits computation of the user’s intended meaning. Furthermore, the recent focus on incremental dialogue systems (see e.g. (Rieser and Schlangen, 2011)) means that repair detection should operate without unnecessary processing overhead, and function efficiently within an incremental framework. However, such left-to-right operability on its own is not sufficient: in line with the principle of strong incremental interpretation (Milward, 1991), a repair detector should give the best results possible as early as possible. With one exception (Zwarts et al., 2010), there has been no focus on evaluating or improving the incremental performance of repair detection. In this paper we present STIR (Strongly Incremental Repair detection), a system which addresses the challenges of incremental accuracy, computational complexity and latency in selfrepair detection, by making local decisions based on relatively simple measures of fluency and similarity. Section 2 reviews state-of-the-art methods; Section 3 summarizes the challenges and explain</context>
+</contexts>
+<marker>Milward, 1991</marker>
+<rawString>David Milward. 1991. Axiomatic Grammar, NonConstituent Coordination and Incremental Interpretation. Ph.D. thesis, University of Cambridge.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xian Qian</author>
+<author>Yang Liu</author>
+</authors>
+<title>Disfluency detection using multi-step stacked learning.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL-HLT,</booktitle>
+<pages>820--825</pages>
+<contexts>
+<context position="2901" citStr="Qian and Liu (2013)" startWordPosition="411" endWordPosition="414">on. In this paper we present STIR (Strongly Incremental Repair detection), a system which addresses the challenges of incremental accuracy, computational complexity and latency in selfrepair detection, by making local decisions based on relatively simple measures of fluency and similarity. Section 2 reviews state-of-the-art methods; Section 3 summarizes the challenges and explains our general approach; Section 4 explains STIR in detail; Section 5 explains our experimental set-up and novel evaluation metrics; Section 6 presents and discusses our results and Section 7 concludes. 2 Previous work Qian and Liu (2013) achieve the state of the art in Switchboard corpus self-repair detection, with an F-score for detecting reparandum words of 0.841 using a three-step weighted Max-Margin Markov network approach. Similarly, Georgila (2009) uses Integer Linear Programming post-processing of a CRF to achieve F-scores over 0.8 for reparandum start and repair start detection. However neither approach can operate incrementally. Recently, there has been increased interest in left-to-right repair detection: Rasooli and Tetreault (2014) and Honnibal and Johnson (2014) present dependency parsing systems with reparandum </context>
+<context position="13854" citStr="Qian and Liu, 2013" startWordPosition="2085" endWordPosition="2088">ction under-estimates prepositions, which speakers favour as the retrace start and over-estimates verbs, which speakers tend to avoid retracing back to, preferring to begin the utterance again, as (Healey et al., 2011)’s experiments also demonstrate. 80 S0 S1 S2 “John” “likes” proach to detecting repairs and isolated edit terms, assigning words the structures in (2). We include interregnum recognition in the process, due to the inclusion of interregnum vocabulary within edit term vocabulary (Ginzburg, 2012; Hough and T0 Purver, 2013), a useful feature for repair detection (Lease et al., 2006; Qian and Liu, 2013). Figure 1: Strongly Incremental Repair Detection � ...[rmstart...rmend + {ed}rpstart...rpend]... (2) ...{ed}... Rather than detecting the repair structure in its left-to-right string order as above, STIR functions as in Figure 1: first detecting edit terms (possibly interregna) at step T1; then detecting repair onsets rpstart at T2; if one is found, backwards searching to find rmstart at T3; then finally finding the repair end rpend at T4. Step T1 relies mainly on lexical probabilities from an edit term language model; T2 exploits features of divergence from a fluent language model; T3 uses f</context>
+</contexts>
+<marker>Qian, Liu, 2013</marker>
+<rawString>Xian Qian and Yang Liu. 2013. Disfluency detection using multi-step stacked learning. In Proceedings of NAACL-HLT, pages 820–825.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mohammad Sadegh Rasooli</author>
+<author>Joel Tetreault</author>
+</authors>
+<title>Non-monotonic parsing of fluent umm I mean disfluent sentences. EACL</title>
+<date>2014</date>
+<pages>48--53</pages>
+<contexts>
+<context position="3417" citStr="Rasooli and Tetreault (2014)" startWordPosition="484" endWordPosition="487">trics; Section 6 presents and discusses our results and Section 7 concludes. 2 Previous work Qian and Liu (2013) achieve the state of the art in Switchboard corpus self-repair detection, with an F-score for detecting reparandum words of 0.841 using a three-step weighted Max-Margin Markov network approach. Similarly, Georgila (2009) uses Integer Linear Programming post-processing of a CRF to achieve F-scores over 0.8 for reparandum start and repair start detection. However neither approach can operate incrementally. Recently, there has been increased interest in left-to-right repair detection: Rasooli and Tetreault (2014) and Honnibal and Johnson (2014) present dependency parsing systems with reparandum detection which perform similarly, the latter equalling Qian and Liu (2013)’s F-score at 0.841. However, while operating left-to-right, these systems are not designed or evaluated for their incremental performance. The use of beam search over 78 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 78–89, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics different repair hypotheses in (Honnibal and Johnson, 2014) is likely to lead </context>
+</contexts>
+<marker>Rasooli, Tetreault, 2014</marker>
+<rawString>Mohammad Sadegh Rasooli and Joel Tetreault. 2014. Non-monotonic parsing of fluent umm I mean disfluent sentences. EACL 2014, pages 48–53.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hannes Rieser</author>
+<author>David Schlangen</author>
+</authors>
+<title>Introduction to the special issue on incremental processing in dialogue.</title>
+<date>2011</date>
+<journal>Dialogue &amp; Discourse,</journal>
+<volume>2</volume>
+<issue>1</issue>
+<contexts>
+<context position="1771" citStr="Rieser and Schlangen, 2011" startWordPosition="241" endWordPosition="244">iberg, 1994) onwards, and as described in Meteer et al. (1995)’s Switchboard corpus annotation handbook: John [ likes + {uh} loves ] Mary (1) |{z } |{z } |{z } reparandum interregnum repair From a dialogue systems perspective, detecting repairs and assigning them the appropriate structure is vital for robust natural language understanding (NLU) in interactive systems. Downgrading the commitment of reparandum phases and assigning appropriate interregnum and repair phases permits computation of the user’s intended meaning. Furthermore, the recent focus on incremental dialogue systems (see e.g. (Rieser and Schlangen, 2011)) means that repair detection should operate without unnecessary processing overhead, and function efficiently within an incremental framework. However, such left-to-right operability on its own is not sufficient: in line with the principle of strong incremental interpretation (Milward, 1991), a repair detector should give the best results possible as early as possible. With one exception (Zwarts et al., 2010), there has been no focus on evaluating or improving the incremental performance of repair detection. In this paper we present STIR (Strongly Incremental Repair detection), a system which</context>
+</contexts>
+<marker>Rieser, Schlangen, 2011</marker>
+<rawString>Hannes Rieser and David Schlangen. 2011. Introduction to the special issue on incremental processing in dialogue. Dialogue &amp; Discourse, 2(1):1–10.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Brian Roark</author>
+<author>Asaf Bachrach</author>
+<author>Carlos Cardenas</author>
+<author>Christophe Pallier</author>
+</authors>
+<title>Deriving lexical and syntactic expectation-based measures for psycholinguistic modeling via incremental top-down parsing.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume</booktitle>
+<volume>1</volume>
+<pages>324--333</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="38743" citStr="Roark et al. (2009)" startWordPosition="6261" endWordPosition="6264">en the two conditions is shown in Table 3. Moving to the 2-stack condition results in gain in overall accuracy in Frm and Fs, but at the cost of EO and also time-to-detection scores TDrm and TDrp. The extent to which the stack can be increased without increasing jitter, latency and complexity will be investigated in future work. 7 Conclusion We have presented STIR, an incremental repair detector that can be used to experiment with incremental performance and accuracy trade-offs. In future work we plan to include probabilistic and distributional features from a top-down incremental parser e.g. Roark et al. (2009), and use STIR’s distributional features to classify repair type. Acknowledgements We thank the three anonymous EMNLP reviewers for their helpful comments. Hough is supported by the DUEL project, financially supported by the Agence Nationale de la Research (grant number ANR-13-FRAL-0001) and the Deutsche Forschungsgemainschaft. Much of the work was carried out with support from an EPSRC DTA scholarship at Queen Mary University of London. Purver is partly supported by ConCreTe: the project ConCreTe acknowledges the financial support of the Future and Emerging Technologies (FET) programme within</context>
+</contexts>
+<marker>Roark, Bachrach, Cardenas, Pallier, 2009</marker>
+<rawString>Brian Roark, Asaf Bachrach, Carlos Cardenas, and Christophe Pallier. 2009. Deriving lexical and syntactic expectation-based measures for psycholinguistic modeling via incremental top-down parsing. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume 1-Volume 1, pages 324–333. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Claude E Shannon</author>
+</authors>
+<title>A mathematical theory of communication. technical journal.</title>
+<date>1948</date>
+<journal>AT &amp; T Bell Labs.</journal>
+<contexts>
+<context position="14878" citStr="Shannon, 1948" startWordPosition="2241" endWordPosition="2242">inding the repair end rpend at T4. Step T1 relies mainly on lexical probabilities from an edit term language model; T2 exploits features of divergence from a fluent language model; T3 uses fluency of hypothesised repairs; and T4 the similarity between distributions after reparandum and repair. However, each stage integrates these basic insights via multiple related features in a statistical classifier. 4.1 Enriched incremental language models We derive the basic information-theoretic features required using n-gram language models, as they have a long history of information theoretic analysis (Shannon, 1948) and provide reproducible results without forcing commitment to one particular grammar formalism. Following recent work on modelling grammaticality judgements (Clark et al., 2013), we implement several modifications to standard language models to develop our basic measures of fluency and uncertainty. For our main fluent language models we train a trigram model with Kneser-Ney smoothing (Kneser and Ney, 1995) on the words and POS tags of the standard Switchboard training data (all files with conversation numbers beginning sw2*,sw3* in the Penn Treebank III release), consisting of ≈100K utteranc</context>
+</contexts>
+<marker>Shannon, 1948</marker>
+<rawString>Claude E. Shannon. 1948. A mathematical theory of communication. technical journal. AT &amp; T Bell Labs.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Elizabeth Shriberg</author>
+<author>Andreas Stolcke</author>
+</authors>
+<title>How far do speakers back up in repairs? A quantitative model.</title>
+<date>1998</date>
+<booktitle>In Proceedings of the International Conference on Spoken Language Processing,</booktitle>
+<pages>2183--2186</pages>
+<contexts>
+<context position="9303" citStr="Shriberg and Stolcke, 1998" startWordPosition="1404" endWordPosition="1407"> truly incremental system good intermediate results are equally important. Zwarts et al. (2010)’s time-to-detection results show their system is only certain about a detection after processing the entire repair. This may be due to the string alignment-inspired S-TAG that matches repair and reparanda: a ‘rough copy’ dependency only becomes likely once the entire repair has been consumed. The latency of 4.6 words to detection and a relatively slow rise to utterance-final accuracy up to 6 words back is undesirable given repairs have a mean reparandum length of ≈1.5 words (Hough and Purver, 2013; Shriberg and Stolcke, 1998). Structural identification Classifying repairs has been ignored in repair processing, despite the presence of distinct categories (e.g. repeats, substitutions, deletes) with different pragmatic effects (Hough and Purver, 2013).1 This is perhaps due to lack of clarity in definition: even for human annotators, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To addr</context>
+<context position="12188" citStr="Shriberg and Stolcke, 1998" startWordPosition="1848" endWordPosition="1851">nsets may take the form of interregna, this is not a reliable signal, occurring in only ≈15% of repairs (Hough and Purver, 2013; Heeman and Allen, 1999). Our repair onset detection is therefore driven by departures from fluency, via information-theoretic features derived incrementally from a language model in line with recent psycholinguistic accounts of incremental parsing – see (Keller, 2004; Jaeger and Tily, 2011). Considering the time-linear way a repair is processed and the fact speakers are exponentially less likely to trace one word further back in repair as utterance length increases (Shriberg and Stolcke, 1998), backwards search seems to be the most efficient reparandum extent detection method.2 Features determining the detection of the reparandum extent in the backwards search can also be information-theoretic: entropy measures of distributional parallelism can characterize not only rough copy dependencies, but distributionally similar or dissimilar correspondences between sequences. Finally, when detecting the repair end and structure, distributional information allows computation of the similarity between reparandum and repair. We argue a local-detectionwith-backtracking approach is more cognitiv</context>
+</contexts>
+<marker>Shriberg, Stolcke, 1998</marker>
+<rawString>Elizabeth Shriberg and Andreas Stolcke. 1998. How far do speakers back up in repairs? A quantitative model. In Proceedings of the International Conference on Spoken Language Processing, pages 2183– 2186.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Elizabeth Shriberg</author>
+</authors>
+<title>Preliminaries to a Theory of Speech Disfluencies.</title>
+<date>1994</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of California, Berkeley.</institution>
+<contexts>
+<context position="1156" citStr="Shriberg, 1994" startWordPosition="151" endWordPosition="152">gram models as its principal decision features in a pipeline of classifiers detecting the different stages of repairs. Results on the Switchboard disfluency tagged corpus show utterance-final accuracy on a par with state-of-the-art incremental repair detection methods, but with better incremental accuracy, faster time-to-detection and less computational overhead. We evaluate its performance using incremental metrics and propose new repair processing evaluation standards. 1 Introduction Self-repairs in spontaneous speech are annotated according to a well established three-phase structure from (Shriberg, 1994) onwards, and as described in Meteer et al. (1995)’s Switchboard corpus annotation handbook: John [ likes + {uh} loves ] Mary (1) |{z } |{z } |{z } reparandum interregnum repair From a dialogue systems perspective, detecting repairs and assigning them the appropriate structure is vital for robust natural language understanding (NLU) in interactive systems. Downgrading the commitment of reparandum phases and assigning appropriate interregnum and repair phases permits computation of the user’s intended meaning. Furthermore, the recent focus on incremental dialogue systems (see e.g. (Rieser and S</context>
+<context position="9709" citStr="Shriberg, 1994" startWordPosition="1463" endWordPosition="1464">detection and a relatively slow rise to utterance-final accuracy up to 6 words back is undesirable given repairs have a mean reparandum length of ≈1.5 words (Hough and Purver, 2013; Shriberg and Stolcke, 1998). Structural identification Classifying repairs has been ignored in repair processing, despite the presence of distinct categories (e.g. repeats, substitutions, deletes) with different pragmatic effects (Hough and Purver, 2013).1 This is perhaps due to lack of clarity in definition: even for human annotators, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To address the above, we propose an alternative to (Johnson and Charniak, 2004; Zwarts et al., 2010)’s noisy channel model. While the model elegantly captures intuitions about parallelism in repairs and modelling fluency, it relies on stringmatching, motivated in a similar way to automatic spelling correction (Brill and Moore, 2000): it assumes a speaker chooses to utter fluent utterance X according to some pr</context>
+</contexts>
+<marker>Shriberg, 1994</marker>
+<rawString>Elizabeth Shriberg. 1994. Preliminaries to a Theory of Speech Disfluencies. Ph.D. thesis, University of California, Berkeley.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Simon Zwarts</author>
+<author>Mark Johnson</author>
+</authors>
+<title>The impact of language models and loss functions on repair disfluency detection.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11,</booktitle>
+<pages>703--711</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="8184" citStr="Zwarts and Johnson, 2011" startWordPosition="1222" endWordPosition="1225">d, for prefixes of length n the number of hypotheses can grow in the order O(n4). Exploring a subset of this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with their STAG repair parser is O(n5). In their approach, complexity is mitigated by imposing a maximum repair length (12 words), and also by using beam search with re-ranking (Lease et al., 2006; Zwarts and Johnson, 2011). If we wish to include full decoding of the repair’s structure (as argued by Hough and Purver (2013) as necessary for full interpretation) whilst taking a strictly incremental and time-critical perspective, reducing this complexity by minimizing the size of this search space is crucial. Stability of repair hypotheses and latency Using a beam search of n-best hypotheses on a wordby-word basis can cause ‘jitter’ in the detector’s output. While utterance-final accuracy is desired, 79 for a truly incremental system good intermediate results are equally important. Zwarts et al. (2010)’s time-to-de</context>
+<context position="30114" citStr="Zwarts and Johnson (2011)" startWordPosition="4762" endWordPosition="4766">e 8 different cost functions in rpstart with differing costs for false negatives and positives of the form below, where R is a repair element word and F is a fluent onset: Rhyp Fhyp � Rgold 0 2 Fgold 1 0 We adopt a similar technique in rmstart using 5 different cost functions and in rpend using 8 different settings, which when combined gives a total of 320 different cost function configurations. We hypothesise that higher recall permitted in the pipeline’s first components would result in better overall accuracy as these hypotheses become refined, though at the cost of the stability of the hy5Zwarts and Johnson (2011) take a similar approach on Switchboard data to train a re-ranker of repair analyses. 6As (Domingos, 1999) demonstrated, there are only relatively small accuracy gains when using more than this, with training time increasing in the order of the re-sample size. potheses of the sequence and extra downstream processing in pruning false positives. We also experiment with the number of repair hypotheses permitted per word, using limits of 1- best and 2-best hypotheses. We expect that allowing 2 hypotheses to be explored per rpstart should allow greater final accuracy, but with the trade-off of grea</context>
+</contexts>
+<marker>Zwarts, Johnson, 2011</marker>
+<rawString>Simon Zwarts and Mark Johnson. 2011. The impact of language models and loss functions on repair disfluency detection. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT ’11, pages 703–711, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Simon Zwarts</author>
+<author>Mark Johnson</author>
+<author>Robert Dale</author>
+</authors>
+<title>Detecting speech repairs incrementally using a noisy channel approach.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 23rd International Conference on Computational Linguistics, COLING ’10,</booktitle>
+<pages>1371--1378</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="2184" citStr="Zwarts et al., 2010" startWordPosition="304" endWordPosition="307">nd assigning appropriate interregnum and repair phases permits computation of the user’s intended meaning. Furthermore, the recent focus on incremental dialogue systems (see e.g. (Rieser and Schlangen, 2011)) means that repair detection should operate without unnecessary processing overhead, and function efficiently within an incremental framework. However, such left-to-right operability on its own is not sufficient: in line with the principle of strong incremental interpretation (Milward, 1991), a repair detector should give the best results possible as early as possible. With one exception (Zwarts et al., 2010), there has been no focus on evaluating or improving the incremental performance of repair detection. In this paper we present STIR (Strongly Incremental Repair detection), a system which addresses the challenges of incremental accuracy, computational complexity and latency in selfrepair detection, by making local decisions based on relatively simple measures of fluency and similarity. Section 2 reviews state-of-the-art methods; Section 3 summarizes the challenges and explains our general approach; Section 4 explains STIR in detail; Section 5 explains our experimental set-up and novel evaluati</context>
+<context position="5319" citStr="Zwarts et al. (2010)" startWordPosition="778" endWordPosition="781">ledge-source language model, the rarity of the tail of repair structures is likely to be the reason for lower performance: Hough and Purver (2013) show that only 39% of repair alignment structures appear at least twice in Switchboard, supported by the 29% reported by Heeman and Allen (1999) on the smaller TRAINS corpus. Miller and Schuler (2008)’s encoding of repairs into a grammar also causes sparsity in training: repair is a general processing strategy not restricted to certain lexical items or POS tag sequences. The model we consider most suitable for incremental dialogue systems so far is Zwarts et al. (2010)’s incremental version of Johnson and Charniak (2004)’s noisy channel repair detector, as it incrementally applies structural repair analyses (rather than just identifying reparanda) and is evaluated for its incremental properties. Following (Johnson and Charniak, 2004), their system uses an n-gram language model trained on roughly 100K utterances of reparandum-excised (‘cleaned’) Switchboard data. Its channel model is a statistically-trained S-TAG parser whose grammar has simple reparandum-repair alignment rule categories for its non-terminals (copy, delete, insert, substitute) and words for </context>
+<context position="7368" citStr="Zwarts et al., 2010" startWordPosition="1088" endWordPosition="1091">re of the stability of the repair hypotheses. They report an F-score of 0.578 at one word back from the current prefix boundary, increasing word-by-word until 6 words back where it reaches 0.770. These results are the point-of-departure for our work. 3 Challenges and Approach In this section we summarize the challenges for incremental repair detection: computational complexity, repair hypothesis stability, latency of detection and repair structure identification. In 3.1 we explain how we address these. Computational complexity Approaches to detecting repair structures often use chart storage (Zwarts et al., 2010; Johnson and Charniak, 2004; Heeman and Allen, 1999), which poses a computational overhead: if considering all possible boundary points for a repair structure’s 3 phases beginning on any word, for prefixes of length n the number of hypotheses can grow in the order O(n4). Exploring a subset of this space is necessary for assigning entire repair structures as in (1) above, rather than just detecting reparanda: the (Johnson and Charniak, 2004; Zwarts et al., 2010) noisy-channel detector is the only system that applies such structures but the potential runtime complexity in decoding these with th</context>
+<context position="8771" citStr="Zwarts et al. (2010)" startWordPosition="1316" endWordPosition="1319">, 2006; Zwarts and Johnson, 2011). If we wish to include full decoding of the repair’s structure (as argued by Hough and Purver (2013) as necessary for full interpretation) whilst taking a strictly incremental and time-critical perspective, reducing this complexity by minimizing the size of this search space is crucial. Stability of repair hypotheses and latency Using a beam search of n-best hypotheses on a wordby-word basis can cause ‘jitter’ in the detector’s output. While utterance-final accuracy is desired, 79 for a truly incremental system good intermediate results are equally important. Zwarts et al. (2010)’s time-to-detection results show their system is only certain about a detection after processing the entire repair. This may be due to the string alignment-inspired S-TAG that matches repair and reparanda: a ‘rough copy’ dependency only becomes likely once the entire repair has been consumed. The latency of 4.6 words to detection and a relatively slow rise to utterance-final accuracy up to 6 words back is undesirable given repairs have a mean reparandum length of ≈1.5 words (Hough and Purver, 2013; Shriberg and Stolcke, 1998). Structural identification Classifying repairs has been ignored in </context>
+<context position="9996" citStr="Zwarts et al., 2010" startWordPosition="1504" endWordPosition="1507">r processing, despite the presence of distinct categories (e.g. repeats, substitutions, deletes) with different pragmatic effects (Hough and Purver, 2013).1 This is perhaps due to lack of clarity in definition: even for human annotators, verbatim repeats withstanding, agreement is often poor (Hough and Purver, 2013; Shriberg, 1994). Assigning and evaluating repair (not just reparandum) structures will allow repair interpretation in future; however, work to date evaluates only reparandum detection. 3.1 Our approach To address the above, we propose an alternative to (Johnson and Charniak, 2004; Zwarts et al., 2010)’s noisy channel model. While the model elegantly captures intuitions about parallelism in repairs and modelling fluency, it relies on stringmatching, motivated in a similar way to automatic spelling correction (Brill and Moore, 2000): it assumes a speaker chooses to utter fluent utterance X according to some prior distribution P(X), but a noisy channel causes them instead to utter a noisy Y according to channel model P(Y |X). Estimating P(Y |X) directly from observed data is difficult due to sparsity of repair instances, so a transducer is trained on the rough copy alignments between reparand</context>
+<context position="31907" citStr="Zwarts et al., 2010" startWordPosition="5044" endWordPosition="5047"> Similarity metrics For direct comparison to previous approaches we use the standard measure of overall accuracy, the F-score over reparandum words, which we abbreviate Frm (see 7): precision = recall = rmgold precision × recall Frm = 2 × precision + recall We are also interested in repair structural classification, we also measure F-score over all repair components (rm words, ed words as interregna and rp words), a metric we abbreviate Fs. This is not measured in standard repair detection on Switchboard. To investigate incremental accuracy we evaluate the delayed accuracy (DA) introduced by (Zwarts et al., 2010), as described in section 2 against the utterance-final gold standard disfluency annotations, and use the mean of the 6 word F-scores. rmcorrect rmhyp rmcorrect (7) 85 Input and current repair labels edits John (®rm) (®rp) (Grm) (Grp) ®ed ®rm ®rp John likes rm rp John likes uh ed John likes uh loves rm ed rp John likes uh loves Mary rm ed rp Figure 4: Edit Overhead- 4 unnecessary edits Figure 6: Delayed Accuracy Curves Timing and resource metrics Again for comparative purposes we use Zwarts et al’s time-todetection metrics, that is the two average distances (in numbers of words) consumed befor</context>
+<context position="35066" citStr="Zwarts et al., 2010" startWordPosition="5591" endWordPosition="5594">bed above, together with the setting achieving the highest total score (TS)– the average % achieved of the best performing system’s result in each metric.7 The settings found to achieve the highest Frm (the metric standardly used in disfluency detection), and that found to achieve the highest TS for each stage in the pipeline are shown in Figure 5. Our experiments showed that different system settings perform better in different metrics, and no individual setting achieved the best result in all of them. Our best utterance-final Frm reaches 0.779, marginally though not significantly exceeding (Zwarts et al., 2010)’s measure and STIR achieves 0.736 on the previously unevaluated Fs. The setting with the best DA improves on (Zwarts et al., 2010)’s result significantly in terms of mean values (0.718 vs. 0.694), and also in terms of the steepness of the curves (Figure 6). The fastest average time to detection is 1 word for TDrp and 2.6 words for TDrm (Table 3), improving dramatically on the noisy channel model’s 4.6 and 7.5 words. Incrementality versus accuracy trade-off We aimed to investigate how well a system could do in terms of achieving both good final accuracy and incremental performance, and while t</context>
+</contexts>
+<marker>Zwarts, Johnson, Dale, 2010</marker>
+<rawString>Simon Zwarts, Mark Johnson, and Robert Dale. 2010. Detecting speech repairs incrementally using a noisy channel approach. In Proceedings of the 23rd International Conference on Computational Linguistics, COLING ’10, pages 1371–1378, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

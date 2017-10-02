@@ -1,0 +1,1765 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000007">
+<title confidence="0.982556">
+Density-Driven Cross-Lingual Transfer of Dependency Parsers
+</title>
+<author confidence="0.908573">
+Mohammad Sadegh Rasooli and Michael Collins∗
+</author>
+<affiliation confidence="0.996439">
+Department of Computer Science, Columbia University
+</affiliation>
+<address confidence="0.988654">
+New York, NY 10027, USA
+</address>
+<email confidence="0.998764">
+{rasooli,mcollins}@cs.columbia.edu
+</email>
+<sectionHeader confidence="0.997385" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9999804">
+We present a novel method for the cross-
+lingual transfer of dependency parsers.
+Our goal is to induce a dependency parser
+in a target language of interest without
+any direct supervision: instead we as-
+sume access to parallel translations be-
+tween the target and one or more source
+languages, and to supervised parsers in
+the source language(s). Our key contribu-
+tions are to show the utility of dense pro-
+jected structures when training the target
+language parser, and to introduce a novel
+learning algorithm that makes use of dense
+structures. Results on several languages
+show an absolute improvement of 5.51%
+in average dependency accuracy over the
+state-of-the-art method of (Ma and Xia,
+2014). Our average dependency accuracy
+of 82.18% compares favourably to the ac-
+curacy of fully supervised methods.
+</bodyText>
+<sectionHeader confidence="0.999517" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.996527824561404">
+In recent years there has been a great deal of inter-
+est in dependency parsing models for natural lan-
+guages. Supervised learning methods have been
+shown to produce highly accurate dependency-
+parsing models; unfortunately, these methods rely
+on human-annotated data, which is expensive to
+obtain, leading to a significant barrier to the devel-
+opment of dependency parsers for new languages.
+Recent work has considered unsupervised meth-
+ods (e.g. (Klein and Manning, 2004; Headden III
+et al., 2009; Gillenwater et al., 2011; Mareˇcek
+and Straka, 2013; Spitkovsky et al., 2013; Le and
+Zuidema, 2015; Grave and Elhadad, 2015)), or
+methods that transfer linguistic structures across
+languages (e.g. (Cohen et al., 2011; McDonald et
+al., 2011; Ma and Xia, 2014; Tiedemann, 2015;
+∗Currently on leave at Google Inc. New York.
+Guo et al., 2015; Zhang and Barzilay, 2015; Xiao
+and Guo, 2015)), in an effort to reduce or eliminate
+the need for annotated training examples. Unfor-
+tunately the accuracy of these methods generally
+lags quite substantially behind the performance of
+fully supervised approaches.
+This paper describes novel methods for the
+transfer of syntactic information between lan-
+guages. As in previous work (Hwa et al., 2005;
+Ganchev et al., 2009; McDonald et al., 2011; Ma
+and Xia, 2014), our goal is to induce a dependency
+parser in a target language of interest without any
+direct supervision (i.e., a treebank) in the target
+language: instead we assume access to parallel
+translations between the target and one or more
+source languages, and to supervised parsers in the
+source languages. We can then use alignments in-
+duced using tools such as GIZA++ (Och and Ney,
+2000), to transfer dependencies from the source
+language(s) to the target language (example pro-
+jections are shown in Figure 1). A target language
+parser is then trained on the projected dependen-
+cies.
+Our contributions are as follows:
+• We demonstrate the utility of dense projected
+structures when training the target-language
+parser. In the most extreme case, a “dense”
+structure is a sentence in the target language
+where the projected dependencies form a
+fully projective tree that includes all words in
+the sentence (we will refer to these structures
+as “full” trees). In more relaxed definitions,
+we might include sentences where at least
+some proportion (e.g., 80%) of the words par-
+ticipate as a modifier in some dependency, or
+where long sequences (e.g., 7 words or more)
+of words all participate as modifiers in some
+dependency. We give empirical evidence that
+dense structures give particularly high accu-
+racy for their projected dependencies.
+</bodyText>
+<page confidence="0.97694">
+328
+</page>
+<note confidence="0.82693775">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 328–338,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+The political priorities must be set by this House and the MEPs . ROOT
+Die politischen Priorit¨aten m¨ussen von diesem Parlament und den Europaabgeordneten abgesteckt werden . ROOT
+</note>
+<figureCaption confidence="0.676232666666667">
+Figure 1: An example projection from English to German in the EuroParl data (Koehn, 2005). The
+English parse tree is the output from a supervised parser, while the German parse tree is projected from
+the English parse tree using translation alignments from GIZA++.
+</figureCaption>
+<bodyText confidence="0.99766625">
+• We describe a training algorithm that builds
+on the definitions of dense structures. The
+algorithm initially trains the model on full
+trees, then iteratively introduces increasingly
+relaxed definitions of density. The algo-
+rithm makes use of a training method that
+can leverage partial (incomplete) dependency
+structures, and also makes use of confidence
+scores from a perceptron-trained model.
+In spite of the simplicity of our approach,
+our experiments demonstrate significant improve-
+ments in accuracy over previous work. In ex-
+periments on transfer from a single source lan-
+guage (English) to a single target language (Ger-
+man, French, Spanish, Italian, Portuguese, and
+Swedish), our average dependency accuracy is
+78.89%. When using multiple source languages,
+average accuracy is improved to 82.18%. This is
+a 5.51% absolute improvement over the previous
+best results reported on this data set, 76.67% for
+the approach of (Ma and Xia, 2014). To give an-
+other perspective, our accuracy is close to that of
+the fully supervised approach of (McDonald et al.,
+2005), which gives 84.29% accuracy on this data.
+To the best of our knowledge these are the high-
+est accuracy parsing results for an approach that
+makes no use of treebank data for the language of
+interest.
+</bodyText>
+<sectionHeader confidence="0.999914" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.99963725">
+A number of researchers have considered the
+problem of projecting linguistic annotations from
+the source to the target language in a parallel cor-
+pus (Yarowsky et al., 2001; Hwa et al., 2005;
+Ganchev et al., 2009; Spreyer and Kuhn, 2009;
+McDonald et al., 2011; Ma and Xia, 2014). The
+projected annotations are then used to train a
+model in the target language. This prior work in-
+volves various innovations such as the use of pos-
+terior regularization (Ganchev et al., 2009), the
+use of entropy regularization and parallel guid-
+ance (Ma and Xia, 2014), the use of a simple
+method to transfer delexicalized parsers across
+languages (McDonald et al., 2011), and a method
+for training on partial annotations that are pro-
+jected from source to target language (Spreyer and
+Kuhn, 2009). There is also recent work on tree-
+bank translation via a machine translation system
+(Tiedemann et al., 2014; Tiedemann, 2015). The
+work of (McDonald et al., 2011) and (Ma and Xia,
+2014) is most relevant to our own work, for two
+reasons: first, these papers consider dependency
+parsing, and as in our work use the latest version of
+the Google universal treebank for evaluation;1 sec-
+ond, these papers represent the state of the art in
+accuracy. The results in (Ma and Xia, 2014) dom-
+inate the accuracies for all other papers discussed
+in this related work section: they report an aver-
+age accuracy of 76.67% on the languages German,
+Italian, Spanish, French, Swedish and Portuguese;
+this evaluation includes all sentence lengths.
+Other work on unsupervised parsing has con-
+sidered various methods that transfer information
+from source to target languages, where parsers are
+available in the source languages, but without the
+use of parallel corpora (Cohen et al., 2011; Dur-
+</bodyText>
+<footnote confidence="0.9995035">
+1The original paper of (McDonald et al., 2011) does not
+use the Google universal treebank, however (Ma and Xia,
+2014) reimplemented the model and report results on the
+Google universal treebank.
+</footnote>
+<page confidence="0.999113">
+329
+</page>
+<bodyText confidence="0.999154">
+rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om
+et al., 2013; Duong et al., 2015; Zhang and Barzi-
+lay, 2015). These results are somewhat below the
+performance of (Ma and Xia, 2014).2
+</bodyText>
+<sectionHeader confidence="0.972337" genericHeader="method">
+3 Our Approach
+</sectionHeader>
+<bodyText confidence="0.999893285714286">
+This section describes our approach, giving defini-
+tions of parallel data and of dense projected struc-
+tures; describing preliminary exploratory experi-
+ments on transfer from German to English; de-
+scribing the iterative training algorithm used in our
+work; and finally describing a generalization of the
+method to transfer from multiple languages.
+</bodyText>
+<subsectionHeader confidence="0.997777">
+3.1 Parallel Data Definitions
+</subsectionHeader>
+<bodyText confidence="0.962578272727273">
+We assume that we have parallel data in two lan-
+guages. The source language, for which we have
+a supervised parser, is assumed to be English. The
+target language, for which our goal is to learn a
+parser, will be referred to as the “foreign” lan-
+guage. We describe the generalization to more
+than two languages in §3.5.
+We use the following notation. Our parallel
+data is a set of examples (e(k), f(k)) for k =
+1... n, where each e(k) is an English sentence,
+and each f(k) is a foreign sentence. Each e(k) =
+</bodyText>
+<equation confidence="0.950963285714286">
+e(k)
+1 ... esk where e(k)
+(k) i is a word, and sk is the
+length of k’th source sentence. Similarly, f(k) =
+f(k)
+1 ... f(k)
+tk where f(k)
+</equation>
+<bodyText confidence="0.992792545454545">
+j is a word, and tk is the
+length of k’th foreign sentence.
+A dependency is a four-tuple (l, k, h, m) where
+l ∈ {e, f} is the language, k is the sentence num-
+ber, h is the head index, m is the modifier index.
+Note that if l = e then we have 0 ≤ h ≤ sk and
+1 ≤ m ≤ sk, conversely if l = f then 0 ≤ h ≤ tk
+and 1 ≤ m ≤ tk. We use h = 0 when h is the root
+of the sentence.
+For any k ∈ {1... n}, j ∈ {0 ... tk}, Ak,j is
+an integer specifying which word in e(k)
+</bodyText>
+<equation confidence="0.9568932">
+1 ... e(k)
+sk ,
+word f(k)
+j is aligned to. It is NULL if f(k)
+j is not
+</equation>
+<bodyText confidence="0.942998666666667">
+aligned to anything. We have Ak,0 = 0 for all k:
+that is, the root in one language is always aligned
+to the root in the other language.
+In our experiments we use intersected align-
+ments from GIZA++ (Och and Ney, 2000) to pro-
+vide the Ak,j values.
+</bodyText>
+<footnote confidence="0.7557045">
+2With one exception: on Spanish, using the CoNLL defi-
+nition of dependencies. The good results from (Ma and Xia,
+2014) on the universal dependencies for Spanish may show
+that the result on the CONLL data is an anomaly, perhaps
+due to the annotation scheme in Spanish being different from
+other languages.
+</footnote>
+<subsectionHeader confidence="0.998789">
+3.2 Projected Dependencies
+</subsectionHeader>
+<bodyText confidence="0.999477909090909">
+We now describe various sets of projected depen-
+dencies. We use D to denote the set of all de-
+pendencies in the source language: these depen-
+dencies are the result of parsing the English side
+of the translation data using a supervised parser.
+Each dependency (l, k, h, m) ∈ D is a four-tuple
+as described above, with l = e. We will use P to
+denote the set of all projected dependencies from
+the source to target language. The set P is con-
+structed from D and the alignment variables Ak,j
+as follows:
+</bodyText>
+<equation confidence="0.992183">
+P = {(l, k, h, m) : l = f
+∧ (e, k, Ak,h, Ak,m) ∈ D}
+</equation>
+<bodyText confidence="0.999954222222222">
+We say the k’th sentence receives a full parse
+under the dependencies P if the dependencies
+(f, k, h, m) for k form a projective tree over the
+entire sentence: that is, each word has exactly one
+head, the root symbol is the head of the entire
+structure, and the resulting structure is a projec-
+tive tree. We use T100 ⊆ {1... n} to denote the
+set of all sentences that receive a full parse under
+P. We then define the following set,
+</bodyText>
+<equation confidence="0.902677">
+P100 = {(l, k, h, m) ∈ P : k ∈ T100}
+</equation>
+<bodyText confidence="0.999953428571429">
+We say the k’th sentence receives a dense parse
+under the dependencies P if the dependencies of
+the form (f, k, h, m) for k form a projective tree
+over at least 80% of the words in the sentence. We
+use T80 ⊆ {1... n} to denote the set of all sen-
+tences that receive a dense parse under P. We then
+define the following set,
+</bodyText>
+<equation confidence="0.960418">
+P80 = {(l,k,h,m) ∈ P : k ∈ T80}
+</equation>
+<bodyText confidence="0.999979166666667">
+We say the k’th sentence receives a span-s parse
+where s is an integer if there is a sequence of at
+least s consecutive words in the target language
+that are all seen as a modifier in the set P. We use
+Ss to refer to the set of all sentences with a span-s
+parse. We define the sets
+</bodyText>
+<equation confidence="0.999797">
+P&gt;7 = {(l,k,h,m) ∈ P : k ∈ S7}
+P&gt;5 = {(l,k,h,m) ∈ P : k ∈ S5}
+P&gt;1 = {(l,k,h,m) ∈ P : k ∈ S1}
+</equation>
+<bodyText confidence="0.999608666666667">
+Finally, we also create datasets that only include
+projected dependencies that are consistent with re-
+spect to part-of-speech (POS) tags for the head and
+</bodyText>
+<page confidence="0.985382">
+330
+</page>
+<bodyText confidence="0.892942285714286">
+modifier words in source and target data. We as-
+sume a function POS(k, j, i) which returns TRUE
+if the POS tags for words f(k)
+j and e(k)
+i are consis-
+tent. The definition of POS-consistent projected
+dependencies is then as follows:
+</bodyText>
+<equation confidence="0.9807545">
+P = {(l, k, h, m) E P :
+POS(k, h, Ak,h) n POS(k, m, Ak,m)}
+</equation>
+<bodyText confidence="0.9999352">
+We experiment with two definitions for the POS
+function. The first imposes a hard constraint, that
+the POS tags in the two languages must be identi-
+cal. The second imposes a soft constraint, that the
+two POS tags must fall into the same equivalance
+class: the equivalence classes used are listed in
+§4.1.
+Given this definition of P, we can create sets
+P100, P80, P&gt;7, P&gt;5, and P&gt;1, using analogous
+definitions to those given above.
+</bodyText>
+<subsectionHeader confidence="0.867475">
+3.3 Preliminary Experiments with Transfer
+from English to German
+</subsectionHeader>
+<bodyText confidence="0.999979863636364">
+Throughout the experiments in this paper, we used
+German as the target language for development of
+our approach. Table 1 shows some preliminary re-
+sults on transferring dependencies from English to
+German. We can estimate the accuracy of depen-
+dency subsets such as P100, P80, P&gt;7 and so on
+by comparing these dependencies to the depen-
+dencies from a supervised German parser on the
+same data. That is, we use a supervised parser to
+provide gold standard annotations. The full set of
+dependencies P give 74.0% accuracy under this
+measure; results for P100 are considerably higher
+in accuracy, ranging from 83.0% to 90.1% depend-
+ing on how POS constraints are used.
+As a second evaluation method, we can test
+the accuracy of a model trained on the P100 data.
+The benefit of the soft-matching POS definition
+is clear. The hard match definition harms perfor-
+mance, presumably because it reduces the number
+of sentences used to train the model.
+Throughout the rest of this paper, we use the
+soft POS constraints in all projection algorithms.3
+</bodyText>
+<subsectionHeader confidence="0.993638">
+3.4 The Training Procedure
+</subsectionHeader>
+<bodyText confidence="0.8840779">
+We now describe the training procedure used in
+our experiments. We use a perceptron-trained
+shift-reduce parser, similar to that of (Zhang and
+Nivre, 2011). We assume that the parser is able
+3The hard constraint is also used by Ma and Xia (2014).
+Inputs: Sets P100, P80, P&gt;7, P&gt;5, P&gt;1 as de-
+fined in §3.2.
+Definitions: Functions TRAIN, CDECODE,
+TOP as defined in §3.4.
+Algorithm:
+</bodyText>
+<listItem confidence="0.95099875">
+1. 01 = TRAIN(P100)
+2. P1100 = CDECODE(P80 U P&gt;7, 01)
+3. 02 = TRAIN(P100 U TOP(P1100, 01))
+4. P2100 = CDECODE(P80 U P&gt;5, 02)
+5. 03 = TRAIN(P100 U TOP(P2100, 02))
+6. P3100 = CDECODE(P&gt;1, 03)
+7. 04 = TRAIN(P100 U TOP(P3100, 03))
+Output: Parameter vectors 01, 02, 03, 04.
+</listItem>
+<figureCaption confidence="0.999269">
+Figure 2: The learning algorithm.
+</figureCaption>
+<bodyText confidence="0.981039083333333">
+to operate in a “constrained” mode, where it re-
+turns the highest scoring parse that is consistent
+with a given subset of dependencies. This can be
+achieved via zero-cost dynamic oracles (Goldberg
+and Nivre, 2013).
+We assume the following definitions:
+• TRAIN(D) is a function that takes a set of de-
+pendency structures D as input, and returns a
+model 0 as its output. The dependency struc-
+tures are assumed to be full trees: that is, they
+correspond to fully projected trees with the
+root symbol as their root.
+</bodyText>
+<listItem confidence="0.859303266666667">
+• CDECODE(P, 0) is a function that takes a
+set of partial dependency structures P, and
+a model 0 as input, and as output returns a
+set of full trees D. It achieves this by con-
+strained decoding of the sentences in P under
+the model 0, where for each sentence we use
+beam search to search for the highest scoring
+projective full tree that is consistent with the
+dependencies in P.
+• TOP(D, 0) takes as input a set of full trees
+D, and a model 0. It returns the top m high-
+est scoring trees in D (in our experiments we
+used m = 200, 000), where the score for each
+tree is the perceptron-based score normalized
+by the sentence length. Thus we return the
+</listItem>
+<page confidence="0.979925">
+331
+</page>
+<table confidence="0.9996448">
+POS Constraints P dense P100 Train on P100
+#sen Acc. #sen Acc. #sen Acc.
+No Restriction 968k 74.0 65k 81.4 23k 83.0 69.5
+Hard match 927k 80.1 26k 88.0 8k 90.1 68.0
+Soft match 904k 80.0 52k 84.9 18k 85.8 70.6
+</table>
+<tableCaption confidence="0.998485">
+Table 1: Statistics showing the accuracy for various definitions of projected trees: see §3.2 for definitions
+</tableCaption>
+<bodyText confidence="0.8666358125">
+of P, P100 etc. Columns labeled “Acc.” show accuracy when the output of a supervised German parser
+is used as gold standard data. Columns labeled “#sen” show number of sentences. “dense” shows
+P100 U P80 U P≥7 and “Train” shows accuracy on test data of a model trained on the P100 trees.
+200,000 trees that the perceptron is most con-
+fident on.4
+Figure 2 shows the learning algorithm. It gener-
+ates a sequence of parsing models, 01 ... 04. In the
+first stage of learning, the model is initialized by
+training on P100. The method then uses this model
+to fill in the missing dependencies on P80 U P≥7
+using the CDECODE method; this data is added
+to P100 and the model is retrained. The method is
+iterated, at each point adding in additional partial
+structures (note that P≥7 C P≥5 C P≥1, hence at
+each stage we expand the set of training data that
+is parsed using CDECODE).
+</bodyText>
+<subsectionHeader confidence="0.938654">
+3.5 Generalization to Multiple Languages
+</subsectionHeader>
+<bodyText confidence="0.949161761904762">
+We now consider the generalization to learning
+from multiple languages. We again assume that
+the task is to learn a parser in a single target lan-
+guage, for example German. We assume that we
+now have multiple source languages. For exam-
+ple, in our experiments with German as the target,
+we used English, French, Spanish, Portuguese,
+Swedish, and Italian as source languages. We as-
+sume that we have fully supervised parsers for all
+source languages. We will consider two methods
+for combining information from the different lan-
+guages:
+Method 1: Concatenation In this approach, we
+form sets P, P100, P80, P≥7 etc. from each of
+the languages separately, and then concatenate5
+the data to give new definitions of P, P100,P80,
+P≥7 etc.
+Method 2: Voting In this case, we assume
+that each target language sentence is aligned to
+a source language sentence in each of the source
+languages. This is the case, for example, in the
+</bodyText>
+<footnote confidence="0.992973333333333">
+4In cases where |D |&lt; m, the entire set D is returned.
+5That is, dependency structures projected from different
+languages are taken to be entirely separate from each other.
+</footnote>
+<bodyText confidence="0.998883285714286">
+Europarl data, where we have translations of the
+same material into multiple languages. We can
+then create the set P of projected dependencies
+using a voting scheme. For any word (k, j) seen
+in the target language, each source language will
+identify a headword (this headword may be NULL
+if there is no alignment giving a dependency). We
+simply take the most frequent headword chosen by
+the languages. After creating the set P, we can
+create subsets such as P100, P80, P≥7 in exactly
+the same way as before.
+Once the various projected dependency training
+sets have been created, we train the dependency
+parsing model using the algorithm given in §3.4.
+</bodyText>
+<sectionHeader confidence="0.99981" genericHeader="method">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.999987666666667">
+We now describe experiments using our approach.
+We first describe data and tools used in the exper-
+iments, and then describe results.
+</bodyText>
+<subsectionHeader confidence="0.990632">
+4.1 Data and Tools
+</subsectionHeader>
+<bodyText confidence="0.9998833125">
+Data We use the EuroParl data (Koehn, 2005)
+as our parallel data and the Google universal tree-
+bank (v2; standard data) (McDonald et al., 2013)
+as our evaluation data, and as our training data for
+the supervised source-language parsers. We use
+seven languages that are present in both Europarl
+and the Google universal treebank: English (used
+only as the source language), and German, Span-
+ish, French, Italian, Portuguese and Swedish.
+Word Alignments We use Giza++6 (Och and
+Ney, 2000) to induce word alignments. Sentences
+with length greater than 100 and single-word sen-
+tences are removed from the parallel data. We fol-
+low common practice in training Giza++ for both
+translation directions, and taking the intersection
+of the two sets as our final alignment. Giza++ de-
+</bodyText>
+<footnote confidence="0.985973">
+6http://www.statmt.org/moses/giza/
+GIZA++.html
+</footnote>
+<page confidence="0.964383">
+332
+</page>
+<table confidence="0.999864222222222">
+L en→trgt concat→trgt voting→trgt
+01 02 03 04 01 02 03 04 01 02 03 04
+de 70.56 72.86 73.74 74.32 73.47 75.17 75.59 76.34 78.17 79.29 79.36 79.68
+es 75.69 77.27 77.29 78.17 79.53 79.57 79.67 80.28 79.82 80.76 81.16 80.86
+fr 77.03 78.54 78.70 79.91 81.23 81.79 82.30 82.24 82.17 82.75 82.47 82.72
+it 77.35 78.64 79.06 79.46 81.49 82.25 82.02 82.49 82.58 82.95 83.45 83.67
+pt 75.98 77.96 78.29 79.38 80.29 81.73 81.53 82.23 80.12 81.70 81.69 82.07
+sv 78.68 80.28 80.81 82.11 82.53 83.78 83.83 83.80 82.85 83.76 83.85 84.06
+avg 75.88 77.59 77.98 78.89 79.76 80.72 80.82 81.23 80.95 81.87 82.00 82.18
+</table>
+<tableCaption confidence="0.995554">
+Table 2: Parsing accuracies of different methods on the test data using the gold standard POS tags.
+</tableCaption>
+<bodyText confidence="0.988548142857143">
+The models 01 ... 04 are described in §3.4. “en→trgt” is the single-source setting with English as the
+source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the
+concatenation and voting methods
+fault alignment model is used in all of our experi-
+ments.
+The Parsing Model For all parsing experiments
+we use the Yara parser7 (Rasooli and Tetreault,
+2015), a reimplementation of the k-beam arc-eager
+parser of Zhang and Nivre (2011). We use a beam
+size of 64, and Brown clustering features8 (Brown
+et al., 1992; Liang, 2005). The parser gives per-
+formance close to the state of the art: for example
+on section 23 of the Penn WSJ treebank (Marcus
+et al., 1993), it achieves 93.32% accuracy, com-
+pared to 92.9% accuracy for the parser of (Zhang
+and Nivre, 2011).
+POS Consistency As mentioned in §3.2, we de-
+fine a soft POS consistency constraint to prune
+some projected dependencies. A source/target lan-
+guage word pair satisifies this constraint if one of
+the following conditions hold: 1) the POS tags for
+the two words are identical; 2) the word forms for
+the two words are identical (this occurs frequently
+for numbers, for example); 3) both tags are in one
+of the following equivalence classes: {ADV H
+ADJ} {ADV H PRT} {ADJ H PRON} {DET
+H NUM} {DET H PRON} {DET H NOUN}
+{PRON H NOUN} {NUM H X} {X H .}. These
+rules were developed primarily on German, with
+some additional validation on Spanish. These
+rules required a small amount of human engineer-
+ing, but we view this as relatively negligible.
+Parameter Tuning We used German as a tar-
+get language in the development of our approach,
+and in setting hyper-parameters. The parser is
+</bodyText>
+<footnote confidence="0.978245">
+7https://github.com/yahoo/YaraParser
+8https://github.com/percyliang/
+brown-cluster
+</footnote>
+<bodyText confidence="0.9984274">
+trained using the averaged structured perceptron
+algorithm (Collins, 2002) with max-violation up-
+dates (Huang et al., 2012). The number of iter-
+ations over the training data is 5 when training
+model 01 in any setting, and 2, 1 and 4 when train-
+ing models 02, 03, 04 respectively. These values
+are chosen by observing the performance on Ger-
+man. We use 04 as the final output from the train-
+ing process: this is found to be optimal in English
+to German projections.
+</bodyText>
+<sectionHeader confidence="0.655253" genericHeader="method">
+4.2 Results
+</sectionHeader>
+<bodyText confidence="0.980235388888889">
+This section gives results of our approach for the
+single source, multi-source (concatenation) and
+multi-source (voting) methods. Following pre-
+vious work (Ma and Xia, 2014) we use gold-
+standard part-of-speech (POS) tags on test data.
+We also provide results with automatic POS tags.
+Results with a Single Source Language The
+first set of results are with a single source lan-
+guage; we use English as the source in all of these
+experiments. Table 2 shows the accuracy of pa-
+rameters 01 ... 04 for transfer into German, Span-
+ish, French, Italian, Portuguese, and Swedish.
+Even the lowest performing model, 01, which is
+trained only on full trees, has a performance of
+75.88%, close to the 76.15% accuracy for the
+method of (Ma and Xia, 2014). There are clear
+gains as we move from 01 to 04, on all languages.
+The average accuracy for 04 is 78.89%.
+</bodyText>
+<sectionHeader confidence="0.515655" genericHeader="method">
+Results with Multiple Source Languages, us-
+</sectionHeader>
+<bodyText confidence="0.999728">
+ing Concatenation Table 2 shows results using
+multiple source languages, using the concatena-
+tion method. In these experiments for a given
+target language we use all other languages in our
+</bodyText>
+<page confidence="0.998286">
+333
+</page>
+<table confidence="0.999800125">
+Model en → trgt concat voting sup(1st) sup(ae)
+de 73.01 74.70 78.77 80.29 84.25
+es 76.31 78.33 79.17 82.17 84.66
+fr 77.54 79.71 80.77 81.33 84.95
+it 78.14 80.82 82.03 83.90 87.03
+pt 78.14 80.81 80.67 84.80 88.08
+sv 79.31 80.81 82.03 81.12 84.87
+avg 77.08 79.20 80.57 82.27 85.64
+</table>
+<tableCaption confidence="0.952230666666667">
+Table 3: Parsing results with automatic part of speech tags on the test data. Sup (1st) is the supervised
+first-order dependency parser (McDonald et al., 2005) and sup (ae) is the Yara arc-eager parser (Rasooli
+and Tetreault, 2015).
+</tableCaption>
+<table confidence="0.999816875">
+Model ge15 zb15 zb s15 mph11 mx14 en → trgt concat voting sup(1st) sup(ae)
+de 51.0 62.5 74.2 69.77 74.30 74.32(+0.02) 76.34(+2.04) 79.68(+5.38) 81.65 85.34
+es 59.2 78.0 78.4 68.72 75.53 78.17(+2.64) 80.28(+4.75) 80.86(+5.33) 83.92 86.69
+fr 59.0 78.9 79.6 73.13 76.53 79.91(+3.38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24
+it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83
+pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44
+sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06
+avg 56.1 75.4 78.4 71.34 76.67 78.89(+2.22) 81.23(+4.56) 82.18(+5.51) 84.29 87.50
+</table>
+<tableCaption confidence="0.992238">
+Table 4: Comparison to previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and
+</tableCaption>
+<bodyText confidence="0.953618272727273">
+Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences),
+mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2.
+The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part
+of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup
+(1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara
+arc-eager supervised parser (Rasooli and Tetreault, 2015).
+data as source languages. The performance of 01
+improves from an average of 75.88% for a sin-
+gle source language, to 79.76% for multiple lan-
+guages. The performance of 04 gives an additional
+improvement to 81.23%.
+</bodyText>
+<sectionHeader confidence="0.443245" genericHeader="method">
+Results with Multiple Source Languages, us-
+</sectionHeader>
+<bodyText confidence="0.999495085714286">
+ing Voting The final set of results in Table 2 are
+for multiple languages using the voting strategy.
+There are further improvements: model 01 has av-
+erage accuracy of 80.95%, and model 04 has aver-
+age accuracy of 82.18%.
+Results with Automatic POS Tags We use our
+final 04 models to parse the treebank with auto-
+matic tags provided by the same POS tagger used
+for tagging the parallel data. Table 3 shows the re-
+sults for the transfer methods and the supervised
+parsing models of (McDonald et al., 2011) and
+(Rasooli and Tetreault, 2015). The first-order su-
+pervised method of (McDonald et al., 2005) gives
+only a 1.7% average absolute improvement in ac-
+curacy over the voting method. For one language
+(Swedish), our method actually gives improved
+accuracy over the 1st order parser.
+Comparison to Previous Results Table 4 gives
+a comparison of the accuracy on the six languages,
+using the single source and multiple source meth-
+ods, to previous work. As shown in the table, our
+model outperforms all models: among them, the
+results of (McDonald et al., 2011) and (Ma and
+Xia, 2014) are directly comparable to us because
+they use the same training and evaluation data.
+The recent work of (Xiao and Guo, 2015) uses the
+same parallel data but evaluates on CoNLL tree-
+banks but their results are lower than Ma and Xia
+(2014). The recent work of (Guo et al., 2015)
+evaluates on the same data as ours but uses differ-
+ent parallel corpora. They only reported on three
+languages (German: 60.35, Spanish: 71.90 and
+French: 72.93) which are all far bellow our re-
+sults. The work of (Grave and Elhadad, 2015) is
+the state-of-the-art fully unsupervised model with
+</bodyText>
+<page confidence="0.996376">
+334
+</page>
+<table confidence="0.9997973">
+en → trg concat voting
+L P80 U P&gt;7 P100 P80 U P&gt;7 P100 P80 U P&gt;7 P100
+sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# dep# acc.
+de 34k 9.6 28.3 84.7 18k 6.8 85.8 98k 9.4 28.8 84.1 51k 6.3 88.0 75k 10.8 23.5 84.5 47k 8.2 91.4
+es 108k 10.9 31.4 87.3 20k 7.4 89.4 536k 11.0 31.8 86.3 89k 7.5 89.8 346k 17.0 28.5 86.1 109k 12.1 89.2
+fr 70k 10.1 32.8 85.8 13k 6.7 84.1 342k 10.5 33.0 87.5 47k 6.9 89.5 303k 14.9 29.9 87.4 78k 11.7 91.2
+it 57k 10.0 31.2 84.4 9k 6.3 76.9 434k 11.1 31.3 84.7 70k 7.4 87.2 301k 15.2 28.5 84.5 101k 12.4 87.9
+pt 489k 10.0 31.0 85.2 10k 6.0 84.0 462k 11.1 31.3 81.4 77k 7.3 85.4 222k 12.4 30.3 81.3 39k 8.8 85.8
+sv 81k 10.4 25.8 83.1 30k 7.4 87.8 255k 9.5 23.6 84.6 79k 6.8 89.7 211k 12.2 25.2 84.2 86k 9.5 88.8
+avg 140k 10.2 30.1 85.1 17k 6.8 84.7 354k 10.4 30.0 84.8 69k 7.0 88.3 243k 13.7 27.6 84.7 77k 10.4 89.0
+</table>
+<tableCaption confidence="0.982628">
+Table 5: Table showing statistics on projected dependencies for the target languages, for the single-
+</tableCaption>
+<bodyText confidence="0.993324266666667">
+source, multi-source (concat) and multi-source (voting) methods. “sen#” is the number of sentences.
+“dep#” is the average number of dependencies per sentence. “len” is the average sentence length. “acc.”
+is the percentage of projected dependencies that agree with the output from a supervised parser.
+minimal linguistic prior knowledge. The model of
+(Zhang and Barzilay, 2015) does not use any paral-
+lel data but uses linguistic information across lan-
+guages. Their semi-supervised model selectively
+samples 50 annotated sentences but our model out-
+performs their model.
+Compared to the results of (McDonald et al.,
+2011) and (Ma and Xia, 2014) which are directly
+comparable, there are clear improvements across
+all languages; the highest accuracy, 82.18%, is a
+5.51% absolute improvement over the average ac-
+curacy for (Ma and Xia, 2014).
+</bodyText>
+<sectionHeader confidence="0.977682" genericHeader="evaluation">
+5 Analysis
+</sectionHeader>
+<bodyText confidence="0.999992211538462">
+We conclude with some analysis of the accuracy
+of the projected dependencies for the different lan-
+guages, for different definitions (P100, P80 etc.),
+and for different projection methods. Table 5 gives
+a summary of statistics for the various languages.
+Recall that German is used as the development
+language in our experiments; the other languages
+can be considered to be test languages. In all cases
+the accuracy reported is the percentage match to a
+supervised parser used to parse the same data.
+There are some clear trends. The accuracy of
+the P100 datasets is high, with an average accuracy
+of 84.7% for the single source method, 88.3% for
+the concatenation method, and 89.0% for the vot-
+ing method. The voting method not only increases
+accuracy over the single source method, but also
+increases the number of sentences (from an aver-
+age 17k to 77k) and the average number of depen-
+dencies per sentence (from 6.8 to 10.4).
+The accuracy of the P80 U P&gt;7 datasets is
+slightly lower, with around 83-87% accuracy for
+the single source, concatenation and voting meth-
+ods. The voting method gives a significant in-
+crease in the number of sentences—from an av-
+erage of 140k to 243k. The average sentence
+length for this data is around 28 words, consid-
+erably longer than the P100 data; the addition of
+longer sentences is very likely beneficial to the
+model. For the voting method the average number
+of dependencies is 13.7, giving an average density
+of 50% on these sentences.
+The accuracy for the different languages, in par-
+ticular for the voting data, is surprisingly uniform,
+with a range of 85.8-91.4% for the P100 data, and
+81.3-87.4% for the P80 U P&gt;7 data. The number
+of sentences for each language, the average length
+of those sentences, and average number of depen-
+dencies per sentence is also quite uniform, with
+the exception of German, which is a clear outlier.
+German has fewer sentences, and fewer dependen-
+cies per sentence: this may account for it having
+the lowest accuracy for our models. Future work
+should investigate why this is the case: one hy-
+pothesis is that German has quite different word
+order from the other languages (it is V2, and verb
+final), which may lead to a degradation in the qual-
+ity of the alignments from GIZA++, or in the pro-
+jection process.
+Finally, figure 3 shows some randomly selected
+examples from the P100 data for Spanish, giving
+a qualitative feel for the data obtained using the
+voting method.
+</bodyText>
+<sectionHeader confidence="0.997936" genericHeader="conclusions">
+6 Conclusions
+</sectionHeader>
+<bodyText confidence="0.999965">
+We have described a density-driven method for
+the induction of dependency parsers using paral-
+lel data and source-language parsers. The key
+ideas are a series of increasingly relaxed defini-
+tions of density, together with an iterative train-
+ing procedure that makes use of these definitions.
+The method gives a significant gain over previous
+methods, with dependency accuracies approach-
+</bodyText>
+<page confidence="0.996336">
+335
+</page>
+<figure confidence="0.9746305">
+El informe presentado por la red abarca una serie de temas muy vasta . ROOT
+La Comisi´on debe proponer medidas para corregir estas verdaderas desviaciones . ROOT
+(a) (b)
+Hemos visto cooperaci´on entre estos pa´ıses en esta ´area . ROOT
+Podr´ıa lograr sus fines si los distintos pa´ıses de la Uni´on partieran del mismo punto . ROOT
+(c) (d)
+Confirma la importancia de abordar el desaf´ıo de la sostenibilidad con una combinaci´on de consolidaci´on fiscal y reformas estructurales . ROOT
+(e)
+</figure>
+<figureCaption confidence="0.999304">
+Figure 3: Randomly selected examples of Spanish dependency structures derived using the voting
+</figureCaption>
+<bodyText confidence="0.789845875">
+method. Dashed/red dependencies are mismatches with the output of a supervised Spanish parser; all
+other dependencies match the supervised parser. In these examples, 92.4% of dependencies match the
+supervised parser; this is close to the average match rate on Spanish of 89.2% for the voting method.
+ing the level of fully supervised methods. Future
+work should consider application of the method to
+a broader set of languages, and application of the
+method to transfer of information other than de-
+pendency structures.
+</bodyText>
+<sectionHeader confidence="0.963169" genericHeader="acknowledgments">
+Acknowledgement
+</sectionHeader>
+<bodyText confidence="0.99572425">
+We thank Avner May and anonymous review-
+ers for their useful comments. Mohammad
+Sadegh Rasooli was supported by a grant from
+Bloomberg’s Knowledge Engineering team.
+</bodyText>
+<sectionHeader confidence="0.999142" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.995350857142857">
+Peter F Brown, Peter V Desouza, Robert L Mercer,
+Vincent J Della Pietra, and Jenifer C Lai. 1992.
+Class-based n-gram models of natural language.
+Computational linguistics, 18(4):467–479.
+Shay B. Cohen, Dipanjan Das, and Noah A. Smith.
+2011. Unsupervised structure prediction with non-
+parallel multilingual guidance. In Proceedings of
+the 2011 Conference on Empirical Methods in Natu-
+ral Language Processing, pages 50–61, Edinburgh,
+Scotland, UK., July. Association for Computational
+Linguistics.
+Michael Collins. 2002. Discriminative training meth-
+ods for hidden markov models: Theory and experi-
+ments with perceptron algorithms. In Proceedings
+of the 2002 Conference on Empirical Methods in
+Natural Language Processing, pages 1–8. Associ-
+ation for Computational Linguistics, July.
+Long Duong, Trevor Cohn, Steven Bird, and Paul
+Cook. 2015. Cross-lingual transfer for unsuper-
+vised dependency parsing without parallel data. In
+Proceedings of the Nineteenth Conference on Com-
+putational Natural Language Learning, pages 113–
+122, Beijing, China, July. Association for Computa-
+tional Linguistics.
+Greg Durrett, Adam Pauls, and Dan Klein. 2012. Syn-
+tactic transfer using a bilingual lexicon. In Pro-
+ceedings of the 2012 Joint Conference on Empirical
+Methods in Natural Language Processing and Com-
+putational Natural Language Learning, pages 1–11,
+Jeju Island, Korea, July. Association for Computa-
+tional Linguistics.
+Kuzman Ganchev, Jennifer Gillenwater, and Ben
+Taskar. 2009. Dependency grammar induction via
+bitext projection constraints. In Proceedings of the
+Joint Conference of the 47th Annual Meeting of the
+ACL and the 4th International Joint Conference on
+Natural Language Processing of the AFNLP, pages
+369–377, Suntec, Singapore, August. Association
+for Computational Linguistics.
+Jennifer Gillenwater, Kuzman Ganchev, Jo˜ao Grac¸a,
+Fernando Pereira, and Ben Taskar. 2011. Posterior
+sparsity in unsupervised dependency parsing. The
+Journal of Machine Learning Research, 12:455–
+490.
+Yoav Goldberg and Joakim Nivre. 2013. Training
+deterministic parsers with non-deterministic oracles.
+TACL, 1:403–414.
+Edouard Grave and No´emie Elhadad. 2015. A con-
+vex and feature-rich discriminative approach to de-
+pendency grammar induction. In Proceedings of the
+53rd Annual Meeting of the Association for Compu-
+tational Linguistics and the 7th International Joint
+Conference on Natural Language Processing (Vol-
+ume 1: Long Papers), pages 1375–1384, Beijing,
+China, July. Association for Computational Linguis-
+tics.
+</reference>
+<page confidence="0.995285">
+336
+</page>
+<reference confidence="0.998002160714286">
+Jiang Guo, Wanxiang Che, David Yarowsky, Haifeng
+Wang, and Ting Liu. 2015. Cross-lingual depen-
+dency parsing based on distributed representations.
+In Proceedings of the 53rd Annual Meeting of the
+Association for Computational Linguistics and the
+7th International Joint Conference on Natural Lan-
+guage Processing (Volume 1: Long Papers), pages
+1234–1244, Beijing, China, July. Association for
+Computational Linguistics.
+William P. Headden III, Mark Johnson, and David Mc-
+Closky. 2009. Improving unsupervised depen-
+dency parsing with richer contexts and smoothing.
+In Proceedings of Human Language Technologies:
+The 2009 Annual Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics, pages 101–109, Boulder, Colorado, June.
+Association for Computational Linguistics.
+Liang Huang, Suphan Fayong, and Yang Guo. 2012.
+Structured perceptron with inexact search. In Pro-
+ceedings of the 2012 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics: Human Language Technologies, pages
+142–151, Montr´eal, Canada, June. Association for
+Computational Linguistics.
+Rebecca Hwa, Philip Resnik, Amy Weinberg, Clara
+Cabezas, and Okan Kolak. 2005. Bootstrapping
+parsers via syntactic projection across parallel texts.
+Natural language engineering, 11(03):311–325.
+Dan Klein and Christopher D. Manning. 2004.
+Corpus-based induction of syntactic structure: Mod-
+els of dependency and constituency. In Proceed-
+ings of the 42Nd Annual Meeting on Association for
+Computational Linguistics, ACL ’04, Stroudsburg,
+PA, USA. Association for Computational Linguis-
+tics.
+Philipp Koehn. 2005. Europarl: A parallel corpus for
+statistical machine translation. In MT summit, vol-
+ume 5, pages 79–86.
+Phong Le and Willem Zuidema. 2015. Unsupervised
+dependency parsing: Let’s use supervised parsers.
+In Proceedings of the 2015 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies,
+pages 651–661, Denver, Colorado, May–June. As-
+sociation for Computational Linguistics.
+Percy Liang. 2005. Semi-supervised learning for nat-
+ural language. Ph.D. thesis, Massachusetts Institute
+of Technology.
+Xuezhe Ma and Fei Xia. 2014. Unsupervised depen-
+dency parsing with transferring distribution via par-
+allel guidance and entropy regularization. In Pro-
+ceedings of the 52nd Annual Meeting of the Asso-
+ciation for Computational Linguistics (Volume 1:
+Long Papers), pages 1337–1348, Baltimore, Mary-
+land, June. Association for Computational Linguis-
+tics.
+Mitchell P. Marcus, Mary Ann Marcinkiewicz, and
+Beatrice Santorini. 1993. Building a large anno-
+tated corpus of English: The Penn treebank. Com-
+putational linguistics, 19(2):313–330.
+David Mareˇcek and Milan Straka. 2013. Stop-
+probability estimates computed on a large corpus
+improve unsupervised dependency parsing. In Pro-
+ceedings of the 51st Annual Meeting of the Associa-
+tion for Computational Linguistics (Volume 1: Long
+Papers), pages 281–290, Sofia, Bulgaria, August.
+Association for Computational Linguistics.
+Ryan McDonald, Fernando Pereira, Kiril Ribarov, and
+Jan Hajiˇc. 2005. Non-projective dependency pars-
+ing using spanning tree algorithms. In Proceedings
+of the Conference on Human Language Technology
+and Empirical Methods in Natural Language Pro-
+cessing, HLT ’05, pages 523–530, Stroudsburg, PA,
+USA. Association for Computational Linguistics.
+Ryan McDonald, Slav Petrov, and Keith Hall. 2011.
+Multi-source transfer of delexicalized dependency
+parsers. In Proceedings of the 2011 Conference on
+Empirical Methods in Natural Language Process-
+ing, pages 62–72, Edinburgh, Scotland, UK., July.
+Association for Computational Linguistics.
+Ryan McDonald, Joakim Nivre, Yvonne Quirmbach-
+Brundage, Yoav Goldberg, Dipanjan Das, Kuz-
+man Ganchev, Keith Hall, Slav Petrov, Hao
+Zhang, Oscar T¨ackstr¨om, Claudia Bedini, N´uria
+Bertomeu Castell´o, and Jungmee Lee. 2013. Uni-
+versal dependency annotation for multilingual pars-
+ing. In Proceedings of the 51st Annual Meeting of
+the Association for Computational Linguistics (Vol-
+ume 2: Short Papers), pages 92–97, Sofia, Bulgaria,
+August. Association for Computational Linguistics.
+Tahira Naseem, Regina Barzilay, and Amir Globerson.
+2012. Selective sharing for multilingual dependency
+parsing. In Proceedings of the 50th Annual Meet-
+ing of the Association for Computational Linguis-
+tics: Long Papers-Volume 1, pages 629–637. Asso-
+ciation for Computational Linguistics.
+Franz Josef Och and Hermann Ney. 2000. Giza++:
+Training of statistical translation models.
+Mohammad Sadegh Rasooli and Joel Tetreault. 2015.
+Yara parser: A fast and accurate dependency parser.
+arXiv preprint arXiv:1503.06733.
+Valentin I. Spitkovsky, Hiyan Alshawi, and Daniel Ju-
+rafsky. 2013. Breaking out of local optima with
+count transforms and model recombination: A study
+in grammar induction. In Proceedings of the 2013
+Conference on Empirical Methods in Natural Lan-
+guage Processing, pages 1983–1995, Seattle, Wash-
+ington, USA, October. Association for Computa-
+tional Linguistics.
+Kathrin Spreyer and Jonas Kuhn. 2009. Data-driven
+dependency parsing of new languages using incom-
+plete and noisy training data. In Proceedings of
+</reference>
+<page confidence="0.981695">
+337
+</page>
+<reference confidence="0.9987565">
+the Thirteenth Conference on Computational Nat-
+ural Language Learning (CoNLL-2009), pages 12–
+20, Boulder, Colorado, June. Association for Com-
+putational Linguistics.
+Oscar T¨ackstr¨om, Ryan McDonald, and Joakim Nivre.
+2013. Target language adaptation of discriminative
+transfer parsers. Transactions for ACL.
+J¨org Tiedemann, ˇZeljko Agi´c, and Joakim Nivre. 2014.
+Treebank translation for cross-lingual parser induc-
+tion. In Proceedings of the Eighteenth Confer-
+ence on Computational Natural Language Learning,
+pages 130–140, Ann Arbor, Michigan, June. Asso-
+ciation for Computational Linguistics.
+J¨org Tiedemann. 2015. Improving the cross-lingual
+projection of syntactic dependencies. In Nordic
+Conference of Computational Linguistics NODAL-
+IDA 2015, pages 191–199.
+Min Xiao and Yuhong Guo. 2015. Annotation
+projection-based representation learning for cross-
+lingual dependency parsing. In Proceedings of the
+Nineteenth Conference on Computational Natural
+Language Learning, pages 73–82, Beijing, China,
+July. Association for Computational Linguistics.
+David Yarowsky, Grace Ngai, and Richard Wicen-
+towski. 2001. Inducing multilingual text analy-
+sis tools via robust projection across aligned cor-
+pora. In Proceedings of the First International Con-
+ference on Human Language Technology Research,
+HLT ’01, pages 1–8, Stroudsburg, PA, USA. Asso-
+ciation for Computational Linguistics.
+Yuan Zhang and Regina Barzilay. 2015. Hierarchi-
+cal low-rank tensors for multilingual transfer pars-
+ing. In Conference on Empirical Methods in Natu-
+ral Language Processing (EMNLP), Lisbon, Portu-
+gal, September.
+Yue Zhang and Joakim Nivre. 2011. Transition-based
+dependency parsing with rich non-local features. In
+Proceedings of the 49th Annual Meeting of the Asso-
+ciation for Computational Linguistics: Human Lan-
+guage Technologies, pages 188–193, Portland, Ore-
+gon, USA, June. Association for Computational Lin-
+guistics.
+</reference>
+<page confidence="0.998368">
+338
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.971656">
+<title confidence="0.999427">Density-Driven Cross-Lingual Transfer of Dependency Parsers</title>
+<author confidence="0.998063">Sadegh Rasooli</author>
+<affiliation confidence="0.999312">Department of Computer Science, Columbia</affiliation>
+<address confidence="0.994026">New York, NY 10027,</address>
+<abstract confidence="0.998964047619048">We present a novel method for the crosslingual transfer of dependency parsers. Our goal is to induce a dependency parser in a target language of interest without any direct supervision: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source language(s). Our key contribuare to show the utility of projected structures when training the target language parser, and to introduce a novel learning algorithm that makes use of dense structures. Results on several languages show an absolute improvement of 5.51% in average dependency accuracy over the state-of-the-art method of (Ma and Xia, 2014). Our average dependency accuracy of 82.18% compares favourably to the accuracy of fully supervised methods.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Peter F Brown</author>
+<author>Peter V Desouza</author>
+<author>Robert L Mercer</author>
+<author>Vincent J Della Pietra</author>
+<author>Jenifer C Lai</author>
+</authors>
+<title>Class-based n-gram models of natural language.</title>
+<date>1992</date>
+<journal>Computational linguistics,</journal>
+<volume>18</volume>
+<issue>4</issue>
+<contexts>
+<context position="20638" citStr="Brown et al., 1992" startWordPosition="3582" endWordPosition="3585">f different methods on the test data using the gold standard POS tags. The models 01 ... 04 are described in §3.4. “en→trgt” is the single-source setting with English as the source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the concatenation and voting methods fault alignment model is used in all of our experiments. The Parsing Model For all parsing experiments we use the Yara parser7 (Rasooli and Tetreault, 2015), a reimplementation of the k-beam arc-eager parser of Zhang and Nivre (2011). We use a beam size of 64, and Brown clustering features8 (Brown et al., 1992; Liang, 2005). The parser gives performance close to the state of the art: for example on section 23 of the Penn WSJ treebank (Marcus et al., 1993), it achieves 93.32% accuracy, compared to 92.9% accuracy for the parser of (Zhang and Nivre, 2011). POS Consistency As mentioned in §3.2, we define a soft POS consistency constraint to prune some projected dependencies. A source/target language word pair satisifies this constraint if one of the following conditions hold: 1) the POS tags for the two words are identical; 2) the word forms for the two words are identical (this occurs frequently for n</context>
+</contexts>
+<marker>Brown, Desouza, Mercer, Pietra, Lai, 1992</marker>
+<rawString>Peter F Brown, Peter V Desouza, Robert L Mercer, Vincent J Della Pietra, and Jenifer C Lai. 1992. Class-based n-gram models of natural language. Computational linguistics, 18(4):467–479.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shay B Cohen</author>
+<author>Dipanjan Das</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Unsupervised structure prediction with nonparallel multilingual guidance.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>50--61</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Edinburgh, Scotland, UK.,</location>
+<contexts>
+<context position="1750" citStr="Cohen et al., 2011" startWordPosition="262" endWordPosition="265">tural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to ind</context>
+<context position="7323" citStr="Cohen et al., 2011" startWordPosition="1161" endWordPosition="1164">versal treebank for evaluation;1 second, these papers represent the state of the art in accuracy. The results in (Ma and Xia, 2014) dominate the accuracies for all other papers discussed in this related work section: they report an average accuracy of 76.67% on the languages German, Italian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various methods that transfer information from source to target languages, where parsers are available in the source languages, but without the use of parallel corpora (Cohen et al., 2011; Dur1The original paper of (McDonald et al., 2011) does not use the Google universal treebank, however (Ma and Xia, 2014) reimplemented the model and report results on the Google universal treebank. 329 rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om et al., 2013; Duong et al., 2015; Zhang and Barzilay, 2015). These results are somewhat below the performance of (Ma and Xia, 2014).2 3 Our Approach This section describes our approach, giving definitions of parallel data and of dense projected structures; describing preliminary exploratory experiments on transfer from German to English; desc</context>
+</contexts>
+<marker>Cohen, Das, Smith, 2011</marker>
+<rawString>Shay B. Cohen, Dipanjan Das, and Noah A. Smith. 2011. Unsupervised structure prediction with nonparallel multilingual guidance. In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing, pages 50–61, Edinburgh, Scotland, UK., July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 2002 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics,</institution>
+<contexts>
+<context position="21916" citStr="Collins, 2002" startWordPosition="3794" endWordPosition="3795">quivalence classes: {ADV H ADJ} {ADV H PRT} {ADJ H PRON} {DET H NUM} {DET H PRON} {DET H NOUN} {PRON H NOUN} {NUM H X} {X H .}. These rules were developed primarily on German, with some additional validation on Spanish. These rules required a small amount of human engineering, but we view this as relatively negligible. Parameter Tuning We used German as a target language in the development of our approach, and in setting hyper-parameters. The parser is 7https://github.com/yahoo/YaraParser 8https://github.com/percyliang/ brown-cluster trained using the averaged structured perceptron algorithm (Collins, 2002) with max-violation updates (Huang et al., 2012). The number of iterations over the training data is 5 when training model 01 in any setting, and 2, 1 and 4 when training models 02, 03, 04 respectively. These values are chosen by observing the performance on German. We use 04 as the final output from the training process: this is found to be optimal in English to German projections. 4.2 Results This section gives results of our approach for the single source, multi-source (concatenation) and multi-source (voting) methods. Following previous work (Ma and Xia, 2014) we use goldstandard part-of-s</context>
+</contexts>
+<marker>Collins, 2002</marker>
+<rawString>Michael Collins. 2002. Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms. In Proceedings of the 2002 Conference on Empirical Methods in Natural Language Processing, pages 1–8. Association for Computational Linguistics, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Long Duong</author>
+<author>Trevor Cohn</author>
+<author>Steven Bird</author>
+<author>Paul Cook</author>
+</authors>
+<title>Cross-lingual transfer for unsupervised dependency parsing without parallel data.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the Nineteenth Conference on Computational Natural Language Learning,</booktitle>
+<pages>113--122</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="7611" citStr="Duong et al., 2015" startWordPosition="1210" endWordPosition="1213">ian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various methods that transfer information from source to target languages, where parsers are available in the source languages, but without the use of parallel corpora (Cohen et al., 2011; Dur1The original paper of (McDonald et al., 2011) does not use the Google universal treebank, however (Ma and Xia, 2014) reimplemented the model and report results on the Google universal treebank. 329 rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om et al., 2013; Duong et al., 2015; Zhang and Barzilay, 2015). These results are somewhat below the performance of (Ma and Xia, 2014).2 3 Our Approach This section describes our approach, giving definitions of parallel data and of dense projected structures; describing preliminary exploratory experiments on transfer from German to English; describing the iterative training algorithm used in our work; and finally describing a generalization of the method to transfer from multiple languages. 3.1 Parallel Data Definitions We assume that we have parallel data in two languages. The source language, for which we have a supervised pa</context>
+</contexts>
+<marker>Duong, Cohn, Bird, Cook, 2015</marker>
+<rawString>Long Duong, Trevor Cohn, Steven Bird, and Paul Cook. 2015. Cross-lingual transfer for unsupervised dependency parsing without parallel data. In Proceedings of the Nineteenth Conference on Computational Natural Language Learning, pages 113– 122, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Adam Pauls</author>
+<author>Dan Klein</author>
+</authors>
+<title>Syntactic transfer using a bilingual lexicon.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>1--11</pages>
+<institution>Jeju Island, Korea, July. Association for Computational Linguistics.</institution>
+<marker>Durrett, Pauls, Klein, 2012</marker>
+<rawString>Greg Durrett, Adam Pauls, and Dan Klein. 2012. Syntactic transfer using a bilingual lexicon. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 1–11, Jeju Island, Korea, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kuzman Ganchev</author>
+<author>Jennifer Gillenwater</author>
+<author>Ben Taskar</author>
+</authors>
+<title>Dependency grammar induction via bitext projection constraints.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP,</booktitle>
+<pages>369--377</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Suntec, Singapore,</location>
+<contexts>
+<context position="2288" citStr="Ganchev et al., 2009" startWordPosition="349" endWordPosition="352">ods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source languages. We can then use alignments induced using tools such as GIZA++ (Och and Ney, 2000), to transfer dependencies from the source language(s) to the target language (example projections are shown in Figure 1). A target language parser is then trained on the p</context>
+<context position="5795" citStr="Ganchev et al., 2009" startWordPosition="908" endWordPosition="911"> reported on this data set, 76.67% for the approach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma and Xia, 2014). The projected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is also recent work on treeb</context>
+</contexts>
+<marker>Ganchev, Gillenwater, Taskar, 2009</marker>
+<rawString>Kuzman Ganchev, Jennifer Gillenwater, and Ben Taskar. 2009. Dependency grammar induction via bitext projection constraints. In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP, pages 369–377, Suntec, Singapore, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jennifer Gillenwater</author>
+<author>Kuzman Ganchev</author>
+<author>Jo˜ao Grac¸a</author>
+<author>Fernando Pereira</author>
+<author>Ben Taskar</author>
+</authors>
+<title>Posterior sparsity in unsupervised dependency parsing.</title>
+<date>2011</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<volume>12</volume>
+<pages>490</pages>
+<marker>Gillenwater, Ganchev, Grac¸a, Pereira, Taskar, 2011</marker>
+<rawString>Jennifer Gillenwater, Kuzman Ganchev, Jo˜ao Grac¸a, Fernando Pereira, and Ben Taskar. 2011. Posterior sparsity in unsupervised dependency parsing. The Journal of Machine Learning Research, 12:455– 490.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Goldberg</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>Training deterministic parsers with non-deterministic oracles.</title>
+<date>2013</date>
+<tech>TACL,</tech>
+<pages>1--403</pages>
+<contexts>
+<context position="14489" citStr="Goldberg and Nivre, 2013" startWordPosition="2514" endWordPosition="2517">, P&gt;7, P&gt;5, P&gt;1 as defined in §3.2. Definitions: Functions TRAIN, CDECODE, TOP as defined in §3.4. Algorithm: 1. 01 = TRAIN(P100) 2. P1100 = CDECODE(P80 U P&gt;7, 01) 3. 02 = TRAIN(P100 U TOP(P1100, 01)) 4. P2100 = CDECODE(P80 U P&gt;5, 02) 5. 03 = TRAIN(P100 U TOP(P2100, 02)) 6. P3100 = CDECODE(P&gt;1, 03) 7. 04 = TRAIN(P100 U TOP(P3100, 03)) Output: Parameter vectors 01, 02, 03, 04. Figure 2: The learning algorithm. to operate in a “constrained” mode, where it returns the highest scoring parse that is consistent with a given subset of dependencies. This can be achieved via zero-cost dynamic oracles (Goldberg and Nivre, 2013). We assume the following definitions: • TRAIN(D) is a function that takes a set of dependency structures D as input, and returns a model 0 as its output. The dependency structures are assumed to be full trees: that is, they correspond to fully projected trees with the root symbol as their root. • CDECODE(P, 0) is a function that takes a set of partial dependency structures P, and a model 0 as input, and as output returns a set of full trees D. It achieves this by constrained decoding of the sentences in P under the model 0, where for each sentence we use beam search to search for the highest </context>
+</contexts>
+<marker>Goldberg, Nivre, 2013</marker>
+<rawString>Yoav Goldberg and Joakim Nivre. 2013. Training deterministic parsers with non-deterministic oracles. TACL, 1:403–414.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Edouard Grave</author>
+<author>No´emie Elhadad</author>
+</authors>
+<title>A convex and feature-rich discriminative approach to dependency grammar induction.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers),</booktitle>
+<pages>1375--1384</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="1658" citStr="Grave and Elhadad, 2015" startWordPosition="249" endWordPosition="252">uction In recent years there has been a great deal of interest in dependency parsing models for natural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et a</context>
+<context position="24612" citStr="Grave and Elhadad, 2015" startWordPosition="4240" endWordPosition="4243"> 74.2 69.77 74.30 74.32(+0.02) 76.34(+2.04) 79.68(+5.38) 81.65 85.34 es 59.2 78.0 78.4 68.72 75.53 78.17(+2.64) 80.28(+4.75) 80.86(+5.33) 83.92 86.69 fr 59.0 78.9 79.6 73.13 76.53 79.91(+3.38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24 it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83 pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44 sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06 avg 56.1 75.4 78.4 71.34 76.67 78.89(+2.22) 81.23(+4.56) 82.18(+5.51) 84.29 87.50 Table 4: Comparison to previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences), mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2. The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup (1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara arc-eager supervised parser (Rasooli and Tetreault, 2015). data as source l</context>
+<context position="27038" citStr="Grave and Elhadad, 2015" startWordPosition="4655" endWordPosition="4658">le, our model outperforms all models: among them, the results of (McDonald et al., 2011) and (Ma and Xia, 2014) are directly comparable to us because they use the same training and evaluation data. The recent work of (Xiao and Guo, 2015) uses the same parallel data but evaluates on CoNLL treebanks but their results are lower than Ma and Xia (2014). The recent work of (Guo et al., 2015) evaluates on the same data as ours but uses different parallel corpora. They only reported on three languages (German: 60.35, Spanish: 71.90 and French: 72.93) which are all far bellow our results. The work of (Grave and Elhadad, 2015) is the state-of-the-art fully unsupervised model with 334 en → trg concat voting L P80 U P&gt;7 P100 P80 U P&gt;7 P100 P80 U P&gt;7 P100 sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# dep# acc. de 34k 9.6 28.3 84.7 18k 6.8 85.8 98k 9.4 28.8 84.1 51k 6.3 88.0 75k 10.8 23.5 84.5 47k 8.2 91.4 es 108k 10.9 31.4 87.3 20k 7.4 89.4 536k 11.0 31.8 86.3 89k 7.5 89.8 346k 17.0 28.5 86.1 109k 12.1 89.2 fr 70k 10.1 32.8 85.8 13k 6.7 84.1 342k 10.5 33.0 87.5 47k 6.9 89.5 303k 14.9 29.9 87.4 78k 11.7 91.2 it 57k 10.0 31.2 84.4 9k 6.3 76.9 434k 11.1 31.3 84.7 70k 7.4 87.2 3</context>
+</contexts>
+<marker>Grave, Elhadad, 2015</marker>
+<rawString>Edouard Grave and No´emie Elhadad. 2015. A convex and feature-rich discriminative approach to dependency grammar induction. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 1375–1384, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Jiang Guo</author>
+<author>Wanxiang Che</author>
+<author>David Yarowsky</author>
+<author>Haifeng Wang</author>
+<author>Ting Liu</author>
+</authors>
+<title>Cross-lingual dependency parsing based on distributed representations.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers),</booktitle>
+<pages>1234--1244</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="1871" citStr="Guo et al., 2015" startWordPosition="284" endWordPosition="287">tely, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target </context>
+<context position="26802" citStr="Guo et al., 2015" startWordPosition="4614" endWordPosition="4617">proved accuracy over the 1st order parser. Comparison to Previous Results Table 4 gives a comparison of the accuracy on the six languages, using the single source and multiple source methods, to previous work. As shown in the table, our model outperforms all models: among them, the results of (McDonald et al., 2011) and (Ma and Xia, 2014) are directly comparable to us because they use the same training and evaluation data. The recent work of (Xiao and Guo, 2015) uses the same parallel data but evaluates on CoNLL treebanks but their results are lower than Ma and Xia (2014). The recent work of (Guo et al., 2015) evaluates on the same data as ours but uses different parallel corpora. They only reported on three languages (German: 60.35, Spanish: 71.90 and French: 72.93) which are all far bellow our results. The work of (Grave and Elhadad, 2015) is the state-of-the-art fully unsupervised model with 334 en → trg concat voting L P80 U P&gt;7 P100 P80 U P&gt;7 P100 P80 U P&gt;7 P100 sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# dep# acc. de 34k 9.6 28.3 84.7 18k 6.8 85.8 98k 9.4 28.8 84.1 51k 6.3 88.0 75k 10.8 23.5 84.5 47k 8.2 91.4 es 108k 10.9 31.4 87.3 20k 7.4 89.4 53</context>
+</contexts>
+<marker>Guo, Che, Yarowsky, Wang, Liu, 2015</marker>
+<rawString>Jiang Guo, Wanxiang Che, David Yarowsky, Haifeng Wang, and Ting Liu. 2015. Cross-lingual dependency parsing based on distributed representations. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 1234–1244, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>William P Headden Mark Johnson</author>
+<author>David McClosky</author>
+</authors>
+<title>Improving unsupervised dependency parsing with richer contexts and smoothing.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>101--109</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Boulder, Colorado,</location>
+<marker>Johnson, McClosky, 2009</marker>
+<rawString>William P. Headden III, Mark Johnson, and David McClosky. 2009. Improving unsupervised dependency parsing with richer contexts and smoothing. In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 101–109, Boulder, Colorado, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Suphan Fayong</author>
+<author>Yang Guo</author>
+</authors>
+<title>Structured perceptron with inexact search.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>142--151</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Montr´eal, Canada,</location>
+<contexts>
+<context position="21964" citStr="Huang et al., 2012" startWordPosition="3800" endWordPosition="3803"> {ADJ H PRON} {DET H NUM} {DET H PRON} {DET H NOUN} {PRON H NOUN} {NUM H X} {X H .}. These rules were developed primarily on German, with some additional validation on Spanish. These rules required a small amount of human engineering, but we view this as relatively negligible. Parameter Tuning We used German as a target language in the development of our approach, and in setting hyper-parameters. The parser is 7https://github.com/yahoo/YaraParser 8https://github.com/percyliang/ brown-cluster trained using the averaged structured perceptron algorithm (Collins, 2002) with max-violation updates (Huang et al., 2012). The number of iterations over the training data is 5 when training model 01 in any setting, and 2, 1 and 4 when training models 02, 03, 04 respectively. These values are chosen by observing the performance on German. We use 04 as the final output from the training process: this is found to be optimal in English to German projections. 4.2 Results This section gives results of our approach for the single source, multi-source (concatenation) and multi-source (voting) methods. Following previous work (Ma and Xia, 2014) we use goldstandard part-of-speech (POS) tags on test data. We also provide r</context>
+</contexts>
+<marker>Huang, Fayong, Guo, 2012</marker>
+<rawString>Liang Huang, Suphan Fayong, and Yang Guo. 2012. Structured perceptron with inexact search. In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, pages 142–151, Montr´eal, Canada, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rebecca Hwa</author>
+<author>Philip Resnik</author>
+<author>Amy Weinberg</author>
+<author>Clara Cabezas</author>
+<author>Okan Kolak</author>
+</authors>
+<title>Bootstrapping parsers via syntactic projection across parallel texts. Natural language engineering,</title>
+<date>2005</date>
+<pages>11--03</pages>
+<contexts>
+<context position="2266" citStr="Hwa et al., 2005" startWordPosition="345" endWordPosition="348">d, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source languages. We can then use alignments induced using tools such as GIZA++ (Och and Ney, 2000), to transfer dependencies from the source language(s) to the target language (example projections are shown in Figure 1). A target language parser is</context>
+<context position="5773" citStr="Hwa et al., 2005" startWordPosition="904" endWordPosition="907">vious best results reported on this data set, 76.67% for the approach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma and Xia, 2014). The projected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is als</context>
+</contexts>
+<marker>Hwa, Resnik, Weinberg, Cabezas, Kolak, 2005</marker>
+<rawString>Rebecca Hwa, Philip Resnik, Amy Weinberg, Clara Cabezas, and Okan Kolak. 2005. Bootstrapping parsers via syntactic projection across parallel texts. Natural language engineering, 11(03):311–325.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Corpus-based induction of syntactic structure: Models of dependency and constituency.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the 42Nd Annual Meeting on Association for Computational Linguistics, ACL ’04,</booktitle>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="1506" citStr="Klein and Manning, 2004" startWordPosition="224" endWordPosition="227">e-art method of (Ma and Xia, 2014). Our average dependency accuracy of 82.18% compares favourably to the accuracy of fully supervised methods. 1 Introduction In recent years there has been a great deal of interest in dependency parsing models for natural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fu</context>
+</contexts>
+<marker>Klein, Manning, 2004</marker>
+<rawString>Dan Klein and Christopher D. Manning. 2004. Corpus-based induction of syntactic structure: Models of dependency and constituency. In Proceedings of the 42Nd Annual Meeting on Association for Computational Linguistics, ACL ’04, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Europarl: A parallel corpus for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In MT summit,</booktitle>
+<volume>5</volume>
+<pages>79--86</pages>
+<contexts>
+<context position="4130" citStr="Koehn, 2005" startWordPosition="642" endWordPosition="643">modifiers in some dependency. We give empirical evidence that dense structures give particularly high accuracy for their projected dependencies. 328 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 328–338, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. The political priorities must be set by this House and the MEPs . ROOT Die politischen Priorit¨aten m¨ussen von diesem Parlament und den Europaabgeordneten abgesteckt werden . ROOT Figure 1: An example projection from English to German in the EuroParl data (Koehn, 2005). The English parse tree is the output from a supervised parser, while the German parse tree is projected from the English parse tree using translation alignments from GIZA++. • We describe a training algorithm that builds on the definitions of dense structures. The algorithm initially trains the model on full trees, then iteratively introduces increasingly relaxed definitions of density. The algorithm makes use of a training method that can leverage partial (incomplete) dependency structures, and also makes use of confidence scores from a perceptron-trained model. In spite of the simplicity o</context>
+<context position="18619" citStr="Koehn, 2005" startWordPosition="3251" endWordPosition="3252"> a headword (this headword may be NULL if there is no alignment giving a dependency). We simply take the most frequent headword chosen by the languages. After creating the set P, we can create subsets such as P100, P80, P≥7 in exactly the same way as before. Once the various projected dependency training sets have been created, we train the dependency parsing model using the algorithm given in §3.4. 4 Experiments We now describe experiments using our approach. We first describe data and tools used in the experiments, and then describe results. 4.1 Data and Tools Data We use the EuroParl data (Koehn, 2005) as our parallel data and the Google universal treebank (v2; standard data) (McDonald et al., 2013) as our evaluation data, and as our training data for the supervised source-language parsers. We use seven languages that are present in both Europarl and the Google universal treebank: English (used only as the source language), and German, Spanish, French, Italian, Portuguese and Swedish. Word Alignments We use Giza++6 (Och and Ney, 2000) to induce word alignments. Sentences with length greater than 100 and single-word sentences are removed from the parallel data. We follow common practice in t</context>
+</contexts>
+<marker>Koehn, 2005</marker>
+<rawString>Philipp Koehn. 2005. Europarl: A parallel corpus for statistical machine translation. In MT summit, volume 5, pages 79–86.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Phong Le and Willem Zuidema</author>
+</authors>
+<title>Unsupervised dependency parsing: Let’s use supervised parsers.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 2015 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>651--661</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Denver, Colorado, May–June.</location>
+<contexts>
+<context position="1632" citStr="Zuidema, 2015" startWordPosition="247" endWordPosition="248">thods. 1 Introduction In recent years there has been a great deal of interest in dependency parsing models for natural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As </context>
+</contexts>
+<marker>Zuidema, 2015</marker>
+<rawString>Phong Le and Willem Zuidema. 2015. Unsupervised dependency parsing: Let’s use supervised parsers. In Proceedings of the 2015 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, pages 651–661, Denver, Colorado, May–June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+</authors>
+<title>Semi-supervised learning for natural language.</title>
+<date>2005</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Massachusetts Institute of Technology.</institution>
+<contexts>
+<context position="20652" citStr="Liang, 2005" startWordPosition="3586" endWordPosition="3587">on the test data using the gold standard POS tags. The models 01 ... 04 are described in §3.4. “en→trgt” is the single-source setting with English as the source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the concatenation and voting methods fault alignment model is used in all of our experiments. The Parsing Model For all parsing experiments we use the Yara parser7 (Rasooli and Tetreault, 2015), a reimplementation of the k-beam arc-eager parser of Zhang and Nivre (2011). We use a beam size of 64, and Brown clustering features8 (Brown et al., 1992; Liang, 2005). The parser gives performance close to the state of the art: for example on section 23 of the Penn WSJ treebank (Marcus et al., 1993), it achieves 93.32% accuracy, compared to 92.9% accuracy for the parser of (Zhang and Nivre, 2011). POS Consistency As mentioned in §3.2, we define a soft POS consistency constraint to prune some projected dependencies. A source/target language word pair satisifies this constraint if one of the following conditions hold: 1) the POS tags for the two words are identical; 2) the word forms for the two words are identical (this occurs frequently for numbers, for ex</context>
+</contexts>
+<marker>Liang, 2005</marker>
+<rawString>Percy Liang. 2005. Semi-supervised learning for natural language. Ph.D. thesis, Massachusetts Institute of Technology.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xuezhe Ma</author>
+<author>Fei Xia</author>
+</authors>
+<title>Unsupervised dependency parsing with transferring distribution via parallel guidance and entropy regularization.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>1337--1348</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Baltimore, Maryland,</location>
+<contexts>
+<context position="917" citStr="Ma and Xia, 2014" startWordPosition="134" endWordPosition="137">rs. Our goal is to induce a dependency parser in a target language of interest without any direct supervision: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source language(s). Our key contributions are to show the utility of dense projected structures when training the target language parser, and to introduce a novel learning algorithm that makes use of dense structures. Results on several languages show an absolute improvement of 5.51% in average dependency accuracy over the state-of-the-art method of (Ma and Xia, 2014). Our average dependency accuracy of 82.18% compares favourably to the accuracy of fully supervised methods. 1 Introduction In recent years there has been a great deal of interest in dependency parsing models for natural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden I</context>
+<context position="2330" citStr="Ma and Xia, 2014" startWordPosition="357" endWordPosition="360">s languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source languages. We can then use alignments induced using tools such as GIZA++ (Och and Ney, 2000), to transfer dependencies from the source language(s) to the target language (example projections are shown in Figure 1). A target language parser is then trained on the projected dependencies. Our contributions a</context>
+<context position="5248" citStr="Ma and Xia, 2014" startWordPosition="812" endWordPosition="815">d also makes use of confidence scores from a perceptron-trained model. In spite of the simplicity of our approach, our experiments demonstrate significant improvements in accuracy over previous work. In experiments on transfer from a single source language (English) to a single target language (German, French, Spanish, Italian, Portuguese, and Swedish), our average dependency accuracy is 78.89%. When using multiple source languages, average accuracy is improved to 82.18%. This is a 5.51% absolute improvement over the previous best results reported on this data set, 76.67% for the approach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma a</context>
+<context position="6545" citStr="Ma and Xia, 2014" startWordPosition="1035" endWordPosition="1038">arget language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is also recent work on treebank translation via a machine translation system (Tiedemann et al., 2014; Tiedemann, 2015). The work of (McDonald et al., 2011) and (Ma and Xia, 2014) is most relevant to our own work, for two reasons: first, these papers consider dependency parsing, and as in our work use the latest version of the Google universal treebank for evaluation;1 second, these papers represent the state of the art in accuracy. The results in (Ma and Xia, 2014) dominate the accuracies for all other papers discussed in this related work section: they report an average accuracy of 76.67% on the languages German, Italian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various m</context>
+<context position="9632" citStr="Ma and Xia, 2014" startWordPosition="1613" endWordPosition="1616">ersely if l = f then 0 ≤ h ≤ tk and 1 ≤ m ≤ tk. We use h = 0 when h is the root of the sentence. For any k ∈ {1... n}, j ∈ {0 ... tk}, Ak,j is an integer specifying which word in e(k) 1 ... e(k) sk , word f(k) j is aligned to. It is NULL if f(k) j is not aligned to anything. We have Ak,0 = 0 for all k: that is, the root in one language is always aligned to the root in the other language. In our experiments we use intersected alignments from GIZA++ (Och and Ney, 2000) to provide the Ak,j values. 2With one exception: on Spanish, using the CoNLL definition of dependencies. The good results from (Ma and Xia, 2014) on the universal dependencies for Spanish may show that the result on the CONLL data is an anomaly, perhaps due to the annotation scheme in Spanish being different from other languages. 3.2 Projected Dependencies We now describe various sets of projected dependencies. We use D to denote the set of all dependencies in the source language: these dependencies are the result of parsing the English side of the translation data using a supervised parser. Each dependency (l, k, h, m) ∈ D is a four-tuple as described above, with l = e. We will use P to denote the set of all projected dependencies fro</context>
+<context position="13840" citStr="Ma and Xia (2014)" startWordPosition="2401" endWordPosition="2404">d, we can test the accuracy of a model trained on the P100 data. The benefit of the soft-matching POS definition is clear. The hard match definition harms performance, presumably because it reduces the number of sentences used to train the model. Throughout the rest of this paper, we use the soft POS constraints in all projection algorithms.3 3.4 The Training Procedure We now describe the training procedure used in our experiments. We use a perceptron-trained shift-reduce parser, similar to that of (Zhang and Nivre, 2011). We assume that the parser is able 3The hard constraint is also used by Ma and Xia (2014). Inputs: Sets P100, P80, P&gt;7, P&gt;5, P&gt;1 as defined in §3.2. Definitions: Functions TRAIN, CDECODE, TOP as defined in §3.4. Algorithm: 1. 01 = TRAIN(P100) 2. P1100 = CDECODE(P80 U P&gt;7, 01) 3. 02 = TRAIN(P100 U TOP(P1100, 01)) 4. P2100 = CDECODE(P80 U P&gt;5, 02) 5. 03 = TRAIN(P100 U TOP(P2100, 02)) 6. P3100 = CDECODE(P&gt;1, 03) 7. 04 = TRAIN(P100 U TOP(P3100, 03)) Output: Parameter vectors 01, 02, 03, 04. Figure 2: The learning algorithm. to operate in a “constrained” mode, where it returns the highest scoring parse that is consistent with a given subset of dependencies. This can be achieved via zer</context>
+<context position="22486" citStr="Ma and Xia, 2014" startWordPosition="3892" endWordPosition="3895">structured perceptron algorithm (Collins, 2002) with max-violation updates (Huang et al., 2012). The number of iterations over the training data is 5 when training model 01 in any setting, and 2, 1 and 4 when training models 02, 03, 04 respectively. These values are chosen by observing the performance on German. We use 04 as the final output from the training process: this is found to be optimal in English to German projections. 4.2 Results This section gives results of our approach for the single source, multi-source (concatenation) and multi-source (voting) methods. Following previous work (Ma and Xia, 2014) we use goldstandard part-of-speech (POS) tags on test data. We also provide results with automatic POS tags. Results with a Single Source Language The first set of results are with a single source language; we use English as the source in all of these experiments. Table 2 shows the accuracy of parameters 01 ... 04 for transfer into German, Spanish, French, Italian, Portuguese, and Swedish. Even the lowest performing model, 01, which is trained only on full trees, has a performance of 75.88%, close to the 76.15% accuracy for the method of (Ma and Xia, 2014). There are clear gains as we move fr</context>
+<context position="24795" citStr="Ma and Xia, 2014" startWordPosition="4269" endWordPosition="4272">38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24 it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83 pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44 sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06 avg 56.1 75.4 78.4 71.34 76.67 78.89(+2.22) 81.23(+4.56) 82.18(+5.51) 84.29 87.50 Table 4: Comparison to previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences), mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2. The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup (1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara arc-eager supervised parser (Rasooli and Tetreault, 2015). data as source languages. The performance of 01 improves from an average of 75.88% for a single source language, to 79.76% for multiple languages. The performance of 04 gives an additional improvemen</context>
+<context position="26525" citStr="Ma and Xia, 2014" startWordPosition="4563" endWordPosition="4566">parsing models of (McDonald et al., 2011) and (Rasooli and Tetreault, 2015). The first-order supervised method of (McDonald et al., 2005) gives only a 1.7% average absolute improvement in accuracy over the voting method. For one language (Swedish), our method actually gives improved accuracy over the 1st order parser. Comparison to Previous Results Table 4 gives a comparison of the accuracy on the six languages, using the single source and multiple source methods, to previous work. As shown in the table, our model outperforms all models: among them, the results of (McDonald et al., 2011) and (Ma and Xia, 2014) are directly comparable to us because they use the same training and evaluation data. The recent work of (Xiao and Guo, 2015) uses the same parallel data but evaluates on CoNLL treebanks but their results are lower than Ma and Xia (2014). The recent work of (Guo et al., 2015) evaluates on the same data as ours but uses different parallel corpora. They only reported on three languages (German: 60.35, Spanish: 71.90 and French: 72.93) which are all far bellow our results. The work of (Grave and Elhadad, 2015) is the state-of-the-art fully unsupervised model with 334 en → trg concat voting L P80</context>
+<context position="28719" citStr="Ma and Xia, 2014" startWordPosition="4969" endWordPosition="4972">ncat) and multi-source (voting) methods. “sen#” is the number of sentences. “dep#” is the average number of dependencies per sentence. “len” is the average sentence length. “acc.” is the percentage of projected dependencies that agree with the output from a supervised parser. minimal linguistic prior knowledge. The model of (Zhang and Barzilay, 2015) does not use any parallel data but uses linguistic information across languages. Their semi-supervised model selectively samples 50 annotated sentences but our model outperforms their model. Compared to the results of (McDonald et al., 2011) and (Ma and Xia, 2014) which are directly comparable, there are clear improvements across all languages; the highest accuracy, 82.18%, is a 5.51% absolute improvement over the average accuracy for (Ma and Xia, 2014). 5 Analysis We conclude with some analysis of the accuracy of the projected dependencies for the different languages, for different definitions (P100, P80 etc.), and for different projection methods. Table 5 gives a summary of statistics for the various languages. Recall that German is used as the development language in our experiments; the other languages can be considered to be test languages. In all</context>
+</contexts>
+<marker>Ma, Xia, 2014</marker>
+<rawString>Xuezhe Ma and Fei Xia. 2014. Unsupervised dependency parsing with transferring distribution via parallel guidance and entropy regularization. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 1337–1348, Baltimore, Maryland, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Mary Ann Marcinkiewicz</author>
+<author>Beatrice Santorini</author>
+</authors>
+<title>Building a large annotated corpus of English: The Penn treebank.</title>
+<date>1993</date>
+<booktitle>Computational linguistics,</booktitle>
+<pages>19--2</pages>
+<contexts>
+<context position="20786" citStr="Marcus et al., 1993" startWordPosition="3610" endWordPosition="3613">setting with English as the source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the concatenation and voting methods fault alignment model is used in all of our experiments. The Parsing Model For all parsing experiments we use the Yara parser7 (Rasooli and Tetreault, 2015), a reimplementation of the k-beam arc-eager parser of Zhang and Nivre (2011). We use a beam size of 64, and Brown clustering features8 (Brown et al., 1992; Liang, 2005). The parser gives performance close to the state of the art: for example on section 23 of the Penn WSJ treebank (Marcus et al., 1993), it achieves 93.32% accuracy, compared to 92.9% accuracy for the parser of (Zhang and Nivre, 2011). POS Consistency As mentioned in §3.2, we define a soft POS consistency constraint to prune some projected dependencies. A source/target language word pair satisifies this constraint if one of the following conditions hold: 1) the POS tags for the two words are identical; 2) the word forms for the two words are identical (this occurs frequently for numbers, for example); 3) both tags are in one of the following equivalence classes: {ADV H ADJ} {ADV H PRT} {ADJ H PRON} {DET H NUM} {DET H PRON} {D</context>
+</contexts>
+<marker>Marcus, Marcinkiewicz, Santorini, 1993</marker>
+<rawString>Mitchell P. Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. 1993. Building a large annotated corpus of English: The Penn treebank. Computational linguistics, 19(2):313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Mareˇcek</author>
+<author>Milan Straka</author>
+</authors>
+<title>Stopprobability estimates computed on a large corpus improve unsupervised dependency parsing.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>281--290</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<marker>Mareˇcek, Straka, 2013</marker>
+<rawString>David Mareˇcek and Milan Straka. 2013. Stopprobability estimates computed on a large corpus improve unsupervised dependency parsing. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 281–290, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Fernando Pereira</author>
+<author>Kiril Ribarov</author>
+<author>Jan Hajiˇc</author>
+</authors>
+<title>Non-projective dependency parsing using spanning tree algorithms.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Conference on Human Language Technology and Empirical Methods in Natural Language Processing, HLT ’05,</booktitle>
+<pages>523--530</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<marker>McDonald, Pereira, Ribarov, Hajiˇc, 2005</marker>
+<rawString>Ryan McDonald, Fernando Pereira, Kiril Ribarov, and Jan Hajiˇc. 2005. Non-projective dependency parsing using spanning tree algorithms. In Proceedings of the Conference on Human Language Technology and Empirical Methods in Natural Language Processing, HLT ’05, pages 523–530, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Slav Petrov</author>
+<author>Keith Hall</author>
+</authors>
+<title>Multi-source transfer of delexicalized dependency parsers.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>62--72</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Edinburgh, Scotland, UK.,</location>
+<contexts>
+<context position="1773" citStr="McDonald et al., 2011" startWordPosition="266" endWordPosition="269">ervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser</context>
+<context position="5842" citStr="McDonald et al., 2011" startWordPosition="916" endWordPosition="919">roach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma and Xia, 2014). The projected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is also recent work on treebank translation via a machine translation syste</context>
+<context position="7374" citStr="McDonald et al., 2011" startWordPosition="1170" endWordPosition="1173">papers represent the state of the art in accuracy. The results in (Ma and Xia, 2014) dominate the accuracies for all other papers discussed in this related work section: they report an average accuracy of 76.67% on the languages German, Italian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various methods that transfer information from source to target languages, where parsers are available in the source languages, but without the use of parallel corpora (Cohen et al., 2011; Dur1The original paper of (McDonald et al., 2011) does not use the Google universal treebank, however (Ma and Xia, 2014) reimplemented the model and report results on the Google universal treebank. 329 rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om et al., 2013; Duong et al., 2015; Zhang and Barzilay, 2015). These results are somewhat below the performance of (Ma and Xia, 2014).2 3 Our Approach This section describes our approach, giving definitions of parallel data and of dense projected structures; describing preliminary exploratory experiments on transfer from German to English; describing the iterative training algorithm used in our</context>
+<context position="24767" citStr="McDonald et al., 2011" startWordPosition="4263" endWordPosition="4266">0 78.9 79.6 73.13 76.53 79.91(+3.38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24 it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83 pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44 sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06 avg 56.1 75.4 78.4 71.34 76.67 78.89(+2.22) 81.23(+4.56) 82.18(+5.51) 84.29 87.50 Table 4: Comparison to previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences), mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2. The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup (1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara arc-eager supervised parser (Rasooli and Tetreault, 2015). data as source languages. The performance of 01 improves from an average of 75.88% for a single source language, to 79.76% for multiple languages. The performance of 04 gi</context>
+<context position="26502" citStr="McDonald et al., 2011" startWordPosition="4558" endWordPosition="4561"> methods and the supervised parsing models of (McDonald et al., 2011) and (Rasooli and Tetreault, 2015). The first-order supervised method of (McDonald et al., 2005) gives only a 1.7% average absolute improvement in accuracy over the voting method. For one language (Swedish), our method actually gives improved accuracy over the 1st order parser. Comparison to Previous Results Table 4 gives a comparison of the accuracy on the six languages, using the single source and multiple source methods, to previous work. As shown in the table, our model outperforms all models: among them, the results of (McDonald et al., 2011) and (Ma and Xia, 2014) are directly comparable to us because they use the same training and evaluation data. The recent work of (Xiao and Guo, 2015) uses the same parallel data but evaluates on CoNLL treebanks but their results are lower than Ma and Xia (2014). The recent work of (Guo et al., 2015) evaluates on the same data as ours but uses different parallel corpora. They only reported on three languages (German: 60.35, Spanish: 71.90 and French: 72.93) which are all far bellow our results. The work of (Grave and Elhadad, 2015) is the state-of-the-art fully unsupervised model with 334 en → </context>
+<context position="28696" citStr="McDonald et al., 2011" startWordPosition="4964" endWordPosition="4967">nglesource, multi-source (concat) and multi-source (voting) methods. “sen#” is the number of sentences. “dep#” is the average number of dependencies per sentence. “len” is the average sentence length. “acc.” is the percentage of projected dependencies that agree with the output from a supervised parser. minimal linguistic prior knowledge. The model of (Zhang and Barzilay, 2015) does not use any parallel data but uses linguistic information across languages. Their semi-supervised model selectively samples 50 annotated sentences but our model outperforms their model. Compared to the results of (McDonald et al., 2011) and (Ma and Xia, 2014) which are directly comparable, there are clear improvements across all languages; the highest accuracy, 82.18%, is a 5.51% absolute improvement over the average accuracy for (Ma and Xia, 2014). 5 Analysis We conclude with some analysis of the accuracy of the projected dependencies for the different languages, for different definitions (P100, P80 etc.), and for different projection methods. Table 5 gives a summary of statistics for the various languages. Recall that German is used as the development language in our experiments; the other languages can be considered to be</context>
+</contexts>
+<marker>McDonald, Petrov, Hall, 2011</marker>
+<rawString>Ryan McDonald, Slav Petrov, and Keith Hall. 2011. Multi-source transfer of delexicalized dependency parsers. In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing, pages 62–72, Edinburgh, Scotland, UK., July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Ryan McDonald</author>
+<author>Joakim Nivre</author>
+<author>Yvonne QuirmbachBrundage</author>
+<author>Yoav Goldberg</author>
+<author>Dipanjan Das</author>
+<author>Kuzman Ganchev</author>
+<author>Keith Hall</author>
+<author>Slav Petrov</author>
+<author>Hao Zhang</author>
+<author>Oscar T¨ackstr¨om</author>
+<author>Claudia Bedini</author>
+<author>N´uria Bertomeu Castell´o</author>
+<author>Jungmee Lee</author>
+</authors>
+<title>Universal dependency annotation for multilingual parsing.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers),</booktitle>
+<pages>92--97</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<marker>McDonald, Nivre, QuirmbachBrundage, Goldberg, Das, Ganchev, Hall, Petrov, Zhang, T¨ackstr¨om, Bedini, Castell´o, Lee, 2013</marker>
+<rawString>Ryan McDonald, Joakim Nivre, Yvonne QuirmbachBrundage, Yoav Goldberg, Dipanjan Das, Kuzman Ganchev, Keith Hall, Slav Petrov, Hao Zhang, Oscar T¨ackstr¨om, Claudia Bedini, N´uria Bertomeu Castell´o, and Jungmee Lee. 2013. Universal dependency annotation for multilingual parsing. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), pages 92–97, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tahira Naseem</author>
+<author>Regina Barzilay</author>
+<author>Amir Globerson</author>
+</authors>
+<title>Selective sharing for multilingual dependency parsing.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers-Volume 1,</booktitle>
+<pages>629--637</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="7565" citStr="Naseem et al., 2012" startWordPosition="1202" endWordPosition="1205">ccuracy of 76.67% on the languages German, Italian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various methods that transfer information from source to target languages, where parsers are available in the source languages, but without the use of parallel corpora (Cohen et al., 2011; Dur1The original paper of (McDonald et al., 2011) does not use the Google universal treebank, however (Ma and Xia, 2014) reimplemented the model and report results on the Google universal treebank. 329 rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om et al., 2013; Duong et al., 2015; Zhang and Barzilay, 2015). These results are somewhat below the performance of (Ma and Xia, 2014).2 3 Our Approach This section describes our approach, giving definitions of parallel data and of dense projected structures; describing preliminary exploratory experiments on transfer from German to English; describing the iterative training algorithm used in our work; and finally describing a generalization of the method to transfer from multiple languages. 3.1 Parallel Data Definitions We assume that we have parallel data in two languages. The sour</context>
+</contexts>
+<marker>Naseem, Barzilay, Globerson, 2012</marker>
+<rawString>Tahira Naseem, Regina Barzilay, and Amir Globerson. 2012. Selective sharing for multilingual dependency parsing. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers-Volume 1, pages 629–637. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Giza++: Training of statistical translation models.</title>
+<date>2000</date>
+<contexts>
+<context position="2716" citStr="Och and Ney, 2000" startWordPosition="422" endWordPosition="425">ce of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assume access to parallel translations between the target and one or more source languages, and to supervised parsers in the source languages. We can then use alignments induced using tools such as GIZA++ (Och and Ney, 2000), to transfer dependencies from the source language(s) to the target language (example projections are shown in Figure 1). A target language parser is then trained on the projected dependencies. Our contributions are as follows: • We demonstrate the utility of dense projected structures when training the target-language parser. In the most extreme case, a “dense” structure is a sentence in the target language where the projected dependencies form a fully projective tree that includes all words in the sentence (we will refer to these structures as “full” trees). In more relaxed definitions, we </context>
+<context position="9486" citStr="Och and Ney, 2000" startWordPosition="1587" endWordPosition="1590">e language, k is the sentence number, h is the head index, m is the modifier index. Note that if l = e then we have 0 ≤ h ≤ sk and 1 ≤ m ≤ sk, conversely if l = f then 0 ≤ h ≤ tk and 1 ≤ m ≤ tk. We use h = 0 when h is the root of the sentence. For any k ∈ {1... n}, j ∈ {0 ... tk}, Ak,j is an integer specifying which word in e(k) 1 ... e(k) sk , word f(k) j is aligned to. It is NULL if f(k) j is not aligned to anything. We have Ak,0 = 0 for all k: that is, the root in one language is always aligned to the root in the other language. In our experiments we use intersected alignments from GIZA++ (Och and Ney, 2000) to provide the Ak,j values. 2With one exception: on Spanish, using the CoNLL definition of dependencies. The good results from (Ma and Xia, 2014) on the universal dependencies for Spanish may show that the result on the CONLL data is an anomaly, perhaps due to the annotation scheme in Spanish being different from other languages. 3.2 Projected Dependencies We now describe various sets of projected dependencies. We use D to denote the set of all dependencies in the source language: these dependencies are the result of parsing the English side of the translation data using a supervised parser. </context>
+<context position="19060" citStr="Och and Ney, 2000" startWordPosition="3320" endWordPosition="3323">periments using our approach. We first describe data and tools used in the experiments, and then describe results. 4.1 Data and Tools Data We use the EuroParl data (Koehn, 2005) as our parallel data and the Google universal treebank (v2; standard data) (McDonald et al., 2013) as our evaluation data, and as our training data for the supervised source-language parsers. We use seven languages that are present in both Europarl and the Google universal treebank: English (used only as the source language), and German, Spanish, French, Italian, Portuguese and Swedish. Word Alignments We use Giza++6 (Och and Ney, 2000) to induce word alignments. Sentences with length greater than 100 and single-word sentences are removed from the parallel data. We follow common practice in training Giza++ for both translation directions, and taking the intersection of the two sets as our final alignment. Giza++ de6http://www.statmt.org/moses/giza/ GIZA++.html 332 L en→trgt concat→trgt voting→trgt 01 02 03 04 01 02 03 04 01 02 03 04 de 70.56 72.86 73.74 74.32 73.47 75.17 75.59 76.34 78.17 79.29 79.36 79.68 es 75.69 77.27 77.29 78.17 79.53 79.57 79.67 80.28 79.82 80.76 81.16 80.86 fr 77.03 78.54 78.70 79.91 81.23 81.79 82.30 </context>
+</contexts>
+<marker>Och, Ney, 2000</marker>
+<rawString>Franz Josef Och and Hermann Ney. 2000. Giza++: Training of statistical translation models.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mohammad Sadegh Rasooli</author>
+<author>Joel Tetreault</author>
+</authors>
+<title>Yara parser: A fast and accurate dependency parser. arXiv preprint arXiv:1503.06733.</title>
+<date>2015</date>
+<contexts>
+<context position="20483" citStr="Rasooli and Tetreault, 2015" startWordPosition="3555" endWordPosition="3558">80.81 82.11 82.53 83.78 83.83 83.80 82.85 83.76 83.85 84.06 avg 75.88 77.59 77.98 78.89 79.76 80.72 80.82 81.23 80.95 81.87 82.00 82.18 Table 2: Parsing accuracies of different methods on the test data using the gold standard POS tags. The models 01 ... 04 are described in §3.4. “en→trgt” is the single-source setting with English as the source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the concatenation and voting methods fault alignment model is used in all of our experiments. The Parsing Model For all parsing experiments we use the Yara parser7 (Rasooli and Tetreault, 2015), a reimplementation of the k-beam arc-eager parser of Zhang and Nivre (2011). We use a beam size of 64, and Brown clustering features8 (Brown et al., 1992; Liang, 2005). The parser gives performance close to the state of the art: for example on section 23 of the Penn WSJ treebank (Marcus et al., 1993), it achieves 93.32% accuracy, compared to 92.9% accuracy for the parser of (Zhang and Nivre, 2011). POS Consistency As mentioned in §3.2, we define a soft POS consistency constraint to prune some projected dependencies. A source/target language word pair satisifies this constraint if one of the </context>
+<context position="23900" citStr="Rasooli and Tetreault, 2015" startWordPosition="4138" endWordPosition="4141">sing the concatenation method. In these experiments for a given target language we use all other languages in our 333 Model en → trgt concat voting sup(1st) sup(ae) de 73.01 74.70 78.77 80.29 84.25 es 76.31 78.33 79.17 82.17 84.66 fr 77.54 79.71 80.77 81.33 84.95 it 78.14 80.82 82.03 83.90 87.03 pt 78.14 80.81 80.67 84.80 88.08 sv 79.31 80.81 82.03 81.12 84.87 avg 77.08 79.20 80.57 82.27 85.64 Table 3: Parsing results with automatic part of speech tags on the test data. Sup (1st) is the supervised first-order dependency parser (McDonald et al., 2005) and sup (ae) is the Yara arc-eager parser (Rasooli and Tetreault, 2015). Model ge15 zb15 zb s15 mph11 mx14 en → trgt concat voting sup(1st) sup(ae) de 51.0 62.5 74.2 69.77 74.30 74.32(+0.02) 76.34(+2.04) 79.68(+5.38) 81.65 85.34 es 59.2 78.0 78.4 68.72 75.53 78.17(+2.64) 80.28(+4.75) 80.86(+5.33) 83.92 86.69 fr 59.0 78.9 79.6 73.13 76.53 79.91(+3.38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24 it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83 pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44 sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06 avg 56.1 75.4 78.4 71.34 76.67 78.89(</context>
+<context position="25194" citStr="Rasooli and Tetreault, 2015" startWordPosition="4335" endWordPosition="4338">o previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences), mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2. The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup (1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara arc-eager supervised parser (Rasooli and Tetreault, 2015). data as source languages. The performance of 01 improves from an average of 75.88% for a single source language, to 79.76% for multiple languages. The performance of 04 gives an additional improvement to 81.23%. Results with Multiple Source Languages, using Voting The final set of results in Table 2 are for multiple languages using the voting strategy. There are further improvements: model 01 has average accuracy of 80.95%, and model 04 has average accuracy of 82.18%. Results with Automatic POS Tags We use our final 04 models to parse the treebank with automatic tags provided by the same POS</context>
+</contexts>
+<marker>Rasooli, Tetreault, 2015</marker>
+<rawString>Mohammad Sadegh Rasooli and Joel Tetreault. 2015. Yara parser: A fast and accurate dependency parser. arXiv preprint arXiv:1503.06733.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Valentin I Spitkovsky</author>
+<author>Hiyan Alshawi</author>
+<author>Daniel Jurafsky</author>
+</authors>
+<title>Breaking out of local optima with count transforms and model recombination: A study in grammar induction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1983--1995</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Seattle, Washington, USA,</location>
+<contexts>
+<context position="1610" citStr="Spitkovsky et al., 2013" startWordPosition="241" endWordPosition="244"> accuracy of fully supervised methods. 1 Introduction In recent years there has been a great deal of interest in dependency parsing models for natural languages. Supervised learning methods have been shown to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information </context>
+</contexts>
+<marker>Spitkovsky, Alshawi, Jurafsky, 2013</marker>
+<rawString>Valentin I. Spitkovsky, Hiyan Alshawi, and Daniel Jurafsky. 2013. Breaking out of local optima with count transforms and model recombination: A study in grammar induction. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1983–1995, Seattle, Washington, USA, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kathrin Spreyer</author>
+<author>Jonas Kuhn</author>
+</authors>
+<title>Data-driven dependency parsing of new languages using incomplete and noisy training data.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Thirteenth Conference on Computational Natural Language Learning (CoNLL-2009),</booktitle>
+<pages>12--20</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Boulder, Colorado,</location>
+<contexts>
+<context position="5819" citStr="Spreyer and Kuhn, 2009" startWordPosition="912" endWordPosition="915"> set, 76.67% for the approach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma and Xia, 2014). The projected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is also recent work on treebank translation via a ma</context>
+</contexts>
+<marker>Spreyer, Kuhn, 2009</marker>
+<rawString>Kathrin Spreyer and Jonas Kuhn. 2009. Data-driven dependency parsing of new languages using incomplete and noisy training data. In Proceedings of the Thirteenth Conference on Computational Natural Language Learning (CoNLL-2009), pages 12– 20, Boulder, Colorado, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Oscar T¨ackstr¨om</author>
+<author>Ryan McDonald</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>Target language adaptation of discriminative transfer parsers. Transactions for ACL.</title>
+<date>2013</date>
+<marker>T¨ackstr¨om, McDonald, Nivre, 2013</marker>
+<rawString>Oscar T¨ackstr¨om, Ryan McDonald, and Joakim Nivre. 2013. Target language adaptation of discriminative transfer parsers. Transactions for ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J¨org Tiedemann</author>
+<author>ˇZeljko Agi´c</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>Treebank translation for cross-lingual parser induction.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Eighteenth Conference on Computational Natural Language Learning,</booktitle>
+<pages>130--140</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Ann Arbor, Michigan,</location>
+<marker>Tiedemann, Agi´c, Nivre, 2014</marker>
+<rawString>J¨org Tiedemann, ˇZeljko Agi´c, and Joakim Nivre. 2014. Treebank translation for cross-lingual parser induction. In Proceedings of the Eighteenth Conference on Computational Natural Language Learning, pages 130–140, Ann Arbor, Michigan, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J¨org Tiedemann</author>
+</authors>
+<title>Improving the cross-lingual projection of syntactic dependencies.</title>
+<date>2015</date>
+<booktitle>In Nordic Conference of Computational Linguistics NODALIDA</booktitle>
+<pages>191--199</pages>
+<contexts>
+<context position="1808" citStr="Tiedemann, 2015" startWordPosition="274" endWordPosition="275">to produce highly accurate dependencyparsing models; unfortunately, these methods rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest w</context>
+<context position="6485" citStr="Tiedemann, 2015" startWordPosition="1025" endWordPosition="1026">ojected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2009). There is also recent work on treebank translation via a machine translation system (Tiedemann et al., 2014; Tiedemann, 2015). The work of (McDonald et al., 2011) and (Ma and Xia, 2014) is most relevant to our own work, for two reasons: first, these papers consider dependency parsing, and as in our work use the latest version of the Google universal treebank for evaluation;1 second, these papers represent the state of the art in accuracy. The results in (Ma and Xia, 2014) dominate the accuracies for all other papers discussed in this related work section: they report an average accuracy of 76.67% on the languages German, Italian, Spanish, French, Swedish and Portuguese; this evaluation includes all sentence lengths.</context>
+</contexts>
+<marker>Tiedemann, 2015</marker>
+<rawString>J¨org Tiedemann. 2015. Improving the cross-lingual projection of syntactic dependencies. In Nordic Conference of Computational Linguistics NODALIDA 2015, pages 191–199.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Min Xiao</author>
+<author>Yuhong Guo</author>
+</authors>
+<title>Annotation projection-based representation learning for crosslingual dependency parsing.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the Nineteenth Conference on Computational Natural Language Learning,</booktitle>
+<pages>73--82</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Beijing, China,</location>
+<contexts>
+<context position="1918" citStr="Xiao and Guo, 2015" startWordPosition="292" endWordPosition="295">data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assume access to parallel </context>
+<context position="26651" citStr="Xiao and Guo, 2015" startWordPosition="4585" endWordPosition="4588">et al., 2005) gives only a 1.7% average absolute improvement in accuracy over the voting method. For one language (Swedish), our method actually gives improved accuracy over the 1st order parser. Comparison to Previous Results Table 4 gives a comparison of the accuracy on the six languages, using the single source and multiple source methods, to previous work. As shown in the table, our model outperforms all models: among them, the results of (McDonald et al., 2011) and (Ma and Xia, 2014) are directly comparable to us because they use the same training and evaluation data. The recent work of (Xiao and Guo, 2015) uses the same parallel data but evaluates on CoNLL treebanks but their results are lower than Ma and Xia (2014). The recent work of (Guo et al., 2015) evaluates on the same data as ours but uses different parallel corpora. They only reported on three languages (German: 60.35, Spanish: 71.90 and French: 72.93) which are all far bellow our results. The work of (Grave and Elhadad, 2015) is the state-of-the-art fully unsupervised model with 334 en → trg concat voting L P80 U P&gt;7 P100 P80 U P&gt;7 P100 P80 U P&gt;7 P100 sen# dep# len acc. sen# len acc. sen# dep# len acc. sen# len acc. sen# dep# len acc.</context>
+</contexts>
+<marker>Xiao, Guo, 2015</marker>
+<rawString>Min Xiao and Yuhong Guo. 2015. Annotation projection-based representation learning for crosslingual dependency parsing. In Proceedings of the Nineteenth Conference on Computational Natural Language Learning, pages 73–82, Beijing, China, July. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Yarowsky</author>
+<author>Grace Ngai</author>
+<author>Richard Wicentowski</author>
+</authors>
+<title>Inducing multilingual text analysis tools via robust projection across aligned corpora.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the First International Conference on Human Language Technology Research, HLT ’01,</booktitle>
+<pages>1--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="5755" citStr="Yarowsky et al., 2001" startWordPosition="900" endWordPosition="903">mprovement over the previous best results reported on this data set, 76.67% for the approach of (Ma and Xia, 2014). To give another perspective, our accuracy is close to that of the fully supervised approach of (McDonald et al., 2005), which gives 84.29% accuracy on this data. To the best of our knowledge these are the highest accuracy parsing results for an approach that makes no use of treebank data for the language of interest. 2 Related Work A number of researchers have considered the problem of projecting linguistic annotations from the source to the target language in a parallel corpus (Yarowsky et al., 2001; Hwa et al., 2005; Ganchev et al., 2009; Spreyer and Kuhn, 2009; McDonald et al., 2011; Ma and Xia, 2014). The projected annotations are then used to train a model in the target language. This prior work involves various innovations such as the use of posterior regularization (Ganchev et al., 2009), the use of entropy regularization and parallel guidance (Ma and Xia, 2014), the use of a simple method to transfer delexicalized parsers across languages (McDonald et al., 2011), and a method for training on partial annotations that are projected from source to target language (Spreyer and Kuhn, 2</context>
+</contexts>
+<marker>Yarowsky, Ngai, Wicentowski, 2001</marker>
+<rawString>David Yarowsky, Grace Ngai, and Richard Wicentowski. 2001. Inducing multilingual text analysis tools via robust projection across aligned corpora. In Proceedings of the First International Conference on Human Language Technology Research, HLT ’01, pages 1–8, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuan Zhang</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Hierarchical low-rank tensors for multilingual transfer parsing.</title>
+<date>2015</date>
+<booktitle>In Conference on Empirical Methods in Natural Language Processing (EMNLP),</booktitle>
+<location>Lisbon, Portugal,</location>
+<contexts>
+<context position="1897" citStr="Zhang and Barzilay, 2015" startWordPosition="288" endWordPosition="291">s rely on human-annotated data, which is expensive to obtain, leading to a significant barrier to the development of dependency parsers for new languages. Recent work has considered unsupervised methods (e.g. (Klein and Manning, 2004; Headden III et al., 2009; Gillenwater et al., 2011; Mareˇcek and Straka, 2013; Spitkovsky et al., 2013; Le and Zuidema, 2015; Grave and Elhadad, 2015)), or methods that transfer linguistic structures across languages (e.g. (Cohen et al., 2011; McDonald et al., 2011; Ma and Xia, 2014; Tiedemann, 2015; ∗Currently on leave at Google Inc. New York. Guo et al., 2015; Zhang and Barzilay, 2015; Xiao and Guo, 2015)), in an effort to reduce or eliminate the need for annotated training examples. Unfortunately the accuracy of these methods generally lags quite substantially behind the performance of fully supervised approaches. This paper describes novel methods for the transfer of syntactic information between languages. As in previous work (Hwa et al., 2005; Ganchev et al., 2009; McDonald et al., 2011; Ma and Xia, 2014), our goal is to induce a dependency parser in a target language of interest without any direct supervision (i.e., a treebank) in the target language: instead we assum</context>
+<context position="7638" citStr="Zhang and Barzilay, 2015" startWordPosition="1214" endWordPosition="1218">, Swedish and Portuguese; this evaluation includes all sentence lengths. Other work on unsupervised parsing has considered various methods that transfer information from source to target languages, where parsers are available in the source languages, but without the use of parallel corpora (Cohen et al., 2011; Dur1The original paper of (McDonald et al., 2011) does not use the Google universal treebank, however (Ma and Xia, 2014) reimplemented the model and report results on the Google universal treebank. 329 rett et al., 2012; Naseem et al., 2012; T¨ackstr¨om et al., 2013; Duong et al., 2015; Zhang and Barzilay, 2015). These results are somewhat below the performance of (Ma and Xia, 2014).2 3 Our Approach This section describes our approach, giving definitions of parallel data and of dense projected structures; describing preliminary exploratory experiments on transfer from German to English; describing the iterative training algorithm used in our work; and finally describing a generalization of the method to transfer from multiple languages. 3.1 Parallel Data Definitions We assume that we have parallel data in two languages. The source language, for which we have a supervised parser, is assumed to be Engl</context>
+<context position="24656" citStr="Zhang and Barzilay, 2015" startWordPosition="4247" endWordPosition="4250">) 79.68(+5.38) 81.65 85.34 es 59.2 78.0 78.4 68.72 75.53 78.17(+2.64) 80.28(+4.75) 80.86(+5.33) 83.92 86.69 fr 59.0 78.9 79.6 73.13 76.53 79.91(+3.38) 82.24(+5.71) 82.72(+6.19) 83.51 86.24 it 55.6 79.3 80.9 70.74 77.74 79.46(+1.72) 82.49(+4.75) 83.67(+5.93) 85.47 88.83 pt 57.0 78.6 79.3 69.82 76.65 79.38(+2.73) 82.23(+5.58) 82.07(+5.42) 85.67 89.44 sv 54.8 75.0 78.3 75.87 79.27 82.11(+2.84) 83.80(+4.53) 84.06(+4.79) 85.59 88.06 avg 56.1 75.4 78.4 71.34 76.67 78.89(+2.22) 81.23(+4.56) 82.18(+5.51) 84.29 87.50 Table 4: Comparison to previous work: ge15 (Grave and Elhadad, 2015, Figure 4), zb15 (Zhang and Barzilay, 2015), zb s15 (Zhang and Barzilay, 2015, semi-supervised with 50 annotated sentences), mph11 (McDonald et al., 2011) and mx14 (Ma and Xia, 2014) on the Google universal treebank v2. The mph11 results are copied from (Ma and Xia, 2014, Table 4). All results are reported on gold part of speech tags. The numbers in parentheses are absolute improvements over (Ma and Xia, 2014). Sup (1st) is the supervised first-order dependency parser used by (Ma and Xia, 2014) and sup(ae) is the Yara arc-eager supervised parser (Rasooli and Tetreault, 2015). data as source languages. The performance of 01 improves fro</context>
+<context position="28454" citStr="Zhang and Barzilay, 2015" startWordPosition="4926" endWordPosition="4929">9k 6.8 89.7 211k 12.2 25.2 84.2 86k 9.5 88.8 avg 140k 10.2 30.1 85.1 17k 6.8 84.7 354k 10.4 30.0 84.8 69k 7.0 88.3 243k 13.7 27.6 84.7 77k 10.4 89.0 Table 5: Table showing statistics on projected dependencies for the target languages, for the singlesource, multi-source (concat) and multi-source (voting) methods. “sen#” is the number of sentences. “dep#” is the average number of dependencies per sentence. “len” is the average sentence length. “acc.” is the percentage of projected dependencies that agree with the output from a supervised parser. minimal linguistic prior knowledge. The model of (Zhang and Barzilay, 2015) does not use any parallel data but uses linguistic information across languages. Their semi-supervised model selectively samples 50 annotated sentences but our model outperforms their model. Compared to the results of (McDonald et al., 2011) and (Ma and Xia, 2014) which are directly comparable, there are clear improvements across all languages; the highest accuracy, 82.18%, is a 5.51% absolute improvement over the average accuracy for (Ma and Xia, 2014). 5 Analysis We conclude with some analysis of the accuracy of the projected dependencies for the different languages, for different definitio</context>
+</contexts>
+<marker>Zhang, Barzilay, 2015</marker>
+<rawString>Yuan Zhang and Regina Barzilay. 2015. Hierarchical low-rank tensors for multilingual transfer parsing. In Conference on Empirical Methods in Natural Language Processing (EMNLP), Lisbon, Portugal, September.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yue Zhang</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>Transition-based dependency parsing with rich non-local features.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>188--193</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Portland, Oregon, USA,</location>
+<contexts>
+<context position="13750" citStr="Zhang and Nivre, 2011" startWordPosition="2383" endWordPosition="2386">ing from 83.0% to 90.1% depending on how POS constraints are used. As a second evaluation method, we can test the accuracy of a model trained on the P100 data. The benefit of the soft-matching POS definition is clear. The hard match definition harms performance, presumably because it reduces the number of sentences used to train the model. Throughout the rest of this paper, we use the soft POS constraints in all projection algorithms.3 3.4 The Training Procedure We now describe the training procedure used in our experiments. We use a perceptron-trained shift-reduce parser, similar to that of (Zhang and Nivre, 2011). We assume that the parser is able 3The hard constraint is also used by Ma and Xia (2014). Inputs: Sets P100, P80, P&gt;7, P&gt;5, P&gt;1 as defined in §3.2. Definitions: Functions TRAIN, CDECODE, TOP as defined in §3.4. Algorithm: 1. 01 = TRAIN(P100) 2. P1100 = CDECODE(P80 U P&gt;7, 01) 3. 02 = TRAIN(P100 U TOP(P1100, 01)) 4. P2100 = CDECODE(P80 U P&gt;5, 02) 5. 03 = TRAIN(P100 U TOP(P2100, 02)) 6. P3100 = CDECODE(P&gt;1, 03) 7. 04 = TRAIN(P100 U TOP(P3100, 03)) Output: Parameter vectors 01, 02, 03, 04. Figure 2: The learning algorithm. to operate in a “constrained” mode, where it returns the highest scoring </context>
+<context position="20560" citStr="Zhang and Nivre (2011)" startWordPosition="3567" endWordPosition="3570">8.89 79.76 80.72 80.82 81.23 80.95 81.87 82.00 82.18 Table 2: Parsing accuracies of different methods on the test data using the gold standard POS tags. The models 01 ... 04 are described in §3.4. “en→trgt” is the single-source setting with English as the source language. “concat→trgt” and “voting→trgt” are results with multiple source languages for the concatenation and voting methods fault alignment model is used in all of our experiments. The Parsing Model For all parsing experiments we use the Yara parser7 (Rasooli and Tetreault, 2015), a reimplementation of the k-beam arc-eager parser of Zhang and Nivre (2011). We use a beam size of 64, and Brown clustering features8 (Brown et al., 1992; Liang, 2005). The parser gives performance close to the state of the art: for example on section 23 of the Penn WSJ treebank (Marcus et al., 1993), it achieves 93.32% accuracy, compared to 92.9% accuracy for the parser of (Zhang and Nivre, 2011). POS Consistency As mentioned in §3.2, we define a soft POS consistency constraint to prune some projected dependencies. A source/target language word pair satisifies this constraint if one of the following conditions hold: 1) the POS tags for the two words are identical; 2</context>
+</contexts>
+<marker>Zhang, Nivre, 2011</marker>
+<rawString>Yue Zhang and Joakim Nivre. 2011. Transition-based dependency parsing with rich non-local features. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies, pages 188–193, Portland, Oregon, USA, June. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

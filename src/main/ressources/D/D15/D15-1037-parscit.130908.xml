@@ -1,0 +1,1947 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000057">
+<title confidence="0.996445">
+Efficient Methods for Incorporating Knowledge into Topic Models
+</title>
+<author confidence="0.9967">
+Yi Yang, Doug Downey
+</author>
+<affiliation confidence="0.992815">
+Electrical Engineering and Computer Science
+Northwestern University
+</affiliation>
+<address confidence="0.468122">
+Evanston, IL
+</address>
+<email confidence="0.986657">
+yiyang@u.northwestern.edu
+ddowney@eecs.northwetsern.edu
+</email>
+<author confidence="0.986973">
+Jordan Boyd-Graber
+</author>
+<affiliation confidence="0.997236">
+Computer Science
+University of Colorado
+</affiliation>
+<address confidence="0.375844">
+Boulder, CO
+Jordan.Boyd.Graber
+</address>
+<email confidence="0.995357">
+@colorado.edu
+</email>
+<sectionHeader confidence="0.997306" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999574095238095">
+Latent Dirichlet allocation (LDA) is a pop-
+ular topic modeling technique for explor-
+ing hidden topics in text corpora. Increas-
+ingly, topic modeling needs to scale to
+larger topic spaces and use richer forms
+of prior knowledge, such as word correla-
+tions or document labels. However, infer-
+ence is cumbersome for LDA models with
+prior knowledge. As a result, LDA mod-
+els that use prior knowledge only work
+in small-scale scenarios. In this work,
+we propose a factor graph framework,
+Sparse Constrained LDA (SC-LDA), for
+efficiently incorporating prior knowledge
+into LDA. We evaluate SC-LDA’s ability
+to incorporate word correlation knowledge
+and document label knowledge on three
+benchmark datasets. Compared to several
+baseline methods, SC-LDA achieves com-
+parable performance but is significantly
+faster.
+</bodyText>
+<sectionHeader confidence="0.969327333333333" genericHeader="keywords">
+1 Challenge: Leveraging Prior
+Knowledge in Large-scale Topic
+Models
+</sectionHeader>
+<bodyText confidence="0.999972854545455">
+Topic models, such as Latent Dirichlet Alloca-
+tion (Blei et al., 2003, LDA), have been success-
+fully used for discovering hidden topics in text col-
+lections. LDA is an unsupervised model—it re-
+quires no annotation—and discovers, without any
+supervision, the thematic trends in a text collec-
+tion. However, LDA’s lack of supervision can
+lead to disappointing results. Often, the hidden
+topics learned by LDA fail to make sense to end
+users. Part of the problem is that the objective
+function of topic models does not always corre-
+late with human judgments of topic quality (Chang
+et al., 2009). Therefore, it’s often necessary to
+incorporate prior knowledge into topic models to
+improve the model’s performance. Recent work
+has also shown that by interactive human feedback
+can improve the quality and stability of topics (Hu
+and Boyd-Graber, 2012; Yang et al., 2015). In-
+formation about documents (Ramage et al., 2009)
+or words (Boyd-Graber et al., 2007) can improve
+LDA’s topics.
+In addition to its occasional inscrutability, scal-
+ability can also hamper LDA’s adoption. Conven-
+tional Gibbs sampling—the most widely used in-
+ference for LDA—scales linearly with the num-
+ber of topics. Moreover, accurate training usu-
+ally takes many sampling passes over the dataset.
+Therefore, for large datasets with millions or even
+billions of tokens, conventional Gibbs sampling
+takes too long to finish. For standard LDA, re-
+cently introduced fast sampling methods (Yao et
+al., 2009; Li et al., 2014; Yuan et al., 2015) en-
+able industrial applications of topic modeling to
+search engines and online advertising, where cap-
+turing the “long tail” of infrequently used topics
+requires large topic spaces. For example, while
+typical LDA models in academic papers have up
+to 103 topics, industrial applications with 105–106
+topics are common (Wang et al., 2014). Moreover,
+scaling topic models to many topics can also re-
+veal the hierarchical structure of topics (Downey
+et al., 2015).
+Thus, there is a need for topic models that can
+both benefit from rich prior information and that
+can scale to large datasets. However, existing
+methods for improving scalability focus on topic
+models without prior information. To rectify this,
+we propose a factor graph model that encodes a
+potential function over the hidden topic variables,
+encouraging topics consistent with prior knowl-
+edge. The factor model representation admits an
+efficient sampling algorithm that takes advantage
+of the model’s sparsity. We show that our method
+achieves comparable performance but runs signifi-
+cantly faster than baseline methods, enabling mod-
+</bodyText>
+<page confidence="0.979497">
+308
+</page>
+<note confidence="0.9914635">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 308–317,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<figure confidence="0.9769483">
+three “buckets”:
+X XP(z = t|z_, w) = αβ (2)
+t t
+nt + V β
+ |{z }
+s
+X
++
+t,nd,t&gt;0
+nd,tβ
+nt + V β
+X
++
+t,nw,t&gt;0
+(nd,t + α)nw,t
+nt + V β .
+ |{z }
+r
+ |{z }
+q
+</figure>
+<bodyText confidence="0.926176">
+els to discover models with many topics enriched
+by prior knowledge.
+</bodyText>
+<sectionHeader confidence="0.983416" genericHeader="method">
+2 Efficient Algorithm for Incorporating
+Knowledge into LDA
+</sectionHeader>
+<bodyText confidence="0.999455666666667">
+In this section, we introduce the factor model for
+incorporating prior knowledge and show how to
+efficiently use Gibbs sampling for inference.
+</bodyText>
+<subsectionHeader confidence="0.998715">
+2.1 Background: LDA and SparseLDA
+</subsectionHeader>
+<bodyText confidence="0.999982333333334">
+A statistical topic model represents words in doc-
+uments in a collection D as mixtures of T top-
+ics, which are multinomials over a vocabulary of
+size V . In LDA, each document d is associated
+with a multinomial distribution over topics, θd.
+The probability of a word type w given topic z
+is φw|z. The multinomial distributions θd and φz
+are drawn from Dirichlet distributions: α and β
+are the hyperparameters for θ and φ. We represent
+the document collection D as a sequence of words
+w, and topic assignments as z. We use symmetric
+priors α and β in the model and experiment, but
+asymmetric priors are easily encoded in the mod-
+els (Wallach et al., 2009).
+Discovering the latent topic assignments z from
+observed words w requires inferring the the pos-
+terior distribution P(z|w). Griffiths and Steyvers
+(2004) propose using collapsed Gibbs sampling.
+The probability of a topic assignment z = t in
+document d given an observed word type w and
+the other topic assignments z_ is
+</bodyText>
+<equation confidence="0.997368">
+P(z = t|z_, w) a (nd,t + α)nw,t + β (1)
+nt + V β
+</equation>
+<bodyText confidence="0.999980375">
+where z_ are the topic assignments of all other
+tokens. This conditional probability is based on
+cumulative counts of topic assignments: nd,t is the
+number of times topic t is used in document d,
+nw,t is the number of times word type w is used in
+topic t, and nt is the marginal count of the number
+of tokens assigned to topic t.
+Unfortunately, explicitly computing the condi-
+tional probability is quite for models with many
+topics. The time complexity of drawing a sample
+by Equation 1 is linear to the number of topics.
+Yao et al. (2009) propose a clever factorization of
+Equation 1 so that the complexity is typically sub-
+linear by breaking the conditional probability into
+The first term s is the “smoothing only”
+bucket—constant for all documents. The second
+term r is the “document only” bucket that is shared
+by a document’s tokens. Both s and r have simple
+constant time updates. The last term q has to be
+computed specifically for each token, only for the
+few types with non-zero counts in a topic, due to
+the sparsity of word-topic count. Since q often has
+the largest mass and few non-zero terms, we start
+the sampling from bucket q.
+</bodyText>
+<subsectionHeader confidence="0.964878">
+2.2 A Factor Model for Incorporating Prior
+Knowledge
+</subsectionHeader>
+<bodyText confidence="0.99927092">
+With SparseLDA, inferring LDA models over
+large topic spaces becomes tractable. However,
+existing methods for incorporating prior knowl-
+edge use conventional Gibbs sampling, which hin-
+ders inference. We address this limitation in this
+section by adding a factor graph to encode prior
+knowledge.
+LDA assumes that the hidden topic assignment
+of a word is independent from other hidden top-
+ics, given the document’s topic distribution θ.
+While this assumption facilitates computational
+efficiency, it loses the rich correlation between
+words. In many scenarios, users have external
+knowledge regarding word correlation, document
+labels, or document relations, which can reshape
+topic models and improve coherence.
+Prior knowledge can constrain what models dis-
+cover. A correlation between two words v and w
+indicates that they have a similar topic distribu-
+tion, i.e., p(z|v) Pz� p(z|w).1 Therefore, the poste-
+rior topic assignments v and w will be correlated.
+In contrast, if v and w are uncorrelated, nothing—
+other than the Dirichlet’s rich get richer effect—
+prevents the topics from diverging. Similarly, if
+two documents share a label, then it is reasonable
+</bodyText>
+<footnote confidence="0.851173">
+1In (Andrzejewski et al., 2009) two correlated words are
+taken to indicate that p(v|z) ≈ p(w|z). However, for word
+types that have very different frequencies, these two quan-
+tities would never be close, and thus p(z|v) ≈ p(z|w) is a
+more intuitive constraint.
+</footnote>
+<page confidence="0.9993635">
+309
+2
+</page>
+<bodyText confidence="0.99950325">
+to assume that they are more likely than two ran-
+dom documents to share topics.
+We denote the set of prior knowledge as M.
+Each prior knowledge m E M defines a potential
+function fm(z, w, d) of the hidden topic z of word
+type w in document d with which m is associated.
+Therefore, the complete prior knowledge M de-
+fines a score on the current topic assignments z:
+</bodyText>
+<equation confidence="0.9410165">
+ψ(z, M) = H exp fm(z, w, d) (3)
+zEz
+</equation>
+<bodyText confidence="0.998040733333333">
+If m is knowledge about word type w, then
+fm(z, w, d) applies to all hidden topics of word
+w. If m is knowledge about document d, then
+fm(z, w, d) applies to all topics that are in docu-
+ment d. The potential function assigns large values
+to the topics that accord with prior knowledge but
+penalizes the topic assignments that disagree with
+the prior knowledge. In an extreme case, if a prior
+knowledge m says word type w in document d is
+Topic 3, then the potential function fm(z, w, d) is
+zero for all topics but Topic 3.
+Since the potential function ψ is a function of
+z, and it is only a real-value score of current topic
+assignments, the potential can be factored out of
+the marginalized joint:
+</bodyText>
+<equation confidence="0.9856685">
+P(w, z|α,β, M) = P(w|z, β)P(z|α)ψ(z, M) (4)
+= ff P(w |z, φ)p(φ|β)p(z|θ)p(θ|α)ψ(z, M)dθdφ
+e y
+= ψ(z, M) f f p(w |z, φ)p(φ|β)p(z|θ)p(θ|α)dθdφ.
+</equation>
+<bodyText confidence="0.997887">
+Given the joint likelihood and observed data, the
+goal is evaluate the posterior P(z|w). Com-
+puting P(z|w) involves evaluating a probabil-
+ity distribution on a large discrete state space:
+P(z|w) = P(z, w)/ Ez P(z, w). Griffiths and
+Steyvers (2004)—mirroring the original inspira-
+tions for Gibbs sampling (Geman and Geman,
+1990)—draw an analogy to statistical physics,
+viewing standard LDA as a system that favors con-
+figurations z that compromise between having few
+topics per document and having few words per
+topic, with the terms of this compromise being set
+by the hyperparameters α and β. Our factor model
+representation of prior knowledge adds a further
+constraint that asks the model to also consider en-
+sembles of topic assignments z that are compatible
+with a standard LDA model and the given prior
+knowledge.
+The collapsed Gibbs Sampling for inferring
+</bodyText>
+<equation confidence="0.991257230769231">
+topic assignment z of word w in document d is:
+P(z = t|w, z_, M) (5)
+P(w, z_, z = t|α, β, M)
+=
+P(w, z_|α, β, M)
+ψ(z_, z = t, M)
+ψ(z_, M)
+� nw t + β ψ(z_, z = t, M)
+a (nd t + α) nt + Wβ ~ ψ(z_, M)
+� ~
+(nd,t + α) nw,t + β
+a exp fm(z = t, w, d).
+nt + Wβ
+</equation>
+<bodyText confidence="0.999998307692308">
+The first term is identical to standard LDA, and
+admits efficient computation using SparseLDA.
+However, if the second term, exp fm(z, w, d), is
+dense, we still need to compute it explicitly T
+times (once for each topic) because we need the
+summation of P(z = t) for sampling. There-
+fore, the critical part of speeding up the sampler is
+finding a sparse representation of the second term.
+In the following sections, we show that natural,
+sparse prior knowledge representations are possi-
+ble. We first present an efficient sparse representa-
+tion of word correlation prior knowledge and then
+one for document-label knowledge.
+</bodyText>
+<subsectionHeader confidence="0.998814">
+2.3 Word Correlation Prior Knowledge
+</subsectionHeader>
+<bodyText confidence="0.98639444">
+We now illustrate how we can encode word cor-
+relation knowledge as a set of sparse constraints
+fm(z, w, d) in our model. In previous work (An-
+drzejewski et al., 2009; Hu et al., 2011; Xie et al.,
+2015), word correlation prior knowledge is repre-
+sented as word must-link constraints and cannot-
+link constraints. A must-link relation between two
+words indicates that the two words tend to be re-
+lated to the same topics, i.e. their topic probabil-
+ities are correlated. In contrast, a cannot-link re-
+lation between two words indicates that these two
+words are not topically similar, and they should
+not both be prominent within the same topic. For
+example, “quarterback” and “fumble” are both re-
+lated to American football, so they can share a
+must-link relation. But “fumble” and “bank” im-
+ply two different topics, so they share a cannot-
+link.
+Let us say word w is associated with a set
+of prior knowledge correlations Mw. Each prior
+knowledge m E Mw is a word pair (w, w&apos;), and
+it has “topic preference” of w given its correla-
+tion word w&apos;. The must-link set of w is Mmw ,
+and the cannot-link set of w is Mcw, i.e., Mw =
+Mc U Mm w . In the example above, Mm
+</bodyText>
+<equation confidence="0.985838333333333">
+w fumble =
+P(w, z_, z = t)
+P(w, z_)
+</equation>
+<page confidence="0.989279">
+310
+3
+</page>
+<bodyText confidence="0.999742571428571">
+{quarterback}, and Mcfumble = {bank}, so
+Mfumble = {quarterback, bank}. The topic as-
+signment of word “fumble” has higher conditional
+probability for the same topics as “quarterback”
+but lower probability for topics containing “bank”.
+The potential score of sampling topic t for word
+type w—if Mw is not empty—is
+</bodyText>
+<equation confidence="0.634003">
+Xfm(z, w, d) = log max(A, nu,z)+
+</equation>
+<bodyText confidence="0.99999136">
+where A is a hyperparameter, which we call the
+correlation strength. The intuitive explanation of
+Equation 6 is that the prior knowledge about the
+word type w will make an impact on the condi-
+tional probability of sampling the hidden topic z.
+Unlike standard LDA where every word’s hidden
+topic is independent of other words given θ, Equa-
+tion 6 instead increases the probability that a word
+w will be drawn from the same topics as those of
+w’s must-link word set, and decreases its probabil-
+ity of being drawn from the same topics as those
+of w’s cannot-link word set.
+The hyperparameter A controls the strength of
+each piece of prior knowledge. The smaller A is,
+the stronger this correlation is. For large A, the
+constraint is inactive for topics except those with
+the large counts. As A decreases, the constraint
+becomes active for topics with lesser counts. We
+can adjust the value of A for each piece of prior
+knowledge based on our confidence. In our exper-
+iments, for simplicity, we use the same value A for
+all knowledge and set A = 1.
+From Equation 6 and Equation 5, the condi-
+tional probability of a topic z in document d given
+an observed word type w is:
+</bodyText>
+<equation confidence="0.994651666666667">
+P(z = t|w, z−, M)
+oc αQ+ nd,tQ + (nd,t + α)nw,t
+{nt + V Q nt + V Q nt + V Q I
+</equation>
+<figureCaption confidence="0.8889822">
+Figure 1: Histogram of nonzero topic counts for
+word types in NYT-News dataset after inference.
+81.9% word types have fewer than 50 topics with
+nonzero counts. This sparsity allows our sparse
+constraints to speed inference.
+</figureCaption>
+<bodyText confidence="0.999261476190476">
+topic counts for must-link word u and cannot-
+link word v, are often sparse. For example, in
+a 100-topic model trained on the NIPS dataset,
+87.2% of word types have fewer than ten top-
+ics with nonzero counts. In a 500-topic model
+trained on a larger dataset like the New York Times
+News (Sandhaus, 2008), 81.9% of word types
+have fewer than 50 topics with nonzero counts.
+Moreover, the model becomes increasingly sparse
+with additional Gibbs iterations. Figure 1 shows
+the word frequency histogram of nonzero topic
+counts of NYT-News dataset.
+Therefore, the computational cost of Equation 7
+can be reduced. SparseLDA efficiently computes
+the s, r, q bins as in Equation 3. Then for words
+that are associated with prior knowledge, we up-
+date s, r, q with an additional potential term. We
+only need to compute the potential term for the
+topics whose counts are greater than A. The col-
+lapsed Gibbs sampling procedure is summarized
+in Algorithm 1.
+</bodyText>
+<figure confidence="0.757227">
+X
+vEMw
+uEMw
+1
+log
+max(A, nv,z).
+(6)
+~ Y max(A, nv,t) }
+uEMw
+Ymax(A, nu,t) Algorithm 1 Gibbs Sampling for word type w in
+vEMw document d, given w’s correlation set Mw
+(7)
+</figure>
+<bodyText confidence="0.996948428571429">
+As explained above, A controls the “strength” of
+the prior knowledge term. If A is large, the prior
+knowledge has little impact on the conditional
+probability of topic assignments.
+Let’s return to the question whether Equation 6
+is sparse, allowing efficient computation of Equa-
+tion 7. Fortunately, nu,t and nv,t, which are the
+</bodyText>
+<listItem confidence="0.997425">
+1: compute st, rt, qt with SparseLDA, (see Eq.
+3)
+2: for t ← 0 to T do
+3: update st, rt, qt. ∀u E Mw if nu,t &gt; A
+4: end for
+5: p(t) = st + rt + qt
+6: sample new topic assignment for w from p(t)
+</listItem>
+<page confidence="0.995479">
+311
+4
+</page>
+<subsectionHeader confidence="0.944309">
+2.4 Other Types of Prior Knowledge
+</subsectionHeader>
+<bodyText confidence="0.999881272727273">
+The factor model framework can also handle other
+types of prior knowledge, such as document la-
+bels, sentence labels, and document link relations.
+We briefly describe document labels here.
+Ramage et al. (2009) propose Labeled-LDA,
+which improves LDA with document labels. It as-
+sumes that there is a one-to-one mapping between
+topics and labels, and it restricts each document’s
+topics to be sampled only from those allowed by
+the documents label set. Therefore, Labeled-LDA
+can be expressed in our model. We define
+</bodyText>
+<equation confidence="0.854095">
+�
+1, if z ∈ and (8)
+−∞, else
+</equation>
+<bodyText confidence="0.9999245">
+where and specifies document d’s label set con-
+verted to corresponding topic labels. Since
+fm(z, w, d) is sparse, we can speed up the train-
+ing as well. Sentence-level prior knowledge (e.g.,
+for sentiment or aspect models (Paul and Girju,
+2010)) can be defined in a similar way.
+Documents can be associated with other useful
+metadata. For example, a scientific paper and the
+prior work it cites might have similar topics (Di-
+etz et al., 2007) or friends in a social network
+might talk about the same topics (Chang and Blei,
+2009). To model link relations, we can use Equa-
+tion 6 and replace the word-topic counts nv,z with
+document-topic counts nd,z. By doing so, we en-
+courage related documents to have similar topic
+structures. Moreover, the document-topic count is
+also sparse, which fits into the efficient learning
+framework.
+Therefore, for different types of prior knowl-
+edge, as long as we can define O(z, M) appropri-
+ately so that f(z, w, d) are sparse, we are able to
+speed up learning.
+</bodyText>
+<sectionHeader confidence="0.999799" genericHeader="method">
+3 Experiments
+</sectionHeader>
+<bodyText confidence="0.9996435">
+In this section, we demonstrate the effectiveness of
+our SC-LDA by comparing it with several baseline
+methods on three benchmark datasets. We first
+evaluate the convergence rate of each method and
+then evaluate the learned model parameter φ—the
+topic-word distribution—in terms of topic coher-
+ence. We show that SC-LDA can achieve results
+comparable to the baseline models but is signifi-
+cantly faster. We set up all experiments on a 8-
+Core 2.8GHz CPU, 16GB RAM machine.2
+</bodyText>
+<footnote confidence="0.875287">
+2Our implementation of SC-LDA is avail-
+able at https://github.com/yya518/
+</footnote>
+<table confidence="0.999693">
+DATASET DOCS TYPE TOKEN(APPROX)
+NIPS 1,500 12,419 1,900,000
+NYT-NEWS 3,000,000 102,660 100,000,000
+20NG 18,828 21,514 1,946,000
+</table>
+<tableCaption confidence="0.998021">
+Table 1: Characteristics of benchmark datasets.
+</tableCaption>
+<bodyText confidence="0.9821725">
+We use NIPS and NYT for word correlation exper-
+iments and 20NG for document label experiments.
+</bodyText>
+<subsectionHeader confidence="0.977737">
+3.1 Dataset
+</subsectionHeader>
+<bodyText confidence="0.999994">
+We use the NIPS and NYT-News datasets from
+the UCI bag of words data collections.3 These
+two datasets have no document labels, and we use
+them for word correlation experiments. We also
+use the 20Newsgroup (20NG) dataset,4 which has
+document labels, for document label experiments.
+Table 1 shows the characteristics of each dataset.
+Since NIPS and NYT-News have already been pre-
+processed, to ensure repeatability, we use the data
+“as they are” from the sources. For 20NG, we
+perform tokenization and stopword removal using
+Mallet (McCallum, 2002) and remove words that
+appear fewer than 10 times.
+</bodyText>
+<subsectionHeader confidence="0.995956">
+3.2 Prior Knowledge Generation
+</subsectionHeader>
+<bodyText confidence="0.97183724">
+Word Correlation Prior Knowledge Previous
+work proposes two methods to automatically gen-
+erate prior word correlation knowledge from ex-
+ternal sources. Hu and Boyd-Graber (2012) use
+WordNet 3.0 to obtain synsets for word types, and
+then if a synset is also in the vocabulary, they
+add a must-link correlation between the word type
+and the synset. Xie et al. (2015) use a different
+method that takes advantage of an existing pre-
+trained word embedding. Each word embedding is
+a real-valued vector capturing the word’s semantic
+meaning based on distributional similarity. If the
+similarity between the embeddings of two word
+types in the vocabulary exceeds a threshold, they
+generate a must-link between the two words.
+In our experiments, we adopt a hybrid method
+that combines the above two methods. For a noun
+word type, we first obtain its synsets from Word-
+Net 3.0. We also obtain the embeddings of each
+word from word2vec (Mikolov et al., 2013). If the
+synset is also in the vocabulary, and the similar-
+ity between the synset and the word is higher than
+a threshold, which in our experiment is 0.2, we
+generate a must-link between thee words. Empir-
+sparse-constrained-lda.
+</bodyText>
+<footnote confidence="0.995546">
+3https://archive.ics.uci.edu/ml/datasets/Bag+of+Words
+4http://qwone.com/ jason/20Newsgroups/
+</footnote>
+<equation confidence="0.784728">
+fm(z, w, d) =
+</equation>
+<page confidence="0.997284">
+312
+5
+</page>
+<bodyText confidence="0.99982125">
+ically, this hybrid method is able to obtain high
+quality correlated words. For example, for the
+NIPS dataset, the must-links we obtain for ran-
+domness are {noise, entropy, stochasticity}.
+Document Label Prior Knowledge Since doc-
+uments in the 20NG dataset are associated with
+labels, we use the labels directly as prior knowl-
+edge.
+</bodyText>
+<subsectionHeader confidence="0.99789">
+3.3 Baselines
+</subsectionHeader>
+<bodyText confidence="0.999655625">
+The baseline methods for incorporating word cor-
+relation prior knowledge in our experiments are as
+follows:
+DF-LDA: incorporates word must-links and
+cannot-links using a Dirichlet Forest prior in LDA
+(Andrzejewski et al., 2009). Here we use Hu
+and Boyd-Graber (2012)’s efficient implementa-
+tion FAST-RB-SDW for DF-LDA.
+Logic-LDA: encodes general domain knowledge
+as first-order logic and incorporates it in LDA (An-
+drzejewski et al., 2011). Logic-LDA has been
+used for word correlations and document label
+knowledge.
+MRF-LDA: encodes word correlations in LDA as
+a Markov random field (Xie et al., 2015).
+We also use Mallet’s SparseLDA implementa-
+tion for vanilla LDA in the topic coherence exper-
+iment. We use a symmetric Dirichlet prior for all
+models. We set α = 1.0, Q = 0.01. For DF-LDA,
+η = 100. For Logic-LDA, we use the default pa-
+rameter setting in the package: a sample rate of
+1.0 and step rate of 10.0. For MRF-LDA, we use
+the default setting with γ = 1.0. (Parameter se-
+mantics can be found in the original papers.)
+</bodyText>
+<subsectionHeader confidence="0.984038">
+3.4 Convergence
+</subsectionHeader>
+<bodyText confidence="0.999932466666667">
+The main advantage of our method over other ex-
+isting methods is efficiency. In this experiment,
+we show the change of our model’s log likelihood
+over time. In topic models, the log likelihood
+change is a good indicator of whether a model has
+converged or not. Figure 2 shows the log like-
+lihood change over time for SC-LDA and three
+baseline methods on NIPS and NYT-News dataset.
+SC-LDA converges faster than all the other meth-
+ods.
+We also conduct experiments on SC-LDA with
+varying numbers of word correlations. Table 2
+shows the Gibbs sampling iteration time on the
+1st, 50th, 100th and the 200th iteration. We also
+incorporate different numbers of word correlations
+</bodyText>
+<figureCaption confidence="0.445754857142857">
+Figure 2: Models’ log likelihood convergence on
+NIPS dataset (above) and NYT-News dataset (be-
+low). For NIPS, a 100-topic model with 100
+must-links is trained. For NYT-News, a 500-
+topic model with 100 must-links is trained. SC-
+LDA reaches likelihood convergence much more
+rapidly than the other methods.
+</figureCaption>
+<table confidence="0.999338833333333">
+# Word Correlations
+round C0 C100 C500 C1000
+1st iteration 2.02 2.14 2.30 2.50
+50th iteration 0.53 0.56 0.58 0.62
+100th iteration 0.48 0.50 0.53 0.56
+200th iteration 0.48 0.49 0.52 0.56
+</table>
+<tableCaption confidence="0.718457666666667">
+Table 2: SC-LDA runtime (in seconds) in the
+1st, 50th, 100th, and 200th iteration with different
+numbers of correlations.
+</tableCaption>
+<bodyText confidence="0.996557">
+in SC-LDA. SC-LDA runs faster as sampling pro-
+ceeds as the sparsity increases, but additional cor-
+relations slow the model.
+</bodyText>
+<subsectionHeader confidence="0.799909">
+3.5 Topic Coherence
+</subsectionHeader>
+<bodyText confidence="0.980413">
+Topic models are often evaluated using perplex-
+ity on held-out test data, but this evaluation is of-
+</bodyText>
+<page confidence="0.999749">
+313
+6
+</page>
+<bodyText confidence="0.999362">
+ten at odds with human evaluations (Chang et al.,
+2009). Following Mimno et al. (2011), we em-
+ploy Topic Coherence—a metric that is consis-
+tent with human judgment—to measure a topic
+model’s quality. Topic t’s coherence is defined
+as C(t : V (t)) = �M E,n 1log F(vM,vlt))+E
+</bodyText>
+<equation confidence="0.911229">
+m=2 F (v(t)
+l )
+,
+</equation>
+<bodyText confidence="0.999392606060606">
+where F(v) is the document frequency of word
+type v, F(v, v&apos;) is the co-document frequency of
+word type v and v�, and V (t) = (v(t)
+1 , ...,v(t) M ) is
+a list of the M most probable words in topic t.
+In our experiments, we choose the ten words with
+highest probability in the topic to compute topic
+coherence, i.e., M = 10. Mimno et al. (2011) use
+c = 1, but R¨oder et al. (2015) show smaller c (such
+as 10−12) improves coherence stability, so we set
+c = 10−12. Larger topic coherence scores imply
+more coherent topics.
+We train a 500-topic model on the NIPS dataset
+with different methods and compare the average
+topic coherence score and the average of the top
+twenty topic coherence scores. Since the topics
+learned by topic model often contain “bad” top-
+ics (Mimno et al., 2011) which do not make sense
+to end users, evaluating the top twenty topics re-
+flects the model’s performance. We let each model
+train for one hour. Figure 3 shows the topic co-
+herence of each method. SC-LDA has about the
+same average topic coherence with LDA but has
+higher coherence score (-36.6) for the top 20 top-
+ics than LDA (-39.1). This is because incorporat-
+ing word correlation knowledge encourages cor-
+related words to have high probability under the
+same topic, thus improving the coherence score.
+For the other methods, however, because they can-
+not converge within an hour, their topic coherence
+scores are much worse than SC-LDA and LDA.
+This again demonstrates the efficiency of SC-LDA
+over other baselines.
+</bodyText>
+<subsectionHeader confidence="0.999068">
+3.6 Document Label Prior Knowledge
+</subsectionHeader>
+<bodyText confidence="0.999787">
+SC-LDA can also handle other types of prior
+knowledge. We compare it with Labeled-LDA
+(Ramage et al., 2009). Labeled-LDA also uses
+Gibbs sampling for inference, allowing direct
+computation time comparisons.
+Table 3 shows the average running time per it-
+eration for Labeled-LDA and SC-LDA. Because
+document labels apply sparsity to the document-
+topic counts, the average running time per itera-
+tion decreases as the number of labeled document
+increases. SC-LDA exhibits greater speedup with
+</bodyText>
+<figureCaption confidence="0.9423728">
+Figure 3: Average topic coherence and average top
+20 topic coherence. The models are trained on
+NIPS dataset with 500-topic and 100 word corre-
+lations. SC-LDA achieves higher topic coherence
+than other methods.
+</figureCaption>
+<table confidence="0.999768375">
+# Topics
+T50 T100 T200 T500
+Labeled-LDA 0.93 1.89 3.60 8.05
+SC-LDA 0.38 0.45 0.51 0.72
+# Labeled Documents
+C500 C1000 C2000 C5000
+Labeled-LDA 1.95 1.88 1.75 1.48
+SC-LDA 0.51 0.45 0.41 0.31
+</table>
+<tableCaption confidence="0.977958">
+Table 3: The average running time per iteration
+</tableCaption>
+<bodyText confidence="0.881307428571429">
+over 100 iterations, averaged over 5 seeds, on
+20NG dataset. Experiments begin with 100 top-
+ics, 1000 labeled documents, and then vary one
+dimension: number of topics (top), or number of
+labeled documents (bottom).
+more topics; when T = 500,5 SC-LDA runs more
+than ten times faster than Labeled-LDA.
+</bodyText>
+<sectionHeader confidence="0.999941" genericHeader="method">
+4 Related Work
+</sectionHeader>
+<bodyText confidence="0.9998936">
+This works brings together two lines of research:
+incorporating rich knowledge into probabilistic
+models and efficient inference of probabilistic
+models on large datasets. Both are common ar-
+eas of interest across many machine learning for-
+malisms: probabilistic logic (Bach et al., 2015),
+graph algorithms (Low et al., 2012), and proba-
+bilistic grammars (Cohen et al., 2008). However,
+our focus in this paper is the intersection of these
+lines of research with topic models.
+</bodyText>
+<footnote confidence="0.995595">
+5For 20NG dataset, it may overfit the data with 500 topics,
+but here we use it to demonstrate the scalability.
+</footnote>
+<page confidence="0.999331">
+314
+7
+</page>
+<bodyText confidence="0.999973626865672">
+Adding knowledge and metadata to topic mod-
+els makes the models richer, more understandable,
+and more domain-specific. A common distinc-
+tion is upstream (conditioning on metadata) vs.
+downstream models (conditioning on variables al-
+ready present in a topic model to predict meta-
+data) (Mimno et al., 2008). Downstream models
+are typically better at prediction tasks such as pre-
+dicting sentiment (Blei and McAuliffe, 2007), ide-
+ology (Nguyen et al., 2014a), or links in a social
+network (Chang and Blei, 2009). In contrast, our
+approach—an upstream model—is often easier to
+implement and leads to more interpretable topics.
+Upstream models at the document level have been
+used to understand the labels in large document
+collections (Ramage et al., 2009; Nguyen et al.,
+2014b) and capture relationships in document net-
+works using Markov random fields (Daum´e III,
+2009). At the word level, Xie et al. (2015) in-
+corporate word correlation to LDA by building a
+Markov Random Field regularization, similar to
+Newman et al. (2011), who use regularization to
+improve topic coherence. However, despite these
+exciting applications, the experiments in the above
+work are typically on small datasets.
+In contrast, there is a huge interest in improving
+the scalability of topic models to large numbers
+of documents, numbers of topics, and vocabular-
+ies. Attempts to scale inference for topic mod-
+els have started from both variational inference
+and Gibbs sampling—two popular learning infer-
+ence techniques for topic modeling. Gibbs sam-
+pling is a popular technique because of its sim-
+plicitly and low latency. However, for large num-
+bers of topics, Gibbs sampling can become un-
+wieldy. Porteous et al. (2008) address this issue by
+creating an upper bound approximation that pro-
+duces accurate results, while SparseLDA (Yao et
+al., 2009) present an effective factorization that
+speeds inference without sacrificing accuracy. Just
+as our model builds on SparseLDA’s insights,
+SparseLDA has been incorporated into commer-
+cial deployments (Wang et al., 2014) and im-
+proved using alias tables (Li et al., 2014). Yuan
+et al. (2015) also presents an efficient constant
+time sampling algorithm for building big topic
+models. Variational inference can easily be paral-
+lelized (Nallapati et al., 2007; Zhai et al., 2012),
+but has high latency, which has been addressed
+by performing online updates (Hoffman et al.,
+2010) and taking stochastic gradients estimated by
+MCMC inference (Mimno et al., 2012). In this
+paper, we only focus on single-processor learning,
+but existing parallelization techniques (Newman et
+al., 2009) are applicable to our model.
+At the intersection lies models that improve the
+scalability of upstream topic model inference. In
+addition to our SC-LDA, Hu and Boyd-Graber
+(2012) speed Gibbs sampling in tree-based topic
+models using SparseLDA’s factorization strategy,
+and Hu et al. (2014) extend this approach by paral-
+lelizing global parameter updates using variational
+inference. Our work is more general (also encom-
+passing document-based constraints) and is faster.
+In contrast to these upstream models, Zhu et al.
+(2013) and Nguyen et al. (2015) improve inference
+of downstream models.
+</bodyText>
+<sectionHeader confidence="0.999643" genericHeader="conclusions">
+5 Conclusion
+</sectionHeader>
+<bodyText confidence="0.9999643">
+We present a factor graph framework for incorpo-
+rating prior knowledge into topic models. By ex-
+pressing the prior knowledge as sparse constraints
+on the hidden topic variables, we are able to take
+advantage of the sparsity to speed up training. We
+demonstrate in experiments that our model runs
+significantly faster than the other alternative mod-
+els and achieves comparable performance in terms
+of topic coherence. Efficient algorithms for incor-
+porating prior knowledge with large topic models
+will benefit several downstream applications. For
+example, interactive topic modeling becomes fea-
+sible because fast model updates reduce the user’s
+waiting time and thus improve the user experience.
+Personalized topic modeling is also an interesting
+future direction in which the model will generate
+a personalized topic structure based on the user’s
+preferences or interests. For all these applications,
+an efficient learning algorithm is a crucial prereq-
+uisite.
+</bodyText>
+<sectionHeader confidence="0.998135" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999948333333333">
+We thank the anonymous reviews for their helpful
+comments. This research was supported in part
+by NSF grant IIS-1351029 and DARPA contract
+D11AP00268. Boyd-Graber is supported by NSF
+Grants CCF-1409287, IIS-1320538, and NCSE-
+1422492. Any opinions, findings, conclusions, or
+recommendations expressed here are those of the
+authors and do not necessarily reflect the view of
+the sponsor.
+</bodyText>
+<page confidence="0.9995585">
+315
+8
+</page>
+<sectionHeader confidence="0.996368" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999567226415094">
+David Andrzejewski, Xiaojin Zhu, and Mark Craven.
+2009. Incorporating domain knowledge into topic
+modeling via Dirichlet forest priors. In Proceedings
+of the International Conference of Machine Learn-
+ing.
+David Andrzejewski, Xiaojin Zhu, Mark Craven, and
+Benjamin Recht. 2011. A framework for incorpo-
+rating general domain knowledge into latent Dirich-
+let allocation using first-order logic. In International
+Joint Conference on Artificial Intelligence.
+Stephen H. Bach, Bert Huang, Jordan Boyd-Graber,
+and Lise Getoor. 2015. Paired-dual learning for fast
+training of latent variable hinge-loss mrfs. In Pro-
+ceedings of the International Conference of Machine
+Learning.
+David M. Blei and Jon D. McAuliffe. 2007. Super-
+vised topic models. In Proceedings of Advances in
+Neural Information Processing Systems.
+David M. Blei, Andrew Ng, and Michael Jordan. 2003.
+Latent Dirichlet allocation. Journal of Machine
+Learning Research, 3.
+Jordan Boyd-Graber, David M. Blei, and Xiaojin Zhu.
+2007. A topic model for word sense disambigua-
+tion. In Proceedings of Empirical Methods in Natu-
+ral Language Processing.
+Jonathan Chang and David M. Blei. 2009. Relational
+topic models for document networks. In Proceed-
+ings of Artificial Intelligence and Statistics.
+Jonathan Chang, Jordan Boyd-Graber, Chong Wang,
+Sean Gerrish, and David M. Blei. 2009. Reading
+tea leaves: How humans interpret topic models. In
+Proceedings ofAdvances in Neural Information Pro-
+cessing Systems.
+Shay B. Cohen, Kevin Gimpel, and Noah A. Smith.
+2008. Logistic normal priors for unsupervised prob-
+abilistic grammar induction. In Proceedings of Ad-
+vances in Neural Information Processing Systems.
+Hal Daum´e III. 2009. Markov random topic fields. In
+Proceedings of Artificial Intelligence and Statistics.
+Laura Dietz, Steffen Bickel, and Tobias Scheffer. 2007.
+Unsupervised prediction of citation influences. In
+Proceedings of the International Conference of Ma-
+chine Learning.
+Doug Downey, Chandra Bhagavatula, and Yi Yang.
+2015. Efficient methods for inferring large sparse
+topic hierarchies. In Proceedings of the Association
+for Computational Linguistics.
+S. Geman and D. Geman, 1990. Stochastic relaxation,
+Gibbs distributions, and the Bayesian restoration of
+images, pages 452–472. Morgan Kaufmann Pub-
+lishers Inc., San Francisco, CA, USA.
+Thomas L. Griffiths and Mark Steyvers. 2004. Find-
+ing scientific topics. Proceedings of the National
+Academy of Sciences, 101(Suppl 1):5228–5235.
+Matthew Hoffman, David M. Blei, and Francis Bach.
+2010. Online learning for latent Dirichlet allocation.
+In Proceedings of Advances in Neural Information
+Processing Systems.
+Yuening Hu and Jordan Boyd-Graber. 2012. Efficient
+tree-based topic modeling. In Proceedings of the As-
+sociation for Computational Linguistics.
+Yuening Hu, Jordan Boyd-Graber, and Brianna Sati-
+noff. 2011. Interactive topic modeling. In Proceed-
+ings of the Association for Computational Linguis-
+tics.
+Yuening Hu, Ke Zhai, Vlad Eidelman, and Jordan
+Boyd-Graber. 2014. Polylingual tree-based topic
+models for translation domain adaptation. In Asso-
+ciation for Computational Linguistics.
+Aaron Q. Li, Amr Ahmed, Sujith Ravi, and Alexan-
+der J. Smola. 2014. Reducing the sampling com-
+plexity of topic models. In Knowledge Discovery
+and Data Mining.
+Yucheng Low, Danny Bickson, Joseph Gonzalez, Car-
+los Guestrin, Aapo Kyrola, and Joseph M. Heller-
+stein. 2012. Distributed graphlab: A framework for
+machine learning and data mining in the cloud. Pro-
+ceedings of the VLDB Endowment, 5(8):716–727,
+April.
+Andrew Kachites McCallum. 2002. Mal-
+let: A machine learning for language toolkit.
+http://www.cs.umass.edu/ mccallum/mallet.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Cor-
+rado, and Jeff Dean. 2013. Distributed representa-
+tions of words and phrases and their compositional-
+ity. In Proceedings of Advances in Neural Informa-
+tion Processing Systems.
+David Mimno, Hanna Wallach, and Andrew McCal-
+lum. 2008. Gibbs sampling for logistic normal
+topic models with graph-based priors. In NIPS 2008
+Workshop on Analyzing Graphs: Theory and Appli-
+cations.
+David Mimno, Hanna Wallach, Edmund Talley,
+Miriam Leenders, and Andrew McCallum. 2011.
+Optimizing semantic coherence in topic models. In
+Proceedings of Empirical Methods in Natural Lan-
+guage Processing.
+David Mimno, Matthew Hoffman, and David Blei.
+2012. Sparse stochastic inference for latent Dirich-
+let allocation. In Proceedings of the International
+Conference of Machine Learning.
+Ramesh Nallapati, William Cohen, and John Lafferty.
+2007. Parallelized variational EM for latent Dirich-
+let allocation: An experimental evaluation of speed
+and scalability. In International Conference on Data
+Mining Workshops.
+</reference>
+<page confidence="0.998511">
+316
+9
+</page>
+<reference confidence="0.9997681">
+David Newman, Arthur Asuncion, Padhraic Smyth,
+and Max Welling. 2009. Distributed Algorithms
+for Topic Models. Journal of Machine Learning Re-
+search, pages 1801–1828.
+David Newman, Edwin Bonilla, and Wray Buntine.
+2011. Improving topic coherence with regularized
+topic models. In Proceedings ofAdvances in Neural
+Information Processing Systems, December.
+Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik,
+Deborah Cai, Jennifer Midberry, and Yuanxin Wang.
+2014a. Modeling topic control to detect influence
+in conversations using nonparametric topic models.
+Machine Learning, 95:381–421.
+Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik,
+and Jonathan Chang. 2014b. Learning a concept
+hierarchy from multi-labeled documents. In Neural
+Information Processing Systems.
+Thang Nguyen, Jordan Boyd-Graber, Jeff Lund, Kevin
+Seppi, and Eric Ringger. 2015. Is your anchor go-
+ing up or down? Fast and accurate supervised topic
+models. In North American Association for Compu-
+tational Linguistics.
+Michael Paul and Roxana Girju. 2010. A two-
+dimensional topic-aspect model for discovering
+multi-faceted topics. In Association for the Ad-
+vancement of Artificial Intelligence.
+Ian Porteous, David Newman, Alexander Ihler, Arthur
+Asuncion, Padhraic Smyth, and Max Welling. 2008.
+Fast collapsed gibbs sampling for latent dirichlet al-
+location. In Knowledge Discovery and Data Mining.
+Daniel Ramage, David Hall, Ramesh Nallapati, and
+Christopher Manning. 2009. Labeled LDA: A su-
+pervised topic model for credit attribution in multi-
+labeled corpora. In Proceedings of Empirical Meth-
+ods in Natural Language Processing.
+Michael R¨oder, Andreas Both, and Alexander Hinneb-
+urg. 2015. Exploring the space of topic coherence
+measures. In Proceedings of ACM International
+Conference on Web Search and Data Mining.
+Evan Sandhaus. 2008. The New
+York Times annotated corpus.
+http://www.ldc.upenn.edu/Catalog/CatalogEntry.jsp?
+catalogId=LDC2008T19.
+Hanna Wallach, David Mimno, and Andrew McCal-
+lum. 2009. Rethinking LDA: Why priors matter.
+In Proceedings of Advances in Neural Information
+Processing Systems.
+Yi Wang, Xuemin Zhao, Zhenlong Sun, Hao Yan,
+Lifeng Wang, Zhihui Jin, Liubin Wang, Yang Gao,
+Jia Zeng, Qiang Yang, and Ching Law. 2014.
+Towards topic modeling for big data. CoRR,
+abs/1405.4402.
+Pengtao Xie, Diyi Yang, and Eric P Xing. 2015. In-
+corporating word correlation knowledge into topic
+modeling. In Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics.
+Yi Yang, Shimei Pan, Yangqiu Song, Jie Lu, and Mer-
+can Topkara. 2015. User-directed non-disruptive
+topic model update for effective exploration of dy-
+namic content. In Proceedings of the 20th Interna-
+tional Conference on Intelligent User Interfaces.
+Limin Yao, David Mimno, and Andrew McCallum.
+2009. Efficient methods for topic model inference
+on streaming document collections. In Knowledge
+Discovery and Data Mining.
+Jinhui Yuan, Fei Gao, Qirong Ho, Wei Dai, Jinliang
+Wei, Xun Zheng, Eric Po Xing, Tie-Yan Liu, and
+Wei-Ying Ma. 2015. Lightlda: Big topic models
+on modest computer clusters. In Proceedings of the
+World Wide Web Conference.
+Ke Zhai, Jordan Boyd-Graber, Nima Asadi, and Mo-
+hamad Alkhouja. 2012. Mr. LDA: A flexible large
+scale topic modeling package using variational in-
+ference in mapreduce. In Proceedings of the World
+Wide Web Conference.
+Jun Zhu, Ning Chen, Hugh Perkins, and Bo Zhang.
+2013. Gibbs max-margin topic models with fast
+sampling algorithms. In Proceedings of the Inter-
+national Conference of Machine Learning.
+</reference>
+<page confidence="0.9989525">
+317
+10
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.999927">Efficient Methods for Incorporating Knowledge into Topic Models</title>
+<author confidence="0.998021">Yi Yang</author>
+<author confidence="0.998021">Doug</author>
+<affiliation confidence="0.820328666666667">Electrical Engineering and Computer Northwestern Evanston,</affiliation>
+<email confidence="0.999891">ddowney@eecs.northwetsern.edu</email>
+<author confidence="0.980412">Jordan</author>
+<affiliation confidence="0.844643">Computer University of Boulder,</affiliation>
+<email confidence="0.999904">@colorado.edu</email>
+<abstract confidence="0.991084104972377">Latent Dirichlet allocation (LDA) is a popular topic modeling technique for exploring hidden topics in text corpora. Increasingly, topic modeling needs to scale to larger topic spaces and use richer forms of prior knowledge, such as word correlations or document labels. However, inference is cumbersome for LDA models with prior knowledge. As a result, LDA models that use prior knowledge only work in small-scale scenarios. In this work, we propose a factor graph framework, Sparse Constrained LDA (SC-LDA), for efficiently incorporating prior knowledge into LDA. We evaluate SC-LDA’s ability to incorporate word correlation knowledge and document label knowledge on three benchmark datasets. Compared to several baseline methods, SC-LDA achieves comparable performance but is significantly faster. 1 Challenge: Leveraging Prior Knowledge in Large-scale Topic Models Topic models, such as Latent Dirichlet Allocation (Blei et al., 2003, LDA), have been successfully used for discovering hidden topics in text collections. LDA is an unsupervised model—it requires no annotation—and discovers, without any supervision, the thematic trends in a text collection. However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to search engines and online advertising, where capturing the “long tail” of infrequently used topics requires large topic spaces. For example, while typical LDA models in academic papers have up topics, industrial applications with topics are common (Wang et al., 2014). Moreover, scaling topic models to many topics can also reveal the hierarchical structure of topics (Downey et al., 2015). Thus, there is a need for topic models that can both benefit from rich prior information and that can scale to large datasets. However, existing methods for improving scalability focus on topic models without prior information. To rectify this, we propose a factor graph model that encodes a potential function over the hidden topic variables, encouraging topics consistent with prior knowledge. The factor model representation admits an efficient sampling algorithm that takes advantage of the model’s sparsity. We show that our method achieves comparable performance but runs signififaster than baseline methods, enabling mod- 308 of the 2015 Conference on Empirical Methods in Natural Language pages Portugal, 17-21 September 2015. Association for Computational Linguistics. three “buckets”: X = αβ (2) t t β {z} s X + β X + β . {z} r q els to discover models with many topics enriched by prior knowledge. 2 Efficient Algorithm for Incorporating Knowledge into LDA In this section, we introduce the factor model for incorporating prior knowledge and show how to efficiently use Gibbs sampling for inference. 2.1 Background: LDA and SparseLDA A statistical topic model represents words in docin a collection mixtures of topics, which are multinomials over a vocabulary of In LDA, each document associated a multinomial distribution over topics, probability of a word type topic The multinomial distributions drawn from Dirichlet distributions: the hyperparameters for We represent document collection a sequence of words and topic assignments as We use symmetric the model and experiment, but asymmetric priors are easily encoded in the models (Wallach et al., 2009). the latent topic assignments words inferring the the posdistribution Griffiths and Steyvers (2004) propose using collapsed Gibbs sampling. probability of a topic assignment d given an observed word type other topic assignments + β the topic assignments of all other tokens. This conditional probability is based on counts of topic assignments: the of times topic used in document the number of times word type used in and the marginal count of the number tokens assigned to topic Unfortunately, explicitly computing the conditional probability is quite for models with many topics. The time complexity of drawing a sample by Equation 1 is linear to the number of topics. Yao et al. (2009) propose a clever factorization of Equation 1 so that the complexity is typically sublinear by breaking the conditional probability into first term the “smoothing only” bucket—constant for all documents. The second the “document only” bucket that is shared a document’s tokens. Both simple time updates. The last term to be computed specifically for each token, only for the few types with non-zero counts in a topic, due to sparsity of word-topic count. Since has the largest mass and few non-zero terms, we start sampling from bucket 2.2 A Factor Model for Incorporating Prior Knowledge With SparseLDA, inferring LDA models over large topic spaces becomes tractable. However, existing methods for incorporating prior knowledge use conventional Gibbs sampling, which hinders inference. We address this limitation in this section by adding a factor graph to encode prior knowledge. LDA assumes that the hidden topic assignment of a word is independent from other hidden topgiven the document’s topic distribution While this assumption facilitates computational efficiency, it loses the rich correlation between words. In many scenarios, users have external knowledge regarding word correlation, document labels, or document relations, which can reshape topic models and improve coherence. Prior knowledge can constrain what models dis- A correlation between two words indicates that they have a similar topic distribui.e., Therefore, the postetopic assignments be correlated. contrast, if uncorrelated, nothing— other than the Dirichlet’s rich get richer effect— prevents the topics from diverging. Similarly, if two documents share a label, then it is reasonable (Andrzejewski et al., 2009) two correlated words are to indicate that However, for word types that have very different frequencies, these two quanwould never be close, and thus a more intuitive constraint. 309 2 to assume that they are more likely than two random documents to share topics. denote the set of prior knowledge as prior knowledge a potential w, the hidden topic word document which associated. the complete prior knowledge dea score on the current topic assignments = H w, knowledge about word type then w, to all hidden topics of word If knowledge about document then w, to all topics that are in docu- The potential function assigns large values to the topics that accord with prior knowledge but penalizes the topic assignments that disagree with the prior knowledge. In an extreme case, if a prior word type document 3, then the potential function w, zero for all topics but Topic 3. the potential function a function of and it is only a real-value score of current topic assignments, the potential can be factored out of the marginalized joint: = = e y ff Given the joint likelihood and observed data, the is evaluate the posterior Comevaluating a probability distribution on a large discrete state space: = Griffiths and Steyvers (2004)—mirroring the original inspirations for Gibbs sampling (Geman and Geman, 1990)—draw an analogy to statistical physics, viewing standard LDA as a system that favors concompromise between having few topics per document and having few words per topic, with the terms of this compromise being set the hyperparameters Our factor model representation of prior knowledge adds a further constraint that asks the model to also consider enof topic assignments are compatible a standard LDA model given prior knowledge. The collapsed Gibbs Sampling for inferring assignment word document z β, = β, z t+ z t+ � ~ a w, The first term is identical to standard LDA, and admits efficient computation using SparseLDA. if the second term, w, is we still need to compute it explicitly times (once for each topic) because we need the of sampling. Therefore, the critical part of speeding up the sampler is finding a sparse representation of the second term. In the following sections, we show that natural, sparse prior knowledge representations are possible. We first present an efficient sparse representation of word correlation prior knowledge and then one for document-label knowledge. 2.3 Word Correlation Prior Knowledge We now illustrate how we can encode word correlation knowledge as a set of sparse constraints w, our model. In previous work (Andrzejewski et al., 2009; Hu et al., 2011; Xie et al., 2015), word correlation prior knowledge is represented as word must-link constraints and cannotlink constraints. A must-link relation between two words indicates that the two words tend to be related to the same topics, i.e. their topic probabilities are correlated. In contrast, a cannot-link relation between two words indicates that these two words are not topically similar, and they should not both be prominent within the same topic. For example, “quarterback” and “fumble” are both related to American football, so they can share a must-link relation. But “fumble” and “bank” imply two different topics, so they share a cannotlink. us say word associated with a set prior knowledge correlations Each prior is a word pair and has “topic preference” of its correlaword The must-link set of , the cannot-link set of i.e., = Uw In the example above, w fumble z 310 3 and so The topic assignment of word “fumble” has higher conditional probability for the same topics as “quarterback” but lower probability for topics containing “bank”. potential score of sampling topic word is not empty—is w, = log a hyperparameter, which we call the correlation strength. The intuitive explanation of Equation 6 is that the prior knowledge about the type make an impact on the condiprobability of sampling the hidden topic Unlike standard LDA where every word’s hidden is independent of other words given Equation 6 instead increases the probability that a word be drawn from the same topics as those of must-link word set, and decreases its probability of being drawn from the same topics as those cannot-link word set. hyperparameter the strength of piece of prior knowledge. The smaller stronger this correlation is. For large the constraint is inactive for topics except those with large counts. As the constraint becomes active for topics with lesser counts. We adjust the value of each piece of prior knowledge based on our confidence. In our experfor simplicity, we use the same value knowledge and set From Equation 6 and Equation 5, the condiprobability of a topic document observed word type + Q Q Q Figure 1: Histogram of nonzero topic counts for word types in NYT-News dataset after inference. 81.9% word types have fewer than 50 topics with nonzero counts. This sparsity allows our sparse constraints to speed inference. counts for must-link word cannotword are often sparse. For example, in a 100-topic model trained on the NIPS dataset, 87.2% of word types have fewer than ten topics with nonzero counts. In a 500-topic model trained on a larger dataset like the New York Times News (Sandhaus, 2008), 81.9% of word types have fewer than 50 topics with nonzero counts. Moreover, the model becomes increasingly sparse with additional Gibbs iterations. Figure 1 shows the word frequency histogram of nonzero topic counts of NYT-News dataset. Therefore, the computational cost of Equation 7 can be reduced. SparseLDA efficiently computes as in Equation 3. Then for words that are associated with prior knowledge, we upan additional potential term. We only need to compute the potential term for the whose counts are greater than The collapsed Gibbs sampling procedure is summarized in Algorithm 1. X 1 log (6) ~ Y 1 Sampling for word type given correlation set (7) explained above, the “strength” of prior knowledge term. If large, the prior knowledge has little impact on the conditional probability of topic assignments. Let’s return to the question whether Equation 6 is sparse, allowing efficient computation of Equa- 7. Fortunately, andwhich are the compute SparseLDA, (see Eq. 3) for ← update E if A 4: end for 5: = sample new topic assignment for 311 4 2.4 Other Types of Prior Knowledge The factor model framework can also handle other types of prior knowledge, such as document labels, sentence labels, and document link relations. We briefly describe document labels here. Ramage et al. (2009) propose Labeled-LDA, which improves LDA with document labels. It assumes that there is a one-to-one mapping between topics and labels, and it restricts each document’s topics to be sampled only from those allowed by the documents label set. Therefore, Labeled-LDA can be expressed in our model. We define � document label set converted to corresponding topic labels. w, sparse, we can speed up the training as well. Sentence-level prior knowledge (e.g., for sentiment or aspect models (Paul and Girju, 2010)) can be defined in a similar way. Documents can be associated with other useful metadata. For example, a scientific paper and the prior work it cites might have similar topics (Dietz et al., 2007) or friends in a social network might talk about the same topics (Chang and Blei, 2009). To model link relations, we can use Equa- 6 and replace the word-topic counts counts By doing so, we encourage related documents to have similar topic structures. Moreover, the document-topic count is also sparse, which fits into the efficient learning framework. Therefore, for different types of prior knowlas long as we can define appropriso that w, sparse, we are able to speed up learning. 3 Experiments In this section, we demonstrate the effectiveness of our SC-LDA by comparing it with several baseline methods on three benchmark datasets. We first evaluate the convergence rate of each method and evaluate the learned model parameter topic-word distribution—in terms of topic coherence. We show that SC-LDA can achieve results comparable to the baseline models but is significantly faster. We set up all experiments on a 8- 2.8GHz CPU, 16GB RAM implementation of SC-LDA is availat DOCS TYPE NIPS 1,500 12,419 1,900,000 3,000,000 102,660 100,000,000 20NG 18,828 21,514 1,946,000 Table 1: Characteristics of benchmark datasets. We use NIPS and NYT for word correlation experiments and 20NG for document label experiments. 3.1 Dataset We use the NIPS and NYT-News datasets from UCI bag of words data These two datasets have no document labels, and we use them for word correlation experiments. We also the 20Newsgroup (20NG) which has document labels, for document label experiments. Table 1 shows the characteristics of each dataset. Since NIPS and NYT-News have already been preprocessed, to ensure repeatability, we use the data “as they are” from the sources. For 20NG, we perform tokenization and stopword removal using Mallet (McCallum, 2002) and remove words that appear fewer than 10 times. 3.2 Prior Knowledge Generation Correlation Prior Knowledge work proposes two methods to automatically generate prior word correlation knowledge from external sources. Hu and Boyd-Graber (2012) use WordNet 3.0 to obtain synsets for word types, and then if a synset is also in the vocabulary, they add a must-link correlation between the word type and the synset. Xie et al. (2015) use a different method that takes advantage of an existing pretrained word embedding. Each word embedding is a real-valued vector capturing the word’s semantic meaning based on distributional similarity. If the similarity between the embeddings of two word types in the vocabulary exceeds a threshold, they generate a must-link between the two words. In our experiments, we adopt a hybrid method that combines the above two methods. For a noun word type, we first obtain its synsets from Word- Net 3.0. We also obtain the embeddings of each word from word2vec (Mikolov et al., 2013). If the synset is also in the vocabulary, and the similarity between the synset and the word is higher than a threshold, which in our experiment is 0.2, we a must-link between thee words. Empirjason/20Newsgroups/ w, = 312 5 ically, this hybrid method is able to obtain high quality correlated words. For example, for the dataset, the must-links we obtain for ranentropy, Label Prior Knowledge documents in the 20NG dataset are associated with labels, we use the labels directly as prior knowledge. 3.3 Baselines The baseline methods for incorporating word correlation prior knowledge in our experiments are as follows: incorporates word must-links and cannot-links using a Dirichlet Forest prior in LDA (Andrzejewski et al., 2009). Here we use Hu and Boyd-Graber (2012)’s efficient implementa- DF-LDA. encodes general domain knowledge as first-order logic and incorporates it in LDA (Andrzejewski et al., 2011). Logic-LDA has been used for word correlations and document label knowledge. encodes word correlations in LDA as a Markov random field (Xie et al., 2015). We also use Mallet’s SparseLDA implementation for vanilla LDA in the topic coherence experiment. We use a symmetric Dirichlet prior for all We set DF-LDA, 100. Logic-LDA, we use the default parameter setting in the package: a sample rate of step rate of MRF-LDA, we use default setting with semantics can be found in the original papers.) 3.4 Convergence The main advantage of our method over other existing methods is efficiency. In this experiment, we show the change of our model’s log likelihood over time. In topic models, the log likelihood change is a good indicator of whether a model has converged or not. Figure 2 shows the log likelihood change over time for SC-LDA and three baseline methods on NIPS and NYT-News dataset. SC-LDA converges faster than all the other methods. We also conduct experiments on SC-LDA with varying numbers of word correlations. Table 2 shows the Gibbs sampling iteration time on the 1st, 50th, 100th and the 200th iteration. We also incorporate different numbers of word correlations Figure 2: Models’ log likelihood convergence on NIPS dataset (above) and NYT-News dataset (below). For NIPS, a 100-topic model with 100 must-links is trained. For NYT-News, a 500topic model with 100 must-links is trained. SC- LDA reaches likelihood convergence much more rapidly than the other methods. round C0 C100 C500 C1000 1st iteration 2.02 2.14 2.30 2.50 50th iteration 0.53 0.56 0.58 0.62 100th iteration 0.48 0.50 0.53 0.56 200th iteration 0.48 0.49 0.52 0.56 Table 2: SC-LDA runtime (in seconds) in the 1st, 50th, 100th, and 200th iteration with different numbers of correlations. in SC-LDA. SC-LDA runs faster as sampling proceeds as the sparsity increases, but additional correlations slow the model. 3.5 Topic Coherence Topic models are often evaluated using perplexon held-out test data, but this evaluation is of- 313 6 ten at odds with human evaluations (Chang et al., 2009). Following Mimno et al. (2011), we employ Topic Coherence—a metric that is consistent with human judgment—to measure a topic quality. Topic coherence is defined = F , the document frequency of word the co-document frequency of type and list of the probable words in topic In our experiments, we choose the ten words with highest probability in the topic to compute topic i.e., Mimno et al. (2011) use but R¨oder et al. (2015) show smaller improves coherence stability, so we set Larger topic coherence scores imply more coherent topics. We train a 500-topic model on the NIPS dataset with different methods and compare the average topic coherence score and the average of the top twenty topic coherence scores. Since the topics learned by topic model often contain “bad” topics (Mimno et al., 2011) which do not make sense to end users, evaluating the top twenty topics reflects the model’s performance. We let each model train for one hour. Figure 3 shows the topic coherence of each method. SC-LDA has about the same average topic coherence with LDA but has higher coherence score (-36.6) for the top 20 topics than LDA (-39.1). This is because incorporating word correlation knowledge encourages correlated words to have high probability under the same topic, thus improving the coherence score. For the other methods, however, because they cannot converge within an hour, their topic coherence scores are much worse than SC-LDA and LDA. This again demonstrates the efficiency of SC-LDA over other baselines. 3.6 Document Label Prior Knowledge SC-LDA can also handle other types of prior knowledge. We compare it with Labeled-LDA (Ramage et al., 2009). Labeled-LDA also uses Gibbs sampling for inference, allowing direct computation time comparisons. Table 3 shows the average running time per iteration for Labeled-LDA and SC-LDA. Because document labels apply sparsity to the documenttopic counts, the average running time per iteration decreases as the number of labeled document increases. SC-LDA exhibits greater speedup with Figure 3: Average topic coherence and average top 20 topic coherence. The models are trained on NIPS dataset with 500-topic and 100 word correlations. SC-LDA achieves higher topic coherence than other methods. T50 T100 T200 T500 Labeled-LDA 0.93 1.89 3.60 8.05 SC-LDA 0.38 0.45 0.51 0.72 C500 C1000 C2000 C5000 Labeled-LDA 1.95 1.88 1.75 1.48 SC-LDA 0.51 0.45 0.41 0.31 Table 3: The average running time per iteration over 100 iterations, averaged over 5 seeds, on 20NG dataset. Experiments begin with 100 topics, 1000 labeled documents, and then vary one dimension: number of topics (top), or number of labeled documents (bottom). topics; when runs more than ten times faster than Labeled-LDA. 4 Related Work This works brings together two lines of research: incorporating rich knowledge into probabilistic models and efficient inference of probabilistic models on large datasets. Both are common areas of interest across many machine learning formalisms: probabilistic logic (Bach et al., 2015), graph algorithms (Low et al., 2012), and probabilistic grammars (Cohen et al., 2008). However, our focus in this paper is the intersection of these lines of research with topic models. 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to improve topic coherence. However, despite these exciting applications, the experiments in the above work are typically on small datasets. In contrast, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to scale inference for topic models have started from both variational inference and Gibbs sampling—two popular learning inference techniques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of topics, Gibbs sampling can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusion We present a factor graph framework for incorporating prior knowledge into topic models. By expressing the prior knowledge as sparse constraints on the hidden topic variables, we are able to take advantage of the sparsity to speed up training. We demonstrate in experiments that our model runs significantly faster than the other alternative models and achieves comparable performance in terms of topic coherence. Efficient algorithms for incorporating prior knowledge with large topic models will benefit several downstream applications. For example, interactive topic modeling becomes feasible because fast model updates reduce the user’s waiting time and thus improve the user experience. Personalized topic modeling is also an interesting future direction in which the model will generate a personalized topic structure based on the user’s preferences or interests. For all these applications, an efficient learning algorithm is a crucial prerequisite. Acknowledgments We thank the anonymous reviews for their helpful comments. This research was supported in part by NSF grant IIS-1351029 and DARPA contract D11AP00268. Boyd-Graber is supported by NSF Grants CCF-1409287, IIS-1320538, and NCSE- 1422492. Any opinions, findings, conclusions, or recommendations expressed here are those of the authors and do not necessarily reflect the view of the sponsor.</abstract>
+<note confidence="0.3974805">315 8</note>
+<title confidence="0.916021">References</title>
+<author confidence="0.919745">David Andrzejewski</author>
+<author confidence="0.919745">Xiaojin Zhu</author>
+<author confidence="0.919745">Mark Craven</author>
+<abstract confidence="0.198770285714286">2009. Incorporating domain knowledge into topic via Dirichlet forest priors. In of the International Conference of Machine Learn- David Andrzejewski, Xiaojin Zhu, Mark Craven, and Benjamin Recht. 2011. A framework for incorporating general domain knowledge into latent Dirichallocation using first-order logic. In</abstract>
+<title confidence="0.981724">Conference on Artificial</title>
+<author confidence="0.8700125">Paired-dual learning for fast</author>
+<title confidence="0.591478">of latent variable hinge-loss mrfs. In Proceedings of the International Conference of Machine</title>
+<author confidence="0.969196">Super-</author>
+<title confidence="0.5005035">topic models. In of Advances in Information Processing</title>
+<note confidence="0.6678232">Dirichlet allocation. of Machine 3. Jordan Boyd-Graber, David M. Blei, and Xiaojin Zhu. 2007. A topic model for word sense disambigua- In of Empirical Methods in Natu-</note>
+<title confidence="0.947379">Language</title>
+<author confidence="0.95632">Relational</author>
+<title confidence="0.6031675">models for document networks. In Proceedof Artificial Intelligence and</title>
+<author confidence="0.754771">Reading</author>
+<note confidence="0.8618595">tea leaves: How humans interpret topic models. In Proceedings ofAdvances in Neural Information Pro-</note>
+<author confidence="0.709022">Shay B Cohen</author>
+<author confidence="0.709022">Kevin Gimpel</author>
+<author confidence="0.709022">Noah A Smith</author>
+<note confidence="0.5695515">2008. Logistic normal priors for unsupervised probgrammar induction. In of Ad-</note>
+<title confidence="0.975271">in Neural Information Processing</title>
+<author confidence="0.978542">Markov random topic fields In</author>
+<affiliation confidence="0.622559">of Artificial Intelligence and</affiliation>
+<note confidence="0.8413706">Laura Dietz, Steffen Bickel, and Tobias Scheffer. 2007. Unsupervised prediction of citation influences. In Proceedings of the International Conference of Ma- Doug Downey, Chandra Bhagavatula, and Yi Yang. 2015. Efficient methods for inferring large sparse hierarchies. In of the Association Computational Geman and D. Geman, 1990. relaxation, Gibbs distributions, and the Bayesian restoration of pages 452–472. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA. Thomas L. Griffiths and Mark Steyvers. 2004. Findscientific topics. of the National of 101(Suppl 1):5228–5235. Matthew Hoffman, David M. Blei, and Francis Bach. 2010. Online learning for latent Dirichlet allocation. of Advances in Neural Information Yuening Hu and Jordan Boyd-Graber. 2012. Efficient topic modeling. In of the Asfor Computational Yuening Hu, Jordan Boyd-Graber, and Brianna Sati- 2011. Interactive topic modeling. In Proceedings of the Association for Computational Linguis- Yuening Hu, Ke Zhai, Vlad Eidelman, and Jordan Boyd-Graber. 2014. Polylingual tree-based topic</note>
+<title confidence="0.927639">for translation domain adaptation. In Assofor Computational</title>
+<author confidence="0.8884615">Reducing the sampling com-</author>
+<title confidence="0.820073">of topic models. In Discovery Data</title>
+<author confidence="0.8387205">Yucheng Low</author>
+<author confidence="0.8387205">Danny Bickson</author>
+<author confidence="0.8387205">Joseph Gonzalez</author>
+<author confidence="0.8387205">Carlos Guestrin</author>
+<author confidence="0.8387205">Aapo Kyrola</author>
+<author confidence="0.8387205">Joseph M Heller-</author>
+<abstract confidence="0.941549333333333">stein. 2012. Distributed graphlab: A framework for learning and data mining in the cloud. Proof the VLDB 5(8):716–727, April. Kachites McCallum. 2002. Mallet: A machine learning for language toolkit.</abstract>
+<web confidence="0.526569">http://www.cs.umass.edu/ mccallum/mallet.</web>
+<note confidence="0.648296">Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Corrado, and Jeff Dean. 2013. Distributed representations of words and phrases and their compositional- In of Advances in Neural Informa-</note>
+<title confidence="0.926298">Processing</title>
+<author confidence="0.892283">David Mimno</author>
+<author confidence="0.892283">Hanna Wallach</author>
+<author confidence="0.892283">Andrew McCal-</author>
+<note confidence="0.383721083333333">lum. 2008. Gibbs sampling for logistic normal models with graph-based priors. In 2008 Workshop on Analyzing Graphs: Theory and Appli- David Mimno, Hanna Wallach, Edmund Talley, Miriam Leenders, and Andrew McCallum. 2011. Optimizing semantic coherence in topic models. In Proceedings of Empirical Methods in Natural Lan- David Mimno, Matthew Hoffman, and David Blei. 2012. Sparse stochastic inference for latent Dirichallocation. In of the International of Machine Ramesh Nallapati, William Cohen, and John Lafferty. 2007. Parallelized variational EM for latent Dirichlet allocation: An experimental evaluation of speed scalability. In Conference on Data 316 9 David Newman, Arthur Asuncion, Padhraic Smyth, and Max Welling. 2009. Distributed Algorithms Topic Models. of Machine Learning Repages 1801–1828. David Newman, Edwin Bonilla, and Wray Buntine. 2011. Improving topic coherence with regularized models. In ofAdvances in Neural Processing December. Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik, Deborah Cai, Jennifer Midberry, and Yuanxin Wang. 2014a. Modeling topic control to detect influence in conversations using nonparametric topic models. 95:381–421. Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik, and Jonathan Chang. 2014b. Learning a concept from multi-labeled documents. In Processing Thang Nguyen, Jordan Boyd-Graber, Jeff Lund, Kevin Seppi, and Eric Ringger. 2015. Is your anchor go-</note>
+<title confidence="0.5557055">ing up or down? Fast and accurate supervised topic In American Association for Compu-</title>
+<author confidence="0.605134">A two-</author>
+<abstract confidence="0.550946666666667">dimensional topic-aspect model for discovering topics. In for the Adof Artificial</abstract>
+<note confidence="0.6350905">Ian Porteous, David Newman, Alexander Ihler, Arthur Asuncion, Padhraic Smyth, and Max Welling. 2008.</note>
+<title confidence="0.9509575">Fast collapsed gibbs sampling for latent dirichlet al- In Discovery and Data</title>
+<author confidence="0.9500165">Labeled LDA A su-</author>
+<title confidence="0.712222666666667">pervised topic model for credit attribution in multicorpora. In of Empirical Methin Natural Language</title>
+<author confidence="0.99857">Michael R¨oder</author>
+<author confidence="0.99857">Andreas Both</author>
+<author confidence="0.99857">Alexander Hinneb-</author>
+<email confidence="0.324387">urg.2015.Exploringthespaceoftopiccoherence</email>
+<affiliation confidence="0.887525">In of ACM International</affiliation>
+<title confidence="0.913031">on Web Search and Data</title>
+<author confidence="0.7650995">The New York Times annotated</author>
+<web confidence="0.970923">http://www.ldc.upenn.edu/Catalog/CatalogEntry.jsp?</web>
+<note confidence="0.879534666666667">catalogId=LDC2008T19. Hanna Wallach, David Mimno, and Andrew McCallum. 2009. Rethinking LDA: Why priors matter.</note>
+<title confidence="0.969144">of Advances in Neural Information</title>
+<author confidence="0.864691">Yi Wang</author>
+<author confidence="0.864691">Xuemin Zhao</author>
+<author confidence="0.864691">Zhenlong Sun</author>
+<author confidence="0.864691">Hao Yan</author>
+<author confidence="0.864691">Lifeng Wang</author>
+<author confidence="0.864691">Zhihui Jin</author>
+<author confidence="0.864691">Liubin Wang</author>
+<author confidence="0.864691">Yang Gao</author>
+<note confidence="0.6646055">Jia Zeng, Qiang Yang, and Ching Law. 2014. topic modeling for big data. abs/1405.4402. Pengtao Xie, Diyi Yang, and Eric P Xing. 2015. Incorporating word correlation knowledge into topic In of the North American Chapter of the Association for Computational Lin- Yi Yang, Shimei Pan, Yangqiu Song, Jie Lu, and Mer-</note>
+<abstract confidence="0.877535809523809">can Topkara. 2015. User-directed non-disruptive topic model update for effective exploration of dycontent. In of the 20th Interna- Conference on Intelligent User Limin Yao, David Mimno, and Andrew McCallum. 2009. Efficient methods for topic model inference streaming document collections. In and Data Jinhui Yuan, Fei Gao, Qirong Ho, Wei Dai, Jinliang Wei, Xun Zheng, Eric Po Xing, Tie-Yan Liu, and Wei-Ying Ma. 2015. Lightlda: Big topic models modest computer clusters. In of the Wide Web Ke Zhai, Jordan Boyd-Graber, Nima Asadi, and Mohamad Alkhouja. 2012. Mr. LDA: A flexible large scale topic modeling package using variational inin mapreduce. In of the World Web Jun Zhu, Ning Chen, Hugh Perkins, and Bo Zhang. 2013. Gibbs max-margin topic models with fast algorithms. In of the Inter-</abstract>
+<affiliation confidence="0.706755">Conference of Machine</affiliation>
+<address confidence="0.688825">317</address>
+<intro confidence="0.397114">10</intro>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>David Andrzejewski</author>
+<author>Xiaojin Zhu</author>
+<author>Mark Craven</author>
+</authors>
+<title>Incorporating domain knowledge into topic modeling via Dirichlet forest priors.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the International Conference of Machine Learning.</booktitle>
+<contexts>
+<context position="7845" citStr="Andrzejewski et al., 2009" startWordPosition="1265" endWordPosition="1268">s have external knowledge regarding word correlation, document labels, or document relations, which can reshape topic models and improve coherence. Prior knowledge can constrain what models discover. A correlation between two words v and w indicates that they have a similar topic distribution, i.e., p(z|v) Pz� p(z|w).1 Therefore, the posterior topic assignments v and w will be correlated. In contrast, if v and w are uncorrelated, nothing— other than the Dirichlet’s rich get richer effect— prevents the topics from diverging. Similarly, if two documents share a label, then it is reasonable 1In (Andrzejewski et al., 2009) two correlated words are taken to indicate that p(v|z) ≈ p(w|z). However, for word types that have very different frequencies, these two quantities would never be close, and thus p(z|v) ≈ p(z|w) is a more intuitive constraint. 309 2 to assume that they are more likely than two random documents to share topics. We denote the set of prior knowledge as M. Each prior knowledge m E M defines a potential function fm(z, w, d) of the hidden topic z of word type w in document d with which m is associated. Therefore, the complete prior knowledge M defines a score on the current topic assignments z: ψ(z</context>
+<context position="11245" citStr="Andrzejewski et al., 2009" startWordPosition="1889" endWordPosition="1893">es (once for each topic) because we need the summation of P(z = t) for sampling. Therefore, the critical part of speeding up the sampler is finding a sparse representation of the second term. In the following sections, we show that natural, sparse prior knowledge representations are possible. We first present an efficient sparse representation of word correlation prior knowledge and then one for document-label knowledge. 2.3 Word Correlation Prior Knowledge We now illustrate how we can encode word correlation knowledge as a set of sparse constraints fm(z, w, d) in our model. In previous work (Andrzejewski et al., 2009; Hu et al., 2011; Xie et al., 2015), word correlation prior knowledge is represented as word must-link constraints and cannotlink constraints. A must-link relation between two words indicates that the two words tend to be related to the same topics, i.e. their topic probabilities are correlated. In contrast, a cannot-link relation between two words indicates that these two words are not topically similar, and they should not both be prominent within the same topic. For example, “quarterback” and “fumble” are both related to American football, so they can share a must-link relation. But “fumbl</context>
+<context position="20605" citStr="Andrzejewski et al., 2009" startWordPosition="3496" endWordPosition="3499">tp://qwone.com/ jason/20Newsgroups/ fm(z, w, d) = 312 5 ically, this hybrid method is able to obtain high quality correlated words. For example, for the NIPS dataset, the must-links we obtain for randomness are {noise, entropy, stochasticity}. Document Label Prior Knowledge Since documents in the 20NG dataset are associated with labels, we use the labels directly as prior knowledge. 3.3 Baselines The baseline methods for incorporating word correlation prior knowledge in our experiments are as follows: DF-LDA: incorporates word must-links and cannot-links using a Dirichlet Forest prior in LDA (Andrzejewski et al., 2009). Here we use Hu and Boyd-Graber (2012)’s efficient implementation FAST-RB-SDW for DF-LDA. Logic-LDA: encodes general domain knowledge as first-order logic and incorporates it in LDA (Andrzejewski et al., 2011). Logic-LDA has been used for word correlations and document label knowledge. MRF-LDA: encodes word correlations in LDA as a Markov random field (Xie et al., 2015). We also use Mallet’s SparseLDA implementation for vanilla LDA in the topic coherence experiment. We use a symmetric Dirichlet prior for all models. We set α = 1.0, Q = 0.01. For DF-LDA, η = 100. For Logic-LDA, we use the defa</context>
+</contexts>
+<marker>Andrzejewski, Zhu, Craven, 2009</marker>
+<rawString>David Andrzejewski, Xiaojin Zhu, and Mark Craven. 2009. Incorporating domain knowledge into topic modeling via Dirichlet forest priors. In Proceedings of the International Conference of Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Andrzejewski</author>
+<author>Xiaojin Zhu</author>
+<author>Mark Craven</author>
+<author>Benjamin Recht</author>
+</authors>
+<title>A framework for incorporating general domain knowledge into latent Dirichlet allocation using first-order logic.</title>
+<date>2011</date>
+<booktitle>In International Joint Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="20815" citStr="Andrzejewski et al., 2011" startWordPosition="3526" endWordPosition="3530"> {noise, entropy, stochasticity}. Document Label Prior Knowledge Since documents in the 20NG dataset are associated with labels, we use the labels directly as prior knowledge. 3.3 Baselines The baseline methods for incorporating word correlation prior knowledge in our experiments are as follows: DF-LDA: incorporates word must-links and cannot-links using a Dirichlet Forest prior in LDA (Andrzejewski et al., 2009). Here we use Hu and Boyd-Graber (2012)’s efficient implementation FAST-RB-SDW for DF-LDA. Logic-LDA: encodes general domain knowledge as first-order logic and incorporates it in LDA (Andrzejewski et al., 2011). Logic-LDA has been used for word correlations and document label knowledge. MRF-LDA: encodes word correlations in LDA as a Markov random field (Xie et al., 2015). We also use Mallet’s SparseLDA implementation for vanilla LDA in the topic coherence experiment. We use a symmetric Dirichlet prior for all models. We set α = 1.0, Q = 0.01. For DF-LDA, η = 100. For Logic-LDA, we use the default parameter setting in the package: a sample rate of 1.0 and step rate of 10.0. For MRF-LDA, we use the default setting with γ = 1.0. (Parameter semantics can be found in the original papers.) 3.4 Convergence</context>
+</contexts>
+<marker>Andrzejewski, Zhu, Craven, Recht, 2011</marker>
+<rawString>David Andrzejewski, Xiaojin Zhu, Mark Craven, and Benjamin Recht. 2011. A framework for incorporating general domain knowledge into latent Dirichlet allocation using first-order logic. In International Joint Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stephen H Bach</author>
+<author>Bert Huang</author>
+<author>Jordan Boyd-Graber</author>
+<author>Lise Getoor</author>
+</authors>
+<title>Paired-dual learning for fast training of latent variable hinge-loss mrfs.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the International Conference of Machine Learning.</booktitle>
+<contexts>
+<context position="26295" citStr="Bach et al., 2015" startWordPosition="4458" endWordPosition="4461">ime per iteration over 100 iterations, averaged over 5 seeds, on 20NG dataset. Experiments begin with 100 topics, 1000 labeled documents, and then vary one dimension: number of topics (top), or number of labeled documents (bottom). more topics; when T = 500,5 SC-LDA runs more than ten times faster than Labeled-LDA. 4 Related Work This works brings together two lines of research: incorporating rich knowledge into probabilistic models and efficient inference of probabilistic models on large datasets. Both are common areas of interest across many machine learning formalisms: probabilistic logic (Bach et al., 2015), graph algorithms (Low et al., 2012), and probabilistic grammars (Cohen et al., 2008). However, our focus in this paper is the intersection of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., </context>
+</contexts>
+<marker>Bach, Huang, Boyd-Graber, Getoor, 2015</marker>
+<rawString>Stephen H. Bach, Bert Huang, Jordan Boyd-Graber, and Lise Getoor. 2015. Paired-dual learning for fast training of latent variable hinge-loss mrfs. In Proceedings of the International Conference of Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David M Blei</author>
+<author>Jon D McAuliffe</author>
+</authors>
+<title>Supervised topic models.</title>
+<date>2007</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="27016" citStr="Blei and McAuliffe, 2007" startWordPosition="4575" endWordPosition="4578"> our focus in this paper is the intersection of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011</context>
+</contexts>
+<marker>Blei, McAuliffe, 2007</marker>
+<rawString>David M. Blei and Jon D. McAuliffe. 2007. Supervised topic models. In Proceedings of Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David M Blei</author>
+<author>Andrew Ng</author>
+<author>Michael Jordan</author>
+</authors>
+<title>Latent Dirichlet allocation.</title>
+<date>2003</date>
+<journal>Journal of Machine Learning Research,</journal>
+<volume>3</volume>
+<contexts>
+<context position="1272" citStr="Blei et al., 2003" startWordPosition="174" endWordPosition="177">ith prior knowledge. As a result, LDA models that use prior knowledge only work in small-scale scenarios. In this work, we propose a factor graph framework, Sparse Constrained LDA (SC-LDA), for efficiently incorporating prior knowledge into LDA. We evaluate SC-LDA’s ability to incorporate word correlation knowledge and document label knowledge on three benchmark datasets. Compared to several baseline methods, SC-LDA achieves comparable performance but is significantly faster. 1 Challenge: Leveraging Prior Knowledge in Large-scale Topic Models Topic models, such as Latent Dirichlet Allocation (Blei et al., 2003, LDA), have been successfully used for discovering hidden topics in text collections. LDA is an unsupervised model—it requires no annotation—and discovers, without any supervision, the thematic trends in a text collection. However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models</context>
+</contexts>
+<marker>Blei, Ng, Jordan, 2003</marker>
+<rawString>David M. Blei, Andrew Ng, and Michael Jordan. 2003. Latent Dirichlet allocation. Journal of Machine Learning Research, 3.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jordan Boyd-Graber</author>
+<author>David M Blei</author>
+<author>Xiaojin Zhu</author>
+</authors>
+<title>A topic model for word sense disambiguation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="2151" citStr="Boyd-Graber et al., 2007" startWordPosition="316" endWordPosition="319">sion can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to</context>
+</contexts>
+<marker>Boyd-Graber, Blei, Zhu, 2007</marker>
+<rawString>Jordan Boyd-Graber, David M. Blei, and Xiaojin Zhu. 2007. A topic model for word sense disambiguation. In Proceedings of Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Chang</author>
+<author>David M Blei</author>
+</authors>
+<title>Relational topic models for document networks.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Artificial Intelligence and Statistics.</booktitle>
+<contexts>
+<context position="16822" citStr="Chang and Blei, 2009" startWordPosition="2899" endWordPosition="2902">. Therefore, Labeled-LDA can be expressed in our model. We define � 1, if z ∈ and (8) −∞, else where and specifies document d’s label set converted to corresponding topic labels. Since fm(z, w, d) is sparse, we can speed up the training as well. Sentence-level prior knowledge (e.g., for sentiment or aspect models (Paul and Girju, 2010)) can be defined in a similar way. Documents can be associated with other useful metadata. For example, a scientific paper and the prior work it cites might have similar topics (Dietz et al., 2007) or friends in a social network might talk about the same topics (Chang and Blei, 2009). To model link relations, we can use Equation 6 and replace the word-topic counts nv,z with document-topic counts nd,z. By doing so, we encourage related documents to have similar topic structures. Moreover, the document-topic count is also sparse, which fits into the efficient learning framework. Therefore, for different types of prior knowledge, as long as we can define O(z, M) appropriately so that f(z, w, d) are sparse, we are able to speed up learning. 3 Experiments In this section, we demonstrate the effectiveness of our SC-LDA by comparing it with several baseline methods on three benc</context>
+<context position="27102" citStr="Chang and Blei, 2009" startWordPosition="4591" endWordPosition="4594"> 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to improve topic coherence. However, despite these exciting </context>
+</contexts>
+<marker>Chang, Blei, 2009</marker>
+<rawString>Jonathan Chang and David M. Blei. 2009. Relational topic models for document networks. In Proceedings of Artificial Intelligence and Statistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Chang</author>
+<author>Jordan Boyd-Graber</author>
+<author>Chong Wang</author>
+<author>Sean Gerrish</author>
+<author>David M Blei</author>
+</authors>
+<title>Reading tea leaves: How humans interpret topic models.</title>
+<date>2009</date>
+<booktitle>In Proceedings ofAdvances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="1790" citStr="Chang et al., 2009" startWordPosition="260" endWordPosition="263">edge in Large-scale Topic Models Topic models, such as Latent Dirichlet Allocation (Blei et al., 2003, LDA), have been successfully used for discovering hidden topics in text collections. LDA is an unsupervised model—it requires no annotation—and discovers, without any supervision, the thematic trends in a text collection. However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, ac</context>
+<context position="22996" citStr="Chang et al., 2009" startWordPosition="3900" endWordPosition="3903"> methods. # Word Correlations round C0 C100 C500 C1000 1st iteration 2.02 2.14 2.30 2.50 50th iteration 0.53 0.56 0.58 0.62 100th iteration 0.48 0.50 0.53 0.56 200th iteration 0.48 0.49 0.52 0.56 Table 2: SC-LDA runtime (in seconds) in the 1st, 50th, 100th, and 200th iteration with different numbers of correlations. in SC-LDA. SC-LDA runs faster as sampling proceeds as the sparsity increases, but additional correlations slow the model. 3.5 Topic Coherence Topic models are often evaluated using perplexity on held-out test data, but this evaluation is of313 6 ten at odds with human evaluations (Chang et al., 2009). Following Mimno et al. (2011), we employ Topic Coherence—a metric that is consistent with human judgment—to measure a topic model’s quality. Topic t’s coherence is defined as C(t : V (t)) = �M E,n 1log F(vM,vlt))+E m=2 F (v(t) l ) , where F(v) is the document frequency of word type v, F(v, v&apos;) is the co-document frequency of word type v and v�, and V (t) = (v(t) 1 , ...,v(t) M ) is a list of the M most probable words in topic t. In our experiments, we choose the ten words with highest probability in the topic to compute topic coherence, i.e., M = 10. Mimno et al. (2011) use c = 1, but R¨oder</context>
+</contexts>
+<marker>Chang, Boyd-Graber, Wang, Gerrish, Blei, 2009</marker>
+<rawString>Jonathan Chang, Jordan Boyd-Graber, Chong Wang, Sean Gerrish, and David M. Blei. 2009. Reading tea leaves: How humans interpret topic models. In Proceedings ofAdvances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shay B Cohen</author>
+<author>Kevin Gimpel</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Logistic normal priors for unsupervised probabilistic grammar induction.</title>
+<date>2008</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="26381" citStr="Cohen et al., 2008" startWordPosition="4472" endWordPosition="4475">ments begin with 100 topics, 1000 labeled documents, and then vary one dimension: number of topics (top), or number of labeled documents (bottom). more topics; when T = 500,5 SC-LDA runs more than ten times faster than Labeled-LDA. 4 Related Work This works brings together two lines of research: incorporating rich knowledge into probabilistic models and efficient inference of probabilistic models on large datasets. Both are common areas of interest across many machine learning formalisms: probabilistic logic (Bach et al., 2015), graph algorithms (Low et al., 2012), and probabilistic grammars (Cohen et al., 2008). However, our focus in this paper is the intersection of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting s</context>
+</contexts>
+<marker>Cohen, Gimpel, Smith, 2008</marker>
+<rawString>Shay B. Cohen, Kevin Gimpel, and Noah A. Smith. 2008. Logistic normal priors for unsupervised probabilistic grammar induction. In Proceedings of Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hal Daum´e</author>
+</authors>
+<title>Markov random topic fields.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Artificial Intelligence and Statistics.</booktitle>
+<marker>Daum´e, 2009</marker>
+<rawString>Hal Daum´e III. 2009. Markov random topic fields. In Proceedings of Artificial Intelligence and Statistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Laura Dietz</author>
+<author>Steffen Bickel</author>
+<author>Tobias Scheffer</author>
+</authors>
+<title>Unsupervised prediction of citation influences.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the International Conference of Machine Learning.</booktitle>
+<contexts>
+<context position="16735" citStr="Dietz et al., 2007" startWordPosition="2882" endWordPosition="2886">ch document’s topics to be sampled only from those allowed by the documents label set. Therefore, Labeled-LDA can be expressed in our model. We define � 1, if z ∈ and (8) −∞, else where and specifies document d’s label set converted to corresponding topic labels. Since fm(z, w, d) is sparse, we can speed up the training as well. Sentence-level prior knowledge (e.g., for sentiment or aspect models (Paul and Girju, 2010)) can be defined in a similar way. Documents can be associated with other useful metadata. For example, a scientific paper and the prior work it cites might have similar topics (Dietz et al., 2007) or friends in a social network might talk about the same topics (Chang and Blei, 2009). To model link relations, we can use Equation 6 and replace the word-topic counts nv,z with document-topic counts nd,z. By doing so, we encourage related documents to have similar topic structures. Moreover, the document-topic count is also sparse, which fits into the efficient learning framework. Therefore, for different types of prior knowledge, as long as we can define O(z, M) appropriately so that f(z, w, d) are sparse, we are able to speed up learning. 3 Experiments In this section, we demonstrate the </context>
+</contexts>
+<marker>Dietz, Bickel, Scheffer, 2007</marker>
+<rawString>Laura Dietz, Steffen Bickel, and Tobias Scheffer. 2007. Unsupervised prediction of citation influences. In Proceedings of the International Conference of Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Doug Downey</author>
+<author>Chandra Bhagavatula</author>
+<author>Yi Yang</author>
+</authors>
+<title>Efficient methods for inferring large sparse topic hierarchies.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="3156" citStr="Downey et al., 2015" startWordPosition="475" endWordPosition="478">ntional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to search engines and online advertising, where capturing the “long tail” of infrequently used topics requires large topic spaces. For example, while typical LDA models in academic papers have up to 103 topics, industrial applications with 105–106 topics are common (Wang et al., 2014). Moreover, scaling topic models to many topics can also reveal the hierarchical structure of topics (Downey et al., 2015). Thus, there is a need for topic models that can both benefit from rich prior information and that can scale to large datasets. However, existing methods for improving scalability focus on topic models without prior information. To rectify this, we propose a factor graph model that encodes a potential function over the hidden topic variables, encouraging topics consistent with prior knowledge. The factor model representation admits an efficient sampling algorithm that takes advantage of the model’s sparsity. We show that our method achieves comparable performance but runs significantly faster</context>
+</contexts>
+<marker>Downey, Bhagavatula, Yang, 2015</marker>
+<rawString>Doug Downey, Chandra Bhagavatula, and Yi Yang. 2015. Efficient methods for inferring large sparse topic hierarchies. In Proceedings of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Geman</author>
+<author>D Geman</author>
+</authors>
+<title>Stochastic relaxation, Gibbs distributions, and the Bayesian restoration of images,</title>
+<date>1990</date>
+<pages>452--472</pages>
+<publisher>Morgan Kaufmann Publishers Inc.,</publisher>
+<location>San Francisco, CA, USA.</location>
+<contexts>
+<context position="9641" citStr="Geman and Geman, 1990" startWordPosition="1591" endWordPosition="1594"> function ψ is a function of z, and it is only a real-value score of current topic assignments, the potential can be factored out of the marginalized joint: P(w, z|α,β, M) = P(w|z, β)P(z|α)ψ(z, M) (4) = ff P(w |z, φ)p(φ|β)p(z|θ)p(θ|α)ψ(z, M)dθdφ e y = ψ(z, M) f f p(w |z, φ)p(φ|β)p(z|θ)p(θ|α)dθdφ. Given the joint likelihood and observed data, the goal is evaluate the posterior P(z|w). Computing P(z|w) involves evaluating a probability distribution on a large discrete state space: P(z|w) = P(z, w)/ Ez P(z, w). Griffiths and Steyvers (2004)—mirroring the original inspirations for Gibbs sampling (Geman and Geman, 1990)—draw an analogy to statistical physics, viewing standard LDA as a system that favors configurations z that compromise between having few topics per document and having few words per topic, with the terms of this compromise being set by the hyperparameters α and β. Our factor model representation of prior knowledge adds a further constraint that asks the model to also consider ensembles of topic assignments z that are compatible with a standard LDA model and the given prior knowledge. The collapsed Gibbs Sampling for inferring topic assignment z of word w in document d is: P(z = t|w, z_, M) (5</context>
+</contexts>
+<marker>Geman, Geman, 1990</marker>
+<rawString>S. Geman and D. Geman, 1990. Stochastic relaxation, Gibbs distributions, and the Bayesian restoration of images, pages 452–472. Morgan Kaufmann Publishers Inc., San Francisco, CA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas L Griffiths</author>
+<author>Mark Steyvers</author>
+</authors>
+<title>Finding scientific topics.</title>
+<date>2004</date>
+<booktitle>Proceedings of the National Academy of Sciences, 101(Suppl</booktitle>
+<pages>1--5228</pages>
+<contexts>
+<context position="5247" citStr="Griffiths and Steyvers (2004)" startWordPosition="827" endWordPosition="830">is associated with a multinomial distribution over topics, θd. The probability of a word type w given topic z is φw|z. The multinomial distributions θd and φz are drawn from Dirichlet distributions: α and β are the hyperparameters for θ and φ. We represent the document collection D as a sequence of words w, and topic assignments as z. We use symmetric priors α and β in the model and experiment, but asymmetric priors are easily encoded in the models (Wallach et al., 2009). Discovering the latent topic assignments z from observed words w requires inferring the the posterior distribution P(z|w). Griffiths and Steyvers (2004) propose using collapsed Gibbs sampling. The probability of a topic assignment z = t in document d given an observed word type w and the other topic assignments z_ is P(z = t|z_, w) a (nd,t + α)nw,t + β (1) nt + V β where z_ are the topic assignments of all other tokens. This conditional probability is based on cumulative counts of topic assignments: nd,t is the number of times topic t is used in document d, nw,t is the number of times word type w is used in topic t, and nt is the marginal count of the number of tokens assigned to topic t. Unfortunately, explicitly computing the conditional pr</context>
+<context position="9562" citStr="Griffiths and Steyvers (2004)" startWordPosition="1580" endWordPosition="1583">potential function fm(z, w, d) is zero for all topics but Topic 3. Since the potential function ψ is a function of z, and it is only a real-value score of current topic assignments, the potential can be factored out of the marginalized joint: P(w, z|α,β, M) = P(w|z, β)P(z|α)ψ(z, M) (4) = ff P(w |z, φ)p(φ|β)p(z|θ)p(θ|α)ψ(z, M)dθdφ e y = ψ(z, M) f f p(w |z, φ)p(φ|β)p(z|θ)p(θ|α)dθdφ. Given the joint likelihood and observed data, the goal is evaluate the posterior P(z|w). Computing P(z|w) involves evaluating a probability distribution on a large discrete state space: P(z|w) = P(z, w)/ Ez P(z, w). Griffiths and Steyvers (2004)—mirroring the original inspirations for Gibbs sampling (Geman and Geman, 1990)—draw an analogy to statistical physics, viewing standard LDA as a system that favors configurations z that compromise between having few topics per document and having few words per topic, with the terms of this compromise being set by the hyperparameters α and β. Our factor model representation of prior knowledge adds a further constraint that asks the model to also consider ensembles of topic assignments z that are compatible with a standard LDA model and the given prior knowledge. The collapsed Gibbs Sampling fo</context>
+</contexts>
+<marker>Griffiths, Steyvers, 2004</marker>
+<rawString>Thomas L. Griffiths and Mark Steyvers. 2004. Finding scientific topics. Proceedings of the National Academy of Sciences, 101(Suppl 1):5228–5235.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Hoffman</author>
+<author>David M Blei</author>
+<author>Francis Bach</author>
+</authors>
+<title>Online learning for latent Dirichlet allocation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="28981" citStr="Hoffman et al., 2010" startWordPosition="4886" endWordPosition="4889">curate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is mor</context>
+</contexts>
+<marker>Hoffman, Blei, Bach, 2010</marker>
+<rawString>Matthew Hoffman, David M. Blei, and Francis Bach. 2010. Online learning for latent Dirichlet allocation. In Proceedings of Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuening Hu</author>
+<author>Jordan Boyd-Graber</author>
+</authors>
+<title>Efficient tree-based topic modeling.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="2044" citStr="Hu and Boyd-Graber, 2012" startWordPosition="298" endWordPosition="301">scovers, without any supervision, the thematic trends in a text collection. However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods</context>
+<context position="18927" citStr="Hu and Boyd-Graber (2012)" startWordPosition="3230" endWordPosition="3233">We also use the 20Newsgroup (20NG) dataset,4 which has document labels, for document label experiments. Table 1 shows the characteristics of each dataset. Since NIPS and NYT-News have already been preprocessed, to ensure repeatability, we use the data “as they are” from the sources. For 20NG, we perform tokenization and stopword removal using Mallet (McCallum, 2002) and remove words that appear fewer than 10 times. 3.2 Prior Knowledge Generation Word Correlation Prior Knowledge Previous work proposes two methods to automatically generate prior word correlation knowledge from external sources. Hu and Boyd-Graber (2012) use WordNet 3.0 to obtain synsets for word types, and then if a synset is also in the vocabulary, they add a must-link correlation between the word type and the synset. Xie et al. (2015) use a different method that takes advantage of an existing pretrained word embedding. Each word embedding is a real-valued vector capturing the word’s semantic meaning based on distributional similarity. If the similarity between the embeddings of two word types in the vocabulary exceeds a threshold, they generate a must-link between the two words. In our experiments, we adopt a hybrid method that combines th</context>
+<context position="20644" citStr="Hu and Boyd-Graber (2012)" startWordPosition="3503" endWordPosition="3506">, w, d) = 312 5 ically, this hybrid method is able to obtain high quality correlated words. For example, for the NIPS dataset, the must-links we obtain for randomness are {noise, entropy, stochasticity}. Document Label Prior Knowledge Since documents in the 20NG dataset are associated with labels, we use the labels directly as prior knowledge. 3.3 Baselines The baseline methods for incorporating word correlation prior knowledge in our experiments are as follows: DF-LDA: incorporates word must-links and cannot-links using a Dirichlet Forest prior in LDA (Andrzejewski et al., 2009). Here we use Hu and Boyd-Graber (2012)’s efficient implementation FAST-RB-SDW for DF-LDA. Logic-LDA: encodes general domain knowledge as first-order logic and incorporates it in LDA (Andrzejewski et al., 2011). Logic-LDA has been used for word correlations and document label knowledge. MRF-LDA: encodes word correlations in LDA as a Markov random field (Xie et al., 2015). We also use Mallet’s SparseLDA implementation for vanilla LDA in the topic coherence experiment. We use a symmetric Dirichlet prior for all models. We set α = 1.0, Q = 0.01. For DF-LDA, η = 100. For Logic-LDA, we use the default parameter setting in the package: a</context>
+<context position="29362" citStr="Hu and Boyd-Graber (2012)" startWordPosition="4943" endWordPosition="4946">e sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusion We present a factor graph framework for incorporating prior knowledge into topic models. By expressing the prior knowledge as sparse constraints on the hidden topic variables,</context>
+</contexts>
+<marker>Hu, Boyd-Graber, 2012</marker>
+<rawString>Yuening Hu and Jordan Boyd-Graber. 2012. Efficient tree-based topic modeling. In Proceedings of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuening Hu</author>
+<author>Jordan Boyd-Graber</author>
+<author>Brianna Satinoff</author>
+</authors>
+<title>Interactive topic modeling.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="11262" citStr="Hu et al., 2011" startWordPosition="1894" endWordPosition="1897">cause we need the summation of P(z = t) for sampling. Therefore, the critical part of speeding up the sampler is finding a sparse representation of the second term. In the following sections, we show that natural, sparse prior knowledge representations are possible. We first present an efficient sparse representation of word correlation prior knowledge and then one for document-label knowledge. 2.3 Word Correlation Prior Knowledge We now illustrate how we can encode word correlation knowledge as a set of sparse constraints fm(z, w, d) in our model. In previous work (Andrzejewski et al., 2009; Hu et al., 2011; Xie et al., 2015), word correlation prior knowledge is represented as word must-link constraints and cannotlink constraints. A must-link relation between two words indicates that the two words tend to be related to the same topics, i.e. their topic probabilities are correlated. In contrast, a cannot-link relation between two words indicates that these two words are not topically similar, and they should not both be prominent within the same topic. For example, “quarterback” and “fumble” are both related to American football, so they can share a must-link relation. But “fumble” and “bank” imp</context>
+</contexts>
+<marker>Hu, Boyd-Graber, Satinoff, 2011</marker>
+<rawString>Yuening Hu, Jordan Boyd-Graber, and Brianna Satinoff. 2011. Interactive topic modeling. In Proceedings of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuening Hu</author>
+<author>Ke Zhai</author>
+<author>Vlad Eidelman</author>
+<author>Jordan Boyd-Graber</author>
+</authors>
+<title>Polylingual tree-based topic models for translation domain adaptation. In Association for Computational Linguistics.</title>
+<date>2014</date>
+<contexts>
+<context position="29473" citStr="Hu et al. (2014)" startWordPosition="4959" endWordPosition="4962">2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusion We present a factor graph framework for incorporating prior knowledge into topic models. By expressing the prior knowledge as sparse constraints on the hidden topic variables, we are able to take advantage of the sparsity to speed up training. We demonstrate in experiments that our mod</context>
+</contexts>
+<marker>Hu, Zhai, Eidelman, Boyd-Graber, 2014</marker>
+<rawString>Yuening Hu, Ke Zhai, Vlad Eidelman, and Jordan Boyd-Graber. 2014. Polylingual tree-based topic models for translation domain adaptation. In Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Aaron Q Li</author>
+<author>Amr Ahmed</author>
+<author>Sujith Ravi</author>
+<author>Alexander J Smola</author>
+</authors>
+<title>Reducing the sampling complexity of topic models.</title>
+<date>2014</date>
+<booktitle>In Knowledge Discovery and Data Mining.</booktitle>
+<contexts>
+<context position="2679" citStr="Li et al., 2014" startWordPosition="399" endWordPosition="402">. Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to search engines and online advertising, where capturing the “long tail” of infrequently used topics requires large topic spaces. For example, while typical LDA models in academic papers have up to 103 topics, industrial applications with 105–106 topics are common (Wang et al., 2014). Moreover, scaling topic models to many topics can also reveal the hierarchical structure of topics (Downey et al., 2015). Thus, there is a need for topic models that can both benefit from rich prior information and that can scale to large data</context>
+<context position="28677" citStr="Li et al., 2014" startWordPosition="4838" endWordPosition="4841">ng inference techniques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of topics, Gibbs sampling can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of</context>
+</contexts>
+<marker>Li, Ahmed, Ravi, Smola, 2014</marker>
+<rawString>Aaron Q. Li, Amr Ahmed, Sujith Ravi, and Alexander J. Smola. 2014. Reducing the sampling complexity of topic models. In Knowledge Discovery and Data Mining.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yucheng Low</author>
+<author>Danny Bickson</author>
+<author>Joseph Gonzalez</author>
+<author>Carlos Guestrin</author>
+<author>Aapo Kyrola</author>
+<author>Joseph M Hellerstein</author>
+</authors>
+<title>Distributed graphlab: A framework for machine learning and data mining in the cloud.</title>
+<date>2012</date>
+<journal>Proceedings of the VLDB Endowment,</journal>
+<volume>5</volume>
+<issue>8</issue>
+<contexts>
+<context position="26332" citStr="Low et al., 2012" startWordPosition="4464" endWordPosition="4467"> averaged over 5 seeds, on 20NG dataset. Experiments begin with 100 topics, 1000 labeled documents, and then vary one dimension: number of topics (top), or number of labeled documents (bottom). more topics; when T = 500,5 SC-LDA runs more than ten times faster than Labeled-LDA. 4 Related Work This works brings together two lines of research: incorporating rich knowledge into probabilistic models and efficient inference of probabilistic models on large datasets. Both are common areas of interest across many machine learning formalisms: probabilistic logic (Bach et al., 2015), graph algorithms (Low et al., 2012), and probabilistic grammars (Cohen et al., 2008). However, our focus in this paper is the intersection of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typicall</context>
+</contexts>
+<marker>Low, Bickson, Gonzalez, Guestrin, Kyrola, Hellerstein, 2012</marker>
+<rawString>Yucheng Low, Danny Bickson, Joseph Gonzalez, Carlos Guestrin, Aapo Kyrola, and Joseph M. Hellerstein. 2012. Distributed graphlab: A framework for machine learning and data mining in the cloud. Proceedings of the VLDB Endowment, 5(8):716–727, April.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew Kachites McCallum</author>
+</authors>
+<title>Mallet: A machine learning for language toolkit.</title>
+<date>2002</date>
+<note>http://www.cs.umass.edu/ mccallum/mallet.</note>
+<contexts>
+<context position="18670" citStr="McCallum, 2002" startWordPosition="3194" endWordPosition="3195">tion experiments and 20NG for document label experiments. 3.1 Dataset We use the NIPS and NYT-News datasets from the UCI bag of words data collections.3 These two datasets have no document labels, and we use them for word correlation experiments. We also use the 20Newsgroup (20NG) dataset,4 which has document labels, for document label experiments. Table 1 shows the characteristics of each dataset. Since NIPS and NYT-News have already been preprocessed, to ensure repeatability, we use the data “as they are” from the sources. For 20NG, we perform tokenization and stopword removal using Mallet (McCallum, 2002) and remove words that appear fewer than 10 times. 3.2 Prior Knowledge Generation Word Correlation Prior Knowledge Previous work proposes two methods to automatically generate prior word correlation knowledge from external sources. Hu and Boyd-Graber (2012) use WordNet 3.0 to obtain synsets for word types, and then if a synset is also in the vocabulary, they add a must-link correlation between the word type and the synset. Xie et al. (2015) use a different method that takes advantage of an existing pretrained word embedding. Each word embedding is a real-valued vector capturing the word’s sema</context>
+</contexts>
+<marker>McCallum, 2002</marker>
+<rawString>Andrew Kachites McCallum. 2002. Mallet: A machine learning for language toolkit. http://www.cs.umass.edu/ mccallum/mallet.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Ilya Sutskever</author>
+<author>Kai Chen</author>
+<author>Greg S Corrado</author>
+<author>Jeff Dean</author>
+</authors>
+<title>Distributed representations of words and phrases and their compositionality.</title>
+<date>2013</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="19695" citStr="Mikolov et al., 2013" startWordPosition="3361" endWordPosition="3364">d type and the synset. Xie et al. (2015) use a different method that takes advantage of an existing pretrained word embedding. Each word embedding is a real-valued vector capturing the word’s semantic meaning based on distributional similarity. If the similarity between the embeddings of two word types in the vocabulary exceeds a threshold, they generate a must-link between the two words. In our experiments, we adopt a hybrid method that combines the above two methods. For a noun word type, we first obtain its synsets from WordNet 3.0. We also obtain the embeddings of each word from word2vec (Mikolov et al., 2013). If the synset is also in the vocabulary, and the similarity between the synset and the word is higher than a threshold, which in our experiment is 0.2, we generate a must-link between thee words. Empirsparse-constrained-lda. 3https://archive.ics.uci.edu/ml/datasets/Bag+of+Words 4http://qwone.com/ jason/20Newsgroups/ fm(z, w, d) = 312 5 ically, this hybrid method is able to obtain high quality correlated words. For example, for the NIPS dataset, the must-links we obtain for randomness are {noise, entropy, stochasticity}. Document Label Prior Knowledge Since documents in the 20NG dataset are a</context>
+</contexts>
+<marker>Mikolov, Sutskever, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Corrado, and Jeff Dean. 2013. Distributed representations of words and phrases and their compositionality. In Proceedings of Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Mimno</author>
+<author>Hanna Wallach</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Gibbs sampling for logistic normal topic models with graph-based priors.</title>
+<date>2008</date>
+<booktitle>In NIPS 2008 Workshop on Analyzing Graphs: Theory and Applications.</booktitle>
+<contexts>
+<context position="26900" citStr="Mimno et al., 2008" startWordPosition="4558" endWordPosition="4561"> et al., 2015), graph algorithms (Low et al., 2012), and probabilistic grammars (Cohen et al., 2008). However, our focus in this paper is the intersection of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) </context>
+</contexts>
+<marker>Mimno, Wallach, McCallum, 2008</marker>
+<rawString>David Mimno, Hanna Wallach, and Andrew McCallum. 2008. Gibbs sampling for logistic normal topic models with graph-based priors. In NIPS 2008 Workshop on Analyzing Graphs: Theory and Applications.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Mimno</author>
+<author>Hanna Wallach</author>
+<author>Edmund Talley</author>
+<author>Miriam Leenders</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Optimizing semantic coherence in topic models.</title>
+<date>2011</date>
+<booktitle>In Proceedings of Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="23027" citStr="Mimno et al. (2011)" startWordPosition="3905" endWordPosition="3908">ound C0 C100 C500 C1000 1st iteration 2.02 2.14 2.30 2.50 50th iteration 0.53 0.56 0.58 0.62 100th iteration 0.48 0.50 0.53 0.56 200th iteration 0.48 0.49 0.52 0.56 Table 2: SC-LDA runtime (in seconds) in the 1st, 50th, 100th, and 200th iteration with different numbers of correlations. in SC-LDA. SC-LDA runs faster as sampling proceeds as the sparsity increases, but additional correlations slow the model. 3.5 Topic Coherence Topic models are often evaluated using perplexity on held-out test data, but this evaluation is of313 6 ten at odds with human evaluations (Chang et al., 2009). Following Mimno et al. (2011), we employ Topic Coherence—a metric that is consistent with human judgment—to measure a topic model’s quality. Topic t’s coherence is defined as C(t : V (t)) = �M E,n 1log F(vM,vlt))+E m=2 F (v(t) l ) , where F(v) is the document frequency of word type v, F(v, v&apos;) is the co-document frequency of word type v and v�, and V (t) = (v(t) 1 , ...,v(t) M ) is a list of the M most probable words in topic t. In our experiments, we choose the ten words with highest probability in the topic to compute topic coherence, i.e., M = 10. Mimno et al. (2011) use c = 1, but R¨oder et al. (2015) show smaller c (</context>
+</contexts>
+<marker>Mimno, Wallach, Talley, Leenders, McCallum, 2011</marker>
+<rawString>David Mimno, Hanna Wallach, Edmund Talley, Miriam Leenders, and Andrew McCallum. 2011. Optimizing semantic coherence in topic models. In Proceedings of Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Mimno</author>
+<author>Matthew Hoffman</author>
+<author>David Blei</author>
+</authors>
+<title>Sparse stochastic inference for latent Dirichlet allocation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the International Conference of Machine Learning.</booktitle>
+<contexts>
+<context position="29062" citStr="Mimno et al., 2012" startWordPosition="4898" endWordPosition="4901">on that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contra</context>
+</contexts>
+<marker>Mimno, Hoffman, Blei, 2012</marker>
+<rawString>David Mimno, Matthew Hoffman, and David Blei. 2012. Sparse stochastic inference for latent Dirichlet allocation. In Proceedings of the International Conference of Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ramesh Nallapati</author>
+<author>William Cohen</author>
+<author>John Lafferty</author>
+</authors>
+<title>Parallelized variational EM for latent Dirichlet allocation: An experimental evaluation of speed and scalability.</title>
+<date>2007</date>
+<booktitle>In International Conference on Data Mining Workshops.</booktitle>
+<contexts>
+<context position="28861" citStr="Nallapati et al., 2007" startWordPosition="4866" endWordPosition="4869"> can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu e</context>
+</contexts>
+<marker>Nallapati, Cohen, Lafferty, 2007</marker>
+<rawString>Ramesh Nallapati, William Cohen, and John Lafferty. 2007. Parallelized variational EM for latent Dirichlet allocation: An experimental evaluation of speed and scalability. In International Conference on Data Mining Workshops.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Newman</author>
+<author>Arthur Asuncion</author>
+<author>Padhraic Smyth</author>
+<author>Max Welling</author>
+</authors>
+<title>Distributed Algorithms for Topic Models.</title>
+<date>2009</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>1801--1828</pages>
+<contexts>
+<context position="29184" citStr="Newman et al., 2009" startWordPosition="4915" endWordPosition="4918">en incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusi</context>
+</contexts>
+<marker>Newman, Asuncion, Smyth, Welling, 2009</marker>
+<rawString>David Newman, Arthur Asuncion, Padhraic Smyth, and Max Welling. 2009. Distributed Algorithms for Topic Models. Journal of Machine Learning Research, pages 1801–1828.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Newman</author>
+<author>Edwin Bonilla</author>
+<author>Wray Buntine</author>
+</authors>
+<title>Improving topic coherence with regularized topic models.</title>
+<date>2011</date>
+<booktitle>In Proceedings ofAdvances in Neural Information Processing Systems,</booktitle>
+<contexts>
+<context position="27617" citStr="Newman et al. (2011)" startWordPosition="4673" endWordPosition="4676">nd McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to improve topic coherence. However, despite these exciting applications, the experiments in the above work are typically on small datasets. In contrast, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to scale inference for topic models have started from both variational inference and Gibbs sampling—two popular learning inference techniques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of </context>
+</contexts>
+<marker>Newman, Bonilla, Buntine, 2011</marker>
+<rawString>David Newman, Edwin Bonilla, and Wray Buntine. 2011. Improving topic coherence with regularized topic models. In Proceedings ofAdvances in Neural Information Processing Systems, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Viet-An Nguyen</author>
+<author>Jordan Boyd-Graber</author>
+<author>Philip Resnik</author>
+<author>Deborah Cai</author>
+<author>Jennifer Midberry</author>
+<author>Yuanxin Wang</author>
+</authors>
+<title>Modeling topic control to detect influence in conversations using nonparametric topic models.</title>
+<date>2014</date>
+<booktitle>Machine Learning,</booktitle>
+<pages>95--381</pages>
+<contexts>
+<context position="27047" citStr="Nguyen et al., 2014" startWordPosition="4581" endWordPosition="4584">section of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to im</context>
+</contexts>
+<marker>Nguyen, Boyd-Graber, Resnik, Cai, Midberry, Wang, 2014</marker>
+<rawString>Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik, Deborah Cai, Jennifer Midberry, and Yuanxin Wang. 2014a. Modeling topic control to detect influence in conversations using nonparametric topic models. Machine Learning, 95:381–421.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Viet-An Nguyen</author>
+<author>Jordan Boyd-Graber</author>
+<author>Philip Resnik</author>
+<author>Jonathan Chang</author>
+</authors>
+<title>Learning a concept hierarchy from multi-labeled documents.</title>
+<date>2014</date>
+<booktitle>In Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="27047" citStr="Nguyen et al., 2014" startWordPosition="4581" endWordPosition="4584">section of these lines of research with topic models. 5For 20NG dataset, it may overfit the data with 500 topics, but here we use it to demonstrate the scalability. 314 7 Adding knowledge and metadata to topic models makes the models richer, more understandable, and more domain-specific. A common distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to im</context>
+</contexts>
+<marker>Nguyen, Boyd-Graber, Resnik, Chang, 2014</marker>
+<rawString>Viet-An Nguyen, Jordan Boyd-Graber, Philip Resnik, and Jonathan Chang. 2014b. Learning a concept hierarchy from multi-labeled documents. In Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thang Nguyen</author>
+<author>Jordan Boyd-Graber</author>
+<author>Jeff Lund</author>
+<author>Kevin Seppi</author>
+<author>Eric Ringger</author>
+</authors>
+<title>Is your anchor going up or down? Fast and accurate supervised topic models. In North American Association for Computational Linguistics.</title>
+<date>2015</date>
+<contexts>
+<context position="29733" citStr="Nguyen et al. (2015)" startWordPosition="4999" endWordPosition="5002">learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusion We present a factor graph framework for incorporating prior knowledge into topic models. By expressing the prior knowledge as sparse constraints on the hidden topic variables, we are able to take advantage of the sparsity to speed up training. We demonstrate in experiments that our model runs significantly faster than the other alternative models and achieves comparable performance in terms of topic coherence. Efficient algorithms for incorporating prior knowledge with large topic models will benefit several downstream applications. For exa</context>
+</contexts>
+<marker>Nguyen, Boyd-Graber, Lund, Seppi, Ringger, 2015</marker>
+<rawString>Thang Nguyen, Jordan Boyd-Graber, Jeff Lund, Kevin Seppi, and Eric Ringger. 2015. Is your anchor going up or down? Fast and accurate supervised topic models. In North American Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Paul</author>
+<author>Roxana Girju</author>
+</authors>
+<title>A twodimensional topic-aspect model for discovering multi-faceted topics.</title>
+<date>2010</date>
+<booktitle>In Association for the Advancement of Artificial Intelligence.</booktitle>
+<contexts>
+<context position="16538" citStr="Paul and Girju, 2010" startWordPosition="2848" endWordPosition="2851">e document labels here. Ramage et al. (2009) propose Labeled-LDA, which improves LDA with document labels. It assumes that there is a one-to-one mapping between topics and labels, and it restricts each document’s topics to be sampled only from those allowed by the documents label set. Therefore, Labeled-LDA can be expressed in our model. We define � 1, if z ∈ and (8) −∞, else where and specifies document d’s label set converted to corresponding topic labels. Since fm(z, w, d) is sparse, we can speed up the training as well. Sentence-level prior knowledge (e.g., for sentiment or aspect models (Paul and Girju, 2010)) can be defined in a similar way. Documents can be associated with other useful metadata. For example, a scientific paper and the prior work it cites might have similar topics (Dietz et al., 2007) or friends in a social network might talk about the same topics (Chang and Blei, 2009). To model link relations, we can use Equation 6 and replace the word-topic counts nv,z with document-topic counts nd,z. By doing so, we encourage related documents to have similar topic structures. Moreover, the document-topic count is also sparse, which fits into the efficient learning framework. Therefore, for d</context>
+</contexts>
+<marker>Paul, Girju, 2010</marker>
+<rawString>Michael Paul and Roxana Girju. 2010. A twodimensional topic-aspect model for discovering multi-faceted topics. In Association for the Advancement of Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ian Porteous</author>
+<author>David Newman</author>
+<author>Alexander Ihler</author>
+<author>Arthur Asuncion</author>
+<author>Padhraic Smyth</author>
+<author>Max Welling</author>
+</authors>
+<title>Fast collapsed gibbs sampling for latent dirichlet allocation.</title>
+<date>2008</date>
+<booktitle>In Knowledge Discovery and Data Mining.</booktitle>
+<contexts>
+<context position="28283" citStr="Porteous et al. (2008)" startWordPosition="4778" endWordPosition="4781">herence. However, despite these exciting applications, the experiments in the above work are typically on small datasets. In contrast, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to scale inference for topic models have started from both variational inference and Gibbs sampling—two popular learning inference techniques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of topics, Gibbs sampling can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), </context>
+</contexts>
+<marker>Porteous, Newman, Ihler, Asuncion, Smyth, Welling, 2008</marker>
+<rawString>Ian Porteous, David Newman, Alexander Ihler, Arthur Asuncion, Padhraic Smyth, and Max Welling. 2008. Fast collapsed gibbs sampling for latent dirichlet allocation. In Knowledge Discovery and Data Mining.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Ramage</author>
+<author>David Hall</author>
+<author>Ramesh Nallapati</author>
+<author>Christopher Manning</author>
+</authors>
+<title>Labeled LDA: A supervised topic model for credit attribution in multilabeled corpora.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="2115" citStr="Ramage et al., 2009" startWordPosition="310" endWordPosition="313"> However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industri</context>
+<context position="15961" citStr="Ramage et al. (2009)" startWordPosition="2749" endWordPosition="2752">ability of topic assignments. Let’s return to the question whether Equation 6 is sparse, allowing efficient computation of Equation 7. Fortunately, nu,t and nv,t, which are the 1: compute st, rt, qt with SparseLDA, (see Eq. 3) 2: for t ← 0 to T do 3: update st, rt, qt. ∀u E Mw if nu,t &gt; A 4: end for 5: p(t) = st + rt + qt 6: sample new topic assignment for w from p(t) 311 4 2.4 Other Types of Prior Knowledge The factor model framework can also handle other types of prior knowledge, such as document labels, sentence labels, and document link relations. We briefly describe document labels here. Ramage et al. (2009) propose Labeled-LDA, which improves LDA with document labels. It assumes that there is a one-to-one mapping between topics and labels, and it restricts each document’s topics to be sampled only from those allowed by the documents label set. Therefore, Labeled-LDA can be expressed in our model. We define � 1, if z ∈ and (8) −∞, else where and specifies document d’s label set converted to corresponding topic labels. Since fm(z, w, d) is sparse, we can speed up the training as well. Sentence-level prior knowledge (e.g., for sentiment or aspect models (Paul and Girju, 2010)) can be defined in a s</context>
+<context position="24868" citStr="Ramage et al., 2009" startWordPosition="4234" endWordPosition="4237">oherence with LDA but has higher coherence score (-36.6) for the top 20 topics than LDA (-39.1). This is because incorporating word correlation knowledge encourages correlated words to have high probability under the same topic, thus improving the coherence score. For the other methods, however, because they cannot converge within an hour, their topic coherence scores are much worse than SC-LDA and LDA. This again demonstrates the efficiency of SC-LDA over other baselines. 3.6 Document Label Prior Knowledge SC-LDA can also handle other types of prior knowledge. We compare it with Labeled-LDA (Ramage et al., 2009). Labeled-LDA also uses Gibbs sampling for inference, allowing direct computation time comparisons. Table 3 shows the average running time per iteration for Labeled-LDA and SC-LDA. Because document labels apply sparsity to the documenttopic counts, the average running time per iteration decreases as the number of labeled document increases. SC-LDA exhibits greater speedup with Figure 3: Average topic coherence and average top 20 topic coherence. The models are trained on NIPS dataset with 500-topic and 100 word correlations. SC-LDA achieves higher topic coherence than other methods. # Topics T</context>
+<context position="27345" citStr="Ramage et al., 2009" startWordPosition="4628" endWordPosition="4631">distinction is upstream (conditioning on metadata) vs. downstream models (conditioning on variables already present in a topic model to predict metadata) (Mimno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to improve topic coherence. However, despite these exciting applications, the experiments in the above work are typically on small datasets. In contrast, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to</context>
+</contexts>
+<marker>Ramage, Hall, Nallapati, Manning, 2009</marker>
+<rawString>Daniel Ramage, David Hall, Ramesh Nallapati, and Christopher Manning. 2009. Labeled LDA: A supervised topic model for credit attribution in multilabeled corpora. In Proceedings of Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael R¨oder</author>
+<author>Andreas Both</author>
+<author>Alexander Hinneburg</author>
+</authors>
+<title>Exploring the space of topic coherence measures.</title>
+<date>2015</date>
+<booktitle>In Proceedings of ACM International Conference on Web Search and Data Mining.</booktitle>
+<marker>R¨oder, Both, Hinneburg, 2015</marker>
+<rawString>Michael R¨oder, Andreas Both, and Alexander Hinneburg. 2015. Exploring the space of topic coherence measures. In Proceedings of ACM International Conference on Web Search and Data Mining.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Evan Sandhaus</author>
+</authors>
+<date>2008</date>
+<publisher>The</publisher>
+<location>New York Times</location>
+<note>annotated corpus. http://www.ldc.upenn.edu/Catalog/CatalogEntry.jsp? catalogId=LDC2008T19.</note>
+<contexts>
+<context position="14380" citStr="Sandhaus, 2008" startWordPosition="2467" endWordPosition="2468">d type w is: P(z = t|w, z−, M) oc αQ+ nd,tQ + (nd,t + α)nw,t {nt + V Q nt + V Q nt + V Q I Figure 1: Histogram of nonzero topic counts for word types in NYT-News dataset after inference. 81.9% word types have fewer than 50 topics with nonzero counts. This sparsity allows our sparse constraints to speed inference. topic counts for must-link word u and cannotlink word v, are often sparse. For example, in a 100-topic model trained on the NIPS dataset, 87.2% of word types have fewer than ten topics with nonzero counts. In a 500-topic model trained on a larger dataset like the New York Times News (Sandhaus, 2008), 81.9% of word types have fewer than 50 topics with nonzero counts. Moreover, the model becomes increasingly sparse with additional Gibbs iterations. Figure 1 shows the word frequency histogram of nonzero topic counts of NYT-News dataset. Therefore, the computational cost of Equation 7 can be reduced. SparseLDA efficiently computes the s, r, q bins as in Equation 3. Then for words that are associated with prior knowledge, we update s, r, q with an additional potential term. We only need to compute the potential term for the topics whose counts are greater than A. The collapsed Gibbs sampling </context>
+</contexts>
+<marker>Sandhaus, 2008</marker>
+<rawString>Evan Sandhaus. 2008. The New York Times annotated corpus. http://www.ldc.upenn.edu/Catalog/CatalogEntry.jsp? catalogId=LDC2008T19.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hanna Wallach</author>
+<author>David Mimno</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Rethinking LDA: Why priors matter.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems.</booktitle>
+<contexts>
+<context position="5093" citStr="Wallach et al., 2009" startWordPosition="805" endWordPosition="808">esents words in documents in a collection D as mixtures of T topics, which are multinomials over a vocabulary of size V . In LDA, each document d is associated with a multinomial distribution over topics, θd. The probability of a word type w given topic z is φw|z. The multinomial distributions θd and φz are drawn from Dirichlet distributions: α and β are the hyperparameters for θ and φ. We represent the document collection D as a sequence of words w, and topic assignments as z. We use symmetric priors α and β in the model and experiment, but asymmetric priors are easily encoded in the models (Wallach et al., 2009). Discovering the latent topic assignments z from observed words w requires inferring the the posterior distribution P(z|w). Griffiths and Steyvers (2004) propose using collapsed Gibbs sampling. The probability of a topic assignment z = t in document d given an observed word type w and the other topic assignments z_ is P(z = t|z_, w) a (nd,t + α)nw,t + β (1) nt + V β where z_ are the topic assignments of all other tokens. This conditional probability is based on cumulative counts of topic assignments: nd,t is the number of times topic t is used in document d, nw,t is the number of times word t</context>
+</contexts>
+<marker>Wallach, Mimno, McCallum, 2009</marker>
+<rawString>Hanna Wallach, David Mimno, and Andrew McCallum. 2009. Rethinking LDA: Why priors matter. In Proceedings of Advances in Neural Information Processing Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yi Wang</author>
+</authors>
+<title>Xuemin Zhao, Zhenlong Sun, Hao Yan, Lifeng Wang,</title>
+<date>2014</date>
+<location>Zhihui Jin, Liubin Wang, Yang Gao, Jia Zeng, Qiang Yang, and</location>
+<marker>Wang, 2014</marker>
+<rawString>Yi Wang, Xuemin Zhao, Zhenlong Sun, Hao Yan, Lifeng Wang, Zhihui Jin, Liubin Wang, Yang Gao, Jia Zeng, Qiang Yang, and Ching Law. 2014. Towards topic modeling for big data. CoRR, abs/1405.4402.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pengtao Xie</author>
+<author>Diyi Yang</author>
+<author>Eric P Xing</author>
+</authors>
+<title>Incorporating word correlation knowledge into topic modeling.</title>
+<date>2015</date>
+<booktitle>In Conference of the North American Chapter of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="11281" citStr="Xie et al., 2015" startWordPosition="1898" endWordPosition="1901"> summation of P(z = t) for sampling. Therefore, the critical part of speeding up the sampler is finding a sparse representation of the second term. In the following sections, we show that natural, sparse prior knowledge representations are possible. We first present an efficient sparse representation of word correlation prior knowledge and then one for document-label knowledge. 2.3 Word Correlation Prior Knowledge We now illustrate how we can encode word correlation knowledge as a set of sparse constraints fm(z, w, d) in our model. In previous work (Andrzejewski et al., 2009; Hu et al., 2011; Xie et al., 2015), word correlation prior knowledge is represented as word must-link constraints and cannotlink constraints. A must-link relation between two words indicates that the two words tend to be related to the same topics, i.e. their topic probabilities are correlated. In contrast, a cannot-link relation between two words indicates that these two words are not topically similar, and they should not both be prominent within the same topic. For example, “quarterback” and “fumble” are both related to American football, so they can share a must-link relation. But “fumble” and “bank” imply two different to</context>
+<context position="19114" citStr="Xie et al. (2015)" startWordPosition="3265" endWordPosition="3268">n preprocessed, to ensure repeatability, we use the data “as they are” from the sources. For 20NG, we perform tokenization and stopword removal using Mallet (McCallum, 2002) and remove words that appear fewer than 10 times. 3.2 Prior Knowledge Generation Word Correlation Prior Knowledge Previous work proposes two methods to automatically generate prior word correlation knowledge from external sources. Hu and Boyd-Graber (2012) use WordNet 3.0 to obtain synsets for word types, and then if a synset is also in the vocabulary, they add a must-link correlation between the word type and the synset. Xie et al. (2015) use a different method that takes advantage of an existing pretrained word embedding. Each word embedding is a real-valued vector capturing the word’s semantic meaning based on distributional similarity. If the similarity between the embeddings of two word types in the vocabulary exceeds a threshold, they generate a must-link between the two words. In our experiments, we adopt a hybrid method that combines the above two methods. For a noun word type, we first obtain its synsets from WordNet 3.0. We also obtain the embeddings of each word from word2vec (Mikolov et al., 2013). If the synset is </context>
+<context position="20978" citStr="Xie et al., 2015" startWordPosition="3553" endWordPosition="3556">ge. 3.3 Baselines The baseline methods for incorporating word correlation prior knowledge in our experiments are as follows: DF-LDA: incorporates word must-links and cannot-links using a Dirichlet Forest prior in LDA (Andrzejewski et al., 2009). Here we use Hu and Boyd-Graber (2012)’s efficient implementation FAST-RB-SDW for DF-LDA. Logic-LDA: encodes general domain knowledge as first-order logic and incorporates it in LDA (Andrzejewski et al., 2011). Logic-LDA has been used for word correlations and document label knowledge. MRF-LDA: encodes word correlations in LDA as a Markov random field (Xie et al., 2015). We also use Mallet’s SparseLDA implementation for vanilla LDA in the topic coherence experiment. We use a symmetric Dirichlet prior for all models. We set α = 1.0, Q = 0.01. For DF-LDA, η = 100. For Logic-LDA, we use the default parameter setting in the package: a sample rate of 1.0 and step rate of 10.0. For MRF-LDA, we use the default setting with γ = 1.0. (Parameter semantics can be found in the original papers.) 3.4 Convergence The main advantage of our method over other existing methods is efficiency. In this experiment, we show the change of our model’s log likelihood over time. In top</context>
+<context position="27499" citStr="Xie et al. (2015)" startWordPosition="4654" endWordPosition="4657">imno et al., 2008). Downstream models are typically better at prediction tasks such as predicting sentiment (Blei and McAuliffe, 2007), ideology (Nguyen et al., 2014a), or links in a social network (Chang and Blei, 2009). In contrast, our approach—an upstream model—is often easier to implement and leads to more interpretable topics. Upstream models at the document level have been used to understand the labels in large document collections (Ramage et al., 2009; Nguyen et al., 2014b) and capture relationships in document networks using Markov random fields (Daum´e III, 2009). At the word level, Xie et al. (2015) incorporate word correlation to LDA by building a Markov Random Field regularization, similar to Newman et al. (2011), who use regularization to improve topic coherence. However, despite these exciting applications, the experiments in the above work are typically on small datasets. In contrast, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to scale inference for topic models have started from both variational inference and Gibbs sampling—two popular learning inference techniques for topic mode</context>
+</contexts>
+<marker>Xie, Yang, Xing, 2015</marker>
+<rawString>Pengtao Xie, Diyi Yang, and Eric P Xing. 2015. Incorporating word correlation knowledge into topic modeling. In Conference of the North American Chapter of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yi Yang</author>
+<author>Shimei Pan</author>
+<author>Yangqiu Song</author>
+<author>Jie Lu</author>
+<author>Mercan Topkara</author>
+</authors>
+<title>User-directed non-disruptive topic model update for effective exploration of dynamic content.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 20th International Conference on Intelligent User Interfaces.</booktitle>
+<contexts>
+<context position="2064" citStr="Yang et al., 2015" startWordPosition="302" endWordPosition="305">vision, the thematic trends in a text collection. However, LDA’s lack of supervision can lead to disappointing results. Often, the hidden topics learned by LDA fail to make sense to end users. Part of the problem is that the objective function of topic models does not always correlate with human judgments of topic quality (Chang et al., 2009). Therefore, it’s often necessary to incorporate prior knowledge into topic models to improve the model’s performance. Recent work has also shown that by interactive human feedback can improve the quality and stability of topics (Hu and Boyd-Graber, 2012; Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; </context>
+</contexts>
+<marker>Yang, Pan, Song, Lu, Topkara, 2015</marker>
+<rawString>Yi Yang, Shimei Pan, Yangqiu Song, Jie Lu, and Mercan Topkara. 2015. User-directed non-disruptive topic model update for effective exploration of dynamic content. In Proceedings of the 20th International Conference on Intelligent User Interfaces.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Limin Yao</author>
+<author>David Mimno</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Efficient methods for topic model inference on streaming document collections.</title>
+<date>2009</date>
+<booktitle>In Knowledge Discovery and Data Mining.</booktitle>
+<contexts>
+<context position="2662" citStr="Yao et al., 2009" startWordPosition="395" endWordPosition="398">Yang et al., 2015). Information about documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to search engines and online advertising, where capturing the “long tail” of infrequently used topics requires large topic spaces. For example, while typical LDA models in academic papers have up to 103 topics, industrial applications with 105–106 topics are common (Wang et al., 2014). Moreover, scaling topic models to many topics can also reveal the hierarchical structure of topics (Downey et al., 2015). Thus, there is a need for topic models that can both benefit from rich prior information and that can sc</context>
+<context position="6001" citStr="Yao et al. (2009)" startWordPosition="970" endWordPosition="973">other topic assignments z_ is P(z = t|z_, w) a (nd,t + α)nw,t + β (1) nt + V β where z_ are the topic assignments of all other tokens. This conditional probability is based on cumulative counts of topic assignments: nd,t is the number of times topic t is used in document d, nw,t is the number of times word type w is used in topic t, and nt is the marginal count of the number of tokens assigned to topic t. Unfortunately, explicitly computing the conditional probability is quite for models with many topics. The time complexity of drawing a sample by Equation 1 is linear to the number of topics. Yao et al. (2009) propose a clever factorization of Equation 1 so that the complexity is typically sublinear by breaking the conditional probability into The first term s is the “smoothing only” bucket—constant for all documents. The second term r is the “document only” bucket that is shared by a document’s tokens. Both s and r have simple constant time updates. The last term q has to be computed specifically for each token, only for the few types with non-zero counts in a topic, due to the sparsity of word-topic count. Since q often has the largest mass and few non-zero terms, we start the sampling from bucke</context>
+<context position="28410" citStr="Yao et al., 2009" startWordPosition="4798" endWordPosition="4801">t, there is a huge interest in improving the scalability of topic models to large numbers of documents, numbers of topics, and vocabularies. Attempts to scale inference for topic models have started from both variational inference and Gibbs sampling—two popular learning inference techniques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of topics, Gibbs sampling can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradie</context>
+</contexts>
+<marker>Yao, Mimno, McCallum, 2009</marker>
+<rawString>Limin Yao, David Mimno, and Andrew McCallum. 2009. Efficient methods for topic model inference on streaming document collections. In Knowledge Discovery and Data Mining.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jinhui Yuan</author>
+<author>Fei Gao</author>
+<author>Qirong Ho</author>
+<author>Wei Dai</author>
+<author>Jinliang Wei</author>
+<author>Xun Zheng</author>
+</authors>
+<title>Eric Po Xing, Tie-Yan Liu, and Wei-Ying Ma.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the World Wide Web Conference.</booktitle>
+<contexts>
+<context position="2699" citStr="Yuan et al., 2015" startWordPosition="403" endWordPosition="406">ut documents (Ramage et al., 2009) or words (Boyd-Graber et al., 2007) can improve LDA’s topics. In addition to its occasional inscrutability, scalability can also hamper LDA’s adoption. Conventional Gibbs sampling—the most widely used inference for LDA—scales linearly with the number of topics. Moreover, accurate training usually takes many sampling passes over the dataset. Therefore, for large datasets with millions or even billions of tokens, conventional Gibbs sampling takes too long to finish. For standard LDA, recently introduced fast sampling methods (Yao et al., 2009; Li et al., 2014; Yuan et al., 2015) enable industrial applications of topic modeling to search engines and online advertising, where capturing the “long tail” of infrequently used topics requires large topic spaces. For example, while typical LDA models in academic papers have up to 103 topics, industrial applications with 105–106 topics are common (Wang et al., 2014). Moreover, scaling topic models to many topics can also reveal the hierarchical structure of topics (Downey et al., 2015). Thus, there is a need for topic models that can both benefit from rich prior information and that can scale to large datasets. However, exist</context>
+<context position="28697" citStr="Yuan et al. (2015)" startWordPosition="4842" endWordPosition="4845">iques for topic modeling. Gibbs sampling is a popular technique because of its simplicitly and low latency. However, for large numbers of topics, Gibbs sampling can become unwieldy. Porteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic mode</context>
+</contexts>
+<marker>Yuan, Gao, Ho, Dai, Wei, Zheng, 2015</marker>
+<rawString>Jinhui Yuan, Fei Gao, Qirong Ho, Wei Dai, Jinliang Wei, Xun Zheng, Eric Po Xing, Tie-Yan Liu, and Wei-Ying Ma. 2015. Lightlda: Big topic models on modest computer clusters. In Proceedings of the World Wide Web Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ke Zhai</author>
+<author>Jordan Boyd-Graber</author>
+<author>Nima Asadi</author>
+<author>Mohamad Alkhouja</author>
+</authors>
+<title>Mr. LDA: A flexible large scale topic modeling package using variational inference in mapreduce.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the World Wide Web Conference.</booktitle>
+<contexts>
+<context position="28881" citStr="Zhai et al., 2012" startWordPosition="4870" endWordPosition="4873">rteous et al. (2008) address this issue by creating an upper bound approximation that produces accurate results, while SparseLDA (Yao et al., 2009) present an effective factorization that speeds inference without sacrificing accuracy. Just as our model builds on SparseLDA’s insights, SparseLDA has been incorporated into commercial deployments (Wang et al., 2014) and improved using alias tables (Li et al., 2014). Yuan et al. (2015) also presents an efficient constant time sampling algorithm for building big topic models. Variational inference can easily be parallelized (Nallapati et al., 2007; Zhai et al., 2012), but has high latency, which has been addressed by performing online updates (Hoffman et al., 2010) and taking stochastic gradients estimated by MCMC inference (Mimno et al., 2012). In this paper, we only focus on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend </context>
+</contexts>
+<marker>Zhai, Boyd-Graber, Asadi, Alkhouja, 2012</marker>
+<rawString>Ke Zhai, Jordan Boyd-Graber, Nima Asadi, and Mohamad Alkhouja. 2012. Mr. LDA: A flexible large scale topic modeling package using variational inference in mapreduce. In Proceedings of the World Wide Web Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jun Zhu</author>
+<author>Ning Chen</author>
+<author>Hugh Perkins</author>
+<author>Bo Zhang</author>
+</authors>
+<title>Gibbs max-margin topic models with fast sampling algorithms.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Conference of Machine Learning.</booktitle>
+<contexts>
+<context position="29708" citStr="Zhu et al. (2013)" startWordPosition="4994" endWordPosition="4997">s on single-processor learning, but existing parallelization techniques (Newman et al., 2009) are applicable to our model. At the intersection lies models that improve the scalability of upstream topic model inference. In addition to our SC-LDA, Hu and Boyd-Graber (2012) speed Gibbs sampling in tree-based topic models using SparseLDA’s factorization strategy, and Hu et al. (2014) extend this approach by parallelizing global parameter updates using variational inference. Our work is more general (also encompassing document-based constraints) and is faster. In contrast to these upstream models, Zhu et al. (2013) and Nguyen et al. (2015) improve inference of downstream models. 5 Conclusion We present a factor graph framework for incorporating prior knowledge into topic models. By expressing the prior knowledge as sparse constraints on the hidden topic variables, we are able to take advantage of the sparsity to speed up training. We demonstrate in experiments that our model runs significantly faster than the other alternative models and achieves comparable performance in terms of topic coherence. Efficient algorithms for incorporating prior knowledge with large topic models will benefit several downstr</context>
+</contexts>
+<marker>Zhu, Chen, Perkins, Zhang, 2013</marker>
+<rawString>Jun Zhu, Ning Chen, Hugh Perkins, and Bo Zhang. 2013. Gibbs max-margin topic models with fast sampling algorithms. In Proceedings of the International Conference of Machine Learning.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

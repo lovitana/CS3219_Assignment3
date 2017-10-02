@@ -1,0 +1,2004 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.9993575">
+Parsing low-resource languages using Gibbs sampling
+for PCFGs with latent annotations
+</title>
+<author confidence="0.99989">
+Liang Sun&apos; Jason Mielens2 Jason Baldridge2
+</author>
+<affiliation confidence="0.9980685">
+&apos;Department of Mechanical Engineering 2Department of Linguistics
+The University of Texas at Austin The University of Texas at Austin
+</affiliation>
+<email confidence="0.999117">
+sally722@utexas.edu {jmielens,jbaldrid}@utexas.edu
+</email>
+<sectionHeader confidence="0.993897" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999833764705882">
+PCFGs with latent annotations have been
+shown to be a very effective model for phrase
+structure parsing. We present a Bayesian
+model and algorithms based on a Gibbs sam-
+pler for parsing with a grammar with latent an-
+notations. For PCFG-LA, we present an ad-
+ditional Gibbs sampler algorithm to learn an-
+notations from training data, which are parse
+trees with coarse (unannotated) symbols. We
+show that a Gibbs sampling technique is ca-
+pable of parsing sentences in a wide variety
+of languages and producing results that are
+on-par with or surpass previous approaches.
+Our results for Kinyarwanda and Malagasy in
+particular demonstrate that low-resource lan-
+guage parsing can benefit substantially from a
+Bayesian approach.
+</bodyText>
+<sectionHeader confidence="0.998799" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999958375">
+Despite great progress over the past two decades on
+parsing, relatively little work has considered the prob-
+lem of creating accurate parsers for low-resource lan-
+guages. Existing work in this area focuses primarily on
+approaches that use some form of cross-lingual boot-
+strapping to improve performance. For instance, Hwa
+et al. (2005) use a parallel Chinese/English corpus and
+an English dependency grammar to induce an anno-
+tated Chinese corpus in order to train a Chinese de-
+pendency grammar. Kuhn (2004b) also considers the
+benefits of using multiple languages to induce a mono-
+lingual grammar, making use of a measure for data re-
+liability in order to weight training data based on confi-
+dence of annotation. Bootstrapping approaches such as
+these achieve markedly improved results, but they are
+dependent on the existence of a parallel bilingual cor-
+pus. Very few such corpora are readily available, par-
+ticularly for low-resource languages, and creating such
+corpora obviously presents a challenge for many practi-
+cal applications. Kuhn (2004a) shows some of the diffi-
+culty in handling low-resource languages by examining
+various tasks using Q’anjob’al as an example. Another
+approach is that of Bender et al. (2002), who take a
+more linguistically-motivated approach by making use
+of linguistic universals to seed newly developed gram-
+mars. This substantially reduces the effort by making
+it unnecessary to learn the basic parameters of a lan-
+guage, but it lacks the robustness of grammars learned
+from data.
+Recent work on Probabilistic Context-Free Gram-
+mars with latent annotations (PCFG-LA) (Matsuzaki et
+al., 2005; Petrov et al., 2006) have shown them to be
+effective models for syntactic parsing, especially when
+less training material is available (Liang et al., 2009;
+Shindo et al., 2012). The coarse nonterminal symbols
+found in vanilla PCFGs are refined by latent variables;
+these latent annotations can model subtypes of gram-
+mar symbols that result in better grammars and enable
+better estimates of grammar productions. In this pa-
+per, we provide a Gibbs sampler for learning PCFG-
+LA models and show its effectiveness for parsing low-
+resource languages such as Malagasy and Kinyawanda.
+Previous PCFG-LA work focuses on the prob-
+lem of parameter estimation, including expectation-
+maximization (EM) (Matsuzaki et al., 2005; Petrov et
+al., 2006), spectral learning (Cohen et al., 2012; Co-
+hen et al., 2013), and variational inference (Liang et
+al., 2009; Wang and Blunsom, 2013). Regardless of
+inference method, previous work has used the same
+method to parse new sentences: a Viterbi parse un-
+der a new sentence-specific PCFG obtained from an
+approximation of the original grammar (Matsuzaki et
+al., 2005). Here, we provide an alternative approach to
+parsing new sentences: an extension of the Gibbs sam-
+pling algorithm of Johnson et al. (2007), which learns
+rule probabilities in an unsupervised PCFG.
+We use a Gibbs sampler to collect sampled trees
+theoretically distributed from the true posterior distri-
+bution in order to parse. Priors in a Bayesian model
+can control the sparsity of grammars (which the inside-
+outside algorithm fails to do), while naturally incorpo-
+rating smoothing into the model (Johnson et al., 2007;
+Liang et al., 2009). We also build a Bayesian model
+for parsing with a treebank, and incorporate informa-
+tion from training data as a prior. Moreover, we ex-
+tend the Gibbs sampler to learn and parse PCFGs with
+latent annotations. Learning the latent annotations is
+a compute-intensive process. We show how a small
+amount of training data can be used to bootstrap: af-
+ter running a large number of sampling iterations on a
+small set, the resulting parameters are used to seed a
+smaller number of iterations on the full training data.
+</bodyText>
+<page confidence="0.986202">
+290
+</page>
+<note confidence="0.910578">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 290–300,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.9998843">
+This allows us to employ more latent annotations while
+maintaining reasonable training times and still making
+full use of the available training data.
+To determine the cross-linguistic applicability of
+these methods, we evaluate on a wide variety of lan-
+guages with varying amounts of available training data.
+We use English and Chinese as examples of languages
+with high data availability, while Italian, Malagasy, and
+Kinyarwanda provide examples of languages with little
+available data.
+We find that our technique comes near state of the
+art results on large datasets, such as those for Chinese
+and English, and it provides excellent results on limited
+datasets – both artificially limited in the case of En-
+glish, and naturally limited in the case of Italian, Mala-
+gasy, and Kinyarwanda. This, combined with its abil-
+ity to run off-the-shelf on new languages without any
+supporting materials such as parallel corpora, make it a
+valuable technique for the parsing of low-resource lan-
+guages.
+</bodyText>
+<sectionHeader confidence="0.657778" genericHeader="method">
+2 Gibbs sampling for PCFGs
+</sectionHeader>
+<bodyText confidence="0.9997505625">
+Our starting point is a Gibbs Sampling algorithm for
+vanilla PCFGs introduced by Johnson et al. (2007) for
+estimating rule probabilities in an unsupervised PCFG.
+We focus instead on using this algorithm for parsing
+new sentences and then extending it to learn PCFGs
+with latent annotations. We begin by summarizing the
+Bayesian PCFG and Gibbs sampler defined by Johnson
+et al. (2007).
+Bayesian PCFG For a grammar G, each rule r in the
+set of rules R has an associated probability θr. The
+probabilities for all the rules that expand the same non-
+terminal A must sum to one: EA-βER θA-β = 1.
+Given an input corpus w=(w(1), · · · , w(n)), we in-
+troduce a latent variable t=(t(1), · · · ,t(n)) for trees
+generated by G for each sentence. The joint posterior
+distribution of t and θ conditioned on w is:
+</bodyText>
+<equation confidence="0.99878375">
+p(t, θ  |w) a p(θ)p(w  |t)p(t  |θ)
+,In
+= p(θ)( i=1 p(w(i)  |t(i))p(t(i)  |θ))
+= p(θ)(,Ii=1 p(w(i)  |t(i))RER θr&apos;r(t(i))) (1)
+</equation>
+<bodyText confidence="0.997947">
+Here fr(t) is the number of occurrences of rule r in the
+derivation of t; p(w(i)  |t(i)) = 1 if the yield of t(i) is
+the sequence w(i), and 0 otherwise.
+We use a Dirichlet distribution parametrized by αA:
+Dir(αA) as the prior of the probability distribution for
+all rules expanding non-terminal A (p(θA)). The prior
+for all θ, p(θ), is the product of all Dirichlet distri-
+</bodyText>
+<equation confidence="0.752448">
+butions over all non-terminals A E N: p(θ  |α) =
+H
+AEN p(θA  |αA).
+</equation>
+<bodyText confidence="0.81833175">
+Since the Dirichlet distribution is conjugate to the
+Multinomial distribution, which we use to model the
+likelihood of trees, the conditional posterior of θA can
+be updated as follows:
+</bodyText>
+<equation confidence="0.999215714285714">
+pG(θ  |t, α) a pG(t  |θ)p(θ  |α)
+a (,I θfr(t))(,I θαr-
+1)
+rER r rER r
+θfr(t)+αr-1 (2)
+r
+rER
+</equation>
+<bodyText confidence="0.971400612903226">
+which is still a Dirichlet distribution with updated pa-
+rameter fr(t) + αr for each rule r E R.
+Gibbs sampler The parameters of the PCFG model
+can be learned from an annotated corpus by simply
+counting rules. However, parsing cannot be done di-
+rectly with standard CKY as with standard PCFGs,
+so we use the Gibbs sampling algorithm presented in
+Johnson et al. (2007). An additional motivation for us-
+ing this algorithm is that Johnson et al. use it for learn-
+ing without annotated structures, and in future work we
+seek to learn from fewer, and at times partial, annota-
+tions.
+An advantage of using Gibbs sampling for Bayesian
+inference, as opposed to other approximation algo-
+rithms such as Variational Bayesian inference (VB) and
+Collapsed Variational Bayesian inference (CVB), is
+that Markov Chain Monte Carlo (MCMC) algorithms
+are guaranteed to converge to a sample from the true
+posterior under appropriate conditions (Taddy, 2011).
+Both VB and CVB converge to inaccurate and locally
+optimal solutions, like EM. In some models, CVB can
+achieve more accurate results due to weaker assump-
+tions (Wang and Blunsom, 2013). Another advantage
+of Gibbs sampling is that the sampler allows for parallel
+computation by allowing each sentence to be sampled
+entirely independently of the others. After each paral-
+lel sampling stage, all model parameters are updated in
+a single step, and the process then repeats (see §2).
+To sample the joint posterior p(t, θ  |w), we sample
+production probabilities θ and then trees t from these
+conditional distributions:
+</bodyText>
+<equation confidence="0.98349175">
+,In
+p(t  |θ, w, α) = i=1 p(ti  |wi, θ) (3)
+,I
+p(θ  |t, w, α) = AEN Dir(θA  |fA(t) + αA) (4)
+</equation>
+<bodyText confidence="0.987620857142857">
+Step 1: Sample Rule Probabilities. Given trees t and
+prior α, the production probabilities θA for each non-
+terminal AEN are sampled from a Dirichlet distribu-
+tion with parameters fA(t) + αA. fA(t) is a vector,
+and each component of fA(t), is the number of occur-
+rences of one rule expanding nonterminal A.
+Step 2: Sample Tree Structures. To sample trees from
+p(ti  |wi, θ), we use the efficient sampling scheme
+used in previous work (Goodman, 1998; Finkel et al.,
+2006; Johnson et al., 2007). There are two parts to this
+algorithm. The first constructs an inside table as in the
+Inside-Outside algorithm for PCFGs (Lary and Young,
+1990). The second selects the tree by recursively sam-
+pling productions from top to bottom.
+</bodyText>
+<equation confidence="0.9056147">
+,I =
+291
+Require: A is parent node of binary rule; wi,k is a
+span of words: i + 1 &lt; k
+function TREESAMPLER(A, i, k)
+for i &lt; j &lt; k and pair of child nodes of
+A:B, C do
+P (j, B, C) = θA→BC·pB,i,j·pC,j,k pA,i,k
+·
+end for
+</equation>
+<bodyText confidence="0.317378333333333">
+Sample j*, B*, C* from multinomial distribution
+for (j, B, C) with probabilities calculated above
+return j*, B*, C*
+</bodyText>
+<subsectionHeader confidence="0.327423">
+end function
+</subsectionHeader>
+<bodyText confidence="0.871043111111111">
+Algorithm 1: Sampling split position and rule to ex-
+pand parent node
+Consider a sentence w, with sub-spans wi,k =
+(wi+1, • • • , wk). Given B, we construct the inside ta-
+ble with entries pA,i,k for each nonterminal and each
+word span wi,k : 0 &lt; i &lt; k &lt; l, where pA,i,k =
+PGA(wi,k|0) is the probability that words i through k
+were produced by the non-terminal A. The table is
+computed recursively by
+</bodyText>
+<equation confidence="0.928564">
+pA,k−1,k = 0A→wk (5)
+�pA,i,k = E 0A→BC • pB,i,j • pC,j,k (6)
+A→BC∈R i&lt;j&lt;k
+for all A,B,C E N and 0 &lt; i &lt; j &lt; k &lt; l.
+</equation>
+<bodyText confidence="0.9993259">
+The resulting inside probabilities are then used to
+generate trees from the distribution of all valid trees of
+the sentence. The tree is generated from top to bottom
+recursively with the function TreeSampler defined in
+Algorithm 1.
+In unsupervised PCFG learning, the rule probabil-
+ities can be resampled using the sampled trees, then
+used to reparse the corpus, and so on. We use this
+property to refine latent annotations for the PCFG-LA
+model described in the next section.
+</bodyText>
+<sectionHeader confidence="0.993063" genericHeader="method">
+3 PCFG with latent annotations
+</sectionHeader>
+<bodyText confidence="0.9999565">
+When labeled trees are available, rule frequencies can
+be directly extracted and used as priors for a PCFG.
+However, when learning PCFG-LAs, we must learn the
+fine-grained rules from the coarse trees, so we extend
+the Gibbs sampler to assign latent annotations to unan-
+notated trees. The resulting learned PCFG-LA parser
+outputs samples of annotated trees so that we can ob-
+tain unannotated trees after marginalizing.
+</bodyText>
+<subsectionHeader confidence="0.997973">
+3.1 Model
+</subsectionHeader>
+<bodyText confidence="0.990289">
+With the PCFG-LA model (Matsuzaki et al., 2005;
+Petrov et al., 2006) fine-grained CFG rules are auto-
+matically induced from training, effectively providing
+a form of feature engineering without human interven-
+tion. Given H = 11, , K}, a set of latent annotation
+symbols, and x E H:
+</bodyText>
+<listItem confidence="0.573863">
+•
+</listItem>
+<bodyText confidence="0.96844575">
+0A[x]→U is the probability of rule A[x] → U,
+where U E N x N U T. The probabilities for all
+rules that expand the same annotated non-terminal
+must sum to one.
+</bodyText>
+<equation confidence="0.7025695">
+• 0A[x],B,C→y,z is the probability of assigning la-
+tent annotation y, z to child nodes B, C of A[x].
+E
+y,z∈H×H 0A[x],B,C→y,z = 1.
+</equation>
+<bodyText confidence="0.999884333333333">
+The inputs to the PCFG-LA are a CFG G with finite
+number of latent annotations for each non-terminal, an
+initial guess of probabilities of grammar rule 00, and a
+prior αθ is learned from training.
+The joint posterior distribution of t and 0, 0 condi-
+tioned on w is:
+</bodyText>
+<equation confidence="0.994456">
+p(t, 0, 0  |w) a p(0, 0)p(w  |t)p(t  |0, 0)
+rln
+= p(0)p(0)( i=1 p(wi  |ti)p(ti  |0,0)) (7)
+We assume that 0 and 0 are independent to get
+P(0,0) = P(0)P(0).
+</equation>
+<bodyText confidence="0.999411">
+To learn parameters 0, 0, we use a Dirichlet distribu-
+tion as a prior for both 0 and 0. The distribution for all
+rules expanding A[x] is:
+</bodyText>
+<equation confidence="0.984137">
+P(0  |αθ) = rl P(0A[x]  |αθA[x]) (8)
+A∈N,x∈H
+</equation>
+<bodyText confidence="0.999578">
+The distribution for latent annotations associated
+with child nodes of A[x] → BC is:
+</bodyText>
+<equation confidence="0.998302">
+P(0  |αβ) = rl P(0A[x],B,C  |αβA[x],B,C).
+y,z∈H×H
+(9)
+</equation>
+<bodyText confidence="0.999934333333333">
+With this setting, the conditional posterior of 0A[x]
+and 0A[x],B,C can be updated, as in §2. For all unary
+and binary rules r expanding A[x]:
+</bodyText>
+<equation confidence="0.9995206">
+0A[x]  |t, αθ — Dir(fr(t) + αθr) (10)
+Here, fr(t) is the number of occurrence of annotated
+rule r in t. Also, for combination of latent annotations
+y, z E H x H assigned to B, C in rule A[x] → B, C:
+0A[x],B,C  |t, αβ — Dir(fd(t) + αβd) (11)
+</equation>
+<bodyText confidence="0.6177685">
+Here, fd(t) is the number of occurrences of combina-
+tion d in t.
+</bodyText>
+<subsectionHeader confidence="0.999934">
+3.2 Learning PCFG-LAs from raw text
+</subsectionHeader>
+<bodyText confidence="0.999990181818182">
+To learn from raw text, we extend the sampler in §2
+to PCFG-LA. Given priors αθ, αβ and raw text, the al-
+gorithm alternates between two steps. The first sam-
+ples trees for the entire corpus; the second samples 0
+and 0 from Dirichlet distributions with updated param-
+eters, combining priors and counts from sampled trees.
+The algorithm then alternates between these steps un-
+til convergence. The outputs are samples of 0, 0 and
+annotated trees.
+The parsing process is specified in Algorithm 2. The
+first step assigns a tree to a sentence, say w0,l. We first
+</bodyText>
+<page confidence="0.927609">
+292
+</page>
+<equation confidence="0.55729625">
+Require: w1, · · · , wn are raw sentences; θ0, O0 are
+initial values; αθ, αβ are priors; M is the number
+of iterations
+function PARSE(w1, .., wn, θ0, O0, αθ, αβ, M)
+</equation>
+<bodyText confidence="0.9722655">
+for iteration i = 1 to M do
+for sentence s = 1 to n do
+</bodyText>
+<figure confidence="0.280220666666667">
+Calculate Inside Table
+Sample tree nodes and associated latent
+annotations, get tree structure t(i)
+s
+end for
+Sample θ(i), O(i)
+</figure>
+<subsectionHeader confidence="0.541005">
+end for
+</subsectionHeader>
+<bodyText confidence="0.851503">
+for sentence s = 1 to n do
+Marginalize the latent annotations to get
+</bodyText>
+<equation confidence="0.8882888">
+unannotated trees T (1)
+s , · · · , T (M)
+s
+Find the mode of T (1)
+s , · · · , T (M)
+s : Ts
+end for
+return T1, · · · , Tn
+end function
+Algorithm 2: Parsing new sentences
+</equation>
+<bodyText confidence="0.99071287804878">
+construct an inside table (see §2). Each entry in the ta-
+ble stores the probability that a word span is produced
+by a given annotated nonterminal. For root node S,
+with θ, O and inside table pA[x],i,k, we sample one an-
+notation based on all pS[x],0,l, x E H. Assume that
+we sampled x for S, we further sample a rule to ex-
+pand S[x] and possible splits of the span w0,l jointly.
+Assume that we sampled nonterminals B, C to expand
+S[x], where B is responsible for w0,j and C is respon-
+sible for wj,l. We further sample annotations for B, C
+together, say y, z. Then we sample rules and split po-
+sitions to expand B[y] and C[z], and continue until
+reaching the terminals.
+This algorithm alone could be used for unsupervised
+learning of PCFG-LA if we input a non-informed or
+weakly-informed prior αθ and αβ. With access to
+unannotated trees for training, we only need to assign
+latent annotations to them and then use the frequen-
+cies of these annotated rules as the prior when parsing.
+The details of training when trees are available are il-
+lustrated in §3.3.
+Once we have trees (with latent annotations), the
+step of sampling θ and O from a Dirichlet distribution
+is direct. We need to count the number of occurrences
+fr(t) for each rule r like A[x] → U, U E N x N U T
+in updated annotated trees t, and draw θA[x] from the
+updated Dirichlet distribution Dir(fA[x](t) + αθA[x]).
+We also need to count the number of occurrences of
+fd(t) for each combination of yz E H x H assigned to
+B, C given A[x] → B, C in t, and draw OA[x],B,C from
+the updated Dirichlet distribution Dir(fA[x],B,C(t) +
+αβA[x],B,C) similarly.
+To parse a sentence, we first calculate the inside table
+and then sample the tree.
+Calculate the inside table. Given θ,β and a string
+w=w0,l, we construct a table with entries pA[x],i,k for
+each AEN, x E H and 0 &lt; i &lt; k &lt; l, where
+pA[x],i,k = PGA[x](wi,k|θ, O) is the probability that
+words i through k were produced by the annotated non-
+terminal A[x]. The table can be computed recursively,
+for all A E N, x E H, by
+</bodyText>
+<equation confidence="0.757191">
+θA[x]-BCOA[x]BC-yzpB[y],i,jpC[z],j,k (13)
+</equation>
+<bodyText confidence="0.999280833333333">
+Sample the tree, top to bottom. First, from start sym-
+bol S, sample latent annotation from multinomial with
+probability πS[x]pS[x],0,l for each x E H. Next, given
+annotated non-terminal A[x] and i, k, sample possible
+child nodes and split positions from multinomial with
+probability:
+</bodyText>
+<equation confidence="0.9971025">
+1
+p(B,C,j) =
+11 θA[x]-BCOA[x]BC-yzpB[y],i,jpC[z],j,k (14)
+y,zEH
+</equation>
+<bodyText confidence="0.955080666666667">
+Here the probability is calculated by marginaliz-
+ing all possible latent annotations for B, C, and
+θA[x]-BCOA[x]BC-yz is the probability of choosing
+B[y], C[z] to expand A[x], and pB[y],i,jpC[z],j,k are the
+probabilities for B[y] and C[z] to be responsible for
+word span wi,j and wj,k respectively. And pA[x],i,k is
+the normalizing term.
+Third, given A[x], B, C, i, j, k, sample annotations
+for B, C from multinomial with probability:
+</bodyText>
+<equation confidence="0.895443">
+p(y, z) = OA[x]BC-yzpB[y],i,jpC[z],j,k (15)
+Ey,z OA[x]BC-yzpB[y],i,jpC[z],j,k
+</equation>
+<bodyText confidence="0.999929142857143">
+A crucial aspect of this procedure is that all trees can
+be sampled independently. This parallel process pro-
+duces a substantial speed gain that is important partic-
+ularly when using more latent annotations. After all
+trees have been sampled (independently), the counts
+from each individual tree are combined prior to the next
+sampling iteration.
+</bodyText>
+<subsectionHeader confidence="0.999718">
+3.3 Learning from coarse training trees
+</subsectionHeader>
+<bodyText confidence="0.999877692307692">
+In training, we need to learn the probabilities of fine-
+grained rules given coarsely-labeled trees. We perform
+Gibbs sampling on the training data by first iteratively
+sampling probabilities and then assigning annotations
+to tree nodes. We use the average counts of anno-
+tated production rules from sampled trees to produce
+the prior αθ and αβ incorporated into parsing raw sen-
+tences.
+We first index the non-terminal nodes of each tree T
+by 1, 2, · · · from top to bottom, and left to right. Then
+the sampler iterates between two steps. The first sam-
+ples θ, O given annotated trees (as in §3.2). The sec-
+ond samples latent annotations for nonterminal nodes
+</bodyText>
+<equation confidence="0.539872">
+pA[x],k-1,k = θA[x]-wk (12)
+pA[x],i,k = E E
+j:i&lt;j&lt;k yzEHxH
+A[x]-BC:BCENxN
+pA[x],i,k
+</equation>
+<page confidence="0.918848">
+293
+</page>
+<note confidence="0.507132">
+Require: T1, · · · , Tn are fully parsed trees; θ0, β0
+</note>
+<bodyText confidence="0.893610875">
+are initial values; αθ0, αβ0 are priors; M is the
+number of iterations
+function ANNO(T1,· · · ,Tn, θ0, β0, αθ0, αβ0, M)
+for iteration i = 1 to M do
+for sentence s = 1 to n do
+Calculate inside probability
+Sample latent annotations for each node
+in the tree, get tree with latent annotations t(i)
+</bodyText>
+<table confidence="0.69981525">
+s
+end for
+Sample θ(i), β(i)
+end for
+</table>
+<tableCaption confidence="0.7765056">
+return Mean of number of occurrences of
+production rules and associated latent annotations
+from all sampled annotated trees
+end function
+Algorithm 3: Learning prior from training
+</tableCaption>
+<bodyText confidence="0.999551">
+in parsed trees, which also takes two steps. The first
+step is to, for each node in the tree, calculate and store
+the probability that the node is annotated by x. The
+second step is to jointly sample latent annotations for
+child nodes of root nodes, and then continue this pro-
+cess from top to bottom until reaching the pre-terminal
+nodes.
+Step one: inside probabilities. Given tree T, com-
+pute biT [x] for each non-terminal i recursively:
+</bodyText>
+<listItem confidence="0.775944">
+1. If node Ni is a pre-terminal node above terminal
+symbol w, then for x∈H
+</listItem>
+<equation confidence="0.969061">
+biT[x] = θNi[x]→w (16)
+2. Otherwise, let j, k be two child nodes of i, then
+for x ∈ H
+�
+bi T [x] =
+y,z∈H
+θNi[x]→NjNkβNi[x]NjNk→y,zbjT[y]bkT[z] (17)
+</equation>
+<bodyText confidence="0.9185695">
+Step two: outside sampling. Given inside probabil-
+ity biT [x] for every non-terminal i and all latent annota-
+tions x∈H, we sample the latent annotations from top
+to bottom:
+</bodyText>
+<listItem confidence="0.963598571428571">
+1. If node i is the root node (i = 1), then sample x ∈
+H from a multinomial distribution with fiT [x] =
+π(Ni[x]).
+2. For a parent node with sampled latent annotation
+Ni[x] with children Nj, Nk, sample latent annota-
+tions for these two nodes from a multinomial dis-
+tribution with
+</listItem>
+<equation confidence="0.991679">
+fiT [y, z] = 1
+bi T [x]·
+θNi[x]→NjNkβNi[x]NjNk→y,zbjT [y]bkT [z]
+</equation>
+<bodyText confidence="0.999872666666667">
+After training, we take the average counts of sampled
+annotated rules and combinations of latent annotations
+as priors to parse raw sentences.
+</bodyText>
+<sectionHeader confidence="0.840876" genericHeader="method">
+4 Experiments1
+</sectionHeader>
+<bodyText confidence="0.99998715">
+Our goal is to understand parsing efficacy using sam-
+pling and latent annotations for low-resource lan-
+guages, so we perform experiments on five languages
+with varying amount of training data. We compare
+our results to a number of previously established base-
+lines. First, for all languages, we use both a stan-
+dard unsmoothed PCFG and the Bikel parser, trained
+on the training corpus. Additionally, we compare to
+state-of-the-art results for both English and Chinese,
+which have an existing body of work in PCFGs using
+a Bayesian framework. For Chinese, we compare to
+Huang &amp; Harper (2009), using their results that only
+use the Chinese Treebank (CTB). For English, we com-
+pare to Liang et al. (2009). Prior results for parsing
+the constituency version of the Italian data are avail-
+able from Alicante et al. (2012), but as they make use
+of a different version of the treebank including extra
+sentences, and additionally use the extensive functional
+tags present in the corpus, we do not directly compare
+our results to theirs.2
+</bodyText>
+<subsectionHeader confidence="0.926223">
+4.1 Data
+</subsectionHeader>
+<bodyText confidence="0.999963827586207">
+English (ENG) and Chinese (CHI) are the two main
+languages used for this work; they are commonly used
+in parser evaluation and have previous examples of sta-
+tistical parsers using a Bayesian framework. And since
+we primarily are interested in parsing low-resource lan-
+guages, we include results for Kinyarwanda (KIN) and
+Malagasy (MLG) as examples of languages without
+substantial existing treebanks. Finally, as a middle-
+ground language, we use Italian (ITL).
+For English, we use the Wall-Street Journal section
+of the Penn Treebank (WSJ) (Marcus et al., 1993). The
+data split is sections 02-21 for training, section 22 for
+development, and section 23 for testing. For Chinese,
+the Chinese Treebank (CTB5) (Xue et al., 2005) was
+used. The data split is files 81-899 for training, files 41-
+80 for development, and files 1-40/900-931 for testing.
+The ITL data is from the Turin University Treebank
+(TUT) (Bosco et al., 2000) and consists of 2,860 Italian
+sentences from a variety of domains. It was split into
+training, development, and test sets with a 70/15/15
+percentage split.
+The KIN texts are transcripts of testimonies by sur-
+vivors of the Rwandan genocide provided by the Ki-
+gali Genocide Memorial Center, along with a few BBC
+news articles. The MLG texts are articles from the
+websites Lakroa and La Gazette and Malagasy Global
+Voices. Both datasets are described in Garrette and
+Baldridge (2013). The KIN and MLG data is very
+small compared to ENG and CHI: the KIN dataset con-
+</bodyText>
+<footnote confidence="0.853489333333333">
+1Code available at github.com/jmielens/gibbs-pcfg-2014,
+along with instructions for replicating experiments when pos-
+sible
+2As part of a standardized pre-processing step, we strip
+functional tags, which makes a direct comparison to their re-
+sults inappropriate.
+</footnote>
+<equation confidence="0.3872">
+(18)
+</equation>
+<page confidence="0.993641">
+294
+</page>
+<bodyText confidence="0.985465">
+tains 677 sentences, while the MLG dataset has only
+113. Also, we simulated a small training set for ENG
+data by using only section 02 of the WSJ for training.
+</bodyText>
+<subsectionHeader confidence="0.9664">
+4.2 Experimental Setup
+</subsectionHeader>
+<bodyText confidence="0.999970642857143">
+As a preprocessing step, all trees are converted into
+Chomsky Normal-Form such that all non-terminal pro-
+ductions are binary and all unary chains are removed.
+Additional standard normalization is performed.
+Functional tags (e.g. the SBJ part of NP-SBJ), empty
+nodes (traces), and indices are removed. Our binariza-
+tion is simple: given a parent, select the rightmost child
+as the head and add a stand-in node that contains the
+remainder of the original children; the process then re-
+curses. This simple technique uses no explicit head-
+finding rules, which eases cross-linguistic applicability.
+From this normalized data, we train latent PCFGs
+with K=1,2,4,8,16,32 (where K=1 is equivalent to the
+plain PCFG described in section 2).
+</bodyText>
+<subsectionHeader confidence="0.998464">
+4.3 Practical refinements
+</subsectionHeader>
+<bodyText confidence="0.999980243243243">
+Unknown word handling. We use a similar unknown
+word handling procedure to Liang et al. (2009). From
+our raw corpus we extract features associated with ev-
+ery word, these features include surrounding context
+words as well as substring suffix/prefix features. Using
+these features we produce fifty clusters using k-means.
+Then, as a pre-parsing step, we replace all words oc-
+curring less than five times with their cluster label -
+this simulates unknown words for training. Finally,
+during evaluation, any word not seen in training was
+also replaced with its corresponding cluster label. This
+final step is simple because there are no ‘unknown un-
+knowns’ in our corpus, as the clustering has been per-
+formed over the entire corpus prior to training. This
+approach is similar to methods for unsupervised POS-
+tag induction that also utilize clusters in this manner
+(Dasgupta &amp; Ng, 2007).
+We compare this unknown word handling method to
+one in which the clustering and a classifier is trained
+not on the corpus under consideration, but rather on a
+separate corpus of unrelated data. This comparison was
+made to understand the effects of including the eval-
+uation set in the training data (without labels) versus
+training on out-of-domain texts. This is a more real-
+istic measurement of out-of-the-box performance of a
+trained model.
+Jump-starting sampling. In the basic setup, train-
+ing high K-value models takes a prohibitively long
+time, so we also consider a jump-start technique that
+allows larger annotation values (such as K=16) to be
+run in less time. We train these high-K value models
+first on a highly reduced training set (5% of the full
+training set) for a large number of iterations, and then
+use the found 0 values as the starting point for training
+on the full training set for a small number of iterations.
+Although many of the estimated parameters on the re-
+duced set will be zero, the prior allows us to eventually
+</bodyText>
+<table confidence="0.99936">
+System K=1 K=2 K=4 K=8 K=16
+Unsmoothed PCFG 40.2 — — — —
+Bikel Parser 57.9 — — — —
+Liang et al. 07 60.5 71.1 77.2 79.2 78.2
+Berkeley Parser 60.8 74.4 78.4 79.1 78.7
+Gibbs PCFG 61.0 71.3 76.6 78.7 78.0
+</table>
+<tableCaption confidence="0.99826">
+Table 1: F1 scores for small English training data ex-
+</tableCaption>
+<bodyText confidence="0.908613777777778">
+periments. ‘K’ is the number of latent annotations –
+K=1 represents a vanilla, unannotated PCFG.
+recover this information in the full set. This allows us
+to train on the full training set, which is desirable rela-
+tive to training on a reduced set, while still allowing the
+model sufficient iterations to burn in. The fact that we
+are likely starting in a fairly good position within the
+search space (due to estimating 0 from the corpus) also
+likely helps enable these lower iteration counts.
+</bodyText>
+<sectionHeader confidence="0.999949" genericHeader="evaluation">
+5 Results
+</sectionHeader>
+<bodyText confidence="0.99982990625">
+We start with Tables 1 and 2, which show performance
+when training on section 02 of the WSJ (pretending En-
+glish is a “low-resource” language). The results show
+that the basic Gibbs PCFG (where K=1), with an F-
+score of 61.0, substantially outperforms not only an
+unsmoothed PCFG (the simplest baseline), but also the
+Bikel parser (Bikel, 2004b) trained on the same amount
+of data. Table 1 also shows further large gains are
+obtained from using latent annotations—from 60.5 for
+K=1 to 78.7 for K=8.
+The Gibbs PCFG also compares quite favorably to
+the PCFG-LA of Liang et al. (2009)—slightly better
+for K=1 and K=2 and slightly worse for K=4 and K=8.
+Table 2 shows that the Gibbs PCFG is able to produce
+results with a smaller amount of variance relative to
+the Berkeley Parser, even at low training sizes. This
+trend is repeated in Table 3, which shows that the Gibbs
+PCFG also produces less variance when training on dif-
+ferent single sections of the WSJ relative to the Berke-
+ley Parser, although it again produces slightly lower F1
+scores.
+We also use the small English corpus to determine
+the effects of weighting the prior when sampling anno-
+tations, varying α between 0.1 and 10.0. Though per-
+formance is not sensitive to varying α for larger cor-
+pora, Figure 1 shows it can make a substantial differ-
+ence for smaller corpora (with an optimal value was
+obtained with an α value of 5 for this small training
+set). This seems to indicate that the lower counts asso-
+ciated with the smaller training sets should be compen-
+sated for by weighting those counts more heavily when
+processing the evaluation set, as we had anticipated.
+</bodyText>
+<table confidence="0.996631333333333">
+System WSJ Sec. 02 KIN MLG
+Berkeley Parser 78.3 ± 0.93 60.6 ± 1.1 52.2 ± 2.0
+Gibbs PCFG 76.7 ± 0.63 67.2 ± 0.92 57.5 ± 1.1
+</table>
+<tableCaption confidence="0.990777">
+Table 2: F1 scores with standard deviation over ten runs
+of small training data, K=4.
+</tableCaption>
+<page confidence="0.98766">
+295
+</page>
+<table confidence="0.611998">
+System F1 / StDev
+</table>
+<tableCaption confidence="0.79441">
+Table 3: F1 scores with standard deviations over twenty
+runs, training on individual WSJ sections (02-21).
+</tableCaption>
+<figure confidence="0.99929775">
+Berkeley Parser
+Gibbs PCFG
+77.5 ± 2.1
+77.0 ± 1.4
+</figure>
+<figureCaption confidence="0.9953535">
+Figure 1: Accuracy by varying α levels for small En-
+glish data.
+</figureCaption>
+<bodyText confidence="0.9995905">
+To evaluate the effectiveness of the jump-start tech-
+nique, we ran the full ENG data set with K=4 to com-
+pare the results from the full training setup to jump-
+starting. For this, we performed 100 training iterations
+on the reduced training set (WSJ section 02) and then
+used the resulting θ values to seed training on the full
+training set. Those training runs varied between three
+and nine iterations, and the results are shown in Figure
+2. The full ENG K=4 F-score is 86.2, so these results
+represent a slight step back. Nonetheless, the technique
+is still valuable in that it allows for inferring latent an-
+notations for higher K-values than would typically be
+available to us in a reasonable timeframe.
+Table 4 shows the results for the main experiments.
+Sampling a vanilla PCFG (K=1) produces results that
+are not state-of-the-art, but still good overall and al-
+ways better than an unsmoothed PCFG. The benefits of
+the latent annotations are further shown in the increase
+</bodyText>
+<table confidence="0.999724636363636">
+Condition ENG CHI ITA KIN MLG
+Unsmoothed PCFG 69.9 66.8 62.1 45.9 49.2
+Liang et al. 07 87.1 — — — —
+Huang &amp; Harper09 — 84.1 — — —
+Bikel Parser 86.9 81.1 74.5 55.7 49.5
+Berkeley Parser 90.1 83.4 71.6 61.4 51.8
+Gibbs PCFG,K=1 79.3 75.4 66.3 58.5 55.1
+Gibbs PCFG,K=2 82.6 79.8 69.3 65.0 57.0
+Gibbs PCFG,K=4 86.0 82.3 71.9 67.2 57.8
+Gibbs PCFG,K=16 87.2 83.2 72.4 68.1 58.2
+Gibbs PCFG,K=32 87.4 83.4 71.0 66.8 55.3
+</table>
+<tableCaption confidence="0.6217328">
+Table 4: F1 scores for experiments on sampled PCFGs.
+Note that Wang and Blunsom (2013) obtain an ENG F-
+score of 77.9% using collapsed VB for K=2. Though
+they do not give exact numbers, their Fig. 7 indicates
+an F-score of about 87% for K=16.
+</tableCaption>
+<figureCaption confidence="0.9904235">
+Figure 2: F-Score for K=4, varying full-set training it-
+erations (with and without 100x jump start).
+</figureCaption>
+<bodyText confidence="0.999599333333333">
+of F1 score in all languages, as compared to the vanilla
+PCFG. Experiments were run up to K=32 primarily due
+to time constraint. Although previous literature results
+report increases up to the equivalent of K=64, it may
+be the case that higher K values with no merge step
+more easily lead to overfitting in our model – reduc-
+ing the effectiveness of those high values, as shown by
+the overall poorer performance on several languages at
+K=32 when compared to K=16 as well as the general
+levelling-off seen at the high K values.
+For English and Chinese, the previous Bayesian
+framework parsers outperform our own, but only by
+around two points. Additionally, our parsing of Chi-
+nese improves on the Bikel parser (trained on our train-
+ing data) despite the fact that the Bikel parser makes
+use of language specific optimizations. Our parser
+needs no changes to switch languages.
+The Gibbs PCFG with K=16 is superior to the strong
+Bikel and Berkeley Parser benchmarks for both KIN
+and MLG, a promising result for future work on pars-
+ing low-resource languages in general. Note also that
+our parser exhibits less variance than Berkeley Parser
+especially for KIN and MLG, which supports the fact
+that the variance of Berkeley Parser is higher for mod-
+els with few subcategories (Petrov et al., 2006).
+Examples of the improvement across latent annota-
+tions for a given tree are shown in Figure 3. The details
+of the noun phrase ‘no major bond offerings’ were the
+same for each tree, and are thus abstracted here. The
+low K-value tree (K=2) is shown in 3a, and primarily
+suffers from issues related to the prepositional phrase,
+‘in Europe friday’. In particular, the low K-value tree
+incorrectly groups ‘Europe friday’ as a noun phrase ob-
+ject of ‘in’.
+The higher K-value tree (K=8) is shown in 3b.
+This tree manages to correctly analyze the preposi-
+tional phrase, accurately separately the temporal loca-
+tive ‘Friday’ from the actual prepositional phrase of
+‘in Europe’. However, the high K-value tree makes a
+</bodyText>
+<page confidence="0.997854">
+296
+</page>
+<figureCaption confidence="0.999846">
+Figure 3: Examples of tree progression in the Gibbs PCFG with a) K=2, b) K=8, and c) gold tree.
+</figureCaption>
+<bodyText confidence="0.999963431818182">
+different mistake that the low K-value tree did not; it
+groups ‘no major bond offerings in Europe Friday’ as a
+noun phrase, when it should be three separate phrases
+(two noun phrases and a prepositional phrase). This er-
+ror may be related to the additional latent annotations.
+With more available noun phrase subtypes, it may be
+the case that a more unusual noun phrase could be per-
+mitted that would have been too low probability with
+only a few subtypes.
+To determine whether the substantial range in F1
+scores across languages are primarily the result of the
+much larger training corpora available for certain lan-
+guages, two extreme training set reduction experiments
+were conducted. The training sets for all languages
+were reduced to a total of either 100 or 500 sen-
+tences. This process was repeated 10 times in a cross-
+validation setup, where 10 separate sets of sentences
+were selected for each language. The results of these
+experiments are shown in Table 5.
+We conclude that while data availability is a major
+factor in the higher performance of English and Chi-
+nese in our original experiments, it is not the only is-
+sue. Clearly, either the linguistic facts of particular
+languages or perhaps choices of formalism and annota-
+tion conventions in the corpora make some of the lan-
+guages more difficult to parse than others. The primary
+questions is why Gibbs-PCFG is able to achieve higher
+relative performance on the KIN/MLG datasets when
+compared to the other parsers, and why this advantage
+does not necessarily transfer to the extreme small-scale
+versions of the ENG/CHI/ITL data. Preliminary inves-
+tigation into the properties of the corpora have revealed
+a number of potential answers. For instance, the POS
+tagsets for KIN/MLG are substantially reduced com-
+pared to the other corpora, and there are differences
+in the branching factor of the native versions of the
+corpora as well: a typical maximum branching fac-
+tor for a tree in ENG/CHI/ITL is around 4-5, while
+for KIN/MLG it is almost always 2 (natively binary).
+Branching factors above 5 essentially never occur in
+KIN/MLG, while they are not rare in ENG/CHI/ITL.
+The question of exactly why the Gibbs-PCFG seems to
+perform well on these corpora remains an open ques-
+tion, but these differences could provide a starting point
+</bodyText>
+<table confidence="0.739892">
+In-Domain Out-of-Domain
+Full English (K=4)
+Small English (K=4)
+Kinyarwanda (K=4)
+Malagasy (K=4)
+</table>
+<tableCaption confidence="0.9702855">
+Table 6: Effect of differing regimes for handling un-
+known words.
+</tableCaption>
+<bodyText confidence="0.967422058823529">
+for future analysis.
+In addition to the actual F1 scores, the relative uni-
+formity of the standard deviation results indicates that
+the individual parsers are not that much different in
+terms of their ability to provide consistent results at
+these small data extremes, as opposed to the slightly
+higher training levels where the Gibbs-PCFG generated
+smaller variances.
+Considering the effects of unknown word handling,
+Table 6 shows that using the evaluation set when creat-
+ing the unknown word classifier does improve overall
+parsing accuracy when compared to an unknown word
+handler that is trained on out-of-domain texts. This
+shows that results reported in previous work somewhat
+overstate the accuracy of these parsers when used in the
+wild—which matters greatly in the low-resource set-
+ting.
+</bodyText>
+<sectionHeader confidence="0.995037" genericHeader="conclusions">
+6 Conclusion
+</sectionHeader>
+<bodyText confidence="0.9999313125">
+Our experiments demonstrate that sampling vanilla
+PCFGs, as well as PCFGs with latent annotations, is
+feasible with the use of a Gibbs sampler technique
+and produces results that are in line with previous
+parsers on controlled test sets. Our results also show
+that our methods are effective on a wide variety of
+languages—including two low-resource languages—
+with no language-specific model modifications needed.
+Additionally, although not a uniform winner, the
+Gibbs-PCFG shows a propensity for performing well
+on naturally small corpora (here, KIN/MLG). The ex-
+act reason for this remains slightly unclear, but the
+fact that a similar advantage is not found for extremely
+small versions of large corpora indicates that our ap-
+proach may be particularly well-suited for application
+in real low-resource environments as opposed to a sim-
+</bodyText>
+<figure confidence="0.982233222222222">
+Condition
+86.0
+76.6
+67.2
+57.8
+83.3
+75.7
+65.1
+55.4
+</figure>
+<page confidence="0.979876">
+297
+</page>
+<table confidence="0.999217142857143">
+Parser Size ENG CHI ITL KIN MLG
+Bikel 100 54.7 ± 2.2 51.4 ± 3.0 51 ± 2.4 47.1 ± 2.3 44.4 ± 2.0
+Berkeley 100 55.2 ± 2.6 53.9 ± 2.9 50 ± 2.8 47.8 ± 2.1 44.5 ± 2.3
+Gibbs-PCFG 100 54.5 ± 2.0 51.7 ± 2.4 49.5 ± 3.6 50.3 ± 2.3 45.8 ± 1.8
+Bikel 500 56.2 ± 2.0 54.1 ± 2.7 54.2 ± 2.4 — —
+Berkeley 500 58.9 ± 2.2 56.4 ± 2.7 52.5 ± 2.7 — —
+Gibbs-PCFG 500 58.1 ± 2.0 55.7 ± 2.3 51.1 ± 3.2 — —
+</table>
+<tableCaption confidence="0.996516">
+Table 5: 100/500 sentence training set results, including st.dev over 10 runs. KIN/MLG did not have enough data
+</tableCaption>
+<bodyText confidence="0.9556614">
+to run the 500 sentence version.
+ulated environment.
+Having established this procedure and its relative tol-
+erance for low amounts of data, we would like to extend
+the model to make use of partial bracketing information
+instead of complete trees, perhaps in the form of Frag-
+mentary Unlabeled Dependency Grammar annotations
+(Schneider et al., 2013). This would allow the sam-
+pling procedure to potentially operate using corpora
+with lighter annotations than full trees, making initial
+annotation effort not quite as heavy and potentially in-
+creasing the amount of available data for low-resource
+languages. Additionally, using the expert partial anno-
+tations to help restrict the sample space could provide
+good gains in terms of training time.
+</bodyText>
+<sectionHeader confidence="0.997475" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.998435666666667">
+Supported by the U.S. Army Research Office un-
+der grant number W911NF-10-1-0533. Any opin-
+ions, findings, and conclusions or recommendations
+expressed in this material are those of the author(s) and
+do not necessarily reflect the view of the U.S. Army
+Research Office.
+</bodyText>
+<sectionHeader confidence="0.99831" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.972774830769231">
+Anita Alicante, Cristina Bosco, Anna Corazza, and
+Alberto Lavelli. 2012. A treebank-based study
+on the influence of Italian word order on pars-
+ing performance. In Nicoletta Calzolari (Con-
+ference Chair), Khalid Choukri, Thierry Declerck,
+Mehmet Uur Doan, Bente Maegaard, Joseph Mar-
+iani, Jan Odijk, and Stelios Piperidis, editors, Pro-
+ceedings of LREC’12, Istanbul, Turkey. European
+Language Resources Association (ELRA).
+Emily M. Bender, Dan Flickinger, and Stephan Oepen.
+2002. The Grammar Matrix: An Open-Source
+Starter-Kit for the Rapid Development of Cross-
+Linguistically Consistent Broad-Coverage Precision
+Grammars. In John Carroll, Nelleke Oostdijk, and
+Richard Sutcliffe, editors, Proceedings of the Work-
+shop on Grammar Engineering and Evaluation at
+the 19th International Conference on Computational
+Linguistics, pages 8–14, Taipei, Taiwan.
+Dan Bikel. 2004a. On The Parameter Space of Gener-
+ative Lexicalized Statistical Parsing Models. Ph.D.
+thesis, University of Pennsylvania.
+Daniel M Bikel. 2004b. Intricacies of Collins’ parsing
+model. Computational Linguistics, 30(4):479–511.
+Ezra Black, Fred Jelinek, John Lafferty, David M
+Magerman, Robert Mercer, and Salim Roukos.
+1992. Towards history-based grammars: Using
+richer models for probabilistic parsing. In Proceed-
+ings of the workshop on Speech and Natural Lan-
+guage, pages 134–139. Association for Computa-
+tional Linguistics.
+Taylor L Booth and Richard A Thompson. 1973. Ap-
+plying probability measures to abstract languages.
+Computers, IEEE Transactions on, 100(5):442–450.
+Cristina Bosco, Vincenzo Lombardo, Daniela Vassallo,
+and Leonardo Lesmo. 2000. Building a Treebank
+for Italian: a Data-driven Annotation Schema. In In
+Proceedings of the Second International Conference
+on Language Resources and Evaluation LREC-2000
+(pp. 99, pages 99–105.
+Glenn Carroll and Eugene Charniak. 1992. Two exper-
+iments on learning probabilistic dependency gram-
+mars from corpora. Department of Computer Sci-
+ence, Univ.
+Eugene Charniak. 1996. Tree-bank grammars. In Pro-
+ceedings of the National Conference on Artificial In-
+telligence, pages 1031–1036.
+Eugene Charniak. 2000. A maximum-entropy-
+inspired parser. In Proceedings of the 1st North
+American chapter of the Association for Computa-
+tional Linguistics conference, pages 132–139. Asso-
+ciation for Computational Linguistics.
+Noam Chomsky. 1956. Three models for the descrip-
+tion of language. Information Theory, IRE Transac-
+tions on, 2(3):113–124.
+Shay B Cohen, Karl Stratos, Michael Collins, Dean P
+Foster, and Lyle Ungar. 2012. Spectral learning
+of latent-variable PCFGs. In Proceedings of the
+50th Annual Meeting of the Association for Compu-
+tational Linguistics: Long Papers-Volume 1, pages
+223–231. Association for Computational Linguis-
+tics.
+Shay B Cohen, Karl Stratos, Michael Collins, Dean P
+Foster, and Lyle Ungar. 2013. Experiments with
+spectral learning of latent-variable PCFGs. In Pro-
+ceedings of NAACL-HLT, pages 148–157.
+</reference>
+<page confidence="0.986861">
+298
+</page>
+<reference confidence="0.999222063063063">
+Michael John Collins. 1996. A new statistical parser
+based on bigram lexical dependencies. In Proceed-
+ings of the 34th annual meeting on Association for
+Computational Linguistics, pages 184–191. Associ-
+ation for Computational Linguistics.
+Michael Collins. 1997. Three generative, lexicalised
+models for statistical parsing. In Proceedings of the
+35th Annual Meeting of the Association for Com-
+putational Linguistics and Eighth Conference of the
+European Chapter of the Association for Compu-
+tational Linguistics, pages 16–23. Association for
+Computational Linguistics.
+Michael Collins. 2003. Head-driven statistical mod-
+els for natural language parsing. Computational lin-
+guistics, 29(4):589–637.
+Jenny Rose Finkel, Christopher D Manning, and An-
+drew Y Ng. 2006. Solving the problem of cascading
+errors: Approximate Bayesian inference for linguis-
+tic annotation pipelines. In Proceedings of the 2006
+Conference on Empirical Methods in Natural Lan-
+guage Processing, pages 618–626. Association for
+Computational Linguistics.
+Dan Garrette and Jason Baldridge. 2013. Learning a
+Part-of-Speech Tagger from Two Hours of Annota-
+tion. In Proceedings of NAACL, Atlanta, Georgia.
+Dan Garrette, Jason Mielens, and Jason Baldridge.
+2013. Real-World Semi-Supervised Learning of
+POS-Taggers for Low-Resource Languages. In Pro-
+ceedings of the 51th annual meeting on Associa-
+tion for Computational Linguistics. Association for
+Computational Linguistics.
+Stuart Geman and Donald Geman. 1984. Stochas-
+tic relaxation, Gibbs distributions, and the Bayesian
+restoration of images. Pattern Analysis and Machine
+Intelligence, IEEE Transactions on, (6):721–741.
+Joshua T Goodman. 1998. Parsing Inside-Out.
+Ph.D. thesis, Harvard University Cambridge, Mas-
+sachusetts.
+Zhongqiang Huang and Mary Harper. 2009. Self-
+Training PCFG grammars with latent annotations
+across languages. In Proceedings of the 2009 Con-
+ference on Empirical Methods in Natural Language
+Processing: Volume 2-Volume 2, pages 832–841.
+Association for Computational Linguistics.
+Rebecca Hwa, Philip Resnik, and Amy Weinberg.
+Breaking the Resource Bottleneck for Multilingual
+Parsing. In The Proceedings of the Workshop on Lin-
+guistic Knowledge Acquisition and Representation:
+Bootstrapping Annotated Language Data. Confer-
+ence on Language Resources and Evaluation.
+Mark Johnson, Thomas Griffiths, and Sharon Gold-
+water. 2007. Bayesian inference for PCFGs via
+Markov Chain Monte Carlo. In Human Language
+Technologies 2007: The Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics; Proceedings of the Main Confer-
+ence, pages 139–146.
+Mark Johnson. 1998. PCFG models of linguis-
+tic tree representations. Computational Linguistics,
+24(4):613–632.
+Dan Klein and Christopher D Manning. 2003. Ac-
+curate unlexicalized parsing. In Proceedings of the
+41st Annual Meeting on Association for Computa-
+tional Linguistics-Volume 1, pages 423–430. Asso-
+ciation for Computational Linguistics.
+Jonas Kuhn. 2004a. Applying computational linguis-
+tic techniques in a documentary project for Qanjobal
+(Mayan, Guatemala). In In Proceedings of LREC
+2004. Citeseer.
+Jonas Kuhn. 2004b. Experiments in parallel-text based
+grammar induction. In Proceedings of the 42nd An-
+nual Meeting on Association for Computational Lin-
+guistics, page 470. Association for Computational
+Linguistics.
+Karim Lary and Steve J Young. 1990. The estimation
+of stochastic context-free grammars using the inside-
+outside algrithm. Computer, Speech and Language,
+4:35–56.
+Percy Liang, Michael I Jordan, and Dan Klein. 2009.
+Probabilistic grammars and hierarchical Dirichlet
+processes. The handbook of applied Bayesian anal-
+ysis.
+David M Magerman. 1995. Statistical decision-tree
+models for parsing. In Proceedings of the 33rd an-
+nual meeting on Association for Computational Lin-
+guistics, pages 276–283. Association for Computa-
+tional Linguistics.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated
+corpus of english: The penn treebank. COMPUTA-
+TIONAL LINGUISTICS, 19(2):313–330.
+Takuya Matsuzaki, Yusuke Miyao, and Jun’ichi Tsu-
+jii. 2005. Probabilistic CFG with latent annotations.
+In Proceedings of the 43rd Annual Meeting on Asso-
+ciation for Computational Linguistics, pages 75–82.
+Association for Computational Linguistics.
+Fernando Pereira and Yves Schabes. 1992. Inside-
+outside reestimation from partially bracketed cor-
+pora. In Proceedings of the 30th annual meeting
+on Association for Computational Linguistics, pages
+128–135. Association for Computational Linguis-
+tics.
+Slav Petrov and Dan Klein. 2007. Improved Inference
+for Unlexicalized Parsing. In HLT-NAACL, pages
+404–411.
+Slav Petrov and Dan Klein. 2008. Sparse multi-scale
+grammars for discriminative latent variable pars-
+ing. In Proceedings of the Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+867–876. Association for Computational Linguis-
+tics.
+</reference>
+<page confidence="0.978101">
+299
+</page>
+<reference confidence="0.999539694444445">
+Slav Petrov, Leon Barrett, Romain Thibaux, and Dan
+Klein. 2006. Learning accurate, compact, and
+interpretable tree annotation. In Proceedings of
+the 21st International Conference on Computational
+Linguistics and the 44th annual meeting of the As-
+sociation for Computational Linguistics, pages 433–
+440. Association for Computational Linguistics.
+Elias Ponvert, Jason Baldridge, and Katrin Erk. 2011.
+Simple Unsupervised Grammar Induction from Raw
+Text with Cascaded Finite State Models. In ACL,
+pages 1077–1086.
+Nathan Schneider, Brendan O’Connor, Naomi Saphra,
+David Bamman, Manaal Faruqui, Noah A Smith,
+Chris Dyer, and Jason Baldridge. 2013. A
+framework for (under) specifying dependency syn-
+tax without overloading annotators. arXiv preprint
+arXiv:1306.2091.
+Hiroyuki Shindo, Yusuke Miyao, Akinori Fujino, and
+Masaaki Nagata. 2012. Bayesian symbol-refined
+tree substitution grammars for syntactic parsing. In
+Proceedings of the 50th Annual Meeting of the Asso-
+ciation for Computational Linguistics: Long Papers-
+Volume 1, pages 440–448. Association for Computa-
+tional Linguistics.
+Matthew A Taddy. 2011. On estimation and selection
+for topic models. arXiv preprint arXiv:1109.4518.
+Pengyu Wang and Phil Blunsom. 2013. Collapsed
+Variational Bayesian Inference for PCFGs. In Pro-
+ceedings of the Seventeenth Conference on Com-
+putational Natural Language Learning, pages 173–
+182, Sofia, Bulgaria, August. Association for Com-
+putational Linguistics.
+Naiwen Xue, Fei Xia, Fu-dong Chiou, and Marta
+Palmer. 2005. The Penn Chinese TreeBank: Phrase
+structure annotation of a large corpus. Nat. Lang.
+Eng., 11(2):207–238, June.
+</reference>
+<page confidence="0.99798">
+300
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.224232">
+<title confidence="0.8279575">Parsing low-resource languages using Gibbs for PCFGs with latent annotations</title>
+<affiliation confidence="0.663702">of Mechanical Engineering of Linguistics The University of Texas at Austin The University of Texas at Austin</affiliation>
+<abstract confidence="0.992405166666667">PCFGs with latent annotations have been shown to be a very effective model for phrase structure parsing. We present a Bayesian model and algorithms based on a Gibbs sampler for parsing with a grammar with latent annotations. For PCFG-LA, we present an additional Gibbs sampler algorithm to learn annotations from training data, which are parse trees with coarse (unannotated) symbols. We show that a Gibbs sampling technique is capable of parsing sentences in a wide variety of languages and producing results that are on-par with or surpass previous approaches. Our results for Kinyarwanda and Malagasy in particular demonstrate that low-resource language parsing can benefit substantially from a Bayesian approach.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="false">
+<authors>
+<author>Anita Alicante</author>
+<author>Cristina Bosco</author>
+<author>Anna Corazza</author>
+<author>Alberto Lavelli</author>
+</authors>
+<title>A treebank-based study on the influence of Italian word order on parsing performance.</title>
+<date>2012</date>
+<booktitle>In Nicoletta Calzolari</booktitle>
+<editor>(Conference Chair), Khalid Choukri, Thierry Declerck, Mehmet Uur Doan, Bente Maegaard, Joseph Mariani, Jan Odijk, and Stelios Piperidis, editors,</editor>
+<contexts>
+<context position="21472" citStr="Alicante et al. (2012)" startWordPosition="3699" endWordPosition="3702">a. We compare our results to a number of previously established baselines. First, for all languages, we use both a standard unsmoothed PCFG and the Bikel parser, trained on the training corpus. Additionally, we compare to state-of-the-art results for both English and Chinese, which have an existing body of work in PCFGs using a Bayesian framework. For Chinese, we compare to Huang &amp; Harper (2009), using their results that only use the Chinese Treebank (CTB). For English, we compare to Liang et al. (2009). Prior results for parsing the constituency version of the Italian data are available from Alicante et al. (2012), but as they make use of a different version of the treebank including extra sentences, and additionally use the extensive functional tags present in the corpus, we do not directly compare our results to theirs.2 4.1 Data English (ENG) and Chinese (CHI) are the two main languages used for this work; they are commonly used in parser evaluation and have previous examples of statistical parsers using a Bayesian framework. And since we primarily are interested in parsing low-resource languages, we include results for Kinyarwanda (KIN) and Malagasy (MLG) as examples of languages without substantia</context>
+</contexts>
+<marker>Alicante, Bosco, Corazza, Lavelli, 2012</marker>
+<rawString>Anita Alicante, Cristina Bosco, Anna Corazza, and Alberto Lavelli. 2012. A treebank-based study on the influence of Italian word order on parsing performance. In Nicoletta Calzolari (Conference Chair), Khalid Choukri, Thierry Declerck, Mehmet Uur Doan, Bente Maegaard, Joseph Mariani, Jan Odijk, and Stelios Piperidis, editors, Proceedings of LREC’12, Istanbul, Turkey. European Language Resources Association (ELRA).</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Emily M Bender</author>
+<author>Dan Flickinger</author>
+<author>Stephan Oepen</author>
+</authors>
+<title>The Grammar Matrix: An Open-Source Starter-Kit for the Rapid Development of CrossLinguistically Consistent Broad-Coverage Precision Grammars. In</title>
+<date>2002</date>
+<booktitle>Proceedings of the Workshop on Grammar Engineering and Evaluation at the 19th International Conference on Computational Linguistics,</booktitle>
+<pages>8--14</pages>
+<editor>John Carroll, Nelleke Oostdijk, and Richard Sutcliffe, editors,</editor>
+<location>Taipei, Taiwan.</location>
+<contexts>
+<context position="2266" citStr="Bender et al. (2002)" startWordPosition="344" endWordPosition="347"> making use of a measure for data reliability in order to weight training data based on confidence of annotation. Bootstrapping approaches such as these achieve markedly improved results, but they are dependent on the existence of a parallel bilingual corpus. Very few such corpora are readily available, particularly for low-resource languages, and creating such corpora obviously presents a challenge for many practical applications. Kuhn (2004a) shows some of the difficulty in handling low-resource languages by examining various tasks using Q’anjob’al as an example. Another approach is that of Bender et al. (2002), who take a more linguistically-motivated approach by making use of linguistic universals to seed newly developed grammars. This substantially reduces the effort by making it unnecessary to learn the basic parameters of a language, but it lacks the robustness of grammars learned from data. Recent work on Probabilistic Context-Free Grammars with latent annotations (PCFG-LA) (Matsuzaki et al., 2005; Petrov et al., 2006) have shown them to be effective models for syntactic parsing, especially when less training material is available (Liang et al., 2009; Shindo et al., 2012). The coarse nontermin</context>
+</contexts>
+<marker>Bender, Flickinger, Oepen, 2002</marker>
+<rawString>Emily M. Bender, Dan Flickinger, and Stephan Oepen. 2002. The Grammar Matrix: An Open-Source Starter-Kit for the Rapid Development of CrossLinguistically Consistent Broad-Coverage Precision Grammars. In John Carroll, Nelleke Oostdijk, and Richard Sutcliffe, editors, Proceedings of the Workshop on Grammar Engineering and Evaluation at the 19th International Conference on Computational Linguistics, pages 8–14, Taipei, Taiwan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Bikel</author>
+</authors>
+<title>On The Parameter Space of Generative Lexicalized Statistical Parsing Models.</title>
+<date>2004</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of Pennsylvania.</institution>
+<contexts>
+<context position="27398" citStr="Bikel, 2004" startWordPosition="4686" endWordPosition="4687"> a reduced set, while still allowing the model sufficient iterations to burn in. The fact that we are likely starting in a fairly good position within the search space (due to estimating 0 from the corpus) also likely helps enable these lower iteration counts. 5 Results We start with Tables 1 and 2, which show performance when training on section 02 of the WSJ (pretending English is a “low-resource” language). The results show that the basic Gibbs PCFG (where K=1), with an Fscore of 61.0, substantially outperforms not only an unsmoothed PCFG (the simplest baseline), but also the Bikel parser (Bikel, 2004b) trained on the same amount of data. Table 1 also shows further large gains are obtained from using latent annotations—from 60.5 for K=1 to 78.7 for K=8. The Gibbs PCFG also compares quite favorably to the PCFG-LA of Liang et al. (2009)—slightly better for K=1 and K=2 and slightly worse for K=4 and K=8. Table 2 shows that the Gibbs PCFG is able to produce results with a smaller amount of variance relative to the Berkeley Parser, even at low training sizes. This trend is repeated in Table 3, which shows that the Gibbs PCFG also produces less variance when training on different single sections</context>
+</contexts>
+<marker>Bikel, 2004</marker>
+<rawString>Dan Bikel. 2004a. On The Parameter Space of Generative Lexicalized Statistical Parsing Models. Ph.D. thesis, University of Pennsylvania.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel M Bikel</author>
+</authors>
+<date>2004</date>
+<journal>Intricacies of Collins’ parsing model. Computational Linguistics,</journal>
+<volume>30</volume>
+<issue>4</issue>
+<contexts>
+<context position="27398" citStr="Bikel, 2004" startWordPosition="4686" endWordPosition="4687"> a reduced set, while still allowing the model sufficient iterations to burn in. The fact that we are likely starting in a fairly good position within the search space (due to estimating 0 from the corpus) also likely helps enable these lower iteration counts. 5 Results We start with Tables 1 and 2, which show performance when training on section 02 of the WSJ (pretending English is a “low-resource” language). The results show that the basic Gibbs PCFG (where K=1), with an Fscore of 61.0, substantially outperforms not only an unsmoothed PCFG (the simplest baseline), but also the Bikel parser (Bikel, 2004b) trained on the same amount of data. Table 1 also shows further large gains are obtained from using latent annotations—from 60.5 for K=1 to 78.7 for K=8. The Gibbs PCFG also compares quite favorably to the PCFG-LA of Liang et al. (2009)—slightly better for K=1 and K=2 and slightly worse for K=4 and K=8. Table 2 shows that the Gibbs PCFG is able to produce results with a smaller amount of variance relative to the Berkeley Parser, even at low training sizes. This trend is repeated in Table 3, which shows that the Gibbs PCFG also produces less variance when training on different single sections</context>
+</contexts>
+<marker>Bikel, 2004</marker>
+<rawString>Daniel M Bikel. 2004b. Intricacies of Collins’ parsing model. Computational Linguistics, 30(4):479–511.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ezra Black</author>
+<author>Fred Jelinek</author>
+<author>John Lafferty</author>
+<author>David M Magerman</author>
+<author>Robert Mercer</author>
+<author>Salim Roukos</author>
+</authors>
+<title>Towards history-based grammars: Using richer models for probabilistic parsing.</title>
+<date>1992</date>
+<booktitle>In Proceedings of the workshop on Speech and Natural Language,</booktitle>
+<pages>134--139</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Black, Jelinek, Lafferty, Magerman, Mercer, Roukos, 1992</marker>
+<rawString>Ezra Black, Fred Jelinek, John Lafferty, David M Magerman, Robert Mercer, and Salim Roukos. 1992. Towards history-based grammars: Using richer models for probabilistic parsing. In Proceedings of the workshop on Speech and Natural Language, pages 134–139. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taylor L Booth</author>
+<author>Richard A Thompson</author>
+</authors>
+<title>Applying probability measures to abstract languages.</title>
+<date>1973</date>
+<journal>Computers, IEEE Transactions on,</journal>
+<volume>100</volume>
+<issue>5</issue>
+<marker>Booth, Thompson, 1973</marker>
+<rawString>Taylor L Booth and Richard A Thompson. 1973. Applying probability measures to abstract languages. Computers, IEEE Transactions on, 100(5):442–450.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cristina Bosco</author>
+<author>Vincenzo Lombardo</author>
+<author>Daniela Vassallo</author>
+<author>Leonardo Lesmo</author>
+</authors>
+<title>Building a Treebank for Italian: a Data-driven Annotation Schema. In</title>
+<date>2000</date>
+<booktitle>In Proceedings of the Second International Conference on Language Resources and Evaluation LREC-2000</booktitle>
+<pages>99--99</pages>
+<contexts>
+<context position="22616" citStr="Bosco et al., 2000" startWordPosition="3885" endWordPosition="3888">rwanda (KIN) and Malagasy (MLG) as examples of languages without substantial existing treebanks. Finally, as a middleground language, we use Italian (ITL). For English, we use the Wall-Street Journal section of the Penn Treebank (WSJ) (Marcus et al., 1993). The data split is sections 02-21 for training, section 22 for development, and section 23 for testing. For Chinese, the Chinese Treebank (CTB5) (Xue et al., 2005) was used. The data split is files 81-899 for training, files 41- 80 for development, and files 1-40/900-931 for testing. The ITL data is from the Turin University Treebank (TUT) (Bosco et al., 2000) and consists of 2,860 Italian sentences from a variety of domains. It was split into training, development, and test sets with a 70/15/15 percentage split. The KIN texts are transcripts of testimonies by survivors of the Rwandan genocide provided by the Kigali Genocide Memorial Center, along with a few BBC news articles. The MLG texts are articles from the websites Lakroa and La Gazette and Malagasy Global Voices. Both datasets are described in Garrette and Baldridge (2013). The KIN and MLG data is very small compared to ENG and CHI: the KIN dataset con1Code available at github.com/jmielens/g</context>
+</contexts>
+<marker>Bosco, Lombardo, Vassallo, Lesmo, 2000</marker>
+<rawString>Cristina Bosco, Vincenzo Lombardo, Daniela Vassallo, and Leonardo Lesmo. 2000. Building a Treebank for Italian: a Data-driven Annotation Schema. In In Proceedings of the Second International Conference on Language Resources and Evaluation LREC-2000 (pp. 99, pages 99–105.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Glenn Carroll</author>
+<author>Eugene Charniak</author>
+</authors>
+<title>Two experiments on learning probabilistic dependency grammars from corpora.</title>
+<date>1992</date>
+<institution>Department of Computer Science, Univ.</institution>
+<marker>Carroll, Charniak, 1992</marker>
+<rawString>Glenn Carroll and Eugene Charniak. 1992. Two experiments on learning probabilistic dependency grammars from corpora. Department of Computer Science, Univ.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+</authors>
+<title>Tree-bank grammars.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the National Conference on Artificial Intelligence,</booktitle>
+<pages>1031--1036</pages>
+<marker>Charniak, 1996</marker>
+<rawString>Eugene Charniak. 1996. Tree-bank grammars. In Proceedings of the National Conference on Artificial Intelligence, pages 1031–1036.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+</authors>
+<title>A maximum-entropyinspired parser.</title>
+<date>2000</date>
+<booktitle>In Proceedings of the 1st North American chapter of the Association for Computational Linguistics conference,</booktitle>
+<pages>132--139</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Charniak, 2000</marker>
+<rawString>Eugene Charniak. 2000. A maximum-entropyinspired parser. In Proceedings of the 1st North American chapter of the Association for Computational Linguistics conference, pages 132–139. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Noam Chomsky</author>
+</authors>
+<title>Three models for the description of language.</title>
+<date>1956</date>
+<journal>Information Theory, IRE Transactions on,</journal>
+<pages>2--3</pages>
+<marker>Chomsky, 1956</marker>
+<rawString>Noam Chomsky. 1956. Three models for the description of language. Information Theory, IRE Transactions on, 2(3):113–124.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shay B Cohen</author>
+<author>Karl Stratos</author>
+<author>Michael Collins</author>
+<author>Dean P Foster</author>
+<author>Lyle Ungar</author>
+</authors>
+<title>Spectral learning of latent-variable PCFGs.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers-Volume 1,</booktitle>
+<pages>223--231</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="3435" citStr="Cohen et al., 2012" startWordPosition="526" endWordPosition="529"> 2009; Shindo et al., 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen et al., 2012; Cohen et al., 2013), and variational inference (Liang et al., 2009; Wang and Blunsom, 2013). Regardless of inference method, previous work has used the same method to parse new sentences: a Viterbi parse under a new sentence-specific PCFG obtained from an approximation of the original grammar (Matsuzaki et al., 2005). Here, we provide an alternative approach to parsing new sentences: an extension of the Gibbs sampling algorithm of Johnson et al. (2007), which learns rule probabilities in an unsupervised PCFG. We use a Gibbs sampler to collect sampled trees theoretically distributed from the </context>
+</contexts>
+<marker>Cohen, Stratos, Collins, Foster, Ungar, 2012</marker>
+<rawString>Shay B Cohen, Karl Stratos, Michael Collins, Dean P Foster, and Lyle Ungar. 2012. Spectral learning of latent-variable PCFGs. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long Papers-Volume 1, pages 223–231. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shay B Cohen</author>
+<author>Karl Stratos</author>
+<author>Michael Collins</author>
+<author>Dean P Foster</author>
+<author>Lyle Ungar</author>
+</authors>
+<title>Experiments with spectral learning of latent-variable PCFGs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL-HLT,</booktitle>
+<pages>148--157</pages>
+<contexts>
+<context position="3456" citStr="Cohen et al., 2013" startWordPosition="530" endWordPosition="534">, 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen et al., 2012; Cohen et al., 2013), and variational inference (Liang et al., 2009; Wang and Blunsom, 2013). Regardless of inference method, previous work has used the same method to parse new sentences: a Viterbi parse under a new sentence-specific PCFG obtained from an approximation of the original grammar (Matsuzaki et al., 2005). Here, we provide an alternative approach to parsing new sentences: an extension of the Gibbs sampling algorithm of Johnson et al. (2007), which learns rule probabilities in an unsupervised PCFG. We use a Gibbs sampler to collect sampled trees theoretically distributed from the true posterior distri</context>
+</contexts>
+<marker>Cohen, Stratos, Collins, Foster, Ungar, 2013</marker>
+<rawString>Shay B Cohen, Karl Stratos, Michael Collins, Dean P Foster, and Lyle Ungar. 2013. Experiments with spectral learning of latent-variable PCFGs. In Proceedings of NAACL-HLT, pages 148–157.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael John Collins</author>
+</authors>
+<title>A new statistical parser based on bigram lexical dependencies.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the 34th annual meeting on Association for Computational Linguistics,</booktitle>
+<pages>184--191</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Collins, 1996</marker>
+<rawString>Michael John Collins. 1996. A new statistical parser based on bigram lexical dependencies. In Proceedings of the 34th annual meeting on Association for Computational Linguistics, pages 184–191. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Three generative, lexicalised models for statistical parsing.</title>
+<date>1997</date>
+<booktitle>In Proceedings of the 35th Annual Meeting of the Association for Computational Linguistics and Eighth Conference of the European Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>16--23</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Collins, 1997</marker>
+<rawString>Michael Collins. 1997. Three generative, lexicalised models for statistical parsing. In Proceedings of the 35th Annual Meeting of the Association for Computational Linguistics and Eighth Conference of the European Chapter of the Association for Computational Linguistics, pages 16–23. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Head-driven statistical models for natural language parsing.</title>
+<date>2003</date>
+<booktitle>Computational linguistics,</booktitle>
+<pages>29--4</pages>
+<marker>Collins, 2003</marker>
+<rawString>Michael Collins. 2003. Head-driven statistical models for natural language parsing. Computational linguistics, 29(4):589–637.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jenny Rose Finkel</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Solving the problem of cascading errors: Approximate Bayesian inference for linguistic annotation pipelines.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 2006 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>618--626</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="9736" citStr="Finkel et al., 2006" startWordPosition="1592" endWordPosition="1595">abilities θ and then trees t from these conditional distributions: ,In p(t |θ, w, α) = i=1 p(ti |wi, θ) (3) ,I p(θ |t, w, α) = AEN Dir(θA |fA(t) + αA) (4) Step 1: Sample Rule Probabilities. Given trees t and prior α, the production probabilities θA for each nonterminal AEN are sampled from a Dirichlet distribution with parameters fA(t) + αA. fA(t) is a vector, and each component of fA(t), is the number of occurrences of one rule expanding nonterminal A. Step 2: Sample Tree Structures. To sample trees from p(ti |wi, θ), we use the efficient sampling scheme used in previous work (Goodman, 1998; Finkel et al., 2006; Johnson et al., 2007). There are two parts to this algorithm. The first constructs an inside table as in the Inside-Outside algorithm for PCFGs (Lary and Young, 1990). The second selects the tree by recursively sampling productions from top to bottom. ,I = 291 Require: A is parent node of binary rule; wi,k is a span of words: i + 1 &lt; k function TREESAMPLER(A, i, k) for i &lt; j &lt; k and pair of child nodes of A:B, C do P (j, B, C) = θA→BC·pB,i,j·pC,j,k pA,i,k · end for Sample j*, B*, C* from multinomial distribution for (j, B, C) with probabilities calculated above return j*, B*, C* end function</context>
+</contexts>
+<marker>Finkel, Manning, Ng, 2006</marker>
+<rawString>Jenny Rose Finkel, Christopher D Manning, and Andrew Y Ng. 2006. Solving the problem of cascading errors: Approximate Bayesian inference for linguistic annotation pipelines. In Proceedings of the 2006 Conference on Empirical Methods in Natural Language Processing, pages 618–626. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Garrette</author>
+<author>Jason Baldridge</author>
+</authors>
+<title>Learning a Part-of-Speech Tagger from Two Hours of Annotation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL,</booktitle>
+<location>Atlanta,</location>
+<contexts>
+<context position="23095" citStr="Garrette and Baldridge (2013)" startWordPosition="3964" endWordPosition="3967">ining, files 41- 80 for development, and files 1-40/900-931 for testing. The ITL data is from the Turin University Treebank (TUT) (Bosco et al., 2000) and consists of 2,860 Italian sentences from a variety of domains. It was split into training, development, and test sets with a 70/15/15 percentage split. The KIN texts are transcripts of testimonies by survivors of the Rwandan genocide provided by the Kigali Genocide Memorial Center, along with a few BBC news articles. The MLG texts are articles from the websites Lakroa and La Gazette and Malagasy Global Voices. Both datasets are described in Garrette and Baldridge (2013). The KIN and MLG data is very small compared to ENG and CHI: the KIN dataset con1Code available at github.com/jmielens/gibbs-pcfg-2014, along with instructions for replicating experiments when possible 2As part of a standardized pre-processing step, we strip functional tags, which makes a direct comparison to their results inappropriate. (18) 294 tains 677 sentences, while the MLG dataset has only 113. Also, we simulated a small training set for ENG data by using only section 02 of the WSJ for training. 4.2 Experimental Setup As a preprocessing step, all trees are converted into Chomsky Norma</context>
+</contexts>
+<marker>Garrette, Baldridge, 2013</marker>
+<rawString>Dan Garrette and Jason Baldridge. 2013. Learning a Part-of-Speech Tagger from Two Hours of Annotation. In Proceedings of NAACL, Atlanta, Georgia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Garrette</author>
+<author>Jason Mielens</author>
+<author>Jason Baldridge</author>
+</authors>
+<title>Real-World Semi-Supervised Learning of POS-Taggers for Low-Resource Languages.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51th annual meeting on Association for Computational Linguistics. Association for Computational Linguistics.</booktitle>
+<marker>Garrette, Mielens, Baldridge, 2013</marker>
+<rawString>Dan Garrette, Jason Mielens, and Jason Baldridge. 2013. Real-World Semi-Supervised Learning of POS-Taggers for Low-Resource Languages. In Proceedings of the 51th annual meeting on Association for Computational Linguistics. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stuart Geman</author>
+<author>Donald Geman</author>
+</authors>
+<title>Stochastic relaxation, Gibbs distributions, and the Bayesian restoration of images.</title>
+<date>1984</date>
+<journal>Pattern Analysis and Machine Intelligence, IEEE Transactions on,</journal>
+<pages>6--721</pages>
+<marker>Geman, Geman, 1984</marker>
+<rawString>Stuart Geman and Donald Geman. 1984. Stochastic relaxation, Gibbs distributions, and the Bayesian restoration of images. Pattern Analysis and Machine Intelligence, IEEE Transactions on, (6):721–741.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joshua T Goodman</author>
+</authors>
+<title>Parsing Inside-Out.</title>
+<date>1998</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Harvard University Cambridge,</institution>
+<location>Massachusetts.</location>
+<contexts>
+<context position="9715" citStr="Goodman, 1998" startWordPosition="1590" endWordPosition="1591">production probabilities θ and then trees t from these conditional distributions: ,In p(t |θ, w, α) = i=1 p(ti |wi, θ) (3) ,I p(θ |t, w, α) = AEN Dir(θA |fA(t) + αA) (4) Step 1: Sample Rule Probabilities. Given trees t and prior α, the production probabilities θA for each nonterminal AEN are sampled from a Dirichlet distribution with parameters fA(t) + αA. fA(t) is a vector, and each component of fA(t), is the number of occurrences of one rule expanding nonterminal A. Step 2: Sample Tree Structures. To sample trees from p(ti |wi, θ), we use the efficient sampling scheme used in previous work (Goodman, 1998; Finkel et al., 2006; Johnson et al., 2007). There are two parts to this algorithm. The first constructs an inside table as in the Inside-Outside algorithm for PCFGs (Lary and Young, 1990). The second selects the tree by recursively sampling productions from top to bottom. ,I = 291 Require: A is parent node of binary rule; wi,k is a span of words: i + 1 &lt; k function TREESAMPLER(A, i, k) for i &lt; j &lt; k and pair of child nodes of A:B, C do P (j, B, C) = θA→BC·pB,i,j·pC,j,k pA,i,k · end for Sample j*, B*, C* from multinomial distribution for (j, B, C) with probabilities calculated above return j*</context>
+</contexts>
+<marker>Goodman, 1998</marker>
+<rawString>Joshua T Goodman. 1998. Parsing Inside-Out. Ph.D. thesis, Harvard University Cambridge, Massachusetts.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongqiang Huang</author>
+<author>Mary Harper</author>
+</authors>
+<title>SelfTraining PCFG grammars with latent annotations across languages.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume</booktitle>
+<volume>2</volume>
+<pages>832--841</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="21248" citStr="Huang &amp; Harper (2009)" startWordPosition="3660" endWordPosition="3663">arse raw sentences. 4 Experiments1 Our goal is to understand parsing efficacy using sampling and latent annotations for low-resource languages, so we perform experiments on five languages with varying amount of training data. We compare our results to a number of previously established baselines. First, for all languages, we use both a standard unsmoothed PCFG and the Bikel parser, trained on the training corpus. Additionally, we compare to state-of-the-art results for both English and Chinese, which have an existing body of work in PCFGs using a Bayesian framework. For Chinese, we compare to Huang &amp; Harper (2009), using their results that only use the Chinese Treebank (CTB). For English, we compare to Liang et al. (2009). Prior results for parsing the constituency version of the Italian data are available from Alicante et al. (2012), but as they make use of a different version of the treebank including extra sentences, and additionally use the extensive functional tags present in the corpus, we do not directly compare our results to theirs.2 4.1 Data English (ENG) and Chinese (CHI) are the two main languages used for this work; they are commonly used in parser evaluation and have previous examples of </context>
+</contexts>
+<marker>Huang, Harper, 2009</marker>
+<rawString>Zhongqiang Huang and Mary Harper. 2009. SelfTraining PCFG grammars with latent annotations across languages. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume 2-Volume 2, pages 832–841. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Rebecca Hwa</author>
+<author>Philip Resnik</author>
+<author>Amy Weinberg</author>
+</authors>
+<title>Breaking the Resource Bottleneck for Multilingual Parsing.</title>
+<booktitle>In The Proceedings of the Workshop on Linguistic Knowledge Acquisition and Representation: Bootstrapping Annotated Language Data. Conference on Language Resources and Evaluation.</booktitle>
+<marker>Hwa, Resnik, Weinberg, </marker>
+<rawString>Rebecca Hwa, Philip Resnik, and Amy Weinberg. Breaking the Resource Bottleneck for Multilingual Parsing. In The Proceedings of the Workshop on Linguistic Knowledge Acquisition and Representation: Bootstrapping Annotated Language Data. Conference on Language Resources and Evaluation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Johnson</author>
+<author>Thomas Griffiths</author>
+<author>Sharon Goldwater</author>
+</authors>
+<title>Bayesian inference for PCFGs via Markov Chain Monte Carlo.</title>
+<date>2007</date>
+<booktitle>In Human Language Technologies 2007: The Conference of the North American Chapter of the Association for Computational Linguistics; Proceedings of the Main Conference,</booktitle>
+<pages>139--146</pages>
+<contexts>
+<context position="3893" citStr="Johnson et al. (2007)" startWordPosition="601" endWordPosition="604">on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen et al., 2012; Cohen et al., 2013), and variational inference (Liang et al., 2009; Wang and Blunsom, 2013). Regardless of inference method, previous work has used the same method to parse new sentences: a Viterbi parse under a new sentence-specific PCFG obtained from an approximation of the original grammar (Matsuzaki et al., 2005). Here, we provide an alternative approach to parsing new sentences: an extension of the Gibbs sampling algorithm of Johnson et al. (2007), which learns rule probabilities in an unsupervised PCFG. We use a Gibbs sampler to collect sampled trees theoretically distributed from the true posterior distribution in order to parse. Priors in a Bayesian model can control the sparsity of grammars (which the insideoutside algorithm fails to do), while naturally incorporating smoothing into the model (Johnson et al., 2007; Liang et al., 2009). We also build a Bayesian model for parsing with a treebank, and incorporate information from training data as a prior. Moreover, we extend the Gibbs sampler to learn and parse PCFGs with latent annot</context>
+<context position="6120" citStr="Johnson et al. (2007)" startWordPosition="958" endWordPosition="961">hat our technique comes near state of the art results on large datasets, such as those for Chinese and English, and it provides excellent results on limited datasets – both artificially limited in the case of English, and naturally limited in the case of Italian, Malagasy, and Kinyarwanda. This, combined with its ability to run off-the-shelf on new languages without any supporting materials such as parallel corpora, make it a valuable technique for the parsing of low-resource languages. 2 Gibbs sampling for PCFGs Our starting point is a Gibbs Sampling algorithm for vanilla PCFGs introduced by Johnson et al. (2007) for estimating rule probabilities in an unsupervised PCFG. We focus instead on using this algorithm for parsing new sentences and then extending it to learn PCFGs with latent annotations. We begin by summarizing the Bayesian PCFG and Gibbs sampler defined by Johnson et al. (2007). Bayesian PCFG For a grammar G, each rule r in the set of rules R has an associated probability θr. The probabilities for all the rules that expand the same nonterminal A must sum to one: EA-βER θA-β = 1. Given an input corpus w=(w(1), · · · , w(n)), we introduce a latent variable t=(t(1), · · · ,t(n)) for trees gene</context>
+<context position="8005" citStr="Johnson et al. (2007)" startWordPosition="1300" endWordPosition="1303">hlet distribution is conjugate to the Multinomial distribution, which we use to model the likelihood of trees, the conditional posterior of θA can be updated as follows: pG(θ |t, α) a pG(t |θ)p(θ |α) a (,I θfr(t))(,I θαr1) rER r rER r θfr(t)+αr-1 (2) r rER which is still a Dirichlet distribution with updated parameter fr(t) + αr for each rule r E R. Gibbs sampler The parameters of the PCFG model can be learned from an annotated corpus by simply counting rules. However, parsing cannot be done directly with standard CKY as with standard PCFGs, so we use the Gibbs sampling algorithm presented in Johnson et al. (2007). An additional motivation for using this algorithm is that Johnson et al. use it for learning without annotated structures, and in future work we seek to learn from fewer, and at times partial, annotations. An advantage of using Gibbs sampling for Bayesian inference, as opposed to other approximation algorithms such as Variational Bayesian inference (VB) and Collapsed Variational Bayesian inference (CVB), is that Markov Chain Monte Carlo (MCMC) algorithms are guaranteed to converge to a sample from the true posterior under appropriate conditions (Taddy, 2011). Both VB and CVB converge to inac</context>
+<context position="9759" citStr="Johnson et al., 2007" startWordPosition="1596" endWordPosition="1599">trees t from these conditional distributions: ,In p(t |θ, w, α) = i=1 p(ti |wi, θ) (3) ,I p(θ |t, w, α) = AEN Dir(θA |fA(t) + αA) (4) Step 1: Sample Rule Probabilities. Given trees t and prior α, the production probabilities θA for each nonterminal AEN are sampled from a Dirichlet distribution with parameters fA(t) + αA. fA(t) is a vector, and each component of fA(t), is the number of occurrences of one rule expanding nonterminal A. Step 2: Sample Tree Structures. To sample trees from p(ti |wi, θ), we use the efficient sampling scheme used in previous work (Goodman, 1998; Finkel et al., 2006; Johnson et al., 2007). There are two parts to this algorithm. The first constructs an inside table as in the Inside-Outside algorithm for PCFGs (Lary and Young, 1990). The second selects the tree by recursively sampling productions from top to bottom. ,I = 291 Require: A is parent node of binary rule; wi,k is a span of words: i + 1 &lt; k function TREESAMPLER(A, i, k) for i &lt; j &lt; k and pair of child nodes of A:B, C do P (j, B, C) = θA→BC·pB,i,j·pC,j,k pA,i,k · end for Sample j*, B*, C* from multinomial distribution for (j, B, C) with probabilities calculated above return j*, B*, C* end function Algorithm 1: Sampling </context>
+</contexts>
+<marker>Johnson, Griffiths, Goldwater, 2007</marker>
+<rawString>Mark Johnson, Thomas Griffiths, and Sharon Goldwater. 2007. Bayesian inference for PCFGs via Markov Chain Monte Carlo. In Human Language Technologies 2007: The Conference of the North American Chapter of the Association for Computational Linguistics; Proceedings of the Main Conference, pages 139–146.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Johnson</author>
+</authors>
+<title>PCFG models of linguistic tree representations.</title>
+<date>1998</date>
+<journal>Computational Linguistics,</journal>
+<volume>24</volume>
+<issue>4</issue>
+<marker>Johnson, 1998</marker>
+<rawString>Mark Johnson. 1998. PCFG models of linguistic tree representations. Computational Linguistics, 24(4):613–632.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Accurate unlexicalized parsing.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics-Volume 1,</booktitle>
+<pages>423--430</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Klein, Manning, 2003</marker>
+<rawString>Dan Klein and Christopher D Manning. 2003. Accurate unlexicalized parsing. In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics-Volume 1, pages 423–430. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonas Kuhn</author>
+</authors>
+<title>Applying computational linguistic techniques in a documentary project for Qanjobal (Mayan, Guatemala). In</title>
+<date>2004</date>
+<booktitle>In Proceedings of LREC</booktitle>
+<publisher>Citeseer.</publisher>
+<contexts>
+<context position="1555" citStr="Kuhn (2004" startWordPosition="234" endWordPosition="235">strate that low-resource language parsing can benefit substantially from a Bayesian approach. 1 Introduction Despite great progress over the past two decades on parsing, relatively little work has considered the problem of creating accurate parsers for low-resource languages. Existing work in this area focuses primarily on approaches that use some form of cross-lingual bootstrapping to improve performance. For instance, Hwa et al. (2005) use a parallel Chinese/English corpus and an English dependency grammar to induce an annotated Chinese corpus in order to train a Chinese dependency grammar. Kuhn (2004b) also considers the benefits of using multiple languages to induce a monolingual grammar, making use of a measure for data reliability in order to weight training data based on confidence of annotation. Bootstrapping approaches such as these achieve markedly improved results, but they are dependent on the existence of a parallel bilingual corpus. Very few such corpora are readily available, particularly for low-resource languages, and creating such corpora obviously presents a challenge for many practical applications. Kuhn (2004a) shows some of the difficulty in handling low-resource langua</context>
+</contexts>
+<marker>Kuhn, 2004</marker>
+<rawString>Jonas Kuhn. 2004a. Applying computational linguistic techniques in a documentary project for Qanjobal (Mayan, Guatemala). In In Proceedings of LREC 2004. Citeseer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonas Kuhn</author>
+</authors>
+<title>Experiments in parallel-text based grammar induction.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the 42nd Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>470</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="1555" citStr="Kuhn (2004" startWordPosition="234" endWordPosition="235">strate that low-resource language parsing can benefit substantially from a Bayesian approach. 1 Introduction Despite great progress over the past two decades on parsing, relatively little work has considered the problem of creating accurate parsers for low-resource languages. Existing work in this area focuses primarily on approaches that use some form of cross-lingual bootstrapping to improve performance. For instance, Hwa et al. (2005) use a parallel Chinese/English corpus and an English dependency grammar to induce an annotated Chinese corpus in order to train a Chinese dependency grammar. Kuhn (2004b) also considers the benefits of using multiple languages to induce a monolingual grammar, making use of a measure for data reliability in order to weight training data based on confidence of annotation. Bootstrapping approaches such as these achieve markedly improved results, but they are dependent on the existence of a parallel bilingual corpus. Very few such corpora are readily available, particularly for low-resource languages, and creating such corpora obviously presents a challenge for many practical applications. Kuhn (2004a) shows some of the difficulty in handling low-resource langua</context>
+</contexts>
+<marker>Kuhn, 2004</marker>
+<rawString>Jonas Kuhn. 2004b. Experiments in parallel-text based grammar induction. In Proceedings of the 42nd Annual Meeting on Association for Computational Linguistics, page 470. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karim Lary</author>
+<author>Steve J Young</author>
+</authors>
+<title>The estimation of stochastic context-free grammars using the insideoutside algrithm.</title>
+<date>1990</date>
+<journal>Computer, Speech and Language,</journal>
+<pages>4--35</pages>
+<contexts>
+<context position="9904" citStr="Lary and Young, 1990" startWordPosition="1620" endWordPosition="1623">ple Rule Probabilities. Given trees t and prior α, the production probabilities θA for each nonterminal AEN are sampled from a Dirichlet distribution with parameters fA(t) + αA. fA(t) is a vector, and each component of fA(t), is the number of occurrences of one rule expanding nonterminal A. Step 2: Sample Tree Structures. To sample trees from p(ti |wi, θ), we use the efficient sampling scheme used in previous work (Goodman, 1998; Finkel et al., 2006; Johnson et al., 2007). There are two parts to this algorithm. The first constructs an inside table as in the Inside-Outside algorithm for PCFGs (Lary and Young, 1990). The second selects the tree by recursively sampling productions from top to bottom. ,I = 291 Require: A is parent node of binary rule; wi,k is a span of words: i + 1 &lt; k function TREESAMPLER(A, i, k) for i &lt; j &lt; k and pair of child nodes of A:B, C do P (j, B, C) = θA→BC·pB,i,j·pC,j,k pA,i,k · end for Sample j*, B*, C* from multinomial distribution for (j, B, C) with probabilities calculated above return j*, B*, C* end function Algorithm 1: Sampling split position and rule to expand parent node Consider a sentence w, with sub-spans wi,k = (wi+1, • • • , wk). Given B, we construct the inside t</context>
+</contexts>
+<marker>Lary, Young, 1990</marker>
+<rawString>Karim Lary and Steve J Young. 1990. The estimation of stochastic context-free grammars using the insideoutside algrithm. Computer, Speech and Language, 4:35–56.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Michael I Jordan</author>
+<author>Dan Klein</author>
+</authors>
+<title>Probabilistic grammars and hierarchical Dirichlet processes. The handbook of applied Bayesian analysis.</title>
+<date>2009</date>
+<contexts>
+<context position="2822" citStr="Liang et al., 2009" startWordPosition="430" endWordPosition="433">s an example. Another approach is that of Bender et al. (2002), who take a more linguistically-motivated approach by making use of linguistic universals to seed newly developed grammars. This substantially reduces the effort by making it unnecessary to learn the basic parameters of a language, but it lacks the robustness of grammars learned from data. Recent work on Probabilistic Context-Free Grammars with latent annotations (PCFG-LA) (Matsuzaki et al., 2005; Petrov et al., 2006) have shown them to be effective models for syntactic parsing, especially when less training material is available (Liang et al., 2009; Shindo et al., 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen</context>
+<context position="4292" citStr="Liang et al., 2009" startWordPosition="665" endWordPosition="668">FG obtained from an approximation of the original grammar (Matsuzaki et al., 2005). Here, we provide an alternative approach to parsing new sentences: an extension of the Gibbs sampling algorithm of Johnson et al. (2007), which learns rule probabilities in an unsupervised PCFG. We use a Gibbs sampler to collect sampled trees theoretically distributed from the true posterior distribution in order to parse. Priors in a Bayesian model can control the sparsity of grammars (which the insideoutside algorithm fails to do), while naturally incorporating smoothing into the model (Johnson et al., 2007; Liang et al., 2009). We also build a Bayesian model for parsing with a treebank, and incorporate information from training data as a prior. Moreover, we extend the Gibbs sampler to learn and parse PCFGs with latent annotations. Learning the latent annotations is a compute-intensive process. We show how a small amount of training data can be used to bootstrap: after running a large number of sampling iterations on a small set, the resulting parameters are used to seed a smaller number of iterations on the full training data. 290 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processin</context>
+<context position="21358" citStr="Liang et al. (2009)" startWordPosition="3680" endWordPosition="3683">ons for low-resource languages, so we perform experiments on five languages with varying amount of training data. We compare our results to a number of previously established baselines. First, for all languages, we use both a standard unsmoothed PCFG and the Bikel parser, trained on the training corpus. Additionally, we compare to state-of-the-art results for both English and Chinese, which have an existing body of work in PCFGs using a Bayesian framework. For Chinese, we compare to Huang &amp; Harper (2009), using their results that only use the Chinese Treebank (CTB). For English, we compare to Liang et al. (2009). Prior results for parsing the constituency version of the Italian data are available from Alicante et al. (2012), but as they make use of a different version of the treebank including extra sentences, and additionally use the extensive functional tags present in the corpus, we do not directly compare our results to theirs.2 4.1 Data English (ENG) and Chinese (CHI) are the two main languages used for this work; they are commonly used in parser evaluation and have previous examples of statistical parsers using a Bayesian framework. And since we primarily are interested in parsing low-resource </context>
+<context position="24476" citStr="Liang et al. (2009)" startWordPosition="4182" endWordPosition="4185">he SBJ part of NP-SBJ), empty nodes (traces), and indices are removed. Our binarization is simple: given a parent, select the rightmost child as the head and add a stand-in node that contains the remainder of the original children; the process then recurses. This simple technique uses no explicit headfinding rules, which eases cross-linguistic applicability. From this normalized data, we train latent PCFGs with K=1,2,4,8,16,32 (where K=1 is equivalent to the plain PCFG described in section 2). 4.3 Practical refinements Unknown word handling. We use a similar unknown word handling procedure to Liang et al. (2009). From our raw corpus we extract features associated with every word, these features include surrounding context words as well as substring suffix/prefix features. Using these features we produce fifty clusters using k-means. Then, as a pre-parsing step, we replace all words occurring less than five times with their cluster label - this simulates unknown words for training. Finally, during evaluation, any word not seen in training was also replaced with its corresponding cluster label. This final step is simple because there are no ‘unknown unknowns’ in our corpus, as the clustering has been p</context>
+<context position="27636" citStr="Liang et al. (2009)" startWordPosition="4726" endWordPosition="4729"> these lower iteration counts. 5 Results We start with Tables 1 and 2, which show performance when training on section 02 of the WSJ (pretending English is a “low-resource” language). The results show that the basic Gibbs PCFG (where K=1), with an Fscore of 61.0, substantially outperforms not only an unsmoothed PCFG (the simplest baseline), but also the Bikel parser (Bikel, 2004b) trained on the same amount of data. Table 1 also shows further large gains are obtained from using latent annotations—from 60.5 for K=1 to 78.7 for K=8. The Gibbs PCFG also compares quite favorably to the PCFG-LA of Liang et al. (2009)—slightly better for K=1 and K=2 and slightly worse for K=4 and K=8. Table 2 shows that the Gibbs PCFG is able to produce results with a smaller amount of variance relative to the Berkeley Parser, even at low training sizes. This trend is repeated in Table 3, which shows that the Gibbs PCFG also produces less variance when training on different single sections of the WSJ relative to the Berkeley Parser, although it again produces slightly lower F1 scores. We also use the small English corpus to determine the effects of weighting the prior when sampling annotations, varying α between 0.1 and 10</context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2009</marker>
+<rawString>Percy Liang, Michael I Jordan, and Dan Klein. 2009. Probabilistic grammars and hierarchical Dirichlet processes. The handbook of applied Bayesian analysis.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David M Magerman</author>
+</authors>
+<title>Statistical decision-tree models for parsing.</title>
+<date>1995</date>
+<booktitle>In Proceedings of the 33rd annual meeting on Association for Computational Linguistics,</booktitle>
+<pages>276--283</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Magerman, 1995</marker>
+<rawString>David M Magerman. 1995. Statistical decision-tree models for parsing. In Proceedings of the 33rd annual meeting on Association for Computational Linguistics, pages 276–283. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Beatrice Santorini</author>
+<author>Mary Ann Marcinkiewicz</author>
+</authors>
+<title>Building a large annotated corpus of english: The penn treebank.</title>
+<date>1993</date>
+<journal>COMPUTATIONAL LINGUISTICS,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="22253" citStr="Marcus et al., 1993" startWordPosition="3824" endWordPosition="3827">, we do not directly compare our results to theirs.2 4.1 Data English (ENG) and Chinese (CHI) are the two main languages used for this work; they are commonly used in parser evaluation and have previous examples of statistical parsers using a Bayesian framework. And since we primarily are interested in parsing low-resource languages, we include results for Kinyarwanda (KIN) and Malagasy (MLG) as examples of languages without substantial existing treebanks. Finally, as a middleground language, we use Italian (ITL). For English, we use the Wall-Street Journal section of the Penn Treebank (WSJ) (Marcus et al., 1993). The data split is sections 02-21 for training, section 22 for development, and section 23 for testing. For Chinese, the Chinese Treebank (CTB5) (Xue et al., 2005) was used. The data split is files 81-899 for training, files 41- 80 for development, and files 1-40/900-931 for testing. The ITL data is from the Turin University Treebank (TUT) (Bosco et al., 2000) and consists of 2,860 Italian sentences from a variety of domains. It was split into training, development, and test sets with a 70/15/15 percentage split. The KIN texts are transcripts of testimonies by survivors of the Rwandan genocid</context>
+</contexts>
+<marker>Marcus, Santorini, Marcinkiewicz, 1993</marker>
+<rawString>Mitchell P. Marcus, Beatrice Santorini, and Mary Ann Marcinkiewicz. 1993. Building a large annotated corpus of english: The penn treebank. COMPUTATIONAL LINGUISTICS, 19(2):313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Takuya Matsuzaki</author>
+<author>Yusuke Miyao</author>
+<author>Jun’ichi Tsujii</author>
+</authors>
+<title>Probabilistic CFG with latent annotations.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>75--82</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2666" citStr="Matsuzaki et al., 2005" startWordPosition="405" endWordPosition="408">enge for many practical applications. Kuhn (2004a) shows some of the difficulty in handling low-resource languages by examining various tasks using Q’anjob’al as an example. Another approach is that of Bender et al. (2002), who take a more linguistically-motivated approach by making use of linguistic universals to seed newly developed grammars. This substantially reduces the effort by making it unnecessary to learn the basic parameters of a language, but it lacks the robustness of grammars learned from data. Recent work on Probabilistic Context-Free Grammars with latent annotations (PCFG-LA) (Matsuzaki et al., 2005; Petrov et al., 2006) have shown them to be effective models for syntactic parsing, especially when less training material is available (Liang et al., 2009; Shindo et al., 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work fo</context>
+<context position="11827" citStr="Matsuzaki et al., 2005" startWordPosition="1972" endWordPosition="1975">pus, and so on. We use this property to refine latent annotations for the PCFG-LA model described in the next section. 3 PCFG with latent annotations When labeled trees are available, rule frequencies can be directly extracted and used as priors for a PCFG. However, when learning PCFG-LAs, we must learn the fine-grained rules from the coarse trees, so we extend the Gibbs sampler to assign latent annotations to unannotated trees. The resulting learned PCFG-LA parser outputs samples of annotated trees so that we can obtain unannotated trees after marginalizing. 3.1 Model With the PCFG-LA model (Matsuzaki et al., 2005; Petrov et al., 2006) fine-grained CFG rules are automatically induced from training, effectively providing a form of feature engineering without human intervention. Given H = 11, , K}, a set of latent annotation symbols, and x E H: • 0A[x]→U is the probability of rule A[x] → U, where U E N x N U T. The probabilities for all rules that expand the same annotated non-terminal must sum to one. • 0A[x],B,C→y,z is the probability of assigning latent annotation y, z to child nodes B, C of A[x]. E y,z∈H×H 0A[x],B,C→y,z = 1. The inputs to the PCFG-LA are a CFG G with finite number of latent annotatio</context>
+</contexts>
+<marker>Matsuzaki, Miyao, Tsujii, 2005</marker>
+<rawString>Takuya Matsuzaki, Yusuke Miyao, and Jun’ichi Tsujii. 2005. Probabilistic CFG with latent annotations. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, pages 75–82. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fernando Pereira</author>
+<author>Yves Schabes</author>
+</authors>
+<title>Insideoutside reestimation from partially bracketed corpora.</title>
+<date>1992</date>
+<booktitle>In Proceedings of the 30th annual meeting on Association for Computational Linguistics,</booktitle>
+<pages>128--135</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Pereira, Schabes, 1992</marker>
+<rawString>Fernando Pereira and Yves Schabes. 1992. Insideoutside reestimation from partially bracketed corpora. In Proceedings of the 30th annual meeting on Association for Computational Linguistics, pages 128–135. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Dan Klein</author>
+</authors>
+<title>Improved Inference for Unlexicalized Parsing. In</title>
+<date>2007</date>
+<booktitle>HLT-NAACL,</booktitle>
+<pages>404--411</pages>
+<marker>Petrov, Klein, 2007</marker>
+<rawString>Slav Petrov and Dan Klein. 2007. Improved Inference for Unlexicalized Parsing. In HLT-NAACL, pages 404–411.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Dan Klein</author>
+</authors>
+<title>Sparse multi-scale grammars for discriminative latent variable parsing.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>867--876</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Petrov, Klein, 2008</marker>
+<rawString>Slav Petrov and Dan Klein. 2008. Sparse multi-scale grammars for discriminative latent variable parsing. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 867–876. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Leon Barrett</author>
+<author>Romain Thibaux</author>
+<author>Dan Klein</author>
+</authors>
+<title>Learning accurate, compact, and interpretable tree annotation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics,</booktitle>
+<pages>433--440</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2688" citStr="Petrov et al., 2006" startWordPosition="409" endWordPosition="412">applications. Kuhn (2004a) shows some of the difficulty in handling low-resource languages by examining various tasks using Q’anjob’al as an example. Another approach is that of Bender et al. (2002), who take a more linguistically-motivated approach by making use of linguistic universals to seed newly developed grammars. This substantially reduces the effort by making it unnecessary to learn the basic parameters of a language, but it lacks the robustness of grammars learned from data. Recent work on Probabilistic Context-Free Grammars with latent annotations (PCFG-LA) (Matsuzaki et al., 2005; Petrov et al., 2006) have shown them to be effective models for syntactic parsing, especially when less training material is available (Liang et al., 2009; Shindo et al., 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem o</context>
+<context position="11849" citStr="Petrov et al., 2006" startWordPosition="1976" endWordPosition="1979">his property to refine latent annotations for the PCFG-LA model described in the next section. 3 PCFG with latent annotations When labeled trees are available, rule frequencies can be directly extracted and used as priors for a PCFG. However, when learning PCFG-LAs, we must learn the fine-grained rules from the coarse trees, so we extend the Gibbs sampler to assign latent annotations to unannotated trees. The resulting learned PCFG-LA parser outputs samples of annotated trees so that we can obtain unannotated trees after marginalizing. 3.1 Model With the PCFG-LA model (Matsuzaki et al., 2005; Petrov et al., 2006) fine-grained CFG rules are automatically induced from training, effectively providing a form of feature engineering without human intervention. Given H = 11, , K}, a set of latent annotation symbols, and x E H: • 0A[x]→U is the probability of rule A[x] → U, where U E N x N U T. The probabilities for all rules that expand the same annotated non-terminal must sum to one. • 0A[x],B,C→y,z is the probability of assigning latent annotation y, z to child nodes B, C of A[x]. E y,z∈H×H 0A[x],B,C→y,z = 1. The inputs to the PCFG-LA are a CFG G with finite number of latent annotations for each non-termin</context>
+<context position="32141" citStr="Petrov et al., 2006" startWordPosition="5522" endWordPosition="5525">of Chinese improves on the Bikel parser (trained on our training data) despite the fact that the Bikel parser makes use of language specific optimizations. Our parser needs no changes to switch languages. The Gibbs PCFG with K=16 is superior to the strong Bikel and Berkeley Parser benchmarks for both KIN and MLG, a promising result for future work on parsing low-resource languages in general. Note also that our parser exhibits less variance than Berkeley Parser especially for KIN and MLG, which supports the fact that the variance of Berkeley Parser is higher for models with few subcategories (Petrov et al., 2006). Examples of the improvement across latent annotations for a given tree are shown in Figure 3. The details of the noun phrase ‘no major bond offerings’ were the same for each tree, and are thus abstracted here. The low K-value tree (K=2) is shown in 3a, and primarily suffers from issues related to the prepositional phrase, ‘in Europe friday’. In particular, the low K-value tree incorrectly groups ‘Europe friday’ as a noun phrase object of ‘in’. The higher K-value tree (K=8) is shown in 3b. This tree manages to correctly analyze the prepositional phrase, accurately separately the temporal loca</context>
+</contexts>
+<marker>Petrov, Barrett, Thibaux, Klein, 2006</marker>
+<rawString>Slav Petrov, Leon Barrett, Romain Thibaux, and Dan Klein. 2006. Learning accurate, compact, and interpretable tree annotation. In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, pages 433– 440. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Elias Ponvert</author>
+<author>Jason Baldridge</author>
+<author>Katrin Erk</author>
+</authors>
+<title>Simple Unsupervised Grammar Induction from Raw Text with Cascaded Finite State Models. In</title>
+<date>2011</date>
+<booktitle>ACL,</booktitle>
+<pages>1077--1086</pages>
+<marker>Ponvert, Baldridge, Erk, 2011</marker>
+<rawString>Elias Ponvert, Jason Baldridge, and Katrin Erk. 2011. Simple Unsupervised Grammar Induction from Raw Text with Cascaded Finite State Models. In ACL, pages 1077–1086.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Nathan Schneider</author>
+<author>Brendan O’Connor</author>
+<author>Naomi Saphra</author>
+<author>David Bamman</author>
+</authors>
+<title>Manaal Faruqui, Noah A Smith,</title>
+<marker>Schneider, O’Connor, Saphra, Bamman, </marker>
+<rawString>Nathan Schneider, Brendan O’Connor, Naomi Saphra, David Bamman, Manaal Faruqui, Noah A Smith,</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Dyer</author>
+<author>Jason Baldridge</author>
+</authors>
+<title>A framework for (under) specifying dependency syntax without overloading annotators. arXiv preprint arXiv:1306.2091.</title>
+<date>2013</date>
+<marker>Dyer, Baldridge, 2013</marker>
+<rawString>Chris Dyer, and Jason Baldridge. 2013. A framework for (under) specifying dependency syntax without overloading annotators. arXiv preprint arXiv:1306.2091.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hiroyuki Shindo</author>
+<author>Yusuke Miyao</author>
+<author>Akinori Fujino</author>
+<author>Masaaki Nagata</author>
+</authors>
+<title>Bayesian symbol-refined tree substitution grammars for syntactic parsing.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long PapersVolume 1,</booktitle>
+<pages>440--448</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2844" citStr="Shindo et al., 2012" startWordPosition="434" endWordPosition="437">r approach is that of Bender et al. (2002), who take a more linguistically-motivated approach by making use of linguistic universals to seed newly developed grammars. This substantially reduces the effort by making it unnecessary to learn the basic parameters of a language, but it lacks the robustness of grammars learned from data. Recent work on Probabilistic Context-Free Grammars with latent annotations (PCFG-LA) (Matsuzaki et al., 2005; Petrov et al., 2006) have shown them to be effective models for syntactic parsing, especially when less training material is available (Liang et al., 2009; Shindo et al., 2012). The coarse nonterminal symbols found in vanilla PCFGs are refined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen et al., 2012; Cohen e</context>
+</contexts>
+<marker>Shindo, Miyao, Fujino, Nagata, 2012</marker>
+<rawString>Hiroyuki Shindo, Yusuke Miyao, Akinori Fujino, and Masaaki Nagata. 2012. Bayesian symbol-refined tree substitution grammars for syntactic parsing. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Long PapersVolume 1, pages 440–448. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew A Taddy</author>
+</authors>
+<title>On estimation and selection for topic models. arXiv preprint arXiv:1109.4518.</title>
+<date>2011</date>
+<contexts>
+<context position="8571" citStr="Taddy, 2011" startWordPosition="1391" endWordPosition="1392">g algorithm presented in Johnson et al. (2007). An additional motivation for using this algorithm is that Johnson et al. use it for learning without annotated structures, and in future work we seek to learn from fewer, and at times partial, annotations. An advantage of using Gibbs sampling for Bayesian inference, as opposed to other approximation algorithms such as Variational Bayesian inference (VB) and Collapsed Variational Bayesian inference (CVB), is that Markov Chain Monte Carlo (MCMC) algorithms are guaranteed to converge to a sample from the true posterior under appropriate conditions (Taddy, 2011). Both VB and CVB converge to inaccurate and locally optimal solutions, like EM. In some models, CVB can achieve more accurate results due to weaker assumptions (Wang and Blunsom, 2013). Another advantage of Gibbs sampling is that the sampler allows for parallel computation by allowing each sentence to be sampled entirely independently of the others. After each parallel sampling stage, all model parameters are updated in a single step, and the process then repeats (see §2). To sample the joint posterior p(t, θ |w), we sample production probabilities θ and then trees t from these conditional di</context>
+</contexts>
+<marker>Taddy, 2011</marker>
+<rawString>Matthew A Taddy. 2011. On estimation and selection for topic models. arXiv preprint arXiv:1109.4518.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pengyu Wang</author>
+<author>Phil Blunsom</author>
+</authors>
+<title>Collapsed Variational Bayesian Inference for PCFGs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Seventeenth Conference on Computational Natural Language Learning,</booktitle>
+<pages>173--182</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="3528" citStr="Wang and Blunsom, 2013" startWordPosition="542" endWordPosition="545">efined by latent variables; these latent annotations can model subtypes of grammar symbols that result in better grammars and enable better estimates of grammar productions. In this paper, we provide a Gibbs sampler for learning PCFGLA models and show its effectiveness for parsing lowresource languages such as Malagasy and Kinyawanda. Previous PCFG-LA work focuses on the problem of parameter estimation, including expectationmaximization (EM) (Matsuzaki et al., 2005; Petrov et al., 2006), spectral learning (Cohen et al., 2012; Cohen et al., 2013), and variational inference (Liang et al., 2009; Wang and Blunsom, 2013). Regardless of inference method, previous work has used the same method to parse new sentences: a Viterbi parse under a new sentence-specific PCFG obtained from an approximation of the original grammar (Matsuzaki et al., 2005). Here, we provide an alternative approach to parsing new sentences: an extension of the Gibbs sampling algorithm of Johnson et al. (2007), which learns rule probabilities in an unsupervised PCFG. We use a Gibbs sampler to collect sampled trees theoretically distributed from the true posterior distribution in order to parse. Priors in a Bayesian model can control the spa</context>
+<context position="8756" citStr="Wang and Blunsom, 2013" startWordPosition="1420" endWordPosition="1423"> in future work we seek to learn from fewer, and at times partial, annotations. An advantage of using Gibbs sampling for Bayesian inference, as opposed to other approximation algorithms such as Variational Bayesian inference (VB) and Collapsed Variational Bayesian inference (CVB), is that Markov Chain Monte Carlo (MCMC) algorithms are guaranteed to converge to a sample from the true posterior under appropriate conditions (Taddy, 2011). Both VB and CVB converge to inaccurate and locally optimal solutions, like EM. In some models, CVB can achieve more accurate results due to weaker assumptions (Wang and Blunsom, 2013). Another advantage of Gibbs sampling is that the sampler allows for parallel computation by allowing each sentence to be sampled entirely independently of the others. After each parallel sampling stage, all model parameters are updated in a single step, and the process then repeats (see §2). To sample the joint posterior p(t, θ |w), we sample production probabilities θ and then trees t from these conditional distributions: ,In p(t |θ, w, α) = i=1 p(ti |wi, θ) (3) ,I p(θ |t, w, α) = AEN Dir(θA |fA(t) + αA) (4) Step 1: Sample Rule Probabilities. Given trees t and prior α, the production probabi</context>
+<context position="30598" citStr="Wang and Blunsom (2013)" startWordPosition="5256" endWordPosition="5259">d overall and always better than an unsmoothed PCFG. The benefits of the latent annotations are further shown in the increase Condition ENG CHI ITA KIN MLG Unsmoothed PCFG 69.9 66.8 62.1 45.9 49.2 Liang et al. 07 87.1 — — — — Huang &amp; Harper09 — 84.1 — — — Bikel Parser 86.9 81.1 74.5 55.7 49.5 Berkeley Parser 90.1 83.4 71.6 61.4 51.8 Gibbs PCFG,K=1 79.3 75.4 66.3 58.5 55.1 Gibbs PCFG,K=2 82.6 79.8 69.3 65.0 57.0 Gibbs PCFG,K=4 86.0 82.3 71.9 67.2 57.8 Gibbs PCFG,K=16 87.2 83.2 72.4 68.1 58.2 Gibbs PCFG,K=32 87.4 83.4 71.0 66.8 55.3 Table 4: F1 scores for experiments on sampled PCFGs. Note that Wang and Blunsom (2013) obtain an ENG Fscore of 77.9% using collapsed VB for K=2. Though they do not give exact numbers, their Fig. 7 indicates an F-score of about 87% for K=16. Figure 2: F-Score for K=4, varying full-set training iterations (with and without 100x jump start). of F1 score in all languages, as compared to the vanilla PCFG. Experiments were run up to K=32 primarily due to time constraint. Although previous literature results report increases up to the equivalent of K=64, it may be the case that higher K values with no merge step more easily lead to overfitting in our model – reducing the effectiveness</context>
+</contexts>
+<marker>Wang, Blunsom, 2013</marker>
+<rawString>Pengyu Wang and Phil Blunsom. 2013. Collapsed Variational Bayesian Inference for PCFGs. In Proceedings of the Seventeenth Conference on Computational Natural Language Learning, pages 173– 182, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Naiwen Xue</author>
+<author>Fei Xia</author>
+<author>Fu-dong Chiou</author>
+<author>Marta Palmer</author>
+</authors>
+<title>The Penn Chinese TreeBank: Phrase structure annotation of a large corpus.</title>
+<date>2005</date>
+<journal>Nat. Lang. Eng.,</journal>
+<volume>11</volume>
+<issue>2</issue>
+<contexts>
+<context position="22417" citStr="Xue et al., 2005" startWordPosition="3851" endWordPosition="3854">parser evaluation and have previous examples of statistical parsers using a Bayesian framework. And since we primarily are interested in parsing low-resource languages, we include results for Kinyarwanda (KIN) and Malagasy (MLG) as examples of languages without substantial existing treebanks. Finally, as a middleground language, we use Italian (ITL). For English, we use the Wall-Street Journal section of the Penn Treebank (WSJ) (Marcus et al., 1993). The data split is sections 02-21 for training, section 22 for development, and section 23 for testing. For Chinese, the Chinese Treebank (CTB5) (Xue et al., 2005) was used. The data split is files 81-899 for training, files 41- 80 for development, and files 1-40/900-931 for testing. The ITL data is from the Turin University Treebank (TUT) (Bosco et al., 2000) and consists of 2,860 Italian sentences from a variety of domains. It was split into training, development, and test sets with a 70/15/15 percentage split. The KIN texts are transcripts of testimonies by survivors of the Rwandan genocide provided by the Kigali Genocide Memorial Center, along with a few BBC news articles. The MLG texts are articles from the websites Lakroa and La Gazette and Malaga</context>
+</contexts>
+<marker>Xue, Xia, Chiou, Palmer, 2005</marker>
+<rawString>Naiwen Xue, Fei Xia, Fu-dong Chiou, and Marta Palmer. 2005. The Penn Chinese TreeBank: Phrase structure annotation of a large corpus. Nat. Lang. Eng., 11(2):207–238, June.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

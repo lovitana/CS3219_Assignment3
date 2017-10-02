@@ -1,0 +1,1290 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.003752">
+<title confidence="0.998485">
+Rule Selection with Soft Syntactic Features
+for String-to-Tree Statistical Machine Translation
+</title>
+<author confidence="0.761675">
+Fabienne Braune and Nina Seemann and Alexander Fraser
+</author>
+<affiliation confidence="0.663471">
+CIS, Ludwig-Maximilians-Universit¨at M¨unchen
+</affiliation>
+<address confidence="0.849666">
+Oettingenstraße 67, 80538 M¨unchen, Germany
+</address>
+<email confidence="0.983967">
+[braunefe|seemanna]@ims.uni-stuttgart.de
+fraser@cis.uni-muenchen.de
+</email>
+<sectionHeader confidence="0.997233" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.99997425">
+In syntax-based machine translation, rule
+selection is the task of choosing the cor-
+rect target side of a translation rule among
+rules with the same source side. We de-
+fine a discriminative rule selection model
+for systems that have syntactic annota-
+tion on the target language side (string-
+to-tree). This is a new and clean way to
+integrate soft source syntactic constraints
+into string-to-tree systems as features of
+the rule selection model. We release our
+implementation as part of Moses.
+</bodyText>
+<sectionHeader confidence="0.999393" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999947072727273">
+Syntax-based machine translation is well known
+for its ability to handle non-local reordering.
+Syntax-based models either use linguistic annota-
+tion on the source language side (Huang, 2006;
+Liu et al., 2006), target language side (Galley et
+al., 2004; Galley et al., 2006) or are syntactic in
+a structural sense only (Chiang, 2005). Recent
+shared tasks have shown that systems integrat-
+ing information on the target language side, also
+called string-to-tree systems, achieve the best per-
+formance on several language pairs (Bojar et al.,
+2014). At the same time, soft syntactic features
+significantly improve the translation quality of hi-
+erarchical systems (Hiero) as shown in (Marton et
+al., 2012; Chiang, 2010; Liu et al., 2011; Cui et
+al., 2010). Improving the performance of string-
+to-tree systems through the integration of soft syn-
+tactic constraints on the source language side is
+therefore an interesting task.
+So far, all approaches on this topic include soft
+syntactic constraints into the rules of string-to-tree
+(Zhang et al., 2011; Huck et al., 2014) or string-
+to-dependency (Huang et al., 2013) systems and
+define heuristics to determine to what extent these
+constituents match the syntactic structure of the
+source sentence. We propose a novel way to in-
+tegrate soft syntactic constraints into a string-to-
+tree system. We define a discriminative rule se-
+lection model for string-to-tree machine transla-
+tion. We consider rule selection as a multi-class
+classification problem where the task is to select
+the correct target side of a rule given its source
+side as well as contextual information about the
+source sentence and the considered rule. So far,
+such models have been applied to systems without
+syntactic annotation on the target language side.
+He et al. (2008), He et al. (2010) and Cui et al.
+(2010) apply such rule selection models to hier-
+archical machine translation, Liu et al. (2008) to
+tree-to-string systems and Zhai et al. (2013) to
+systems based on predicate argument structures.
+When target side syntactic annotations are taken
+into account, the task of rule selection has to be
+reformulated (see Section 2) while the same type
+of model can be used in approaches without target
+annotations. This work is the first attempt to define
+a rule selection model for a string-to-tree system.
+We make our implementation publicly available as
+part of Moses.1
+We show in Section 2 that string-to-tree rule se-
+lection is different from the hierarchical case ad-
+dressed by previous work and define our rule se-
+lection model. In Section 3 we present the train-
+ing procedure before providing a proof-of-concept
+evaluation in Section 4.
+</bodyText>
+<sectionHeader confidence="0.950331" genericHeader="method">
+2 Rule selection for string-to-tree SMT
+</sectionHeader>
+<subsectionHeader confidence="0.99772">
+2.1 String-to-tree machine translation
+</subsectionHeader>
+<bodyText confidence="0.999603">
+We present string-to-tree machine translation as
+implemented in Moses (which is the framework
+that we use). String-to-tree rules have the form
+X/A → (α, γ, ∼). On the source language side,
+</bodyText>
+<footnote confidence="0.997767">
+1We use the string-to-tree component of Moses (Williams
+and Koehn, 2012; Hoang et al., 2009) in which we integrate
+the high-speed classifier Vowpal Wabbit http://hunch.
+net/˜vw/.
+</footnote>
+<page confidence="0.851788">
+1095
+</page>
+<note confidence="0.8659085">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1095–1101,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<figure confidence="0.959131">
+Ces cellules pr´esentent plusieurs caract´eristiques sp´ecifiques
+Ces robots ont des comportements caract´eristiques similaires
+similar
+These
+DT
+NP
+S
+</figure>
+<figureCaption confidence="0.999733666666667">
+Figure 1: Word-aligned sentence pairs with target-
+side parse.
+Figure 2: Partial translation during decoding.
+</figureCaption>
+<bodyText confidence="0.999935461538462">
+all non-terminals have the unique label X while
+on the target language side non-terminals are an-
+notated with syntactic labels nt ∈ Nt. The left-
+hand side X/A consists of source and target non-
+terminals. In the right hand side (rhs), α is a string
+of source terminal symbols and the non-terminal
+X. The string γ consists of target terminals and
+non-terminals nt ∈ Nt. The alignment ∼ is a one-
+to-one correspondence between source and target
+non-terminal symbols. String-to-tree rules are ex-
+tracted from pairs of strings and trees as exempli-
+fied in Figure 1. Rules r1 and r2 are example rules
+extracted from this data.
+</bodyText>
+<equation confidence="0.990879">
+(r1) X/NP ( X1 caract´eristiques X2, JJ1 JJ2 charac-
+teristics )
+(r2) X/NP ( X1 caract´eristiques X2, NNS1 charac-
+teristic JJ2 )
+</equation>
+<bodyText confidence="0.999355666666667">
+During decoding, CYK+ chart parsing (Chappe-
+lier et al., 1998) with cube pruning and language
+model scoring is performed on an input sentence
+such as F below. Each time a rule is applied to
+the input sentence, candidate target trees are built.
+Figure 2 shows the partial translations built after
+the segments Diverses and importantes have been
+decoded. Given these partial translations, rule r1
+can be applied in a further decoding step.
+</bodyText>
+<equation confidence="0.60810875">
+F (Diverses)X1 caract´eristiques (importantes)x2 n’ont
+pas ´et´e prises en compte.
+(Various)X1 characteristics (important)x2 were not
+considered.
+</equation>
+<subsectionHeader confidence="0.999467">
+2.2 String-to-tree rule selection
+</subsectionHeader>
+<bodyText confidence="0.999909">
+Rule selection is the problem of selecting the rule
+with the correct target side among rules with the
+same source side. For hierarchical machine trans-
+lation (Hiero), the rule selection problem consists
+of choosing, among r3 and r4, the rule that cor-
+rectly applies to F (r3 in our example).
+</bodyText>
+<equation confidence="0.9913535">
+(r3) X/X ( X1 caract´eristiques X2, X1 X2 characteris-
+tics )
+(r4) X/X ( X1 caract´eristiques X2, X1 characteristic
+X2 )
+</equation>
+<bodyText confidence="0.999628666666667">
+Rule selection models disambiguate between these
+rules using context information about the source
+sentence and the shape of the rules.
+In string-to-tree machine translation, the rule
+selection problem is different. Because the decod-
+ing process is guided by target side syntactic an-
+notation, partial trees built during decoding must
+be considered when new rules are applied. For
+instance, when a rule is selected to translate sen-
+tence F given the partial translations in Figure 2,
+then the non-terminals in the target side of this
+rule must match the constituents selected so far.
+Consequently, rules r1 and r2 (Section 2.1) are
+not competing during rule selection.2 Competing
+rules for r1 would be r5 and r6 below.
+</bodyText>
+<equation confidence="0.6963505">
+(r5) X/NP ( X1 caract´eristiques X2, JJ1 properties
+JJ2 )
+(rs) X/NP ( X1 caract´eristiques X2, JJ1 JJ2 fea-
+tures )
+</equation>
+<bodyText confidence="0.999892076923077">
+For consistency with decoding, we redefine the
+rule selection problem for the string-to-tree case.
+In this setup, it is the task of disambiguating rules
+with the same source side and aligned target non-
+terminals. As a consequence, our rule selection
+model (presented next) is not only normalized over
+the source rhs of the rules but also takes target
+non-terminals into account. The default rule scor-
+ing procedure for string-to-tree rules implemented
+in Moses uses the same normalization as we do.
+However, Williams and Koehn (2012) propose to
+normalize string-to-tree rules over the source rhs
+only.
+</bodyText>
+<footnote confidence="0.914211">
+2This is because their target side non-terminals are differ-
+ent.
+</footnote>
+<figure confidence="0.992875515151515">
+characteristics
+NNS
+These
+DT
+NP
+NNS
+cells
+present
+VBP
+S
+several
+JJ
+VP
+specific
+JJ
+NP
+robots
+NNS
+VBP
+have
+JJ
+VP
+characteristic
+JJ
+NP
+behaviours
+NNS
+Diverses caract´eristiques importantes
+JJ JJ
+Various
+important
+1096
+(similaires)X2
+</figure>
+<figureCaption confidence="0.997343">
+Figure 3: French sentence with input parse tree.
+</figureCaption>
+<subsectionHeader confidence="0.992802">
+2.3 Rule selection model
+</subsectionHeader>
+<bodyText confidence="0.996906928571429">
+We denote string-to-tree rules with X/A —*
+(α,-y, —), as in Section 2.1. By ˜Ntt, we de-
+note target non-terminals with their alignment to
+source non-terminals.3 C(f, α) is context infor-
+mation in the source sentence f and the source
+side α. R(α, -y) represents features on string-to-
+tree rules. The rule selection model estimates
+P(-y  |C(f, α), R(α, -y), α, ˜Ntt) and is normal-
+ized over the set G&apos; of candidate target sides -y&apos; for
+a given α and ˜Ntt. The function GTO : α —* G&apos;
+generates, given the source side α and target non-
+terminals ˜Ntt , the set G&apos; of all corresponding
+target sides -y&apos;. The estimated distribution can be
+written as:
+</bodyText>
+<equation confidence="0.987195666666667">
+P(-y  |C(f, α), R(α, -y), α, ˜Ntt) =
+exp(Ei Aihi(C(f, α), R(α, -y), α, ˜Ntt)))
+Eγ&apos;∈GTO(α,˜Ntt) exp(Ei Aihi(C(f, α), R(α, -y�), α, ˜Ntt))
+</equation>
+<bodyText confidence="0.936202692307692">
+In the same fashion as (Cui et al., 2010) do for
+the hierarchical case, we define a global rule selec-
+tion model instead of a model that is local to the
+source side of each rule.
+To illustrate the feature templates C(f, α) and
+R(α, -y) of our rule selection model, we suppose
+that rule r1 has been extracted from the French
+sentence in Figure 3. The syntactic features are:
+- Does α match a constituent: no match
+- Type of matched constituent: None
+- Lowest parent of unmatched constituent: NP
+- Span width covered by α: 3
+The rule internal features are:
+</bodyText>
+<listItem confidence="0.942799">
+- Source side α: X1 caract´eristiques X2 (one feature)
+- Target side -y: JJ1 JJ2 characteristics
+- Aligned terminals in α and -y: car-
+act´eristiques↔characteristics
+- Aligned non-terminals in α and -y: X1↔JJ1 X2↔JJ2
+- Best baseline translation probability: Most Frequent
+</listItem>
+<bodyText confidence="0.966831333333333">
+Our rule selection model is integrated in the
+Moses string-to-tree system as an additional fea-
+ture of the log-linear model.
+</bodyText>
+<footnote confidence="0.693606">
+3For rule r1,r5 and r6, ˜Ntt would be JJ1 and JJ2.
+</footnote>
+<sectionHeader confidence="0.919926" genericHeader="method">
+3 Model Training
+</sectionHeader>
+<bodyText confidence="0.99937496">
+We create training examples using the rule extrac-
+tion procedure in (Williams and Koehn, 2012).4
+We begin by generating a rule-table using this pro-
+cedure. Then, each time a rule r : X/A —*
+(α, -y, —) can be extracted from the training data,
+we generate a new training example. The target
+side -y of the extracted rule is a positive instance
+and gets a loss of 0. To generate negative sam-
+ples, we collect all rules r2, ... , rn that have the
+same source language side as r as well as the same
+aligned target non-terminals ˜Ntt. Each of these
+rules is a negative example and gets a cost of 1.
+As an example, suppose that rule r1 introduced in
+Section 2.1 has been extracted from the training
+example in Figure 1. The target side ”JJ1 JJ2
+characteristics” is a correct class and gets a cost of
+0. The target side of all other rules having the same
+source side and aligned target non-terminals, such
+as rule r5 and r6, are incorrect classes.
+For model training, we use the cost-sensitive
+one-against-all-reduction (Beygelzimer et al.,
+2005) of Vowpal Wabbit (VW).5 We avoid over-
+fitting to training data by employing early stop-
+ping once classifier accuracy decreases on a held-
+out dataset.6
+</bodyText>
+<sectionHeader confidence="0.999913" genericHeader="method">
+4 Experiments
+</sectionHeader>
+<subsectionHeader confidence="0.993257">
+4.1 Experimental Setup
+</subsectionHeader>
+<bodyText confidence="0.9999870625">
+Our baseline system is a syntax-based system with
+linguistic annotation on the target language side
+(string-to-tree). We use the version implemented
+in the Moses open source toolkit (Hoang et al.,
+2009; Williams and Koehn, 2012) with standard
+parameters. Rule extraction is performed as in
+(Galley et al., 2004) with rule composition (Gal-
+ley et al., 2006; DeNeefe et al., 2007). Non-lexical
+unary rules are removed (Chung et al., 2011) and
+scope-3 pruning (Hopkins and Langmead, 2010)
+is performed. Rule scoring is done using relative
+frequencies normalized over the source rhs and
+aligned non-terminals in the target rhs. The con-
+trastive system is the same string-to-tree system
+but augmented with our rule selection model as a
+feature of the log-linear model.
+</bodyText>
+<footnote confidence="0.985877">
+4Which is based on (Galley et al., 2004; Galley et al.,
+2006; DeNeefe et al., 2007).
+5Specifically, the label dependent version of Cost Sensi-
+tive One Against All which uses classification.
+6We use the development set which is also used for MIRA
+tuning.
+</footnote>
+<figure confidence="0.989447055555556">
+des
+ont
+SENT
+NP
+N
+(comportements)X1
+N
+caract´eristiques
+Ces
+D
+NP
+N
+robots
+VN
+V
+D
+AP
+A
+</figure>
+<page confidence="0.975742">
+1097
+</page>
+<table confidence="0.995997333333333">
+System science medical news
+Baseline 34.06 49.87 18.35
+Contrastive 34.36 49.57 18.59
+</table>
+<tableCaption confidence="0.998829">
+Table 2: String-to-tree system evaluation results.
+</tableCaption>
+<bodyText confidence="0.999987285714286">
+We evaluate the baseline and our global model
+on three domains: (1) news, (2) medical,
+and (3) science. The training data for news
+is taken from Europarl-v4. Development and
+test sets are from the news translation task of
+WMT 2009 (Callison-Burch et al., 2009). For
+medical we use the biomedical data from
+EMEA (Tiedemann, 2009). Since this is a parallel
+corpus only, we first removed duplicate sentences
+and then constructed development and test sets by
+randomly selecting sentence pairs. As training
+data for science we use the scientific abstracts
+data provided by Carpuat et al. (2013). Table 1
+gives an overview of the corpora sizes.
+Berkeley parser (Petrov et al., 2006) is used to
+parse the English side of each parallel corpus (for
+string-to-tree rule extraction) as well as for pars-
+ing the French source side (for feature extraction).
+We trained a 5-gram language model on the En-
+glish side of each training corpus using the SRI
+Language Modeling Toolkit (Stolcke, 2002). We
+train the model in the standard way and gener-
+ate word alignments using GIZA++. After train-
+ing, we reduced the number of translation rules
+by only keeping the 30-best rules with the same
+source side according to the direct rule transla-
+tion rule probability. Our rule selection model was
+trained with VW. All systems were tuned using
+batch MIRA (Cherry and Foster, 2012). We mea-
+sured the overall translation quality with 4-gram
+BLEU (Papineni et al., 2002), which was com-
+puted on tokenized and lowercased data for all sys-
+tems. Statistical significance is computed with the
+pairwise bootstrap resampling technique of Koehn
+(2004).
+</bodyText>
+<sectionHeader confidence="0.715825" genericHeader="evaluation">
+4.2 Results
+</sectionHeader>
+<bodyText confidence="0.999950904761905">
+Table 2 displays the BLEU scores for our experi-
+ments. On science and news, small improve-
+ments are achieved while for medical a small
+decrease is observed. None of these differences is
+statistically significant.
+An analysis of the system outputs for each do-
+main showed that the small improvements are due
+to the fact that in string-to-tree systems there is not
+enough ambiguity between competing rules dur-
+ing decoding. To support this conjecture, we first
+analyzed rule diversity by looking at the negative
+samples collected during training example acqui-
+sition. In a second step, we compared the results
+of the string-to-tree systems in Table 2 with a sys-
+tem where the translation rules are much more am-
+biguous. To this aim, we applied our approach to a
+hierarchical system in the same line as (Cui et al.,
+2010). Finally, we further tested the ability of our
+system to disambiguate between competing rules
+by training a model on the concatenation of all do-
+mains.
+</bodyText>
+<subsectionHeader confidence="0.99988">
+4.3 Analysis of Rule Diversity
+</subsectionHeader>
+<bodyText confidence="0.999745625">
+The amount of competing rules during decoding
+can be estimated by looking at the negative sam-
+ples collected for each training example. This
+analysis showed that the diversity of rules contain-
+ing non-terminal symbols is limited. We present
+rules q1 to q3 (taken from science) to illustrate
+the poor diversity observed in our training exam-
+ples.
+</bodyText>
+<equation confidence="0.926853333333333">
+(q1) X/PP ( a` X1 X2 ´eventail X3, to DT1 JJ2 variety
+PP3 )
+(q2) X/PP ( a` X1 X2 ´eventail X3, to DT1 JJ2 range
+PP3 )
+(q3) X/PP ( a` X1 X2 ´eventail X3, to DT1 JJ2 array
+PP3 )
+</equation>
+<bodyText confidence="0.998027217391305">
+Rules q1 to q3 are the only rules with source side a`
+X1 X2 ´eventail X3. This number is very low given
+that the source side contains three non-terminal
+symbols out of which two are adjacent. More-
+over, the difference between these rules is limited
+to the lexical translation of ´eventail. This lack
+of diversity is due to the constraint that compet-
+ing string-to-tree rules must have the same aligned
+non-terminal symbols, which is taken into account
+when collecting negative samples. In other words,
+the ambiguity between translation rules in a string-
+to-tree system is heavily restricted by the target
+side syntax.
+The observed lack of diversity could be min-
+imized by allowing rules with the same source
+rhs to have different aligned target non-terminals.
+In this perspective, rule scoring should be done
+by normalizing over the source rhs only as
+in Williams and Koehn (2012). The rule selection
+model in Section 2.3 should then be redefined and
+normalized over all rules with the same source rhs.
+Another way to improve rule diversity would be
+to remove target non-terminals and use preference
+</bodyText>
+<page confidence="0.963867">
+1098
+</page>
+<table confidence="0.9884632">
+news medical science
+training data 4th EuroParl corpus (Tiedemann, 2009) (Carpuat et al., 2013)
+training data size 149,986 sentence pairs 111,081 sentence pairs 139,199 sentence pairs
+development size 1,025 sentences 2,000 sentences 2,907 sentences
+test size 1,026 sentences 1,999 sentences 3,915 sentences
+</table>
+<tableCaption confidence="0.994894">
+Table 1: Overview of the sizes of the three domains.
+</tableCaption>
+<table confidence="0.999908">
+System science medical news
+Baseline 31.22 48.67 17.28
+Contrastive 32.27 49.66 17.38
+</table>
+<tableCaption confidence="0.998337">
+Table 3: Hierarchical system evaluation results.
+</tableCaption>
+<bodyText confidence="0.7011795">
+The results in bold are statistically significant im-
+provements over the Baseline (at confidence p &lt;
+0.05).
+grammars as in Huck et al. (2014).
+</bodyText>
+<subsectionHeader confidence="0.9977105">
+4.4 Comparison with Hierarchical Rule
+Selection
+</subsectionHeader>
+<bodyText confidence="0.999992176470588">
+We applied our approach in a hierarchical phrase-
+based setting (Hiero). To this end, we trained 3 Hi-
+ero baseline systems and 3 Hiero systems aug-
+mented with our rule selection model on the data
+given in Section 4.1. The results of these ex-
+periments are shown in Table 3. Our augmented
+system largely outperforms the baselines. Inter-
+estingly, hierarchical rule selection significantly
+helps on the medical and scientific domain but
+still yields results that are significantly lower than
+those of the string-to-tree systems. This indicates
+that systems with target side syntax better disam-
+biguate than hierarchical models with improved
+rule selection. Overall, we find the results of both
+types of systems promising and we will consider
+how to introduce more diversity into the rules of
+string-to-tree systems.
+</bodyText>
+<subsectionHeader confidence="0.999692">
+4.5 Concatenation of Training Data
+</subsectionHeader>
+<bodyText confidence="0.998205555555556">
+In order to further evaluate the ability of our model
+to disambiguate string-to-tree rules, we trained a
+system using the concatenated training data of all
+3 domains as presented in Section 4.1. This global
+model was then used to tune and decode using the
+development and test data of each domain. The
+results in Table 4 show that even on concatenated
+data our rule selection model does not improve
+over the baseline.
+</bodyText>
+<table confidence="0.999160666666667">
+System science medical news
+Baseline 33.78 49.48 19.12
+Contrastive 33.87 49.14 19.00
+</table>
+<tableCaption confidence="0.9950595">
+Table 4: String-to-tree system evaluation results
+with concatenated training data.
+</tableCaption>
+<sectionHeader confidence="0.9888" genericHeader="conclusions">
+5 Conclusion and future work
+</sectionHeader>
+<bodyText confidence="0.9999795625">
+We presented the first attempt to define a rule se-
+lection model with syntactic features for string-to-
+tree machine translation. We have shown that in
+order to be applied to the string-to-tree case, the
+rule selection problem must be redefined. An ex-
+tensive evaluation on French-English translation
+tasks for different domains has shown that rule se-
+lection cannot significantly improve string-to-tree
+systems. An analysis of rule diversity and an em-
+pirical comparison with hierarchical rule selection
+indicate that the low improvements are due to the
+fact that the ambiguity between string-to-tree rules
+is too small to be improved with a rule selection
+model. In future work, we will use different tech-
+niques to improve the diversity of the string-to-tree
+rules considered during decoding in our system.
+</bodyText>
+<sectionHeader confidence="0.997364" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.999741916666666">
+We thank all members of the DAMT team of the
+2012 JHU Summer Workshop. We are especially
+grateful to Hal Daum´e III and Ales Tamchyna for
+their ongoing support in the implementation of our
+system. We also thank Andreas Maletti for his
+shared expertise on tree grammars. This project
+has received funding from the European Unions
+Horizon 2020 research and innovation programme
+under grant agreement No 644402 (HimL) and the
+DFG grant Models of Morphosyntax for Statistical
+Machine Translation (Phase 2), which we grate-
+fully acknowledge.
+</bodyText>
+<sectionHeader confidence="0.996222" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.9090575">
+Alina Beygelzimer, John Langford, and Bianca
+Zadrozny. 2005. Weighted one-against-all. In
+</reference>
+<page confidence="0.968843">
+1099
+</page>
+<reference confidence="0.998829009708738">
+AAAI, pages 720–725.
+Ondrej Bojar, Christian Buck, Christian Federmann,
+Barry Haddow, Philipp Koehn, Johannes Leveling,
+Christof Monz, Pavel Pecina, Matt Post, Herve
+Saint-Amand, Radu Soricut, Lucia Specia, and Aleˇs
+Tamchyna. 2014. Findings of the 2014 workshop
+on statistical machine translation. In Ninth Work-
+shop on Statistical Machine Translation, WMT,
+pages 12–58, Baltimore, Maryland.
+Chris Callison-Burch, Philipp Koehn, Christof Monz,
+and Josh Schroeder. 2009. Findings of the 2009
+Workshop on Statistical Machine Translation. In
+Proc. 4th Workshop on Statistical Machine Trans-
+lation, pages 1–28.
+Marine Carpuat, Hal Daum´e III, Katharine Henry,
+Ann Irvine, Jagadeesh Jagarlamudi, and Rachel
+Rudinger. 2013. Sensespotting: Never let your par-
+allel data tie you to an old domain. In Proc. ACL.
+Jean-C´edric Chappelier, Martin Rajman, et al. 1998. A
+generalized cyk algorithm for parsing stochastic cfg.
+TAPD, 98(133-137):5.
+Colin Cherry and George Foster. 2012. Batch tun-
+ing strategies for statistical machine translation. In
+Proc. NAACL.
+David Chiang. 2005. Hierarchical phrase-based trans-
+lation. In Proc. ACL.
+David Chiang. 2010. Learning to translate with source
+and target syntax. In Proc. ACL.
+Tagyoung Chung, Licheng Fang, and Daniel Gildea.
+2011. Issues concerning decoding with synchronous
+context-free grammars. In Proc. ACL.
+Lei Cui, Dongdong Zhang, Mu Li, Ming Zhou, and
+Tiejun Zhao. 2010. A joint rule selection model for
+hierarchical phrase-based translation. In Proc. ACL.
+Steve DeNeefe, Kevin Knight, Wei Wang, and Daniel
+Marcu. 2007. What can syntax-based mt learn from
+phrase-based mt. In Proc. EMNLP.
+Michel Galley, Mark Hopkins, Kevin Knight, and
+Daniel Marcu. 2004. What’s in a translation rule?
+In Proc. HLT-NAACL.
+Michel Galley, Jonathan Graehl, Kevin Knight, Daniel
+Marcu, Steve Deneefe, Wei Wang, and Ignacio
+Thayer. 2006. Scalable inference and training of
+context-rich syntactic translation models. In Proc.
+ACL.
+Zhongjun He, Qun Liu, and Shouxun Lin. 2008. Im-
+proving statistical machine translation using lexical-
+ized rule selection. In Proc. COLING.
+Zhongjun He, Yao Meng, and Hao Yu. 2010. Maxi-
+mum entropy based phrase reordering for hierarchi-
+cal phrase-based translation. In Proc. EMNLP.
+Hieu Hoang, Philipp Koehn, and Adam Lopez. 2009.
+A unified framework for phrase-based, hierarchical,
+and syntax-based statistical machine translation. In
+In Proceedings of the International Workshop on
+Spoken Language Translation (IWSLT.
+Mark Hopkins and Greg Langmead. 2010. Scfg de-
+coding without binarization. In Proc. EMNLP.
+Zhongqiang Huang, Jacob Devlin, and Rabih Zbib.
+2013. Factored soft source syntactic constraints for
+hierarchical machine translation. In Proc. EMNLP.
+Liang Huang. 2006. Statistical syntax-directed trans-
+lation with extended domain of locality. In In Proc.
+AMTA 2006.
+Mathias Huck, Hieu Hoang, and Philipp Koehn. 2014.
+Preference grammars and soft syntactic constraints
+for ghkm syntax-based statistical machine transla-
+tion. In Proc. SSST-8.
+Philipp Koehn. 2004. Statistical significance tests for
+machine translation evaluation. In Proc. EMNLP.
+Yang Liu, Qun Liu, and Shouxun Lin. 2006. Tree-
+to-string alignment template for statistical machine
+translation. In Proc. ACL.
+Qun Liu, Zhongjun He, Yang Liu, and Shouxun Lin.
+2008. Maximum entropy based rule selection model
+for syntax-based statistical machine translation. In
+Proc. EMNLP.
+Lemao Liu, Tiejun Zhao, Chao Wang, and Hailong
+Cao. 2011. A unified and discriminative soft syn-
+tactic constraint model for hierarchical phrase-based
+translation. In Proceedings of the 13th Machine
+Translation Summit, pages 253–261.
+Yuval Marton, David Chiang, and Philip Resnik. 2012.
+Soft syntactic constraints for arabic—english hierar-
+chical phrase-based translation. Machine Transla-
+tion, 26:137–157.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei
+jing Zhu. 2002. BLEU: a method for automatic
+evaluation of machine translation. In Proc. ACL.
+Slav Petrov, Leon Barrett, Romain Thibaux, and Dan
+Klein. 2006. Learning accurate, compact, and inter-
+pretable tree annotation. In Proc. ACL.
+Andreas Stolcke. 2002. Srilm - an extensible language
+modeling toolkit. In Proceedings of the Interna-
+tional Conference on Spoken language Processing.
+J¨org Tiedemann. 2009. News from opus: A collection
+of multilingual parallel corpora with tools and in-
+terfaces. In Recent Advances in Natural Language
+Processing V, volume V, pages 237–248. John Ben-
+jamins.
+Philip Williams and Philipp Koehn. 2012. Ghkm rule
+extraction and scope-3 parsing in moses. In Proc.
+WMT.
+</reference>
+<page confidence="0.82066">
+1100
+</page>
+<reference confidence="0.998584285714286">
+Feifei Zhai, Jiajun Zhang, Yu Zhou, and Chengqing
+Zong. 2013. Handling ambiguities of bilingual
+predicate-argument structures for statistical machine
+translation. In Proc. ACL.
+Jiajun Zhang, Feifei Zhai, and Chengqing Zong. 2011.
+Augmenting string-to-tree translation models with
+fuzzy use of source-side syntax. In Proc. EMNLP.
+</reference>
+<page confidence="0.995169">
+1101
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.297542">
+<title confidence="0.9989135">Rule Selection with Soft Syntactic for String-to-Tree Statistical Machine Translation</title>
+<author confidence="0.98914">Braune Seemann</author>
+<affiliation confidence="0.668352">CIS, Ludwig-Maximilians-Universit¨at</affiliation>
+<address confidence="0.332895">Oettingenstraße 67, 80538 M¨unchen,</address>
+<email confidence="0.994778">fraser@cis.uni-muenchen.de</email>
+<abstract confidence="0.998049">In syntax-based machine translation, rule selection is the task of choosing the correct target side of a translation rule among rules with the same source side. We define a discriminative rule selection model for systems that have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Alina Beygelzimer</author>
+<author>John Langford</author>
+<author>Bianca Zadrozny</author>
+</authors>
+<title>Weighted one-against-all.</title>
+<date>2005</date>
+<booktitle>In AAAI,</booktitle>
+<pages>720--725</pages>
+<contexts>
+<context position="10754" citStr="Beygelzimer et al., 2005" startWordPosition="1744" endWordPosition="1747">es r2, ... , rn that have the same source language side as r as well as the same aligned target non-terminals ˜Ntt. Each of these rules is a negative example and gets a cost of 1. As an example, suppose that rule r1 introduced in Section 2.1 has been extracted from the training example in Figure 1. The target side ”JJ1 JJ2 characteristics” is a correct class and gets a cost of 0. The target side of all other rules having the same source side and aligned target non-terminals, such as rule r5 and r6, are incorrect classes. For model training, we use the cost-sensitive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed</context>
+</contexts>
+<marker>Beygelzimer, Langford, Zadrozny, 2005</marker>
+<rawString>Alina Beygelzimer, John Langford, and Bianca Zadrozny. 2005. Weighted one-against-all. In AAAI, pages 720–725.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ondrej Bojar</author>
+<author>Christian Buck</author>
+<author>Christian Federmann</author>
+<author>Barry Haddow</author>
+<author>Philipp Koehn</author>
+<author>Johannes Leveling</author>
+<author>Christof Monz</author>
+<author>Pavel Pecina</author>
+<author>Matt Post</author>
+</authors>
+<title>Herve Saint-Amand, Radu Soricut, Lucia Specia, and Aleˇs Tamchyna.</title>
+<date>2014</date>
+<booktitle>Findings of the 2014 workshop on statistical machine translation. In Ninth Workshop on Statistical Machine Translation, WMT,</booktitle>
+<pages>12--58</pages>
+<location>Baltimore, Maryland.</location>
+<contexts>
+<context position="1361" citStr="Bojar et al., 2014" startWordPosition="192" endWordPosition="195">lection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to dete</context>
+</contexts>
+<marker>Bojar, Buck, Federmann, Haddow, Koehn, Leveling, Monz, Pecina, Post, 2014</marker>
+<rawString>Ondrej Bojar, Christian Buck, Christian Federmann, Barry Haddow, Philipp Koehn, Johannes Leveling, Christof Monz, Pavel Pecina, Matt Post, Herve Saint-Amand, Radu Soricut, Lucia Specia, and Aleˇs Tamchyna. 2014. Findings of the 2014 workshop on statistical machine translation. In Ninth Workshop on Statistical Machine Translation, WMT, pages 12–58, Baltimore, Maryland.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Callison-Burch</author>
+<author>Philipp Koehn</author>
+<author>Christof Monz</author>
+<author>Josh Schroeder</author>
+</authors>
+<date>2009</date>
+<booktitle>Findings of the 2009 Workshop on Statistical Machine Translation. In Proc. 4th Workshop on Statistical Machine Translation,</booktitle>
+<pages>1--28</pages>
+<contexts>
+<context position="12442" citStr="Callison-Burch et al., 2009" startWordPosition="2018" endWordPosition="2021">pendent version of Cost Sensitive One Against All which uses classification. 6We use the development set which is also used for MIRA tuning. des ont SENT NP N (comportements)X1 N caract´eristiques Ces D NP N robots VN V D AP A 1097 System science medical news Baseline 34.06 49.87 18.35 Contrastive 34.36 49.57 18.59 Table 2: String-to-tree system evaluation results. We evaluate the baseline and our global model on three domains: (1) news, (2) medical, and (3) science. The training data for news is taken from Europarl-v4. Development and test sets are from the news translation task of WMT 2009 (Callison-Burch et al., 2009). For medical we use the biomedical data from EMEA (Tiedemann, 2009). Since this is a parallel corpus only, we first removed duplicate sentences and then constructed development and test sets by randomly selecting sentence pairs. As training data for science we use the scientific abstracts data provided by Carpuat et al. (2013). Table 1 gives an overview of the corpora sizes. Berkeley parser (Petrov et al., 2006) is used to parse the English side of each parallel corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-g</context>
+</contexts>
+<marker>Callison-Burch, Koehn, Monz, Schroeder, 2009</marker>
+<rawString>Chris Callison-Burch, Philipp Koehn, Christof Monz, and Josh Schroeder. 2009. Findings of the 2009 Workshop on Statistical Machine Translation. In Proc. 4th Workshop on Statistical Machine Translation, pages 1–28.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marine Carpuat</author>
+<author>Hal Daum´e Katharine Henry</author>
+<author>Ann Irvine</author>
+<author>Jagadeesh Jagarlamudi</author>
+<author>Rachel Rudinger</author>
+</authors>
+<title>Sensespotting: Never let your parallel data tie you to an old domain.</title>
+<date>2013</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="12771" citStr="Carpuat et al. (2013)" startWordPosition="2070" endWordPosition="2073">tree system evaluation results. We evaluate the baseline and our global model on three domains: (1) news, (2) medical, and (3) science. The training data for news is taken from Europarl-v4. Development and test sets are from the news translation task of WMT 2009 (Callison-Burch et al., 2009). For medical we use the biomedical data from EMEA (Tiedemann, 2009). Since this is a parallel corpus only, we first removed duplicate sentences and then constructed development and test sets by randomly selecting sentence pairs. As training data for science we use the scientific abstracts data provided by Carpuat et al. (2013). Table 1 gives an overview of the corpora sizes. Berkeley parser (Petrov et al., 2006) is used to parse the English side of each parallel corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using the SRI Language Modeling Toolkit (Stolcke, 2002). We train the model in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side accordin</context>
+<context position="16514" citStr="Carpuat et al., 2013" startWordPosition="2705" endWordPosition="2708">y restricted by the target side syntax. The observed lack of diversity could be minimized by allowing rules with the same source rhs to have different aligned target non-terminals. In this perspective, rule scoring should be done by normalizing over the source rhs only as in Williams and Koehn (2012). The rule selection model in Section 2.3 should then be redefined and normalized over all rules with the same source rhs. Another way to improve rule diversity would be to remove target non-terminals and use preference 1098 news medical science training data 4th EuroParl corpus (Tiedemann, 2009) (Carpuat et al., 2013) training data size 149,986 sentence pairs 111,081 sentence pairs 139,199 sentence pairs development size 1,025 sentences 2,000 sentences 2,907 sentences test size 1,026 sentences 1,999 sentences 3,915 sentences Table 1: Overview of the sizes of the three domains. System science medical news Baseline 31.22 48.67 17.28 Contrastive 32.27 49.66 17.38 Table 3: Hierarchical system evaluation results. The results in bold are statistically significant improvements over the Baseline (at confidence p &lt; 0.05). grammars as in Huck et al. (2014). 4.4 Comparison with Hierarchical Rule Selection We applied </context>
+</contexts>
+<marker>Carpuat, Henry, Irvine, Jagarlamudi, Rudinger, 2013</marker>
+<rawString>Marine Carpuat, Hal Daum´e III, Katharine Henry, Ann Irvine, Jagadeesh Jagarlamudi, and Rachel Rudinger. 2013. Sensespotting: Never let your parallel data tie you to an old domain. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jean-C´edric Chappelier</author>
+<author>Martin Rajman</author>
+</authors>
+<title>A generalized cyk algorithm for parsing stochastic cfg.</title>
+<date>1998</date>
+<journal>TAPD,</journal>
+<pages>98--133</pages>
+<marker>Chappelier, Rajman, 1998</marker>
+<rawString>Jean-C´edric Chappelier, Martin Rajman, et al. 1998. A generalized cyk algorithm for parsing stochastic cfg. TAPD, 98(133-137):5.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Colin Cherry</author>
+<author>George Foster</author>
+</authors>
+<title>Batch tuning strategies for statistical machine translation.</title>
+<date>2012</date>
+<booktitle>In Proc. NAACL.</booktitle>
+<contexts>
+<context position="13533" citStr="Cherry and Foster, 2012" startWordPosition="2200" endWordPosition="2203"> corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using the SRI Language Modeling Toolkit (Stolcke, 2002). We train the model in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side according to the direct rule translation rule probability. Our rule selection model was trained with VW. All systems were tuned using batch MIRA (Cherry and Foster, 2012). We measured the overall translation quality with 4-gram BLEU (Papineni et al., 2002), which was computed on tokenized and lowercased data for all systems. Statistical significance is computed with the pairwise bootstrap resampling technique of Koehn (2004). 4.2 Results Table 2 displays the BLEU scores for our experiments. On science and news, small improvements are achieved while for medical a small decrease is observed. None of these differences is statistically significant. An analysis of the system outputs for each domain showed that the small improvements are due to the fact that in stri</context>
+</contexts>
+<marker>Cherry, Foster, 2012</marker>
+<rawString>Colin Cherry and George Foster. 2012. Batch tuning strategies for statistical machine translation. In Proc. NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2005</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="1151" citStr="Chiang, 2005" startWordPosition="162" endWordPosition="163">hat have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all appr</context>
+</contexts>
+<marker>Chiang, 2005</marker>
+<rawString>David Chiang. 2005. Hierarchical phrase-based translation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Learning to translate with source and target syntax.</title>
+<date>2010</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="1529" citStr="Chiang, 2010" startWordPosition="220" endWordPosition="221">ntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a stri</context>
+</contexts>
+<marker>Chiang, 2010</marker>
+<rawString>David Chiang. 2010. Learning to translate with source and target syntax. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tagyoung Chung</author>
+<author>Licheng Fang</author>
+<author>Daniel Gildea</author>
+</authors>
+<title>Issues concerning decoding with synchronous context-free grammars.</title>
+<date>2011</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="11375" citStr="Chung et al., 2011" startWordPosition="1843" endWordPosition="1846">f Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNeefe et al., 2007). 5Specifically, the label dependent version of Cost Sensitive One Against All which uses classification. 6We use the development set which is also used for MIRA tuning. des ont SENT NP N (c</context>
+</contexts>
+<marker>Chung, Fang, Gildea, 2011</marker>
+<rawString>Tagyoung Chung, Licheng Fang, and Daniel Gildea. 2011. Issues concerning decoding with synchronous context-free grammars. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lei Cui</author>
+<author>Dongdong Zhang</author>
+<author>Mu Li</author>
+<author>Ming Zhou</author>
+<author>Tiejun Zhao</author>
+</authors>
+<title>A joint rule selection model for hierarchical phrase-based translation.</title>
+<date>2010</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="1566" citStr="Cui et al., 2010" startWordPosition="226" endWordPosition="229">guistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discrim</context>
+<context position="8744" citStr="Cui et al., 2010" startWordPosition="1388" endWordPosition="1391">source sentence f and the source side α. R(α, -y) represents features on string-totree rules. The rule selection model estimates P(-y |C(f, α), R(α, -y), α, ˜Ntt) and is normalized over the set G&apos; of candidate target sides -y&apos; for a given α and ˜Ntt. The function GTO : α —* G&apos; generates, given the source side α and target nonterminals ˜Ntt , the set G&apos; of all corresponding target sides -y&apos;. The estimated distribution can be written as: P(-y |C(f, α), R(α, -y), α, ˜Ntt) = exp(Ei Aihi(C(f, α), R(α, -y), α, ˜Ntt))) Eγ&apos;∈GTO(α,˜Ntt) exp(Ei Aihi(C(f, α), R(α, -y�), α, ˜Ntt)) In the same fashion as (Cui et al., 2010) do for the hierarchical case, we define a global rule selection model instead of a model that is local to the source side of each rule. To illustrate the feature templates C(f, α) and R(α, -y) of our rule selection model, we suppose that rule r1 has been extracted from the French sentence in Figure 3. The syntactic features are: - Does α match a constituent: no match - Type of matched constituent: None - Lowest parent of unmatched constituent: NP - Span width covered by α: 3 The rule internal features are: - Source side α: X1 caract´eristiques X2 (one feature) - Target side -y: JJ1 JJ2 charac</context>
+<context position="14616" citStr="Cui et al., 2010" startWordPosition="2380" endWordPosition="2383">lly significant. An analysis of the system outputs for each domain showed that the small improvements are due to the fact that in string-to-tree systems there is not enough ambiguity between competing rules during decoding. To support this conjecture, we first analyzed rule diversity by looking at the negative samples collected during training example acquisition. In a second step, we compared the results of the string-to-tree systems in Table 2 with a system where the translation rules are much more ambiguous. To this aim, we applied our approach to a hierarchical system in the same line as (Cui et al., 2010). Finally, we further tested the ability of our system to disambiguate between competing rules by training a model on the concatenation of all domains. 4.3 Analysis of Rule Diversity The amount of competing rules during decoding can be estimated by looking at the negative samples collected for each training example. This analysis showed that the diversity of rules containing non-terminal symbols is limited. We present rules q1 to q3 (taken from science) to illustrate the poor diversity observed in our training examples. (q1) X/PP ( a` X1 X2 ´eventail X3, to DT1 JJ2 variety PP3 ) (q2) X/PP ( a`</context>
+</contexts>
+<marker>Cui, Zhang, Li, Zhou, Zhao, 2010</marker>
+<rawString>Lei Cui, Dongdong Zhang, Mu Li, Ming Zhou, and Tiejun Zhao. 2010. A joint rule selection model for hierarchical phrase-based translation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Steve DeNeefe</author>
+<author>Kevin Knight</author>
+<author>Wei Wang</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>What can syntax-based mt learn from phrase-based mt.</title>
+<date>2007</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="11317" citStr="DeNeefe et al., 2007" startWordPosition="1834" endWordPosition="1837">itive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNeefe et al., 2007). 5Specifically, the label dependent version of Cost Sensitive One Against All which uses classification. 6We use the development se</context>
+</contexts>
+<marker>DeNeefe, Knight, Wang, Marcu, 2007</marker>
+<rawString>Steve DeNeefe, Kevin Knight, Wei Wang, and Daniel Marcu. 2007. What can syntax-based mt learn from phrase-based mt. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Mark Hopkins</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>What’s in a translation rule? In</title>
+<date>2004</date>
+<booktitle>Proc. HLT-NAACL.</booktitle>
+<contexts>
+<context position="1070" citStr="Galley et al., 2004" startWordPosition="146" endWordPosition="149">ith the same source side. We define a discriminative rule selection model for systems that have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constrain</context>
+<context position="11251" citStr="Galley et al., 2004" startWordPosition="1822" endWordPosition="1825">, are incorrect classes. For model training, we use the cost-sensitive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNeefe et al., 2007). 5Specifically, the label dependent version of Cost Sensitive One</context>
+</contexts>
+<marker>Galley, Hopkins, Knight, Marcu, 2004</marker>
+<rawString>Michel Galley, Mark Hopkins, Kevin Knight, and Daniel Marcu. 2004. What’s in a translation rule? In Proc. HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Jonathan Graehl</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+<author>Steve Deneefe</author>
+<author>Wei Wang</author>
+<author>Ignacio Thayer</author>
+</authors>
+<title>Scalable inference and training of context-rich syntactic translation models.</title>
+<date>2006</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="1092" citStr="Galley et al., 2006" startWordPosition="150" endWordPosition="153">ide. We define a discriminative rule selection model for systems that have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source langu</context>
+<context position="11294" citStr="Galley et al., 2006" startWordPosition="1829" endWordPosition="1833"> we use the cost-sensitive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNeefe et al., 2007). 5Specifically, the label dependent version of Cost Sensitive One Against All which uses classification. 6We</context>
+</contexts>
+<marker>Galley, Graehl, Knight, Marcu, Deneefe, Wang, Thayer, 2006</marker>
+<rawString>Michel Galley, Jonathan Graehl, Kevin Knight, Daniel Marcu, Steve Deneefe, Wei Wang, and Ignacio Thayer. 2006. Scalable inference and training of context-rich syntactic translation models. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongjun He</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Improving statistical machine translation using lexicalized rule selection.</title>
+<date>2008</date>
+<booktitle>In Proc. COLING.</booktitle>
+<contexts>
+<context position="2594" citStr="He et al. (2008)" startWordPosition="390" endWordPosition="393">ent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, such models have been applied to systems without syntactic annotation on the target language side. He et al. (2008), He et al. (2010) and Cui et al. (2010) apply such rule selection models to hierarchical machine translation, Liu et al. (2008) to tree-to-string systems and Zhai et al. (2013) to systems based on predicate argument structures. When target side syntactic annotations are taken into account, the task of rule selection has to be reformulated (see Section 2) while the same type of model can be used in approaches without target annotations. This work is the first attempt to define a rule selection model for a string-to-tree system. We make our implementation publicly available as part of Moses.1 W</context>
+</contexts>
+<marker>He, Liu, Lin, 2008</marker>
+<rawString>Zhongjun He, Qun Liu, and Shouxun Lin. 2008. Improving statistical machine translation using lexicalized rule selection. In Proc. COLING.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongjun He</author>
+<author>Yao Meng</author>
+<author>Hao Yu</author>
+</authors>
+<title>Maximum entropy based phrase reordering for hierarchical phrase-based translation.</title>
+<date>2010</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="2612" citStr="He et al. (2010)" startWordPosition="394" endWordPosition="397">ents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, such models have been applied to systems without syntactic annotation on the target language side. He et al. (2008), He et al. (2010) and Cui et al. (2010) apply such rule selection models to hierarchical machine translation, Liu et al. (2008) to tree-to-string systems and Zhai et al. (2013) to systems based on predicate argument structures. When target side syntactic annotations are taken into account, the task of rule selection has to be reformulated (see Section 2) while the same type of model can be used in approaches without target annotations. This work is the first attempt to define a rule selection model for a string-to-tree system. We make our implementation publicly available as part of Moses.1 We show in Section </context>
+</contexts>
+<marker>He, Meng, Yu, 2010</marker>
+<rawString>Zhongjun He, Yao Meng, and Hao Yu. 2010. Maximum entropy based phrase reordering for hierarchical phrase-based translation. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hieu Hoang</author>
+<author>Philipp Koehn</author>
+<author>Adam Lopez</author>
+</authors>
+<title>A unified framework for phrase-based, hierarchical, and syntax-based statistical machine translation. In</title>
+<date>2009</date>
+<booktitle>In Proceedings of the International Workshop on Spoken Language Translation (IWSLT.</booktitle>
+<contexts>
+<context position="3821" citStr="Hoang et al., 2009" startWordPosition="590" endWordPosition="593">n Section 2 that string-to-tree rule selection is different from the hierarchical case addressed by previous work and define our rule selection model. In Section 3 we present the training procedure before providing a proof-of-concept evaluation in Section 4. 2 Rule selection for string-to-tree SMT 2.1 String-to-tree machine translation We present string-to-tree machine translation as implemented in Moses (which is the framework that we use). String-to-tree rules have the form X/A → (α, γ, ∼). On the source language side, 1We use the string-to-tree component of Moses (Williams and Koehn, 2012; Hoang et al., 2009) in which we integrate the high-speed classifier Vowpal Wabbit http://hunch. net/˜vw/. 1095 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1095–1101, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. Ces cellules pr´esentent plusieurs caract´eristiques sp´ecifiques Ces robots ont des comportements caract´eristiques similaires similar These DT NP S Figure 1: Word-aligned sentence pairs with targetside parse. Figure 2: Partial translation during decoding. all non-terminals have the unique label X while on the </context>
+<context position="11141" citStr="Hoang et al., 2009" startWordPosition="1805" endWordPosition="1808">side of all other rules having the same source side and aligned target non-terminals, such as rule r5 and r6, are incorrect classes. For model training, we use the cost-sensitive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004</context>
+</contexts>
+<marker>Hoang, Koehn, Lopez, 2009</marker>
+<rawString>Hieu Hoang, Philipp Koehn, and Adam Lopez. 2009. A unified framework for phrase-based, hierarchical, and syntax-based statistical machine translation. In In Proceedings of the International Workshop on Spoken Language Translation (IWSLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Hopkins</author>
+<author>Greg Langmead</author>
+</authors>
+<title>Scfg decoding without binarization.</title>
+<date>2010</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="11424" citStr="Hopkins and Langmead, 2010" startWordPosition="1850" endWordPosition="1853">ng to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNeefe et al., 2007). 5Specifically, the label dependent version of Cost Sensitive One Against All which uses classification. 6We use the development set which is also used for MIRA tuning. des ont SENT NP N (comportements)X1 N caract´eristiques Ces D NP N ro</context>
+</contexts>
+<marker>Hopkins, Langmead, 2010</marker>
+<rawString>Mark Hopkins and Greg Langmead. 2010. Scfg decoding without binarization. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongqiang Huang</author>
+<author>Jacob Devlin</author>
+<author>Rabih Zbib</author>
+</authors>
+<title>Factored soft source syntactic constraints for hierarchical machine translation.</title>
+<date>2013</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="1923" citStr="Huang et al., 2013" startWordPosition="282" endWordPosition="285">erformance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, such models have been applied to systems wit</context>
+</contexts>
+<marker>Huang, Devlin, Zbib, 2013</marker>
+<rawString>Zhongqiang Huang, Jacob Devlin, and Rabih Zbib. 2013. Factored soft source syntactic constraints for hierarchical machine translation. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+</authors>
+<title>Statistical syntax-directed translation with extended domain of locality. In</title>
+<date>2006</date>
+<booktitle>In Proc. AMTA</booktitle>
+<contexts>
+<context position="1008" citStr="Huang, 2006" startWordPosition="137" endWordPosition="138">orrect target side of a translation rule among rules with the same source side. We define a discriminative rule selection model for systems that have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tr</context>
+</contexts>
+<marker>Huang, 2006</marker>
+<rawString>Liang Huang. 2006. Statistical syntax-directed translation with extended domain of locality. In In Proc. AMTA 2006.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mathias Huck</author>
+<author>Hieu Hoang</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Preference grammars and soft syntactic constraints for ghkm syntax-based statistical machine translation. In</title>
+<date>2014</date>
+<booktitle>Proc. SSST-8.</booktitle>
+<contexts>
+<context position="1879" citStr="Huck et al., 2014" startWordPosition="275" endWordPosition="278"> string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, </context>
+<context position="17053" citStr="Huck et al. (2014)" startWordPosition="2785" endWordPosition="2788">ence training data 4th EuroParl corpus (Tiedemann, 2009) (Carpuat et al., 2013) training data size 149,986 sentence pairs 111,081 sentence pairs 139,199 sentence pairs development size 1,025 sentences 2,000 sentences 2,907 sentences test size 1,026 sentences 1,999 sentences 3,915 sentences Table 1: Overview of the sizes of the three domains. System science medical news Baseline 31.22 48.67 17.28 Contrastive 32.27 49.66 17.38 Table 3: Hierarchical system evaluation results. The results in bold are statistically significant improvements over the Baseline (at confidence p &lt; 0.05). grammars as in Huck et al. (2014). 4.4 Comparison with Hierarchical Rule Selection We applied our approach in a hierarchical phrasebased setting (Hiero). To this end, we trained 3 Hiero baseline systems and 3 Hiero systems augmented with our rule selection model on the data given in Section 4.1. The results of these experiments are shown in Table 3. Our augmented system largely outperforms the baselines. Interestingly, hierarchical rule selection significantly helps on the medical and scientific domain but still yields results that are significantly lower than those of the string-to-tree systems. This indicates that systems w</context>
+</contexts>
+<marker>Huck, Hoang, Koehn, 2014</marker>
+<rawString>Mathias Huck, Hieu Hoang, and Philipp Koehn. 2014. Preference grammars and soft syntactic constraints for ghkm syntax-based statistical machine translation. In Proc. SSST-8.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Statistical significance tests for machine translation evaluation.</title>
+<date>2004</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="13791" citStr="Koehn (2004)" startWordPosition="2242" endWordPosition="2243">l in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side according to the direct rule translation rule probability. Our rule selection model was trained with VW. All systems were tuned using batch MIRA (Cherry and Foster, 2012). We measured the overall translation quality with 4-gram BLEU (Papineni et al., 2002), which was computed on tokenized and lowercased data for all systems. Statistical significance is computed with the pairwise bootstrap resampling technique of Koehn (2004). 4.2 Results Table 2 displays the BLEU scores for our experiments. On science and news, small improvements are achieved while for medical a small decrease is observed. None of these differences is statistically significant. An analysis of the system outputs for each domain showed that the small improvements are due to the fact that in string-to-tree systems there is not enough ambiguity between competing rules during decoding. To support this conjecture, we first analyzed rule diversity by looking at the negative samples collected during training example acquisition. In a second step, we comp</context>
+</contexts>
+<marker>Koehn, 2004</marker>
+<rawString>Philipp Koehn. 2004. Statistical significance tests for machine translation evaluation. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yang Liu</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Treeto-string alignment template for statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="1027" citStr="Liu et al., 2006" startWordPosition="139" endWordPosition="142"> side of a translation rule among rules with the same source side. We define a discriminative rule selection model for systems that have syntactic annotation on the target language side (stringto-tree). This is a new and clean way to integrate soft source syntactic constraints into string-to-tree systems as features of the rule selection model. We release our implementation as part of Moses. 1 Introduction Syntax-based machine translation is well known for its ability to handle non-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through </context>
+</contexts>
+<marker>Liu, Liu, Lin, 2006</marker>
+<rawString>Yang Liu, Qun Liu, and Shouxun Lin. 2006. Treeto-string alignment template for statistical machine translation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Qun Liu</author>
+<author>Zhongjun He</author>
+<author>Yang Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Maximum entropy based rule selection model for syntax-based statistical machine translation. In</title>
+<date>2008</date>
+<booktitle>Proc. EMNLP.</booktitle>
+<contexts>
+<context position="2722" citStr="Liu et al. (2008)" startWordPosition="413" endWordPosition="416"> constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, such models have been applied to systems without syntactic annotation on the target language side. He et al. (2008), He et al. (2010) and Cui et al. (2010) apply such rule selection models to hierarchical machine translation, Liu et al. (2008) to tree-to-string systems and Zhai et al. (2013) to systems based on predicate argument structures. When target side syntactic annotations are taken into account, the task of rule selection has to be reformulated (see Section 2) while the same type of model can be used in approaches without target annotations. This work is the first attempt to define a rule selection model for a string-to-tree system. We make our implementation publicly available as part of Moses.1 We show in Section 2 that string-to-tree rule selection is different from the hierarchical case addressed by previous work and de</context>
+</contexts>
+<marker>Liu, He, Liu, Lin, 2008</marker>
+<rawString>Qun Liu, Zhongjun He, Yang Liu, and Shouxun Lin. 2008. Maximum entropy based rule selection model for syntax-based statistical machine translation. In Proc. EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lemao Liu</author>
+<author>Tiejun Zhao</author>
+<author>Chao Wang</author>
+<author>Hailong Cao</author>
+</authors>
+<title>A unified and discriminative soft syntactic constraint model for hierarchical phrase-based translation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 13th Machine Translation Summit,</booktitle>
+<pages>253--261</pages>
+<contexts>
+<context position="1547" citStr="Liu et al., 2011" startWordPosition="222" endWordPosition="225">els either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. </context>
+</contexts>
+<marker>Liu, Zhao, Wang, Cao, 2011</marker>
+<rawString>Lemao Liu, Tiejun Zhao, Chao Wang, and Hailong Cao. 2011. A unified and discriminative soft syntactic constraint model for hierarchical phrase-based translation. In Proceedings of the 13th Machine Translation Summit, pages 253–261.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuval Marton</author>
+<author>David Chiang</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Soft syntactic constraints for arabic—english hierarchical phrase-based translation.</title>
+<date>2012</date>
+<booktitle>Machine Translation,</booktitle>
+<pages>26--137</pages>
+<contexts>
+<context position="1515" citStr="Marton et al., 2012" startWordPosition="216" endWordPosition="219">-local reordering. Syntax-based models either use linguistic annotation on the source language side (Huang, 2006; Liu et al., 2006), target language side (Galley et al., 2004; Galley et al., 2006) or are syntactic in a structural sense only (Chiang, 2005). Recent shared tasks have shown that systems integrating information on the target language side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constrain</context>
+</contexts>
+<marker>Marton, Chiang, Resnik, 2012</marker>
+<rawString>Yuval Marton, David Chiang, and Philip Resnik. 2012. Soft syntactic constraints for arabic—english hierarchical phrase-based translation. Machine Translation, 26:137–157.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>Wei jing Zhu</author>
+</authors>
+<title>BLEU: a method for automatic evaluation of machine translation.</title>
+<date>2002</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="13619" citStr="Papineni et al., 2002" startWordPosition="2214" endWordPosition="2217">de (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using the SRI Language Modeling Toolkit (Stolcke, 2002). We train the model in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side according to the direct rule translation rule probability. Our rule selection model was trained with VW. All systems were tuned using batch MIRA (Cherry and Foster, 2012). We measured the overall translation quality with 4-gram BLEU (Papineni et al., 2002), which was computed on tokenized and lowercased data for all systems. Statistical significance is computed with the pairwise bootstrap resampling technique of Koehn (2004). 4.2 Results Table 2 displays the BLEU scores for our experiments. On science and news, small improvements are achieved while for medical a small decrease is observed. None of these differences is statistically significant. An analysis of the system outputs for each domain showed that the small improvements are due to the fact that in string-to-tree systems there is not enough ambiguity between competing rules during decodi</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and Wei jing Zhu. 2002. BLEU: a method for automatic evaluation of machine translation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Leon Barrett</author>
+<author>Romain Thibaux</author>
+<author>Dan Klein</author>
+</authors>
+<title>Learning accurate, compact, and interpretable tree annotation.</title>
+<date>2006</date>
+<booktitle>In Proc. ACL.</booktitle>
+<contexts>
+<context position="12858" citStr="Petrov et al., 2006" startWordPosition="2085" endWordPosition="2088">omains: (1) news, (2) medical, and (3) science. The training data for news is taken from Europarl-v4. Development and test sets are from the news translation task of WMT 2009 (Callison-Burch et al., 2009). For medical we use the biomedical data from EMEA (Tiedemann, 2009). Since this is a parallel corpus only, we first removed duplicate sentences and then constructed development and test sets by randomly selecting sentence pairs. As training data for science we use the scientific abstracts data provided by Carpuat et al. (2013). Table 1 gives an overview of the corpora sizes. Berkeley parser (Petrov et al., 2006) is used to parse the English side of each parallel corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using the SRI Language Modeling Toolkit (Stolcke, 2002). We train the model in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side according to the direct rule translation rule probability. Our rule selection model was trained</context>
+</contexts>
+<marker>Petrov, Barrett, Thibaux, Klein, 2006</marker>
+<rawString>Slav Petrov, Leon Barrett, Romain Thibaux, and Dan Klein. 2006. Learning accurate, compact, and interpretable tree annotation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+</authors>
+<title>Srilm - an extensible language modeling toolkit.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the International Conference on Spoken language Processing.</booktitle>
+<contexts>
+<context position="13160" citStr="Stolcke, 2002" startWordPosition="2138" endWordPosition="2139">ly, we first removed duplicate sentences and then constructed development and test sets by randomly selecting sentence pairs. As training data for science we use the scientific abstracts data provided by Carpuat et al. (2013). Table 1 gives an overview of the corpora sizes. Berkeley parser (Petrov et al., 2006) is used to parse the English side of each parallel corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using the SRI Language Modeling Toolkit (Stolcke, 2002). We train the model in the standard way and generate word alignments using GIZA++. After training, we reduced the number of translation rules by only keeping the 30-best rules with the same source side according to the direct rule translation rule probability. Our rule selection model was trained with VW. All systems were tuned using batch MIRA (Cherry and Foster, 2012). We measured the overall translation quality with 4-gram BLEU (Papineni et al., 2002), which was computed on tokenized and lowercased data for all systems. Statistical significance is computed with the pairwise bootstrap resam</context>
+</contexts>
+<marker>Stolcke, 2002</marker>
+<rawString>Andreas Stolcke. 2002. Srilm - an extensible language modeling toolkit. In Proceedings of the International Conference on Spoken language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J¨org Tiedemann</author>
+</authors>
+<title>News from opus: A collection of multilingual parallel corpora with tools and interfaces.</title>
+<date>2009</date>
+<booktitle>In Recent Advances in Natural Language Processing V, volume V,</booktitle>
+<pages>237--248</pages>
+<publisher>John Benjamins.</publisher>
+<contexts>
+<context position="12510" citStr="Tiedemann, 2009" startWordPosition="2031" endWordPosition="2032"> use the development set which is also used for MIRA tuning. des ont SENT NP N (comportements)X1 N caract´eristiques Ces D NP N robots VN V D AP A 1097 System science medical news Baseline 34.06 49.87 18.35 Contrastive 34.36 49.57 18.59 Table 2: String-to-tree system evaluation results. We evaluate the baseline and our global model on three domains: (1) news, (2) medical, and (3) science. The training data for news is taken from Europarl-v4. Development and test sets are from the news translation task of WMT 2009 (Callison-Burch et al., 2009). For medical we use the biomedical data from EMEA (Tiedemann, 2009). Since this is a parallel corpus only, we first removed duplicate sentences and then constructed development and test sets by randomly selecting sentence pairs. As training data for science we use the scientific abstracts data provided by Carpuat et al. (2013). Table 1 gives an overview of the corpora sizes. Berkeley parser (Petrov et al., 2006) is used to parse the English side of each parallel corpus (for string-to-tree rule extraction) as well as for parsing the French source side (for feature extraction). We trained a 5-gram language model on the English side of each training corpus using</context>
+<context position="16491" citStr="Tiedemann, 2009" startWordPosition="2703" endWordPosition="2704">e system is heavily restricted by the target side syntax. The observed lack of diversity could be minimized by allowing rules with the same source rhs to have different aligned target non-terminals. In this perspective, rule scoring should be done by normalizing over the source rhs only as in Williams and Koehn (2012). The rule selection model in Section 2.3 should then be redefined and normalized over all rules with the same source rhs. Another way to improve rule diversity would be to remove target non-terminals and use preference 1098 news medical science training data 4th EuroParl corpus (Tiedemann, 2009) (Carpuat et al., 2013) training data size 149,986 sentence pairs 111,081 sentence pairs 139,199 sentence pairs development size 1,025 sentences 2,000 sentences 2,907 sentences test size 1,026 sentences 1,999 sentences 3,915 sentences Table 1: Overview of the sizes of the three domains. System science medical news Baseline 31.22 48.67 17.28 Contrastive 32.27 49.66 17.38 Table 3: Hierarchical system evaluation results. The results in bold are statistically significant improvements over the Baseline (at confidence p &lt; 0.05). grammars as in Huck et al. (2014). 4.4 Comparison with Hierarchical Rul</context>
+</contexts>
+<marker>Tiedemann, 2009</marker>
+<rawString>J¨org Tiedemann. 2009. News from opus: A collection of multilingual parallel corpora with tools and interfaces. In Recent Advances in Natural Language Processing V, volume V, pages 237–248. John Benjamins.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philip Williams</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Ghkm rule extraction and scope-3 parsing in moses.</title>
+<date>2012</date>
+<booktitle>In Proc. WMT.</booktitle>
+<contexts>
+<context position="3800" citStr="Williams and Koehn, 2012" startWordPosition="586" endWordPosition="589"> part of Moses.1 We show in Section 2 that string-to-tree rule selection is different from the hierarchical case addressed by previous work and define our rule selection model. In Section 3 we present the training procedure before providing a proof-of-concept evaluation in Section 4. 2 Rule selection for string-to-tree SMT 2.1 String-to-tree machine translation We present string-to-tree machine translation as implemented in Moses (which is the framework that we use). String-to-tree rules have the form X/A → (α, γ, ∼). On the source language side, 1We use the string-to-tree component of Moses (Williams and Koehn, 2012; Hoang et al., 2009) in which we integrate the high-speed classifier Vowpal Wabbit http://hunch. net/˜vw/. 1095 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1095–1101, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. Ces cellules pr´esentent plusieurs caract´eristiques sp´ecifiques Ces robots ont des comportements caract´eristiques similaires similar These DT NP S Figure 1: Word-aligned sentence pairs with targetside parse. Figure 2: Partial translation during decoding. all non-terminals have the unique </context>
+<context position="7492" citStr="Williams and Koehn (2012)" startWordPosition="1172" endWordPosition="1175">t´eristiques X2, JJ1 properties JJ2 ) (rs) X/NP ( X1 caract´eristiques X2, JJ1 JJ2 features ) For consistency with decoding, we redefine the rule selection problem for the string-to-tree case. In this setup, it is the task of disambiguating rules with the same source side and aligned target nonterminals. As a consequence, our rule selection model (presented next) is not only normalized over the source rhs of the rules but also takes target non-terminals into account. The default rule scoring procedure for string-to-tree rules implemented in Moses uses the same normalization as we do. However, Williams and Koehn (2012) propose to normalize string-to-tree rules over the source rhs only. 2This is because their target side non-terminals are different. characteristics NNS These DT NP NNS cells present VBP S several JJ VP specific JJ NP robots NNS VBP have JJ VP characteristic JJ NP behaviours NNS Diverses caract´eristiques importantes JJ JJ Various important 1096 (similaires)X2 Figure 3: French sentence with input parse tree. 2.3 Rule selection model We denote string-to-tree rules with X/A —* (α,-y, —), as in Section 2.1. By ˜Ntt, we denote target non-terminals with their alignment to source non-terminals.3 C(f</context>
+<context position="9812" citStr="Williams and Koehn, 2012" startWordPosition="1572" endWordPosition="1575">uent: NP - Span width covered by α: 3 The rule internal features are: - Source side α: X1 caract´eristiques X2 (one feature) - Target side -y: JJ1 JJ2 characteristics - Aligned terminals in α and -y: caract´eristiques↔characteristics - Aligned non-terminals in α and -y: X1↔JJ1 X2↔JJ2 - Best baseline translation probability: Most Frequent Our rule selection model is integrated in the Moses string-to-tree system as an additional feature of the log-linear model. 3For rule r1,r5 and r6, ˜Ntt would be JJ1 and JJ2. 3 Model Training We create training examples using the rule extraction procedure in (Williams and Koehn, 2012).4 We begin by generating a rule-table using this procedure. Then, each time a rule r : X/A —* (α, -y, —) can be extracted from the training data, we generate a new training example. The target side -y of the extracted rule is a positive instance and gets a loss of 0. To generate negative samples, we collect all rules r2, ... , rn that have the same source language side as r as well as the same aligned target non-terminals ˜Ntt. Each of these rules is a negative example and gets a cost of 1. As an example, suppose that rule r1 introduced in Section 2.1 has been extracted from the training exam</context>
+<context position="11168" citStr="Williams and Koehn, 2012" startWordPosition="1809" endWordPosition="1812">les having the same source side and aligned target non-terminals, such as rule r5 and r6, are incorrect classes. For model training, we use the cost-sensitive one-against-all-reduction (Beygelzimer et al., 2005) of Vowpal Wabbit (VW).5 We avoid overfitting to training data by employing early stopping once classifier accuracy decreases on a heldout dataset.6 4 Experiments 4.1 Experimental Setup Our baseline system is a syntax-based system with linguistic annotation on the target language side (string-to-tree). We use the version implemented in the Moses open source toolkit (Hoang et al., 2009; Williams and Koehn, 2012) with standard parameters. Rule extraction is performed as in (Galley et al., 2004) with rule composition (Galley et al., 2006; DeNeefe et al., 2007). Non-lexical unary rules are removed (Chung et al., 2011) and scope-3 pruning (Hopkins and Langmead, 2010) is performed. Rule scoring is done using relative frequencies normalized over the source rhs and aligned non-terminals in the target rhs. The contrastive system is the same string-to-tree system but augmented with our rule selection model as a feature of the log-linear model. 4Which is based on (Galley et al., 2004; Galley et al., 2006; DeNe</context>
+<context position="16194" citStr="Williams and Koehn (2012)" startWordPosition="2654" endWordPosition="2657">the lexical translation of ´eventail. This lack of diversity is due to the constraint that competing string-to-tree rules must have the same aligned non-terminal symbols, which is taken into account when collecting negative samples. In other words, the ambiguity between translation rules in a stringto-tree system is heavily restricted by the target side syntax. The observed lack of diversity could be minimized by allowing rules with the same source rhs to have different aligned target non-terminals. In this perspective, rule scoring should be done by normalizing over the source rhs only as in Williams and Koehn (2012). The rule selection model in Section 2.3 should then be redefined and normalized over all rules with the same source rhs. Another way to improve rule diversity would be to remove target non-terminals and use preference 1098 news medical science training data 4th EuroParl corpus (Tiedemann, 2009) (Carpuat et al., 2013) training data size 149,986 sentence pairs 111,081 sentence pairs 139,199 sentence pairs development size 1,025 sentences 2,000 sentences 2,907 sentences test size 1,026 sentences 1,999 sentences 3,915 sentences Table 1: Overview of the sizes of the three domains. System science </context>
+</contexts>
+<marker>Williams, Koehn, 2012</marker>
+<rawString>Philip Williams and Philipp Koehn. 2012. Ghkm rule extraction and scope-3 parsing in moses. In Proc. WMT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Feifei Zhai</author>
+<author>Jiajun Zhang</author>
+<author>Yu Zhou</author>
+<author>Chengqing Zong</author>
+</authors>
+<title>Handling ambiguities of bilingual predicate-argument structures for statistical machine translation. In</title>
+<date>2013</date>
+<booktitle>Proc. ACL.</booktitle>
+<contexts>
+<context position="2771" citStr="Zhai et al. (2013)" startWordPosition="421" endWordPosition="424">ine a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the considered rule. So far, such models have been applied to systems without syntactic annotation on the target language side. He et al. (2008), He et al. (2010) and Cui et al. (2010) apply such rule selection models to hierarchical machine translation, Liu et al. (2008) to tree-to-string systems and Zhai et al. (2013) to systems based on predicate argument structures. When target side syntactic annotations are taken into account, the task of rule selection has to be reformulated (see Section 2) while the same type of model can be used in approaches without target annotations. This work is the first attempt to define a rule selection model for a string-to-tree system. We make our implementation publicly available as part of Moses.1 We show in Section 2 that string-to-tree rule selection is different from the hierarchical case addressed by previous work and define our rule selection model. In Section 3 we pr</context>
+</contexts>
+<marker>Zhai, Zhang, Zhou, Zong, 2013</marker>
+<rawString>Feifei Zhai, Jiajun Zhang, Yu Zhou, and Chengqing Zong. 2013. Handling ambiguities of bilingual predicate-argument structures for statistical machine translation. In Proc. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jiajun Zhang</author>
+<author>Feifei Zhai</author>
+<author>Chengqing Zong</author>
+</authors>
+<title>Augmenting string-to-tree translation models with fuzzy use of source-side syntax.</title>
+<date>2011</date>
+<booktitle>In Proc. EMNLP.</booktitle>
+<contexts>
+<context position="1859" citStr="Zhang et al., 2011" startWordPosition="271" endWordPosition="274">ge side, also called string-to-tree systems, achieve the best performance on several language pairs (Bojar et al., 2014). At the same time, soft syntactic features significantly improve the translation quality of hierarchical systems (Hiero) as shown in (Marton et al., 2012; Chiang, 2010; Liu et al., 2011; Cui et al., 2010). Improving the performance of stringto-tree systems through the integration of soft syntactic constraints on the source language side is therefore an interesting task. So far, all approaches on this topic include soft syntactic constraints into the rules of string-to-tree (Zhang et al., 2011; Huck et al., 2014) or stringto-dependency (Huang et al., 2013) systems and define heuristics to determine to what extent these constituents match the syntactic structure of the source sentence. We propose a novel way to integrate soft syntactic constraints into a string-totree system. We define a discriminative rule selection model for string-to-tree machine translation. We consider rule selection as a multi-class classification problem where the task is to select the correct target side of a rule given its source side as well as contextual information about the source sentence and the consi</context>
+</contexts>
+<marker>Zhang, Zhai, Zong, 2011</marker>
+<rawString>Jiajun Zhang, Feifei Zhai, and Chengqing Zong. 2011. Augmenting string-to-tree translation models with fuzzy use of source-side syntax. In Proc. EMNLP.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

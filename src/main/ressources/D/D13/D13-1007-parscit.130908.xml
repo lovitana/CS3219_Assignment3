@@ -1,0 +1,1888 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000217">
+<title confidence="0.978365">
+A Log-Linear Model for Unsupervised Text Normalization
+</title>
+<author confidence="0.998972">
+Yi Yang
+</author>
+<affiliation confidence="0.9991165">
+School of Interactive Computing
+Georgia Institute of Technology
+</affiliation>
+<email confidence="0.998016">
+yiyang@gatech.edu
+</email>
+<author confidence="0.99726">
+Jacob Eisenstein
+</author>
+<affiliation confidence="0.9991015">
+School of Interactive Computing
+Georgia Institute of Technology
+</affiliation>
+<email confidence="0.998662">
+jacobe@gatech.edu
+</email>
+<sectionHeader confidence="0.998599" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999858736842105">
+We present a unified unsupervised statistical
+model for text normalization. The relation-
+ship between standard and non-standard to-
+kens is characterized by a log-linear model,
+permitting arbitrary features. The weights
+of these features are trained in a maximum-
+likelihood framework, employing a novel se-
+quential Monte Carlo training algorithm to
+overcome the large label space, which would
+be impractical for traditional dynamic pro-
+gramming solutions. This model is im-
+plemented in a normalization system called
+UNLOL, which achieves the best known re-
+sults on two normalization datasets, outper-
+forming more complex systems. We use the
+output of UNLOL to automatically normalize
+a large corpus of social media text, revealing a
+set of coherent orthographic styles that under-
+lie online language variation.
+</bodyText>
+<sectionHeader confidence="0.999471" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999937717391305">
+Social media language can differ substantially from
+other written text. Many of the attempts to character-
+ize and overcome this variation have focused on nor-
+malization: transforming social media language into
+text that better matches standard datasets (Sproat et
+al., 2001; Liu et al., 2011). Because there is lit-
+tle available training data, and because social me-
+dia language changes rapidly (Eisenstein, 2013b),
+fully supervised training is generally not considered
+appropriate for this task. However, due to the ex-
+tremely high-dimensional output space — arbitrary
+sequences of words across the vocabulary — it is
+a very challenging problem for unsupervised learn-
+ing. Perhaps it is for these reasons that the most suc-
+cessful systems are pipeline architectures that cob-
+ble together a diverse array of techniques and re-
+sources, including statistical language models, de-
+pendency parsers, string edit distances, off-the-shelf
+spellcheckers, and curated slang dictionaries (Liu et
+al., 2011; Han and Baldwin, 2011; Han et al., 2013).
+We propose a different approach, performing nor-
+malization in a maximum-likelihood framework.
+There are two main sources of information to be
+exploited: local context, and surface similarity be-
+tween the observed strings and normalization can-
+didates. We treat the local context using standard
+language modeling techniques; we treat string simi-
+larity with a log-linear model that includes features
+for both surface similarity and word-word pairs.
+Because labeled examples of normalized text
+are not available, this model cannot be trained
+in the standard supervised fashion. Nor can we
+apply dynamic programming techniques for unsu-
+pervised training of locally-normalized conditional
+models (Berg-Kirkpatrick et al., 2010), as their com-
+plexity is quadratic in the size of label space; in
+normalization, the label space is the vocabulary it-
+self, with at least 104 elements. Instead, we present
+a new training approach using Monte Carlo tech-
+niques to compute an approximate gradient on the
+feature weights. This training method may be appli-
+cable in other unsupervised learning problems with
+a large label space.
+This model is implemented in a normalization
+system called UNLOL (unsupervised normalization
+in a LOg-Linear model). It is a lightweight proba-
+</bodyText>
+<page confidence="0.991302">
+61
+</page>
+<note confidence="0.73422">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 61–72,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999027111111111">
+bilistic approach, relying only on a language model
+for the target domain; it can be adapted to new
+corpora text or new domains easily and quickly.
+Our evaluations show that UNLOL outperforms the
+state-of-the-art on standard normalization datasets.
+In addition, we demonstrate the linguistic insights
+that can be obtained from normalization, using
+UNLOL to identify classes of orthographic transfor-
+mations that form coherent linguistic styles.
+</bodyText>
+<sectionHeader confidence="0.995576" genericHeader="introduction">
+2 Background
+</sectionHeader>
+<bodyText confidence="0.999968380281691">
+The text normalization task was introduced
+by Sproat et al. (2001), and attained popularity in
+the context of SMS messages (Choudhury et al.,
+2007b). It has become still more salient in the era of
+widespread social media, particularly Twitter. Han
+and Baldwin (2011) formally define a normalization
+task for Twitter, focusing on normalizations between
+single tokens, and excluding multi-word tokens like
+tot (laugh out loud). The normalization task has
+been criticized by Eisenstein (2013b), who argues
+that it strips away important social meanings. In
+recent work, normalization has been shown to yield
+improvements for part-of-speech tagging (Han
+et al., 2013), parsing (Zhang et al., 2013), and
+machine translation (Hassan and Menezes, 2013).
+As we will show in Section 7, accurate automated
+normalization can also improve our understanding
+of the nature of social media language.
+Supervised methods Early work on normaliza-
+tion focused on labeled SMS datasets, using ap-
+proaches such as noisy-channel modeling (Choud-
+hury et al., 2007a) and machine translation (Aw
+et al., 2006), as well as hybrid combinations of
+spelling correction and speech recognition (Kobus
+et al., 2008; Beaufort et al., 2010). This work
+sought to balance language models (favoring words
+that fit in context) with transformation models (fa-
+voring words that are similar to the observed text).
+Our approach can also be seen as a noisy channel
+model, but unlike this prior work, no labeled data is
+required.
+Unsupervised methods Cook and Stevenson
+(2009) manually identify several word formation
+types within a noisy channel framework. They
+parametrize each formation type with a small num-
+ber of scalar values, so that all legal transformations
+of a given type are equally likely. The scalar pa-
+rameters are then estimated using expectation max-
+imization. This work stands apart from most of the
+other unsupervised models, which are pipelines.
+Contractor et al. (2010) use string edit distance
+to identify closely-related candidate orthographic
+forms and then decode the message using a language
+model. Gouws et al. (2011) refine this approach
+by mining an “exception dictionary” of strongly-
+associated word pairs such as you/u. Like Con-
+tractor et al. (2010), we apply string edit distance,
+and like Gouws et al. (2011), we capture strongly
+related word pairs. However, rather than applying
+these properties as filtering steps in a pipeline, we
+add them as features in a unified log-linear model.
+Recent approaches have sought to improve accu-
+racy by bringing more external resources and com-
+plex architectures to bear. Han and Baldwin (2011)
+begin with a set of string similarity metrics, and then
+apply dependency parsing to identify contextually-
+similar words. Liu et al. (2011) extract noisy train-
+ing pairs from the search snippets that result from
+carefully designed queries to Google, and then train
+a conditional random field (Lafferty et al., 2001) to
+estimate a character-based translation model. They
+later extend this work by adding a model of vi-
+sual priming, an off-the-shelf spell-checker, and lo-
+cal context (Liu et al., 2012a). Hassan and Menezes
+(2013) use a random walk framework to capture
+contextual similarity, which they then interpolate
+with an edit distance metric. Rather than seek-
+ing additional external resources or designing more
+complex metrics of context and similarity, we pro-
+pose a unified statistical model, which learns feature
+weights in a maximum-likelihood framework.
+</bodyText>
+<sectionHeader confidence="0.994683" genericHeader="method">
+3 Approach
+</sectionHeader>
+<bodyText confidence="0.987086">
+Our approach is motivated by the following criteria:
+</bodyText>
+<listItem confidence="0.99973275">
+• Unsupervised. We want to be able to train
+a model without labeled data. At present, la-
+beled data for Twitter normalization is avail-
+able only in small quantities. Moreover, as
+social media language is undergoing rapid
+change (Eisenstein, 2013b), labeled datasets
+may become stale and increasingly ill-suited to
+new spellings and words.
+</listItem>
+<page confidence="0.914211">
+62
+</page>
+<listItem confidence="0.90109524">
+• Low-resource. Other unsupervised ap-
+proaches take advantage of resources such as
+slang dictionaries and spell checkers (Han and
+Baldwin, 2011; Liu et al., 2011). Resources
+that characterize the current state of internet
+language risk becoming outdated; in this paper
+we investigate whether high-quality normaliza-
+tion is possible without any such resources.
+• Featurized. The relationship between any pair
+of words can be characterized in a number of
+different ways, ranging from simple character-
+level rules (e.g., going/goin) to larger substi-
+tutions (e.g., someone/sum1), and even to pat-
+terns that are lexically restricted (e.g., you/u,
+to/2). For these reasons, we seek a model that
+permits many overlapping features to describe
+candidate word pairs. These features may in-
+clude simple string edit distance metrics, as
+well as lexical features that memorize specific
+pairs of standard and nonstandard words.
+• Context-driven. Learning potentially arbitrary
+word-to-word transformations without supervi-
+sion would be impossible without the strong
+additional cue of local context. For example,
+in the phrase
+</listItem>
+<bodyText confidence="0.997258833333333">
+give me suttin to believe in,
+even a reader who has never before seen the
+word suttin may recognize it as a phonetic
+transcription of something. The relatively high
+string edit distance is overcome by the strong
+contextual preference for the word something
+over orthographically closer alternatives such
+as button or suiting. We can apply an arbi-
+trary target language model, leveraging large
+amounts of unlabeled data and catering to the
+desired linguistic characteristics of the normal-
+ized content.
+</bodyText>
+<listItem confidence="0.642218142857143">
+• Holistic. While several prior approaches —
+such as normalization dictionaries — operate at
+the token level, our approach reasons over the
+scope of the entire message. The necessity for
+such holistic, joint inference and learning can
+be seen by changing the example above to:
+gimme suttin 2 beleive innnn.
+</listItem>
+<bodyText confidence="0.9999645">
+None of these tokens are standard (except 2,
+which appears in a nonstandard sense here), so
+without joint inference, it would not be possi-
+ble to use context to help normalize suttin.
+Only by jointly reasoning over the entire mes-
+sage can we obtain the correct normalization.
+These desiderata point towards a featurized se-
+quence model, which must be trained without la-
+beled examples. While there is prior work on train-
+ing sequence models without supervision (Smith
+and Eisner, 2005; Berg-Kirkpatrick et al., 2010),
+there is an additional complication not faced by
+models for tasks such as part-of-speech tagging
+and named entity recognition: the potential label
+space of standard words is large, on the order of
+at least 104. Naive application of Viterbi decod-
+ing — which is a component of training for both
+Contrastive Estimation (Smith and Eisner, 2005)
+and the locally-normalized sequence labeling model
+of Berg-Kirkpatrick et al. (2010) — will be stymied
+by Viterbi’s quadratic complexity in the dimension
+of the label space. While various pruning heuris-
+tics may be applied, we instead look to Sequen-
+tial Monte Carlo (SMC), a randomized algorithm
+which approximates the necessary feature expecta-
+tions through weighted samples.
+</bodyText>
+<sectionHeader confidence="0.995678" genericHeader="method">
+4 Model
+</sectionHeader>
+<bodyText confidence="0.9999771">
+Given a set of source-language sentences 5 =
+{s1, s2, ...I (e.g., Tweets), our goal is to trans-
+duce them into target-language sentences T =
+{t1, t2, ...I (standard English). We are given a tar-
+get language model P(t), which can be estimated
+from some large set of unlabeled target-language
+sentences. We denote the vocabularies of source lan-
+guage and target language as vS and vT respectively.
+We define a log-linear model that scores source
+and target strings, with the form
+</bodyText>
+<equation confidence="0.711888">
+( )
+P(s�t; 0) a exp 0Tf(s, t) . (1)
+</equation>
+<bodyText confidence="0.9998365">
+The desired conditional probability P(tIs) can be
+obtained by combining this model with the target
+language model, P(tIs) a P(sIt; 0)P(t). Since no
+labeled data is available, the parameters 0 must be
+estimated by maximizing the log-likelihood of the
+source-language data. We define the log-likelihood
+</bodyText>
+<page confidence="0.968691">
+63
+</page>
+<equation confidence="0.787535666666667">
+`θ(s) for a source-language sentence s as follows:
+`θ(s) = log P(s) = log E P(s|t; θ)P(t)
+t
+</equation>
+<bodyText confidence="0.996187">
+We would like to maximize this objective by mak-
+ing gradient-based updates.
+</bodyText>
+<equation confidence="0.8846825">
+= Et|s[f(s, t) − Es,|t[f(s0, t)]]
+(2)
+</equation>
+<bodyText confidence="0.999981172413793">
+We are left with a difference in expected feature
+counts, as is typical in log-linear models. However,
+unlike the supervised case, here both terms are ex-
+pectations: the outer expectation is over all target se-
+quences (given the observed source sequence), and
+the nested expectation is over all source sequences,
+given the target sequence. As the space of possible
+target sequences t grows exponentially in the length
+of the source sequence, it will not be practical to
+compute this expectation directly.
+Dynamic programming is the typical solution for
+computing feature expectations, and can be applied
+to sequence models when the feature function de-
+composes locally. There are two reasons this will
+not work in our case. First, while the forward-
+backward algorithm would enable us to compute
+Et|s, it would not give us the nested expectation
+Et|s[Es,|t]; this is the classic challenge in training
+globally-normalized log-linear models without la-
+beled data (Smith and Eisner, 2005). Second, both
+forward-backward and the Viterbi algorithm have
+time complexity that is quadratic in the dimension of
+the label space, at least 104 or 105. As we will show,
+Sequential Monte Carlo (SMC) algorithms have a
+number of advantages in this setting: they permit
+the efficient computation of both the outer and inner
+expectations, they are trivially parallelizable, and
+the number of samples provides an intuitive tuning
+tradeoff between accuracy and speed.
+</bodyText>
+<subsectionHeader confidence="0.996007">
+4.1 Sequential Monte Carlo approximation
+</subsectionHeader>
+<bodyText confidence="0.9983543">
+Sequential Monte Carlo algorithms are a class of
+sampling-based algorithms in which latent vari-
+ables are sampled sequentially (Cappe et al., 2007).
+They are particularly well-suited to sequence mod-
+els, though they can be applied more broadly. SMC
+algorithms maintain a set of weighted hypotheses;
+the weights correspond to probabilities, and in our
+case, the hypotheses correspond to target language
+word sequences. Specifically, we approximate the
+conditional probability,
+</bodyText>
+<equation confidence="0.9976315">
+P(t1:n|s1:n) � EK ωk nδtk 1:n(t1:n),
+k=1
+</equation>
+<bodyText confidence="0.99995225">
+where ωkn is the normalized weight of sample k at
+word n (˜ωkn is the unnormalized weight), and δtk1:n is
+a delta function centered at tk1:n.
+At each step, and for each hypothesis k, a new
+target word is sampled from a proposal distribution,
+and the weight of the hypothesis is then updated. We
+maintain feature counts for each hypothesis, and ap-
+proximate the expectation by taking a weighted av-
+erage using the hypothesis weights. The proposal
+distribution will be described in detail later.
+We make a Markov assumption, so that the emis-
+sion probability P(s|t) decomposes across the ele-
+ments of the sentence P(s|t) = HN nP(sn|tn). This
+means that the feature functions f(s, t) must decom-
+pose on each (sn, tn) pair. We can then rewrite (1)
+as
+</bodyText>
+<equation confidence="0.9937824">
+exp (θTf(sn,tn)) (3)
+Z(tn)
+E � �
+Z(tn) = exp θTf(s, tn) . (4)
+s
+</equation>
+<bodyText confidence="0.999960642857143">
+In addition, we assume that the target language
+model P(t) can be written as an N-gram language
+model, P(t) = Hn P(tn|tn−1, ... tn−k+1). With
+these assumptions, we can view normalization as
+a finite state-space model in which the target lan-
+guage model defines the prior distribution of the pro-
+cess and Equation 3 defines the likelihood function.
+We are able to compute the the posterior probabil-
+ity P(t|s) using sequential importance sampling, a
+member of the SMC family.
+The crucial idea in sequential importance sam-
+pling is to update the hypotheses tk1:n and their
+weights ωkn so that they approximate the posterior
+distribution at the next time step, P(t1:n+1|s1:n+1).
+</bodyText>
+<equation confidence="0.9932215">
+∂`θ(s)
+∂θ
+=E
+t
+E
+P(t|s) f(s,t) −
+s,
+�P(s0|t)f(s0,t)
+1 E P (t) ∂ ∂θ P (s|t; θ)
+P (s)
+t
+N
+P(s|t; θ) = ri
+n
+</equation>
+<page confidence="0.97572">
+64
+</page>
+<bodyText confidence="0.997592">
+Assuming the proposal distribution has the form
+Q(tk1:n|s1:n), the importance weights are given by
+</bodyText>
+<equation confidence="0.998879">
+k P(t1:n|s1:n)
+Wn 0C (5)
+Q(tk 1:n|s1:n)
+</equation>
+<bodyText confidence="0.897737">
+In order to update the hypotheses recursively, we
+rewrite P(t1:n|s1:n) as:
+</bodyText>
+<equation confidence="0.982780333333333">
+P(sn|tn)P(tn|t1:n−1, s1:n−1)P(t1:n−1|s1:n−1)
+P(sn|s1:n−1)
+0CP(sn|tn)P(tn|tn−1)P(t1:n−1|s1:n−1),
+</equation>
+<bodyText confidence="0.9611875">
+assuming a bigram language model. We further as-
+sume the proposal distribution Q can be factored as:
+</bodyText>
+<equation confidence="0.9981">
+Q(t1:n|s1:n) =Q(tn|t1:n−1, s1:n)Q(t1:n−1|s1:n−1)
+=Q(tn|tn−1, sn)Q(t1:n−1|s1:n−1).
+(6)
+</equation>
+<bodyText confidence="0.9851405">
+Then the unnormalized importance weights sim-
+plify to a recurrence:
+</bodyText>
+<equation confidence="0.9987665">
+k _P(sn |tkn)P(tkn |tkn−1)P(tl:n—1 |1:n-1)
+Wn — (7)
+Q(tn |tn−1, sn)Q(tk1:n−1 |s1:n−1)
+k P(sn |tkn)P(tkn |tkn−1) (8)
+=Wn−1
+Q(tn|tn−1, sn)
+</equation>
+<bodyText confidence="0.634975666666667">
+Therefore, we can approximate the posterior dis-
+tribution P(tn|s1:n) ^ �K k=1 Wk n�tk �(tn), and com-
+pute the outer expectation as follows:
+</bodyText>
+<equation confidence="0.99557">
+f(sn,tkn) (9)
+</equation>
+<bodyText confidence="0.989497">
+We compute the nested expectation using a non-
+sequential Monte Carlo approximation, assuming
+we can draw s`,k ti P(s|tkn).
+This gives the overall gradient computation:
+</bodyText>
+<equation confidence="0.9996225">
+K
+Et|.[f(s,t) − E.,|t[f(S,t)]] = K1˜k EWkN
+Ek=1 WN k=1
+f(s1,k tk)J
+n , n
+(10)
+</equation>
+<bodyText confidence="0.999849285714286">
+where we sample tkn and update Wk nwhile mov-
+ing from left-to-right, and sample s`,k
+n at each n.
+Note that although the sequential importance sam-
+pler moves left-to-right like a filter, we use only the
+final weights WN to compute the expectation. Thus,
+the resulting expectation is based on the distribu-
+tion P(s1:N|t1:N), so that no backwards “smooth-
+ing” pass (Godsill et al., 2004) is needed to elim-
+inate bias. Other applications of sequential Monte
+Carlo make use of resampling (Cappe et al., 2007) to
+avoid degeneration of the hypothesis weights, but we
+found this to be unnecessary due to the short length
+of Twitter messages.
+</bodyText>
+<subsectionHeader confidence="0.98586">
+4.2 Proposal distribution
+</subsectionHeader>
+<bodyText confidence="0.999995727272727">
+The major computational challenge for dynamic
+programming approaches to normalization is the
+large label space, equal to the size of the target vo-
+cabulary. It may appear that all we have gained
+by applying sequential Monte Carlo is to convert
+a computational problem into a statistical one: a
+naive sampling approach will have little hope of
+finding the small high-probability region of the high-
+dimensional label space. However, sequential im-
+portance sampling allows us to address this issue
+through the proposal distribution, from which we
+sample the candidate words tn. Careful design of the
+proposal distribution can guide sampling towards
+the high-probability space. In the asymptotic limit of
+an infinite number of samples, any non-pathological
+proposal distribution will ultimately arrive at the de-
+sired estimate, but a good proposal distribution can
+greatly reduce the number of samples needed.
+Doucet et al. (2001) note that the optimal pro-
+posal — which minimizes the variance of the im-
+portance weights conditional on t1:n−1 and s1:n —
+has the following form:
+</bodyText>
+<equation confidence="0.997539653846154">
+P(t1:n|s1:n) = P(sn|s1:n−1)
+P(sn|t1:n, s1:n−1)P(t1:n|s1:n−1)
+=
+Et|$[f(s, t)] =
+Wk
+N
+N
+n=1
+K
+k=1
+L
+f(sn,tkn) − 1
+�
+P=1
+N
+X E
+n=1
+N
+E.|tk [f (s, tk)] = � n=1
+L
+`=1
+f(s`,k
+n , tkn)
+P(sn|tk n)P(tk n|tk n−1)
+Q(tk n|sn,tk n−1) = (11)
+Et&apos; P(sn |t0)P(t0 |tkn−1)
+</equation>
+<page confidence="0.981228">
+65
+</page>
+<bodyText confidence="0.999956304347826">
+Sampling from this proposal requires computing
+the normalized distribution P(sn|tkn); similarly, the
+update of the hypothesis weights (Equation 8) re-
+quires the calculation of Q in its normalized form. In
+each case, the total cost is the product of the vocabu-
+lary sizes, O(#|νT |#|νS|), which is not tractable as
+the vocabularies become large.
+In low-dimensional settings, a convenient so-
+lution is to set the proposal distribution equal
+to the transition distribution, Q(tk n|sn, tk n−1) =
+P (tk n|tk n−1, . . . , tkn−k+1). This choice is called the
+“bootstrap filter,” and it has the advantage that the
+weights ω(k) are exactly identical to the product
+of emission likelihoods 11n P(sn|tkn). The com-
+plexity of computing the hypothesis weights is thus
+O(#|νS|). However, because this proposal ignores
+the emission likelihood, the bootstrap filter has very
+little hope of finding a high-probability sample in
+high-entropy contexts.
+We strike a middle ground between efficiency and
+accuracy, using a proposal distribution that is closely
+related to the overall likelihood, yet is tractable to
+sample and compute:
+</bodyText>
+<equation confidence="0.9935762">
+Q(tk n|sn, tkn−1) def=
+P(sn|tk n)Z(tk n)P(tk n|tk n−1)
+Et&apos; P(sn |t0)Z(t0)P(t(� |tkn−1)
+exp (θTf(sn,tn)) P(tkn|tkn−1)
+Et/ exp (θTf(sn,t0)) P(t0|tkn−1)
+</equation>
+<bodyText confidence="0.999912">
+Here, we simply replace the likelihood distribu-
+tion in (11) by its unnormalized version.
+To update the unnormalized hypothesis weights
+�ωkn, we have
+</bodyText>
+<equation confidence="0.992364">
+Et/ exp (θTf(sn, t0)) P(t0|tkn−1) (13)
+Z(tkn)
+</equation>
+<bodyText confidence="0.9973725">
+The numerator requires summing over all ele-
+ments in νT and the denominator Z(tkn) requires
+summing over all elements in νS, for a total cost of
+O(#|νT |+ #|νS|).
+</bodyText>
+<subsectionHeader confidence="0.997875">
+4.3 Decoding
+</subsectionHeader>
+<bodyText confidence="0.888632">
+Given an input source sentence s, the decoding prob-
+lem is to find a target sentence t that maximizes
+P(t|s) a P(s|t)P(t) = 11n P(sn|tn)P(tn|tn−1).
+</bodyText>
+<table confidence="0.590429">
+Feature name Description
+</table>
+<tableCaption confidence="0.609786125">
+word-word pair A set of binary features for each
+source/target word pair (s, t)
+string similarity A set of binary features in-
+dicating whether s is one of
+the top N string similar non-
+standard words of t, for N E
+15,10, 25, 50,100, 250, 500,1000}
+Table 1: The feature set for our log-linear model
+</tableCaption>
+<bodyText confidence="0.999694409090909">
+As with learning, we cannot apply the usual dy-
+namic programming algorithm (Viterbi), because
+of its quadratic cost in the size of the target lan-
+guage vocabulary. This must be multiplied by
+the cost of computing the normalized probability
+P(sn|tn), resulting in a prohibitive time complexity
+of O(#|νS|#|νT|2N).
+We consider two approximate decoding algo-
+rithms. The first is to simply apply the proposal dis-
+tribution, with linear complexity in the size of the
+two vocabularies. However, this decoder is not iden-
+tical to P(t|s), because of the extra factor of Z(t)
+in the numerator. Alternatively, we can apply the
+proposal distribution for selecting target word can-
+didates, then apply the Viterbi algorithm only within
+these candidates. The total cost is O(#|νS|T2N),
+where T is the number of target word candidates we
+consider; this will asymptotically approach P(t|s)
+as T —* #|νT |. Our evaluations use the more expen-
+sive proposal+Viterbi decoding, but accuracy with
+the more efficient proposal-based decoding is very
+similar.
+</bodyText>
+<subsectionHeader confidence="0.958354">
+4.4 Features
+</subsectionHeader>
+<bodyText confidence="0.999996272727273">
+Our system uses the feature types described in Ta-
+ble 1. The word pair features are designed to cap-
+ture lexical conventions, e.g. you/u. We only con-
+sider word pair features that fired during training.
+The string similarity features rely on the similarity
+function proposed by Contractor et al. (2010), which
+has proven effective for normalization in prior work.
+We bin this similarity to create binary features indi-
+cating whether a string s is in the top-N most similar
+strings to t; this binning yields substantial speed im-
+provements without negatively impacting accuracy.
+</bodyText>
+<equation confidence="0.9534178">
+(12)
+Wk
+n
+k
+=ωn−1
+</equation>
+<page confidence="0.970355">
+66
+</page>
+<sectionHeader confidence="0.979903" genericHeader="method">
+5 Implementation and data
+</sectionHeader>
+<bodyText confidence="0.999942714285714">
+The model and inference described in the pre-
+vious section are implemented in a software
+system for normalizing text on twitter, called
+UNLOL: unsupervised normalization in a LOg-
+Linear model. The final system can process roughly
+10,000 Tweets per hour. We now describe some im-
+plementation details.
+</bodyText>
+<subsectionHeader confidence="0.987545">
+5.1 Normalization candidates
+</subsectionHeader>
+<bodyText confidence="0.988443219512195">
+Most tokens in tweets do not require normalization.
+The question of how to identify which words are
+to be normalized is still an open problem. Follow-
+ing Han and Baldwin (2011), we build a dictionary
+of words which are permissible in the target domain,
+and make no attempt to normalize source strings
+that match these words. As with other comparable
+approaches, we are therefore unable to normalize
+strings like ill into I’ll. Our set of “in-vocabulary”
+(IV) words is based on the GNU aspell dictionary
+(v0.60.6), containing 97,070 words. From this dic-
+tionary, we follow Liu et al. (2012a) and remove all
+the words with a count of less than 20 in the Edin-
+burgh Twitter corpus (Petrovi´c et al., 2010) — re-
+sulting in a total of 52,449 target words. All sin-
+gle characters except a and i are excluded, and rt
+is treated as in-vocabulary. For all in-vocabulary
+words, we define P(sn|tn) = S(sn, tn), taking the
+value of zero when sn =� tn. This effectively pre-
+vents our model from attempting to normalize these
+words.
+In addition to words that are in the target vocabu-
+lary, there are many other strings that should not be
+normalized, such as names and multiword shorten-
+ings (e.g. going to/gonna).1 We follow prior work
+and assume that the set of normalization candidates
+is known in advance during test set decoding (Han et
+al., 2013). However, the unlabeled training data has
+no such information. Thus, during training we at-
+tempt to normalize all tokens that (1) are not in our
+lexicon of IV words, and (2) are composed of letters,
+numbers and the apostrophe. This set includes con-
+tractions like &amp;quot;gonna&amp;quot; and &amp;quot;gotta&amp;quot;, which would not
+appear in the test set, but are nonetheless normalized
+1Whether multiword shortenings should be normalized is ar-
+guable, but they are outside the scope of current normalization
+datasets (Han and Baldwin, 2011).
+during training. For each OOV token, we conduct a
+pre-normalization step by reducing any repetitions
+of more than two letters in the nonstandard words to
+exactly two letters (e.g., cooool —* cool).
+</bodyText>
+<subsectionHeader confidence="0.999158">
+5.2 Language modeling
+</subsectionHeader>
+<bodyText confidence="0.999990363636364">
+The Kneser-Ney smoothed trigram target language
+model is estimated with the SRILM toolkit Stolcke
+(2002), using Tweets from the Edinburgh Twitter
+corpus that contain no OOV words besides hash-
+tags and username mentions (following (Han et al.,
+2013)). We use this language model for both training
+and decoding. We occasionally find training con-
+texts in which the trigram (tn, tn_1, tn_2) is unob-
+served in the language model data; features resulting
+from such trigrams are not considered when comput-
+ing the weight gradients.
+</bodyText>
+<subsectionHeader confidence="0.982385">
+5.3 Parameters
+</subsectionHeader>
+<bodyText confidence="0.999972142857143">
+The Monte Carlo approximations require two pa-
+rameters: the number of samples for sequential
+Monte Carlo (K), and the number of samples for the
+non-sequential sampler of the nested expectation (L,
+from Equation 10). The theory of Monte Carlo ap-
+proximation states that the quality of the approxima-
+tion should only improve as the number of samples
+increases; we obtained good results with K = 10
+and L = 1, and found relatively little improvement
+by increasing these values. The number of hypothe-
+ses considered by the decoder is set to T = 10;
+again, the performance should only improve with T,
+as we more closely approximate full Viterbi decod-
+ing.
+</bodyText>
+<sectionHeader confidence="0.999674" genericHeader="method">
+6 Experiments
+</sectionHeader>
+<bodyText confidence="0.999798923076923">
+Datasets We use two existing labeled Twitter
+datasets to evaluate our approach. The first dataset
+— which we call LWWL11, based on the names of
+its authors Liu et al. (2011) — contains 3,802 indi-
+vidual “nonstandard” words (i.e., words that are not
+in the target vocabulary) and their normalized forms.
+The rest of the message in which the words is appear
+is not available. As this corpus does not provide lin-
+guistic context, its decoding must use a unigram tar-
+get language model. The second dataset — which
+is called LexNorm1.1 by its authors Han and Bald-
+win (2011) — contains 549 complete tweets with
+1,184 nonstandard tokens (558 unique word types).
+</bodyText>
+<page confidence="0.998342">
+67
+</page>
+<table confidence="0.981190666666667">
+Method Dataset Precision Recall F-measure
+(Liu et al. 2011) 68.88 68.88 68.88
+(Liu et al. 2012) LMML11 69.81 69.81 69.81
+UNLOL 73.04 73.04 73.04
+(Han and Baldwin, 2011) 75.30 75.30 75.30
+(Liu et al. 2012) LexNorm 1.1 84.13 78.38 81.15
+(Hassan et al. 2013) 85.37 56.4 69.93
+UNLOL 82.09 82.09 82.09
+UNLOL LexNorm 1.2 82.06 82.06 82.06
+</table>
+<tableCaption confidence="0.993465">
+Table 2: Empirical results
+</tableCaption>
+<bodyText confidence="0.999752924242425">
+In this corpus, we can decode with a trigram lan-
+guage model.
+Close analysis of LexNorm1.1 revealed some in-
+consistencies in annotation (for example, y’all
+and 2 are sometimes normalized to you and to,
+but are left unnormalized in other cases). In ad-
+dition, several annotations disagree with existing
+resources on internet language and dialectal En-
+glish. For example, smh is normalized to some-
+how in LexNorm1.1, but internetslang.com
+and urbandictionary.com assert that it stands
+for shake my head, and this is evident from examples
+such as smh at this girl. Similarly, finna
+is normalized to finally in LexNorm1.1, but from
+the literature on African American English (Green,
+2002), it corresponds to fixing to (e.g., i’m finna
+go home). To address these issues, we have pro-
+duced a new version of this dataset, which we call
+LexNorm1.2 (after consulting with the creators of
+LexNorm1.1). LexNorm1.2 differs from version 1.1
+in the annotations for 172 of the 2140 OOV words.
+We evaluate on LexNorm1.1 to compare with prior
+work, but we also present results on LexNorm1.2
+in the hope that it will become standard in future
+work on normalization in English. The dataset
+is available at http://www.cc.gatech.edu/
+~jeisenst/lexnorm.v1.2.tgz.
+To obtain unlabeled training data, we randomly
+sample 50 tweets from the Edinburgh Twitter cor-
+pus Petrovi´c et al. (2010) for each OOV word. Some
+OOV words appear less than 50 times in the cor-
+pus, so we obtained more training tweets for them
+through the Twitter search API.
+Metrics Prior work on these datasets has assumed
+perfect detection of words requiring normalization,
+and has focused on finding the correct normalization
+for these words (Han and Baldwin, 2011; Han et al.,
+2013). Recall has been defined as the proportion of
+words requiring normalization which are normalized
+correctly; precision is defined as the proportion of
+normalizations which are correct.
+Results We run our training algorithm for two it-
+erations (pass the training data twice). The results
+are presented in Table 2. Our system, UNLOL,
+achieves the highest published F-measure on both
+datasets. Performance on LexNorm1.2 is very simi-
+lar to LexNorm1.1, despite the fact that roughly 8%
+of the examples were relabeled.
+In the normalization task that we consider, the to-
+kens to be normalized are specified in advance. This
+is the same task specification as in the prior work
+against which we compare. At test time, our system
+attempts normalizes all such tokens; every error is
+thus both a false positive and false negative, so pre-
+cision equals to recall for this task; this is also true
+for Han and Baldwin (2011) and Liu et al. (2011).
+It is possible to trade recall for precision by re-
+fusing to normalize words when the system‘s confi-
+dence falls below a threshold. A good setting of this
+threshold can improve the F-measure, but we did not
+report these results because we have no development
+set for parameter tuning.
+Regularization One potential concern is that the
+number of non-zero feature weights will continually
+increase until the memory cost becomes overwhelm-
+ing. Although we did not run up against mem-
+</bodyText>
+<page confidence="0.996388">
+68
+</page>
+<figure confidence="0.913565173913043">
+83
+82
+F-measure
+81
+80
+79
+0 100000 200000 300000 400000
+number of features
+A Dataset F-measure # of features
+10−4 79.05 9,281
+5 x 10−5 80.32 11,794
+10− 81.00 42,466
+5 x 10−6 LexNorm 11 82.52 74,744
+.
+10−6 82.35 241,820
+0 82.26 369,366
+5 x 10−6 LexNorm 1.2 82.23 74,607
+λ =1e−05
+λ =5e−05
+λ =1e−04
+λ =5e−06
+λ =1e−06
+λ =0e +00
+</figure>
+<figureCaption confidence="0.999903">
+Figure 1: Effect of L1 regularization on the F-measure and the number of features with non-zero weights
+</figureCaption>
+<bodyText confidence="0.9999475625">
+ory limitations in the experiments producing the re-
+sults in Table 2, this issue can be addressed through
+the application of L1 regularization, which produces
+sparse weight vectors by adding a penalty of A||0||1
+to the log-likelihood. We perform online optimiza-
+tion of the L1-regularized log-likelihood by apply-
+ing the truncated gradient method (Langford et al.,
+2009). We use an exponential decreasing learning
+rate 71k = 170αk/N, where k is the iteration counter
+and N is the size of training data. We set M = 1 and
+α = 0.5. Experiments were run until 300,000 train-
+ing instances were observed, with a final learning
+rate of less than 1/32. As shown in Figure 1, a small
+amount of regularization can dramatically decrease
+the number of active features without harming per-
+formance.
+</bodyText>
+<sectionHeader confidence="0.99418" genericHeader="method">
+7 Analysis
+</sectionHeader>
+<bodyText confidence="0.999986452380953">
+We apply our normalization system to investi-
+gate the orthographic processes underlying language
+variation in social media. Using a dataset of 400,000
+English language tweets, sampled from the month
+of August in each year from 2009 to 2012, we ap-
+ply UNLOL to automatically normalize each token.
+We then treat these normalizations as labeled train-
+ing data, and examine the Levenshtein alignment be-
+tween the source and target tokens. This alignment
+gives approximate character-level transduction rules
+to explain each OOV token. We then examine which
+rules are used by each author, constructing a matrix
+of authors and rules.2
+Factorization of the author-rule matrix reveals sets
+of rules that tend to be used together; we might
+call these rulesets “orthographic styles.” We apply
+non-negative matrix factorization (Lee and Seung,
+2001), which characterizes each author by a vector
+of k style loadings, and simultaneously constructs
+k style dictionaries, which each put weight on dif-
+ferent orthographic rules. Because the loadings are
+constrained to be non-negative, the factorization can
+be seen as sparsely assigning varying amounts of
+each style to each author. We choose the factoriza-
+tion that minimizes the Frobenius norm of the recon-
+struction error, using the NIMFA software package
+(http://nimfa.biolab.si/).
+The resulting styles are shown in Table 3, for
+k = 10; other values of k give similar overall re-
+sults with more or less detail. The styles incor-
+porate a number of linguistic phenomena, includ-
+ing: expressive lengthening (styles 7-9; see Brody
+and Diakopoulos, 2011); g- and t-dropping (style 5,
+see Eisenstein 2013a) ; th-stopping (style 6); and
+the dropping of several word-final vowels (styles
+1-3). Some of these styles, such as t-dropping
+and th-stopping, have direct analogues in spoken
+language varieties (Tagliamonte and Temple, 2005;
+Green, 2002), while others, like expressive length-
+ening, seem more unique to social media. The re-
+lationships between these orthographic styles and
+social variables such as geography and demograph-
+</bodyText>
+<footnote confidence="0.9002445">
+2We tried adding these rules as features and retraining the
+normalization system, but this hurt performance.
+</footnote>
+<page confidence="0.998116">
+69
+</page>
+<reference confidence="0.9729091">
+style rules examples
+1. you; o-dropping y/_ ou/_u *y/*_ o/_ u, yu, 2day, knw, gud, yur, wud, yuh, u’ve, toda,
+everthing,everwhere,ourself
+2. e-dropping, u/o be/b_ e/_ o/u e*/_* b, r, luv, cum, hav, mayb, bn, remembr, btween,
+gunna,gud
+3. a-dropping a/_ *a/*_ re/r_ ar/_r r, tht, wht, yrs, bck, strt, gurantee,
+elementry, wr, rlly, wher, rdy, preciate,
+neway
+4. g-dropping g*/_* ng/n_ g/_ goin, talkin, watchin, feelin, makin
+5. t-dropping t*/_* st/s_ t/_ jus, bc, shh, wha, gota, wea, mus, firts, jes,
+subsistutes
+6. th-stopping h/_ *t/*d th/d_ t/d dat, de, skool, fone, dese, dha, shid, dhat,
+dat’s
+7. (kd)-lengthening i_/id _/k _/d _*/k* idk, fuckk, okk, backk, workk, badd, andd,
+goodd,bedd,elidgible,pidgeon
+8. o-lengthening o_/oo _*/o* _/o soo, noo, doo, oohh, loove, thoo, helloo
+9. e-lengthening _/i e_/ee _/e _*/e* mee, ive, retweet, bestie, lovee, nicee, heey,
+likee,iphone,homie,ii,damnit
+10. a-adding _/a __/ma _/m _*/a* ima, outta, needa, shoulda, woulda, mm,
+comming, tomm, boutt, ppreciate
+</reference>
+<tableCaption confidence="0.998239">
+Table 3: Orthographic styles induced from automatically normalized Twitter text
+</tableCaption>
+<bodyText confidence="0.999945764705883">
+ics must be left to future research, but they offer a
+promising generalization of prior work that has fo-
+cused almost exclusively on exclusively on lexical
+variation (Argamon et al., 2007; Eisenstein et al.,
+2010; Eisenstein et al., 2011), with a few exceptions
+for character-level features (Brody and Diakopoulos,
+2011; Burger et al., 2011).
+Note that style 10 is largely the result of mis-
+taken normalizations. The tokens ima, outta, and
+needa all refer to multi-word expressions in stan-
+dard English, and are thus outside the scope of the
+normalization task as defined by Han et al. (2013).
+UNLOL has produced incorrect single-token nor-
+malizations for these terms: i/ima, out/outta, and
+need/needa. But while these normalizations are
+wrong, the resulting style nonetheless captures a co-
+herent orthographic phenomenon.
+</bodyText>
+<sectionHeader confidence="0.999061" genericHeader="conclusions">
+8 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999955111111111">
+We have presented a unified, unsupervised statistical
+model for normalizing social media text, attaining
+the best reported performance on the two standard
+normalization datasets. The power of our approach
+comes from flexible modeling of word-to-word re-
+lationships through features, while exploiting con-
+textual regularity to train the corresponding feature
+weights without labeled data. The primary techni-
+cal challenge was overcoming the large label space
+of the normalization task; we accomplish this us-
+ing sequential Monte Carlo. Future work may con-
+sider whether sequential Monte Carlo can offer sim-
+ilar advantages in other unsupervised NLP tasks. An
+additional benefit of our joint statistical approach is
+that it may be combined with other downstream lan-
+guage processing tasks, such as part-of-speech tag-
+ging (Gimpel et al., 2011) and named entity resolu-
+tion (Liu et al., 2012b).
+</bodyText>
+<sectionHeader confidence="0.998137" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999804333333333">
+We thank the reviewers for thoughtful comments
+on our submission. This work also benefitted
+from discussions with Timothy Baldwin, Paul Cook,
+Frank Dellaert, Arnoud Doucet, Micha Elsner, and
+Sharon Goldwater. It was supported by NSF SOCS-
+1111142.
+</bodyText>
+<sectionHeader confidence="0.999145" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.984556166666667">
+S. Argamon, M. Koppel, J. Pennebaker, and J. Schler.
+2007. Mining the blogosphere: age, gender, and the
+varieties of self-expression. First Monday, 12(9).
+AiTi Aw, Min Zhang, Juan Xiao, and Jian Su. 2006. A
+phrase-based statistical model for SMS text normaliza-
+tion. In Proceedings of ACL, pages 33–40.
+</reference>
+<page confidence="0.986598">
+70
+</page>
+<reference confidence="0.999764773584906">
+Richard Beaufort, Sophie Roekhaut, Louise-Amélie
+Cougnon, and Cédrick Fairon. 2010. A hybrid
+rule/model-based finite-state framework for normaliz-
+ing sms messages. In Proceedings ofACL, pages 770–
+779.
+Taylor Berg-Kirkpatrick, Alexandre Bouchard-Côté,
+John DeNero, and Dan Klein. 2010. Painless un-
+supervised learning with features. In Proceedings of
+NAACL, pages 582–590.
+Samuel Brody and Nicholas Diakopoulos. 2011.
+Cooooooooooooooollllllllllllll!!!!!!!!!!!!!!: using
+word lengthening to detect sentiment in microblogs.
+In Proceedings of EMNLP.
+John D. Burger, John C. Henderson, George Kim, and
+Guido Zarrella. 2011. Discriminating gender on twit-
+ter. In Proceedings of EMNLP.
+Olivier Cappe, Simon J. Godsill, and Eric Moulines.
+2007. An overview of existing methods and recent ad-
+vances in sequential monte carlo. Proceedings of the
+IEEE, 95(5):899–924, May.
+M. Choudhury, R. Saraf, V. Jain, A. Mukherjee, S. Sarkar,
+and A. Basu. 2007a. Investigation and model-
+ing of the structure of texting language. Interna-
+tional Journal on DocumentAnalysis and Recognition,
+10(3):157–174.
+Monojit Choudhury, Rahul Saraf, Vijit Jain, Animesh
+Mukherjee, Sudeshna Sarkar, and Anupam Basu.
+2007b. Investigation and modeling of the structure of
+texting language. International Journal of Document
+Analysis and Recognition (IJDAR), 10(3-4):157–174.
+Danish Contractor, Tanveer A. Faruquie, and L. Venkata
+Subramaniam. 2010. Unsupervised cleansing of noisy
+text. In Proceedings of COLING, pages 189–196.
+Paul Cook and Suzanne Stevenson. 2009. An unsu-
+pervised model for text message normalization. In
+Proceedings of the Workshop on Computational Ap-
+proaches to Linguistic Creativity, CALC ’09, pages
+71–78, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+A. Doucet, N.J. Gordon, and V. Krishnamurthy. 2001.
+Particle filters for state estimation of jump markov lin-
+ear systems. Trans. Sig. Proc., 49(3):613–624, March.
+Jacob Eisenstein, Brendan O’Connor, Noah A. Smith,
+and Eric P. Xing. 2010. A latent variable model for ge-
+ographic lexical variation. In Proceedings of EMNLP.
+Jacob Eisenstein, Noah A. Smith, and Eric P. Xing.
+2011. Discovering sociolinguistic associations with
+structured sparsity. In Proceedings of ACL.
+Jacob Eisenstein. 2013a. Phonological factors in social
+media writing. In Proceedings of the NAACL Work-
+shop on Language Analysis in Social Media.
+Jacob Eisenstein. 2013b. What to do about bad language
+on the internet. In Proceedings of NAACL, pages 359–
+369.
+Kevin Gimpel, Nathan Schneider, Brendan O’Connor,
+Dipanjan Das, Daniel Mills, Jacob Eisenstein, Michael
+Heilman, Dani Yogatama, Jeffrey Flanigan, and
+Noah A. Smith. 2011. Part-of-speech tagging for
+twitter: annotation, features, and experiments. In Pro-
+ceedings of ACL.
+Simon J. Godsill, Arnaud Doucet, and Mike West. 2004.
+Monte carlo smoothing for non-linear time series. In
+Journal of the American Statistical Association, pages
+156–168.
+Stephan Gouws, Dirk Hovy, and Donald Metzler. 2011.
+Unsupervised mining of lexical variants from noisy
+text. In Proceedings of the First Workshop on Unsu-
+pervised Learning in NLP, EMNLP ’11.
+Lisa J. Green. 2002. African American English: A
+Linguistic Introduction. Cambridge University Press,
+September.
+Bo Han and Timothy Baldwin. 2011. Lexical normalisa-
+tion of short text messages: makn sens a #twitter. In
+Proceedings of ACL, pages 368–378.
+Bo Han, Paul Cook, and Timothy Baldwin. 2013. Lex-
+ical normalization for social media text. ACM Trans-
+actions on Intelligent Systems and Technology, 4(1):5.
+Hany Hassan and Arul Menezes. 2013. Social text nor-
+malization using contextual graph random walks. In
+Proceedings of ACL.
+Catherine Kobus, François Yvon, and Géraldine
+Damnati. 2008. Normalizing sms: are two metaphors
+better than one? In Proceedings of COLING, pages
+441–448.
+John D. Lafferty, Andrew McCallum, and Fernando C. N.
+Pereira. 2001. Conditional random fields: Probabilis-
+tic models for segmenting and labeling sequence data.
+In Proceedings of ICML, pages 282–289.
+John Langford, Lihong Li, and Tong Zhang. 2009.
+Sparse online learning via truncated gradient. The
+Journal of Machine Learning Research, 10:777–801.
+D. D. Lee and H. S. Seung. 2001. Algorithms for Non-
+Negative Matrix Factorization. In Advances in Neural
+Information Processing Systems (NIPS), volume 13,
+pages 556–562.
+Fei Liu, Fuliang Weng, Bingqing Wang, and Yang Liu.
+2011. Insertion, deletion, or substitution?: normaliz-
+ing text messages without pre-categorization nor su-
+pervision. In Proceedings of ACL, pages 71–76.
+Fei Liu, Fuliang Weng, and Xiao Jiang. 2012a. A broad-
+coverage normalization system for social media lan-
+guage. In Proceedings of ACL, pages 1035–1044.
+Xiaohua Liu, Ming Zhou, Xiangyang Zhou, Zhongyang
+Fu, and Furu Wei. 2012b. Joint inference of named
+entity recognition and normalization for tweets. In
+Proceedings of ACL.
+</reference>
+<page confidence="0.979849">
+71
+</page>
+<reference confidence="0.999568">
+Saša Petrovi´c, Miles Osborne, and Victor Lavrenko.
+2010. The edinburgh twitter corpus. In Proceedings
+of the NAACL HLT Workshop on Computational Lin-
+guistics in a World of Social Media, pages 25–26.
+Noah A. Smith and Jason Eisner. 2005. Contrastive
+estimation: training log-linear models on unlabeled
+data. In Proceedings of the 43rd Annual Meeting on
+Association for Computational Linguistics, ACL ’05,
+pages 354–362, Stroudsburg, PA, USA. Association
+for Computational Linguistics.
+R. Sproat, A.W. Black, S. Chen, S. Kumar, M. Os-
+tendorf, and C. Richards. 2001. Normalization of
+non-standard words. Computer Speech &amp; Language,
+15(3):287–333.
+Andreas Stolcke. 2002. SRILM - an extensible language
+modeling toolkit. In Proceedings of ICSLP, pages
+901–904.
+Sali Tagliamonte and Rosalind Temple. 2005. New
+perspectives on an ol’ variable: (t,d) in british en-
+glish. Language Variation and Change, 17:281–302,
+September.
+Congle Zhang, Tyler Baldwin, Howard Ho, Benny
+Kimelfeld, and Yunyao Li. 2013. Adaptive parser-
+centric text normalization. In Proceedings of ACL,
+pages 1159–1168.
+</reference>
+<page confidence="0.998719">
+72
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.962165">
+<title confidence="0.999932">A Log-Linear Model for Unsupervised Text Normalization</title>
+<author confidence="0.998227">Yi</author>
+<affiliation confidence="0.999647">School of Interactive Georgia Institute of</affiliation>
+<email confidence="0.997646">yiyang@gatech.edu</email>
+<author confidence="0.985041">Jacob</author>
+<affiliation confidence="0.9994085">School of Interactive Georgia Institute of</affiliation>
+<email confidence="0.999018">jacobe@gatech.edu</email>
+<abstract confidence="0.99918005">We present a unified unsupervised statistical model for text normalization. The relationship between standard and non-standard tokens is characterized by a log-linear model, permitting arbitrary features. The weights of these features are trained in a maximumlikelihood framework, employing a novel sequential Monte Carlo training algorithm to overcome the large label space, which would be impractical for traditional dynamic programming solutions. This model is implemented in a normalization system called which achieves the best known results on two normalization datasets, outperforming more complex systems. We use the of to automatically normalize a large corpus of social media text, revealing a set of coherent orthographic styles that underlie online language variation.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="false">
+<title>style rules examples 1. you; o-dropping y/_ ou/_u *y/*_ o/_ u, yu, 2day, knw, gud, yur, wud, yuh, u’ve,</title>
+<location>toda, everthing,everwhere,ourself</location>
+<marker></marker>
+<rawString>style rules examples 1. you; o-dropping y/_ ou/_u *y/*_ o/_ u, yu, 2day, knw, gud, yur, wud, yuh, u’ve, toda, everthing,everwhere,ourself</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>e-dropping</author>
+</authors>
+<title>u/o be/b_ e/_ o/u e*/_* b,</title>
+<note>r, luv, cum, hav, mayb, bn, remembr, btween, gunna,gud</note>
+<marker>e-dropping, </marker>
+<rawString>2. e-dropping, u/o be/b_ e/_ o/u e*/_* b, r, luv, cum, hav, mayb, bn, remembr, btween, gunna,gud</rawString>
+</citation>
+<citation valid="false">
+<title>a-dropping a/_ *a/*_ re/r_ ar/_r r, tht, wht, yrs,</title>
+<note>bck, strt, gurantee, elementry, wr, rlly, wher, rdy, preciate, neway</note>
+<marker></marker>
+<rawString>3. a-dropping a/_ *a/*_ re/r_ ar/_r r, tht, wht, yrs, bck, strt, gurantee, elementry, wr, rlly, wher, rdy, preciate, neway</rawString>
+</citation>
+<citation valid="false">
+<title>g-dropping g*/_* ng/n_ g/_ goin, talkin, watchin, feelin, makin 5. t-dropping t*/_* st/s_ t/_ jus, bc, shh, wha, gota, wea, mus, firts, jes, subsistutes</title>
+<marker></marker>
+<rawString>4. g-dropping g*/_* ng/n_ g/_ goin, talkin, watchin, feelin, makin 5. t-dropping t*/_* st/s_ t/_ jus, bc, shh, wha, gota, wea, mus, firts, jes, subsistutes</rawString>
+</citation>
+<citation valid="false">
+<title>th-stopping h/_ *t/*d th/d_ t/d dat, de,</title>
+<note>skool, fone, dese, dha, shid, dhat, dat’s</note>
+<marker></marker>
+<rawString>6. th-stopping h/_ *t/*d th/d_ t/d dat, de, skool, fone, dese, dha, shid, dhat, dat’s</rawString>
+</citation>
+<citation valid="false">
+<title>(kd)-lengthening i_/id _/k _/d _*/k* idk, fuckk, okk, backk, workk, badd, andd, goodd,bedd,elidgible,pidgeon 8. o-lengthening o_/oo _*/o* _/o soo, noo, doo, oohh, loove, thoo, helloo 9. e-lengthening _/i e_/ee _/e _*/e* mee, ive, retweet, bestie, lovee, nicee, heey, likee,iphone,homie,ii,damnit</title>
+<marker></marker>
+<rawString>7. (kd)-lengthening i_/id _/k _/d _*/k* idk, fuckk, okk, backk, workk, badd, andd, goodd,bedd,elidgible,pidgeon 8. o-lengthening o_/oo _*/o* _/o soo, noo, doo, oohh, loove, thoo, helloo 9. e-lengthening _/i e_/ee _/e _*/e* mee, ive, retweet, bestie, lovee, nicee, heey, likee,iphone,homie,ii,damnit</rawString>
+</citation>
+<citation valid="false">
+<title>a-adding _/a __/ma _/m _*/a* ima, outta,</title>
+<note>needa, shoulda, woulda, mm, comming, tomm, boutt, ppreciate</note>
+<marker></marker>
+<rawString>10. a-adding _/a __/ma _/m _*/a* ima, outta, needa, shoulda, woulda, mm, comming, tomm, boutt, ppreciate</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Argamon</author>
+<author>M Koppel</author>
+<author>J Pennebaker</author>
+<author>J Schler</author>
+</authors>
+<title>Mining the blogosphere: age, gender, and the varieties of self-expression.</title>
+<date>2007</date>
+<journal>First Monday,</journal>
+<volume>12</volume>
+<issue>9</issue>
+<marker>Argamon, Koppel, Pennebaker, Schler, 2007</marker>
+<rawString>S. Argamon, M. Koppel, J. Pennebaker, and J. Schler. 2007. Mining the blogosphere: age, gender, and the varieties of self-expression. First Monday, 12(9).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>AiTi Aw</author>
+<author>Min Zhang</author>
+<author>Juan Xiao</author>
+<author>Jian Su</author>
+</authors>
+<title>A phrase-based statistical model for SMS text normalization.</title>
+<date>2006</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>33--40</pages>
+<contexts>
+<context position="5081" citStr="Aw et al., 2006" startWordPosition="753" endWordPosition="756">cized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with transformation models (favoring words that are similar to the observed text). Our approach can also be seen as a noisy channel model, but unlike this prior work, no labeled data is required. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar valu</context>
+</contexts>
+<marker>Aw, Zhang, Xiao, Su, 2006</marker>
+<rawString>AiTi Aw, Min Zhang, Juan Xiao, and Jian Su. 2006. A phrase-based statistical model for SMS text normalization. In Proceedings of ACL, pages 33–40.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Beaufort</author>
+<author>Sophie Roekhaut</author>
+<author>Louise-Amélie Cougnon</author>
+<author>Cédrick Fairon</author>
+</authors>
+<title>A hybrid rule/model-based finite-state framework for normalizing sms messages.</title>
+<date>2010</date>
+<booktitle>In Proceedings ofACL,</booktitle>
+<pages>770--779</pages>
+<contexts>
+<context position="5203" citStr="Beaufort et al., 2010" startWordPosition="772" endWordPosition="775"> has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with transformation models (favoring words that are similar to the observed text). Our approach can also be seen as a noisy channel model, but unlike this prior work, no labeled data is required. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar values, so that all legal transformations of a given type are equally likely. The scalar parameters are then estimated using e</context>
+</contexts>
+<marker>Beaufort, Roekhaut, Cougnon, Fairon, 2010</marker>
+<rawString>Richard Beaufort, Sophie Roekhaut, Louise-Amélie Cougnon, and Cédrick Fairon. 2010. A hybrid rule/model-based finite-state framework for normalizing sms messages. In Proceedings ofACL, pages 770– 779.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taylor Berg-Kirkpatrick</author>
+<author>Alexandre Bouchard-Côté</author>
+<author>John DeNero</author>
+<author>Dan Klein</author>
+</authors>
+<title>Painless unsupervised learning with features.</title>
+<date>2010</date>
+<booktitle>In Proceedings of NAACL,</booktitle>
+<pages>582--590</pages>
+<contexts>
+<context position="2816" citStr="Berg-Kirkpatrick et al., 2010" startWordPosition="409" endWordPosition="412">ork. There are two main sources of information to be exploited: local context, and surface similarity between the observed strings and normalization candidates. We treat the local context using standard language modeling techniques; we treat string similarity with a log-linear model that includes features for both surface similarity and word-word pairs. Because labeled examples of normalized text are not available, this model cannot be trained in the standard supervised fashion. Nor can we apply dynamic programming techniques for unsupervised training of locally-normalized conditional models (Berg-Kirkpatrick et al., 2010), as their complexity is quadratic in the size of label space; in normalization, the label space is the vocabulary itself, with at least 104 elements. Instead, we present a new training approach using Monte Carlo techniques to compute an approximate gradient on the feature weights. This training method may be applicable in other unsupervised learning problems with a large label space. This model is implemented in a normalization system called UNLOL (unsupervised normalization in a LOg-Linear model). It is a lightweight proba61 Proceedings of the 2013 Conference on Empirical Methods in Natural </context>
+<context position="10299" citStr="Berg-Kirkpatrick et al., 2010" startWordPosition="1570" endWordPosition="1573">uch holistic, joint inference and learning can be seen by changing the example above to: gimme suttin 2 beleive innnn. None of these tokens are standard (except 2, which appears in a nonstandard sense here), so without joint inference, it would not be possible to use context to help normalize suttin. Only by jointly reasoning over the entire message can we obtain the correct normalization. These desiderata point towards a featurized sequence model, which must be trained without labeled examples. While there is prior work on training sequence models without supervision (Smith and Eisner, 2005; Berg-Kirkpatrick et al., 2010), there is an additional complication not faced by models for tasks such as part-of-speech tagging and named entity recognition: the potential label space of standard words is large, on the order of at least 104. Naive application of Viterbi decoding — which is a component of training for both Contrastive Estimation (Smith and Eisner, 2005) and the locally-normalized sequence labeling model of Berg-Kirkpatrick et al. (2010) — will be stymied by Viterbi’s quadratic complexity in the dimension of the label space. While various pruning heuristics may be applied, we instead look to Sequential Mont</context>
+</contexts>
+<marker>Berg-Kirkpatrick, Bouchard-Côté, DeNero, Klein, 2010</marker>
+<rawString>Taylor Berg-Kirkpatrick, Alexandre Bouchard-Côté, John DeNero, and Dan Klein. 2010. Painless unsupervised learning with features. In Proceedings of NAACL, pages 582–590.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Samuel Brody</author>
+<author>Nicholas Diakopoulos</author>
+</authors>
+<title>Cooooooooooooooollllllllllllll!!!!!!!!!!!!!!: using word lengthening to detect sentiment in microblogs.</title>
+<date>2011</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<marker>Brody, Diakopoulos, 2011</marker>
+<rawString>Samuel Brody and Nicholas Diakopoulos. 2011. Cooooooooooooooollllllllllllll!!!!!!!!!!!!!!: using word lengthening to detect sentiment in microblogs. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John D Burger</author>
+<author>John C Henderson</author>
+<author>George Kim</author>
+<author>Guido Zarrella</author>
+</authors>
+<title>Discriminating gender on twitter.</title>
+<date>2011</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<marker>Burger, Henderson, Kim, Zarrella, 2011</marker>
+<rawString>John D. Burger, John C. Henderson, George Kim, and Guido Zarrella. 2011. Discriminating gender on twitter. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Olivier Cappe</author>
+<author>Simon J Godsill</author>
+<author>Eric Moulines</author>
+</authors>
+<title>An overview of existing methods and recent advances in sequential monte carlo.</title>
+<date>2007</date>
+<booktitle>Proceedings of the IEEE,</booktitle>
+<volume>95</volume>
+<issue>5</issue>
+<contexts>
+<context position="13675" citStr="Cappe et al., 2007" startWordPosition="2112" endWordPosition="2115">and the Viterbi algorithm have time complexity that is quadratic in the dimension of the label space, at least 104 or 105. As we will show, Sequential Monte Carlo (SMC) algorithms have a number of advantages in this setting: they permit the efficient computation of both the outer and inner expectations, they are trivially parallelizable, and the number of samples provides an intuitive tuning tradeoff between accuracy and speed. 4.1 Sequential Monte Carlo approximation Sequential Monte Carlo algorithms are a class of sampling-based algorithms in which latent variables are sampled sequentially (Cappe et al., 2007). They are particularly well-suited to sequence models, though they can be applied more broadly. SMC algorithms maintain a set of weighted hypotheses; the weights correspond to probabilities, and in our case, the hypotheses correspond to target language word sequences. Specifically, we approximate the conditional probability, P(t1:n|s1:n) � EK ωk nδtk 1:n(t1:n), k=1 where ωkn is the normalized weight of sample k at word n (˜ωkn is the unnormalized weight), and δtk1:n is a delta function centered at tk1:n. At each step, and for each hypothesis k, a new target word is sampled from a proposal dis</context>
+<context position="17226" citStr="Cappe et al., 2007" startWordPosition="2689" endWordPosition="2692">s gives the overall gradient computation: K Et|.[f(s,t) − E.,|t[f(S,t)]] = K1˜k EWkN Ek=1 WN k=1 f(s1,k tk)J n , n (10) where we sample tkn and update Wk nwhile moving from left-to-right, and sample s`,k n at each n. Note that although the sequential importance sampler moves left-to-right like a filter, we use only the final weights WN to compute the expectation. Thus, the resulting expectation is based on the distribution P(s1:N|t1:N), so that no backwards “smoothing” pass (Godsill et al., 2004) is needed to eliminate bias. Other applications of sequential Monte Carlo make use of resampling (Cappe et al., 2007) to avoid degeneration of the hypothesis weights, but we found this to be unnecessary due to the short length of Twitter messages. 4.2 Proposal distribution The major computational challenge for dynamic programming approaches to normalization is the large label space, equal to the size of the target vocabulary. It may appear that all we have gained by applying sequential Monte Carlo is to convert a computational problem into a statistical one: a naive sampling approach will have little hope of finding the small high-probability region of the highdimensional label space. However, sequential imp</context>
+</contexts>
+<marker>Cappe, Godsill, Moulines, 2007</marker>
+<rawString>Olivier Cappe, Simon J. Godsill, and Eric Moulines. 2007. An overview of existing methods and recent advances in sequential monte carlo. Proceedings of the IEEE, 95(5):899–924, May.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Choudhury</author>
+<author>R Saraf</author>
+<author>V Jain</author>
+<author>A Mukherjee</author>
+<author>S Sarkar</author>
+<author>A Basu</author>
+</authors>
+<title>Investigation and modeling of the structure of texting language.</title>
+<date>2007</date>
+<journal>International Journal on DocumentAnalysis and Recognition,</journal>
+<volume>10</volume>
+<issue>3</issue>
+<contexts>
+<context position="4148" citStr="Choudhury et al., 2007" startWordPosition="612" endWordPosition="615">tional Linguistics bilistic approach, relying only on a language model for the target domain; it can be adapted to new corpora text or new domains easily and quickly. Our evaluations show that UNLOL outperforms the state-of-the-art on standard normalization datasets. In addition, we demonstrate the linguistic insights that can be obtained from normalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). </context>
+</contexts>
+<marker>Choudhury, Saraf, Jain, Mukherjee, Sarkar, Basu, 2007</marker>
+<rawString>M. Choudhury, R. Saraf, V. Jain, A. Mukherjee, S. Sarkar, and A. Basu. 2007a. Investigation and modeling of the structure of texting language. International Journal on DocumentAnalysis and Recognition, 10(3):157–174.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Monojit Choudhury</author>
+<author>Rahul Saraf</author>
+<author>Vijit Jain</author>
+<author>Animesh Mukherjee</author>
+<author>Sudeshna Sarkar</author>
+<author>Anupam Basu</author>
+</authors>
+<title>Investigation and modeling of the structure of texting language.</title>
+<date>2007</date>
+<journal>International Journal of Document Analysis and Recognition (IJDAR),</journal>
+<pages>10--3</pages>
+<contexts>
+<context position="4148" citStr="Choudhury et al., 2007" startWordPosition="612" endWordPosition="615">tional Linguistics bilistic approach, relying only on a language model for the target domain; it can be adapted to new corpora text or new domains easily and quickly. Our evaluations show that UNLOL outperforms the state-of-the-art on standard normalization datasets. In addition, we demonstrate the linguistic insights that can be obtained from normalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). </context>
+</contexts>
+<marker>Choudhury, Saraf, Jain, Mukherjee, Sarkar, Basu, 2007</marker>
+<rawString>Monojit Choudhury, Rahul Saraf, Vijit Jain, Animesh Mukherjee, Sudeshna Sarkar, and Anupam Basu. 2007b. Investigation and modeling of the structure of texting language. International Journal of Document Analysis and Recognition (IJDAR), 10(3-4):157–174.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Danish Contractor</author>
+<author>Tanveer A Faruquie</author>
+<author>L Venkata Subramaniam</author>
+</authors>
+<title>Unsupervised cleansing of noisy text.</title>
+<date>2010</date>
+<booktitle>In Proceedings of COLING,</booktitle>
+<pages>189--196</pages>
+<contexts>
+<context position="5940" citStr="Contractor et al. (2010)" startWordPosition="890" endWordPosition="893">voring words that are similar to the observed text). Our approach can also be seen as a noisy channel model, but unlike this prior work, no labeled data is required. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar values, so that all legal transformations of a given type are equally likely. The scalar parameters are then estimated using expectation maximization. This work stands apart from most of the other unsupervised models, which are pipelines. Contractor et al. (2010) use string edit distance to identify closely-related candidate orthographic forms and then decode the message using a language model. Gouws et al. (2011) refine this approach by mining an “exception dictionary” of stronglyassociated word pairs such as you/u. Like Contractor et al. (2010), we apply string edit distance, and like Gouws et al. (2011), we capture strongly related word pairs. However, rather than applying these properties as filtering steps in a pipeline, we add them as features in a unified log-linear model. Recent approaches have sought to improve accuracy by bringing more exter</context>
+<context position="22145" citStr="Contractor et al. (2010)" startWordPosition="3488" endWordPosition="3491"> these candidates. The total cost is O(#|νS|T2N), where T is the number of target word candidates we consider; this will asymptotically approach P(t|s) as T —* #|νT |. Our evaluations use the more expensive proposal+Viterbi decoding, but accuracy with the more efficient proposal-based decoding is very similar. 4.4 Features Our system uses the feature types described in Table 1. The word pair features are designed to capture lexical conventions, e.g. you/u. We only consider word pair features that fired during training. The string similarity features rely on the similarity function proposed by Contractor et al. (2010), which has proven effective for normalization in prior work. We bin this similarity to create binary features indicating whether a string s is in the top-N most similar strings to t; this binning yields substantial speed improvements without negatively impacting accuracy. (12) Wk n k =ωn−1 66 5 Implementation and data The model and inference described in the previous section are implemented in a software system for normalizing text on twitter, called UNLOL: unsupervised normalization in a LOgLinear model. The final system can process roughly 10,000 Tweets per hour. We now describe some implem</context>
+</contexts>
+<marker>Contractor, Faruquie, Subramaniam, 2010</marker>
+<rawString>Danish Contractor, Tanveer A. Faruquie, and L. Venkata Subramaniam. 2010. Unsupervised cleansing of noisy text. In Proceedings of COLING, pages 189–196.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Paul Cook</author>
+<author>Suzanne Stevenson</author>
+</authors>
+<title>An unsupervised model for text message normalization.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Workshop on Computational Approaches to Linguistic Creativity, CALC ’09,</booktitle>
+<pages>71--78</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="5528" citStr="Cook and Stevenson (2009)" startWordPosition="825" endWordPosition="828">s Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with transformation models (favoring words that are similar to the observed text). Our approach can also be seen as a noisy channel model, but unlike this prior work, no labeled data is required. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar values, so that all legal transformations of a given type are equally likely. The scalar parameters are then estimated using expectation maximization. This work stands apart from most of the other unsupervised models, which are pipelines. Contractor et al. (2010) use string edit distance to identify closely-related candidate orthographic forms and then decode the message using a language model. Gouws et al. (2011) refine this approach by mining an</context>
+</contexts>
+<marker>Cook, Stevenson, 2009</marker>
+<rawString>Paul Cook and Suzanne Stevenson. 2009. An unsupervised model for text message normalization. In Proceedings of the Workshop on Computational Approaches to Linguistic Creativity, CALC ’09, pages 71–78, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Doucet</author>
+<author>N J Gordon</author>
+<author>V Krishnamurthy</author>
+</authors>
+<title>Particle filters for state estimation of jump markov linear systems.</title>
+<date>2001</date>
+<journal>Trans. Sig. Proc.,</journal>
+<volume>49</volume>
+<issue>3</issue>
+<contexts>
+<context position="18305" citStr="Doucet et al. (2001)" startWordPosition="2856" endWordPosition="2859">pling approach will have little hope of finding the small high-probability region of the highdimensional label space. However, sequential importance sampling allows us to address this issue through the proposal distribution, from which we sample the candidate words tn. Careful design of the proposal distribution can guide sampling towards the high-probability space. In the asymptotic limit of an infinite number of samples, any non-pathological proposal distribution will ultimately arrive at the desired estimate, but a good proposal distribution can greatly reduce the number of samples needed. Doucet et al. (2001) note that the optimal proposal — which minimizes the variance of the importance weights conditional on t1:n−1 and s1:n — has the following form: P(t1:n|s1:n) = P(sn|s1:n−1) P(sn|t1:n, s1:n−1)P(t1:n|s1:n−1) = Et|$[f(s, t)] = Wk N N n=1 K k=1 L f(sn,tkn) − 1 � P=1 N X E n=1 N E.|tk [f (s, tk)] = � n=1 L `=1 f(s`,k n , tkn) P(sn|tk n)P(tk n|tk n−1) Q(tk n|sn,tk n−1) = (11) Et&apos; P(sn |t0)P(t0 |tkn−1) 65 Sampling from this proposal requires computing the normalized distribution P(sn|tkn); similarly, the update of the hypothesis weights (Equation 8) requires the calculation of Q in its normalized fo</context>
+</contexts>
+<marker>Doucet, Gordon, Krishnamurthy, 2001</marker>
+<rawString>A. Doucet, N.J. Gordon, and V. Krishnamurthy. 2001. Particle filters for state estimation of jump markov linear systems. Trans. Sig. Proc., 49(3):613–624, March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Eisenstein</author>
+<author>Brendan O’Connor</author>
+<author>Noah A Smith</author>
+<author>Eric P Xing</author>
+</authors>
+<title>A latent variable model for geographic lexical variation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<marker>Eisenstein, O’Connor, Smith, Xing, 2010</marker>
+<rawString>Jacob Eisenstein, Brendan O’Connor, Noah A. Smith, and Eric P. Xing. 2010. A latent variable model for geographic lexical variation. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Eisenstein</author>
+<author>Noah A Smith</author>
+<author>Eric P Xing</author>
+</authors>
+<title>Discovering sociolinguistic associations with structured sparsity.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<marker>Eisenstein, Smith, Xing, 2011</marker>
+<rawString>Jacob Eisenstein, Noah A. Smith, and Eric P. Xing. 2011. Discovering sociolinguistic associations with structured sparsity. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Eisenstein</author>
+</authors>
+<title>Phonological factors in social media writing.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the NAACL Workshop on Language Analysis in Social Media.</booktitle>
+<contexts>
+<context position="1477" citStr="Eisenstein, 2013" startWordPosition="214" endWordPosition="215">lex systems. We use the output of UNLOL to automatically normalize a large corpus of social media text, revealing a set of coherent orthographic styles that underlie online language variation. 1 Introduction Social media language can differ substantially from other written text. Many of the attempts to characterize and overcome this variation have focused on normalization: transforming social media language into text that better matches standard datasets (Sproat et al., 2001; Liu et al., 2011). Because there is little available training data, and because social media language changes rapidly (Eisenstein, 2013b), fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, dependency parsers, string edit distances, off-the-shelf spellcheckers, and curated slang dictionaries (Liu et al., 2011; Han and Baldwin, 2011</context>
+<context position="4490" citStr="Eisenstein (2013" startWordPosition="664" endWordPosition="665">rmalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well</context>
+<context position="7778" citStr="Eisenstein, 2013" startWordPosition="1182" endWordPosition="1183">k to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreover, as social media language is undergoing rapid change (Eisenstein, 2013b), labeled datasets may become stale and increasingly ill-suited to new spellings and words. 62 • Low-resource. Other unsupervised approaches take advantage of resources such as slang dictionaries and spell checkers (Han and Baldwin, 2011; Liu et al., 2011). Resources that characterize the current state of internet language risk becoming outdated; in this paper we investigate whether high-quality normalization is possible without any such resources. • Featurized. The relationship between any pair of words can be characterized in a number of different ways, ranging from simple characterlevel r</context>
+</contexts>
+<marker>Eisenstein, 2013</marker>
+<rawString>Jacob Eisenstein. 2013a. Phonological factors in social media writing. In Proceedings of the NAACL Workshop on Language Analysis in Social Media.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Eisenstein</author>
+</authors>
+<title>What to do about bad language on the internet.</title>
+<date>2013</date>
+<booktitle>In Proceedings of NAACL,</booktitle>
+<pages>359--369</pages>
+<contexts>
+<context position="1477" citStr="Eisenstein, 2013" startWordPosition="214" endWordPosition="215">lex systems. We use the output of UNLOL to automatically normalize a large corpus of social media text, revealing a set of coherent orthographic styles that underlie online language variation. 1 Introduction Social media language can differ substantially from other written text. Many of the attempts to characterize and overcome this variation have focused on normalization: transforming social media language into text that better matches standard datasets (Sproat et al., 2001; Liu et al., 2011). Because there is little available training data, and because social media language changes rapidly (Eisenstein, 2013b), fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, dependency parsers, string edit distances, off-the-shelf spellcheckers, and curated slang dictionaries (Liu et al., 2011; Han and Baldwin, 2011</context>
+<context position="4490" citStr="Eisenstein (2013" startWordPosition="664" endWordPosition="665">rmalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well</context>
+<context position="7778" citStr="Eisenstein, 2013" startWordPosition="1182" endWordPosition="1183">k to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreover, as social media language is undergoing rapid change (Eisenstein, 2013b), labeled datasets may become stale and increasingly ill-suited to new spellings and words. 62 • Low-resource. Other unsupervised approaches take advantage of resources such as slang dictionaries and spell checkers (Han and Baldwin, 2011; Liu et al., 2011). Resources that characterize the current state of internet language risk becoming outdated; in this paper we investigate whether high-quality normalization is possible without any such resources. • Featurized. The relationship between any pair of words can be characterized in a number of different ways, ranging from simple characterlevel r</context>
+</contexts>
+<marker>Eisenstein, 2013</marker>
+<rawString>Jacob Eisenstein. 2013b. What to do about bad language on the internet. In Proceedings of NAACL, pages 359– 369.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Nathan Schneider</author>
+<author>Brendan O’Connor</author>
+<author>Dipanjan Das</author>
+<author>Daniel Mills</author>
+<author>Jacob Eisenstein</author>
+<author>Michael Heilman</author>
+<author>Dani Yogatama</author>
+<author>Jeffrey Flanigan</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Part-of-speech tagging for twitter: annotation, features, and experiments.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<marker>Gimpel, Schneider, O’Connor, Das, Mills, Eisenstein, Heilman, Yogatama, Flanigan, Smith, 2011</marker>
+<rawString>Kevin Gimpel, Nathan Schneider, Brendan O’Connor, Dipanjan Das, Daniel Mills, Jacob Eisenstein, Michael Heilman, Dani Yogatama, Jeffrey Flanigan, and Noah A. Smith. 2011. Part-of-speech tagging for twitter: annotation, features, and experiments. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Simon J Godsill</author>
+<author>Arnaud Doucet</author>
+<author>Mike West</author>
+</authors>
+<title>Monte carlo smoothing for non-linear time series.</title>
+<date>2004</date>
+<journal>In Journal of the American Statistical Association,</journal>
+<pages>156--168</pages>
+<contexts>
+<context position="17108" citStr="Godsill et al., 2004" startWordPosition="2669" endWordPosition="2672">mpute the nested expectation using a nonsequential Monte Carlo approximation, assuming we can draw s`,k ti P(s|tkn). This gives the overall gradient computation: K Et|.[f(s,t) − E.,|t[f(S,t)]] = K1˜k EWkN Ek=1 WN k=1 f(s1,k tk)J n , n (10) where we sample tkn and update Wk nwhile moving from left-to-right, and sample s`,k n at each n. Note that although the sequential importance sampler moves left-to-right like a filter, we use only the final weights WN to compute the expectation. Thus, the resulting expectation is based on the distribution P(s1:N|t1:N), so that no backwards “smoothing” pass (Godsill et al., 2004) is needed to eliminate bias. Other applications of sequential Monte Carlo make use of resampling (Cappe et al., 2007) to avoid degeneration of the hypothesis weights, but we found this to be unnecessary due to the short length of Twitter messages. 4.2 Proposal distribution The major computational challenge for dynamic programming approaches to normalization is the large label space, equal to the size of the target vocabulary. It may appear that all we have gained by applying sequential Monte Carlo is to convert a computational problem into a statistical one: a naive sampling approach will hav</context>
+</contexts>
+<marker>Godsill, Doucet, West, 2004</marker>
+<rawString>Simon J. Godsill, Arnaud Doucet, and Mike West. 2004. Monte carlo smoothing for non-linear time series. In Journal of the American Statistical Association, pages 156–168.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stephan Gouws</author>
+<author>Dirk Hovy</author>
+<author>Donald Metzler</author>
+</authors>
+<title>Unsupervised mining of lexical variants from noisy text.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the First Workshop on Unsupervised Learning in NLP, EMNLP ’11.</booktitle>
+<contexts>
+<context position="6094" citStr="Gouws et al. (2011)" startWordPosition="913" endWordPosition="916">uired. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar values, so that all legal transformations of a given type are equally likely. The scalar parameters are then estimated using expectation maximization. This work stands apart from most of the other unsupervised models, which are pipelines. Contractor et al. (2010) use string edit distance to identify closely-related candidate orthographic forms and then decode the message using a language model. Gouws et al. (2011) refine this approach by mining an “exception dictionary” of stronglyassociated word pairs such as you/u. Like Contractor et al. (2010), we apply string edit distance, and like Gouws et al. (2011), we capture strongly related word pairs. However, rather than applying these properties as filtering steps in a pipeline, we add them as features in a unified log-linear model. Recent approaches have sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing t</context>
+</contexts>
+<marker>Gouws, Hovy, Metzler, 2011</marker>
+<rawString>Stephan Gouws, Dirk Hovy, and Donald Metzler. 2011. Unsupervised mining of lexical variants from noisy text. In Proceedings of the First Workshop on Unsupervised Learning in NLP, EMNLP ’11.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lisa J Green</author>
+</authors>
+<title>African American English: A Linguistic Introduction.</title>
+<date>2002</date>
+<publisher>Cambridge University Press,</publisher>
+<contexts>
+<context position="27742" citStr="Green, 2002" startWordPosition="4426" endWordPosition="4427">analysis of LexNorm1.1 revealed some inconsistencies in annotation (for example, y’all and 2 are sometimes normalized to you and to, but are left unnormalized in other cases). In addition, several annotations disagree with existing resources on internet language and dialectal English. For example, smh is normalized to somehow in LexNorm1.1, but internetslang.com and urbandictionary.com assert that it stands for shake my head, and this is evident from examples such as smh at this girl. Similarly, finna is normalized to finally in LexNorm1.1, but from the literature on African American English (Green, 2002), it corresponds to fixing to (e.g., i’m finna go home). To address these issues, we have produced a new version of this dataset, which we call LexNorm1.2 (after consulting with the creators of LexNorm1.1). LexNorm1.2 differs from version 1.1 in the annotations for 172 of the 2140 OOV words. We evaluate on LexNorm1.1 to compare with prior work, but we also present results on LexNorm1.2 in the hope that it will become standard in future work on normalization in English. The dataset is available at http://www.cc.gatech.edu/ ~jeisenst/lexnorm.v1.2.tgz. To obtain unlabeled training data, we random</context>
+</contexts>
+<marker>Green, 2002</marker>
+<rawString>Lisa J. Green. 2002. African American English: A Linguistic Introduction. Cambridge University Press, September.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bo Han</author>
+<author>Timothy Baldwin</author>
+</authors>
+<title>Lexical normalisation of short text messages: makn sens a #twitter.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>368--378</pages>
+<contexts>
+<context position="2077" citStr="Han and Baldwin, 2011" startWordPosition="302" endWordPosition="305">dly (Eisenstein, 2013b), fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, dependency parsers, string edit distances, off-the-shelf spellcheckers, and curated slang dictionaries (Liu et al., 2011; Han and Baldwin, 2011; Han et al., 2013). We propose a different approach, performing normalization in a maximum-likelihood framework. There are two main sources of information to be exploited: local context, and surface similarity between the observed strings and normalization candidates. We treat the local context using standard language modeling techniques; we treat string similarity with a log-linear model that includes features for both surface similarity and word-word pairs. Because labeled examples of normalized text are not available, this model cannot be trained in the standard supervised fashion. Nor can</context>
+<context position="4268" citStr="Han and Baldwin (2011)" startWordPosition="631" endWordPosition="634">orpora text or new domains easily and quickly. Our evaluations show that UNLOL outperforms the state-of-the-art on standard normalization datasets. In addition, we demonstrate the linguistic insights that can be obtained from normalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of socia</context>
+<context position="6611" citStr="Han and Baldwin (2011)" startWordPosition="997" endWordPosition="1000">ated candidate orthographic forms and then decode the message using a language model. Gouws et al. (2011) refine this approach by mining an “exception dictionary” of stronglyassociated word pairs such as you/u. Like Contractor et al. (2010), we apply string edit distance, and like Gouws et al. (2011), we capture strongly related word pairs. However, rather than applying these properties as filtering steps in a pipeline, we add them as features in a unified log-linear model. Recent approaches have sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they th</context>
+<context position="8017" citStr="Han and Baldwin, 2011" startWordPosition="1215" endWordPosition="1218">cal model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreover, as social media language is undergoing rapid change (Eisenstein, 2013b), labeled datasets may become stale and increasingly ill-suited to new spellings and words. 62 • Low-resource. Other unsupervised approaches take advantage of resources such as slang dictionaries and spell checkers (Han and Baldwin, 2011; Liu et al., 2011). Resources that characterize the current state of internet language risk becoming outdated; in this paper we investigate whether high-quality normalization is possible without any such resources. • Featurized. The relationship between any pair of words can be characterized in a number of different ways, ranging from simple characterlevel rules (e.g., going/goin) to larger substitutions (e.g., someone/sum1), and even to patterns that are lexically restricted (e.g., you/u, to/2). For these reasons, we seek a model that permits many overlapping features to describe candidate w</context>
+<context position="22967" citStr="Han and Baldwin (2011)" startWordPosition="3622" endWordPosition="3625">lds substantial speed improvements without negatively impacting accuracy. (12) Wk n k =ωn−1 66 5 Implementation and data The model and inference described in the previous section are implemented in a software system for normalizing text on twitter, called UNLOL: unsupervised normalization in a LOgLinear model. The final system can process roughly 10,000 Tweets per hour. We now describe some implementation details. 5.1 Normalization candidates Most tokens in tweets do not require normalization. The question of how to identify which words are to be normalized is still an open problem. Following Han and Baldwin (2011), we build a dictionary of words which are permissible in the target domain, and make no attempt to normalize source strings that match these words. As with other comparable approaches, we are therefore unable to normalize strings like ill into I’ll. Our set of “in-vocabulary” (IV) words is based on the GNU aspell dictionary (v0.60.6), containing 97,070 words. From this dictionary, we follow Liu et al. (2012a) and remove all the words with a count of less than 20 in the Edinburgh Twitter corpus (Petrovi´c et al., 2010) — resulting in a total of 52,449 target words. All single characters except</context>
+<context position="24629" citStr="Han and Baldwin, 2011" startWordPosition="3907" endWordPosition="3910">nd assume that the set of normalization candidates is known in advance during test set decoding (Han et al., 2013). However, the unlabeled training data has no such information. Thus, during training we attempt to normalize all tokens that (1) are not in our lexicon of IV words, and (2) are composed of letters, numbers and the apostrophe. This set includes contractions like &amp;quot;gonna&amp;quot; and &amp;quot;gotta&amp;quot;, which would not appear in the test set, but are nonetheless normalized 1Whether multiword shortenings should be normalized is arguable, but they are outside the scope of current normalization datasets (Han and Baldwin, 2011). during training. For each OOV token, we conduct a pre-normalization step by reducing any repetitions of more than two letters in the nonstandard words to exactly two letters (e.g., cooool —* cool). 5.2 Language modeling The Kneser-Ney smoothed trigram target language model is estimated with the SRILM toolkit Stolcke (2002), using Tweets from the Edinburgh Twitter corpus that contain no OOV words besides hashtags and username mentions (following (Han et al., 2013)). We use this language model for both training and decoding. We occasionally find training contexts in which the trigram (tn, tn_1</context>
+<context position="26613" citStr="Han and Baldwin (2011)" startWordPosition="4239" endWordPosition="4243">closely approximate full Viterbi decoding. 6 Experiments Datasets We use two existing labeled Twitter datasets to evaluate our approach. The first dataset — which we call LWWL11, based on the names of its authors Liu et al. (2011) — contains 3,802 individual “nonstandard” words (i.e., words that are not in the target vocabulary) and their normalized forms. The rest of the message in which the words is appear is not available. As this corpus does not provide linguistic context, its decoding must use a unigram target language model. The second dataset — which is called LexNorm1.1 by its authors Han and Baldwin (2011) — contains 549 complete tweets with 1,184 nonstandard tokens (558 unique word types). 67 Method Dataset Precision Recall F-measure (Liu et al. 2011) 68.88 68.88 68.88 (Liu et al. 2012) LMML11 69.81 69.81 69.81 UNLOL 73.04 73.04 73.04 (Han and Baldwin, 2011) 75.30 75.30 75.30 (Liu et al. 2012) LexNorm 1.1 84.13 78.38 81.15 (Hassan et al. 2013) 85.37 56.4 69.93 UNLOL 82.09 82.09 82.09 UNLOL LexNorm 1.2 82.06 82.06 82.06 Table 2: Empirical results In this corpus, we can decode with a trigram language model. Close analysis of LexNorm1.1 revealed some inconsistencies in annotation (for example, y’</context>
+<context position="28764" citStr="Han and Baldwin, 2011" startWordPosition="4590" endWordPosition="4593">that it will become standard in future work on normalization in English. The dataset is available at http://www.cc.gatech.edu/ ~jeisenst/lexnorm.v1.2.tgz. To obtain unlabeled training data, we randomly sample 50 tweets from the Edinburgh Twitter corpus Petrovi´c et al. (2010) for each OOV word. Some OOV words appear less than 50 times in the corpus, so we obtained more training tweets for them through the Twitter search API. Metrics Prior work on these datasets has assumed perfect detection of words requiring normalization, and has focused on finding the correct normalization for these words (Han and Baldwin, 2011; Han et al., 2013). Recall has been defined as the proportion of words requiring normalization which are normalized correctly; precision is defined as the proportion of normalizations which are correct. Results We run our training algorithm for two iterations (pass the training data twice). The results are presented in Table 2. Our system, UNLOL, achieves the highest published F-measure on both datasets. Performance on LexNorm1.2 is very similar to LexNorm1.1, despite the fact that roughly 8% of the examples were relabeled. In the normalization task that we consider, the tokens to be normaliz</context>
+</contexts>
+<marker>Han, Baldwin, 2011</marker>
+<rawString>Bo Han and Timothy Baldwin. 2011. Lexical normalisation of short text messages: makn sens a #twitter. In Proceedings of ACL, pages 368–378.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bo Han</author>
+<author>Paul Cook</author>
+<author>Timothy Baldwin</author>
+</authors>
+<title>Lexical normalization for social media text.</title>
+<date>2013</date>
+<journal>ACM Transactions on Intelligent Systems and Technology,</journal>
+<volume>4</volume>
+<issue>1</issue>
+<contexts>
+<context position="2096" citStr="Han et al., 2013" startWordPosition="306" endWordPosition="309">, fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, dependency parsers, string edit distances, off-the-shelf spellcheckers, and curated slang dictionaries (Liu et al., 2011; Han and Baldwin, 2011; Han et al., 2013). We propose a different approach, performing normalization in a maximum-likelihood framework. There are two main sources of information to be exploited: local context, and surface similarity between the observed strings and normalization candidates. We treat the local context using standard language modeling techniques; we treat string similarity with a log-linear model that includes features for both surface similarity and word-word pairs. Because labeled examples of normalized text are not available, this model cannot be trained in the standard supervised fashion. Nor can we apply dynamic p</context>
+<context position="4664" citStr="Han et al., 2013" startWordPosition="688" endWordPosition="691"> Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words</context>
+<context position="24121" citStr="Han et al., 2013" startWordPosition="3824" endWordPosition="3827">in a total of 52,449 target words. All single characters except a and i are excluded, and rt is treated as in-vocabulary. For all in-vocabulary words, we define P(sn|tn) = S(sn, tn), taking the value of zero when sn =� tn. This effectively prevents our model from attempting to normalize these words. In addition to words that are in the target vocabulary, there are many other strings that should not be normalized, such as names and multiword shortenings (e.g. going to/gonna).1 We follow prior work and assume that the set of normalization candidates is known in advance during test set decoding (Han et al., 2013). However, the unlabeled training data has no such information. Thus, during training we attempt to normalize all tokens that (1) are not in our lexicon of IV words, and (2) are composed of letters, numbers and the apostrophe. This set includes contractions like &amp;quot;gonna&amp;quot; and &amp;quot;gotta&amp;quot;, which would not appear in the test set, but are nonetheless normalized 1Whether multiword shortenings should be normalized is arguable, but they are outside the scope of current normalization datasets (Han and Baldwin, 2011). during training. For each OOV token, we conduct a pre-normalization step by reducing any r</context>
+<context position="28783" citStr="Han et al., 2013" startWordPosition="4594" endWordPosition="4597">ndard in future work on normalization in English. The dataset is available at http://www.cc.gatech.edu/ ~jeisenst/lexnorm.v1.2.tgz. To obtain unlabeled training data, we randomly sample 50 tweets from the Edinburgh Twitter corpus Petrovi´c et al. (2010) for each OOV word. Some OOV words appear less than 50 times in the corpus, so we obtained more training tweets for them through the Twitter search API. Metrics Prior work on these datasets has assumed perfect detection of words requiring normalization, and has focused on finding the correct normalization for these words (Han and Baldwin, 2011; Han et al., 2013). Recall has been defined as the proportion of words requiring normalization which are normalized correctly; precision is defined as the proportion of normalizations which are correct. Results We run our training algorithm for two iterations (pass the training data twice). The results are presented in Table 2. Our system, UNLOL, achieves the highest published F-measure on both datasets. Performance on LexNorm1.2 is very similar to LexNorm1.1, despite the fact that roughly 8% of the examples were relabeled. In the normalization task that we consider, the tokens to be normalized are specified in</context>
+</contexts>
+<marker>Han, Cook, Baldwin, 2013</marker>
+<rawString>Bo Han, Paul Cook, and Timothy Baldwin. 2013. Lexical normalization for social media text. ACM Transactions on Intelligent Systems and Technology, 4(1):5.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hany Hassan</author>
+<author>Arul Menezes</author>
+</authors>
+<title>Social text normalization using contextual graph random walks.</title>
+<date>2013</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="4746" citStr="Hassan and Menezes, 2013" startWordPosition="700" endWordPosition="703">ges (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with transformation models (favoring words that are similar </context>
+<context position="7135" citStr="Hassan and Menezes (2013)" startWordPosition="1081" endWordPosition="1084">ccuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreover, as social media language i</context>
+</contexts>
+<marker>Hassan, Menezes, 2013</marker>
+<rawString>Hany Hassan and Arul Menezes. 2013. Social text normalization using contextual graph random walks. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Catherine Kobus</author>
+<author>François Yvon</author>
+<author>Géraldine Damnati</author>
+</authors>
+<title>Normalizing sms: are two metaphors better than one?</title>
+<date>2008</date>
+<booktitle>In Proceedings of COLING,</booktitle>
+<pages>441--448</pages>
+<contexts>
+<context position="5179" citStr="Kobus et al., 2008" startWordPosition="768" endWordPosition="771"> work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with transformation models (favoring words that are similar to the observed text). Our approach can also be seen as a noisy channel model, but unlike this prior work, no labeled data is required. Unsupervised methods Cook and Stevenson (2009) manually identify several word formation types within a noisy channel framework. They parametrize each formation type with a small number of scalar values, so that all legal transformations of a given type are equally likely. The scalar parameters ar</context>
+</contexts>
+<marker>Kobus, Yvon, Damnati, 2008</marker>
+<rawString>Catherine Kobus, François Yvon, and Géraldine Damnati. 2008. Normalizing sms: are two metaphors better than one? In Proceedings of COLING, pages 441–448.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John D Lafferty</author>
+<author>Andrew McCallum</author>
+<author>Fernando C N Pereira</author>
+</authors>
+<title>Conditional random fields: Probabilistic models for segmenting and labeling sequence data.</title>
+<date>2001</date>
+<booktitle>In Proceedings of ICML,</booktitle>
+<pages>282--289</pages>
+<contexts>
+<context position="6924" citStr="Lafferty et al., 2001" startWordPosition="1047" endWordPosition="1050"> strongly related word pairs. However, rather than applying these properties as filtering steps in a pipeline, we add them as features in a unified log-linear model. Recent approaches have sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following</context>
+</contexts>
+<marker>Lafferty, McCallum, Pereira, 2001</marker>
+<rawString>John D. Lafferty, Andrew McCallum, and Fernando C. N. Pereira. 2001. Conditional random fields: Probabilistic models for segmenting and labeling sequence data. In Proceedings of ICML, pages 282–289.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Langford</author>
+<author>Lihong Li</author>
+<author>Tong Zhang</author>
+</authors>
+<title>Sparse online learning via truncated gradient.</title>
+<date>2009</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<pages>10--777</pages>
+<contexts>
+<context position="30985" citStr="Langford et al., 2009" startWordPosition="4968" endWordPosition="4971"> LexNorm 11 82.52 74,744 . 10−6 82.35 241,820 0 82.26 369,366 5 x 10−6 LexNorm 1.2 82.23 74,607 λ =1e−05 λ =5e−05 λ =1e−04 λ =5e−06 λ =1e−06 λ =0e +00 Figure 1: Effect of L1 regularization on the F-measure and the number of features with non-zero weights ory limitations in the experiments producing the results in Table 2, this issue can be addressed through the application of L1 regularization, which produces sparse weight vectors by adding a penalty of A||0||1 to the log-likelihood. We perform online optimization of the L1-regularized log-likelihood by applying the truncated gradient method (Langford et al., 2009). We use an exponential decreasing learning rate 71k = 170αk/N, where k is the iteration counter and N is the size of training data. We set M = 1 and α = 0.5. Experiments were run until 300,000 training instances were observed, with a final learning rate of less than 1/32. As shown in Figure 1, a small amount of regularization can dramatically decrease the number of active features without harming performance. 7 Analysis We apply our normalization system to investigate the orthographic processes underlying language variation in social media. Using a dataset of 400,000 English language tweets, </context>
+</contexts>
+<marker>Langford, Li, Zhang, 2009</marker>
+<rawString>John Langford, Lihong Li, and Tong Zhang. 2009. Sparse online learning via truncated gradient. The Journal of Machine Learning Research, 10:777–801.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D D Lee</author>
+<author>H S Seung</author>
+</authors>
+<title>Algorithms for NonNegative Matrix Factorization.</title>
+<date>2001</date>
+<booktitle>In Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<volume>13</volume>
+<pages>556--562</pages>
+<contexts>
+<context position="32243" citStr="Lee and Seung, 2001" startWordPosition="5173" endWordPosition="5176">ch year from 2009 to 2012, we apply UNLOL to automatically normalize each token. We then treat these normalizations as labeled training data, and examine the Levenshtein alignment between the source and target tokens. This alignment gives approximate character-level transduction rules to explain each OOV token. We then examine which rules are used by each author, constructing a matrix of authors and rules.2 Factorization of the author-rule matrix reveals sets of rules that tend to be used together; we might call these rulesets “orthographic styles.” We apply non-negative matrix factorization (Lee and Seung, 2001), which characterizes each author by a vector of k style loadings, and simultaneously constructs k style dictionaries, which each put weight on different orthographic rules. Because the loadings are constrained to be non-negative, the factorization can be seen as sparsely assigning varying amounts of each style to each author. We choose the factorization that minimizes the Frobenius norm of the reconstruction error, using the NIMFA software package (http://nimfa.biolab.si/). The resulting styles are shown in Table 3, for k = 10; other values of k give similar overall results with more or less </context>
+</contexts>
+<marker>Lee, Seung, 2001</marker>
+<rawString>D. D. Lee and H. S. Seung. 2001. Algorithms for NonNegative Matrix Factorization. In Advances in Neural Information Processing Systems (NIPS), volume 13, pages 556–562.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fei Liu</author>
+<author>Fuliang Weng</author>
+<author>Bingqing Wang</author>
+<author>Yang Liu</author>
+</authors>
+<title>Insertion, deletion, or substitution?: normalizing text messages without pre-categorization nor supervision.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>71--76</pages>
+<contexts>
+<context position="1359" citStr="Liu et al., 2011" startWordPosition="194" endWordPosition="197">ation system called UNLOL, which achieves the best known results on two normalization datasets, outperforming more complex systems. We use the output of UNLOL to automatically normalize a large corpus of social media text, revealing a set of coherent orthographic styles that underlie online language variation. 1 Introduction Social media language can differ substantially from other written text. Many of the attempts to characterize and overcome this variation have focused on normalization: transforming social media language into text that better matches standard datasets (Sproat et al., 2001; Liu et al., 2011). Because there is little available training data, and because social media language changes rapidly (Eisenstein, 2013b), fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, dependency parsers, strin</context>
+<context position="6749" citStr="Liu et al. (2011)" startWordPosition="1019" endWordPosition="1022">ception dictionary” of stronglyassociated word pairs such as you/u. Like Contractor et al. (2010), we apply string edit distance, and like Gouws et al. (2011), we capture strongly related word pairs. However, rather than applying these properties as filtering steps in a pipeline, we add them as features in a unified log-linear model. Recent approaches have sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of contex</context>
+<context position="8036" citStr="Liu et al., 2011" startWordPosition="1219" endWordPosition="1222"> feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreover, as social media language is undergoing rapid change (Eisenstein, 2013b), labeled datasets may become stale and increasingly ill-suited to new spellings and words. 62 • Low-resource. Other unsupervised approaches take advantage of resources such as slang dictionaries and spell checkers (Han and Baldwin, 2011; Liu et al., 2011). Resources that characterize the current state of internet language risk becoming outdated; in this paper we investigate whether high-quality normalization is possible without any such resources. • Featurized. The relationship between any pair of words can be characterized in a number of different ways, ranging from simple characterlevel rules (e.g., going/goin) to larger substitutions (e.g., someone/sum1), and even to patterns that are lexically restricted (e.g., you/u, to/2). For these reasons, we seek a model that permits many overlapping features to describe candidate word pairs. These fe</context>
+<context position="26221" citStr="Liu et al. (2011)" startWordPosition="4171" endWordPosition="4174">he theory of Monte Carlo approximation states that the quality of the approximation should only improve as the number of samples increases; we obtained good results with K = 10 and L = 1, and found relatively little improvement by increasing these values. The number of hypotheses considered by the decoder is set to T = 10; again, the performance should only improve with T, as we more closely approximate full Viterbi decoding. 6 Experiments Datasets We use two existing labeled Twitter datasets to evaluate our approach. The first dataset — which we call LWWL11, based on the names of its authors Liu et al. (2011) — contains 3,802 individual “nonstandard” words (i.e., words that are not in the target vocabulary) and their normalized forms. The rest of the message in which the words is appear is not available. As this corpus does not provide linguistic context, its decoding must use a unigram target language model. The second dataset — which is called LexNorm1.1 by its authors Han and Baldwin (2011) — contains 549 complete tweets with 1,184 nonstandard tokens (558 unique word types). 67 Method Dataset Precision Recall F-measure (Liu et al. 2011) 68.88 68.88 68.88 (Liu et al. 2012) LMML11 69.81 69.81 69.</context>
+<context position="29711" citStr="Liu et al. (2011)" startWordPosition="4749" endWordPosition="4752"> Our system, UNLOL, achieves the highest published F-measure on both datasets. Performance on LexNorm1.2 is very similar to LexNorm1.1, despite the fact that roughly 8% of the examples were relabeled. In the normalization task that we consider, the tokens to be normalized are specified in advance. This is the same task specification as in the prior work against which we compare. At test time, our system attempts normalizes all such tokens; every error is thus both a false positive and false negative, so precision equals to recall for this task; this is also true for Han and Baldwin (2011) and Liu et al. (2011). It is possible to trade recall for precision by refusing to normalize words when the system‘s confidence falls below a threshold. A good setting of this threshold can improve the F-measure, but we did not report these results because we have no development set for parameter tuning. Regularization One potential concern is that the number of non-zero feature weights will continually increase until the memory cost becomes overwhelming. Although we did not run up against mem68 83 82 F-measure 81 80 79 0 100000 200000 300000 400000 number of features A Dataset F-measure # of features 10−4 79.05 9</context>
+</contexts>
+<marker>Liu, Weng, Wang, Liu, 2011</marker>
+<rawString>Fei Liu, Fuliang Weng, Bingqing Wang, and Yang Liu. 2011. Insertion, deletion, or substitution?: normalizing text messages without pre-categorization nor supervision. In Proceedings of ACL, pages 71–76.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fei Liu</author>
+<author>Fuliang Weng</author>
+<author>Xiao Jiang</author>
+</authors>
+<title>A broadcoverage normalization system for social media language.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>1035--1044</pages>
+<contexts>
+<context position="7106" citStr="Liu et al., 2012" startWordPosition="1077" endWordPosition="1080"> sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreove</context>
+<context position="23378" citStr="Liu et al. (2012" startWordPosition="3690" endWordPosition="3693"> 5.1 Normalization candidates Most tokens in tweets do not require normalization. The question of how to identify which words are to be normalized is still an open problem. Following Han and Baldwin (2011), we build a dictionary of words which are permissible in the target domain, and make no attempt to normalize source strings that match these words. As with other comparable approaches, we are therefore unable to normalize strings like ill into I’ll. Our set of “in-vocabulary” (IV) words is based on the GNU aspell dictionary (v0.60.6), containing 97,070 words. From this dictionary, we follow Liu et al. (2012a) and remove all the words with a count of less than 20 in the Edinburgh Twitter corpus (Petrovi´c et al., 2010) — resulting in a total of 52,449 target words. All single characters except a and i are excluded, and rt is treated as in-vocabulary. For all in-vocabulary words, we define P(sn|tn) = S(sn, tn), taking the value of zero when sn =� tn. This effectively prevents our model from attempting to normalize these words. In addition to words that are in the target vocabulary, there are many other strings that should not be normalized, such as names and multiword shortenings (e.g. going to/go</context>
+<context position="26798" citStr="Liu et al. 2012" startWordPosition="4270" endWordPosition="4273"> names of its authors Liu et al. (2011) — contains 3,802 individual “nonstandard” words (i.e., words that are not in the target vocabulary) and their normalized forms. The rest of the message in which the words is appear is not available. As this corpus does not provide linguistic context, its decoding must use a unigram target language model. The second dataset — which is called LexNorm1.1 by its authors Han and Baldwin (2011) — contains 549 complete tweets with 1,184 nonstandard tokens (558 unique word types). 67 Method Dataset Precision Recall F-measure (Liu et al. 2011) 68.88 68.88 68.88 (Liu et al. 2012) LMML11 69.81 69.81 69.81 UNLOL 73.04 73.04 73.04 (Han and Baldwin, 2011) 75.30 75.30 75.30 (Liu et al. 2012) LexNorm 1.1 84.13 78.38 81.15 (Hassan et al. 2013) 85.37 56.4 69.93 UNLOL 82.09 82.09 82.09 UNLOL LexNorm 1.2 82.06 82.06 82.06 Table 2: Empirical results In this corpus, we can decode with a trigram language model. Close analysis of LexNorm1.1 revealed some inconsistencies in annotation (for example, y’all and 2 are sometimes normalized to you and to, but are left unnormalized in other cases). In addition, several annotations disagree with existing resources on internet language and d</context>
+</contexts>
+<marker>Liu, Weng, Jiang, 2012</marker>
+<rawString>Fei Liu, Fuliang Weng, and Xiao Jiang. 2012a. A broadcoverage normalization system for social media language. In Proceedings of ACL, pages 1035–1044.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiaohua Liu</author>
+<author>Ming Zhou</author>
+<author>Xiangyang Zhou</author>
+<author>Zhongyang Fu</author>
+<author>Furu Wei</author>
+</authors>
+<title>Joint inference of named entity recognition and normalization for tweets.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="7106" citStr="Liu et al., 2012" startWordPosition="1077" endWordPosition="1080"> sought to improve accuracy by bringing more external resources and complex architectures to bear. Han and Baldwin (2011) begin with a set of string similarity metrics, and then apply dependency parsing to identify contextuallysimilar words. Liu et al. (2011) extract noisy training pairs from the search snippets that result from carefully designed queries to Google, and then train a conditional random field (Lafferty et al., 2001) to estimate a character-based translation model. They later extend this work by adding a model of visual priming, an off-the-shelf spell-checker, and local context (Liu et al., 2012a). Hassan and Menezes (2013) use a random walk framework to capture contextual similarity, which they then interpolate with an edit distance metric. Rather than seeking additional external resources or designing more complex metrics of context and similarity, we propose a unified statistical model, which learns feature weights in a maximum-likelihood framework. 3 Approach Our approach is motivated by the following criteria: • Unsupervised. We want to be able to train a model without labeled data. At present, labeled data for Twitter normalization is available only in small quantities. Moreove</context>
+<context position="23378" citStr="Liu et al. (2012" startWordPosition="3690" endWordPosition="3693"> 5.1 Normalization candidates Most tokens in tweets do not require normalization. The question of how to identify which words are to be normalized is still an open problem. Following Han and Baldwin (2011), we build a dictionary of words which are permissible in the target domain, and make no attempt to normalize source strings that match these words. As with other comparable approaches, we are therefore unable to normalize strings like ill into I’ll. Our set of “in-vocabulary” (IV) words is based on the GNU aspell dictionary (v0.60.6), containing 97,070 words. From this dictionary, we follow Liu et al. (2012a) and remove all the words with a count of less than 20 in the Edinburgh Twitter corpus (Petrovi´c et al., 2010) — resulting in a total of 52,449 target words. All single characters except a and i are excluded, and rt is treated as in-vocabulary. For all in-vocabulary words, we define P(sn|tn) = S(sn, tn), taking the value of zero when sn =� tn. This effectively prevents our model from attempting to normalize these words. In addition to words that are in the target vocabulary, there are many other strings that should not be normalized, such as names and multiword shortenings (e.g. going to/go</context>
+<context position="26798" citStr="Liu et al. 2012" startWordPosition="4270" endWordPosition="4273"> names of its authors Liu et al. (2011) — contains 3,802 individual “nonstandard” words (i.e., words that are not in the target vocabulary) and their normalized forms. The rest of the message in which the words is appear is not available. As this corpus does not provide linguistic context, its decoding must use a unigram target language model. The second dataset — which is called LexNorm1.1 by its authors Han and Baldwin (2011) — contains 549 complete tweets with 1,184 nonstandard tokens (558 unique word types). 67 Method Dataset Precision Recall F-measure (Liu et al. 2011) 68.88 68.88 68.88 (Liu et al. 2012) LMML11 69.81 69.81 69.81 UNLOL 73.04 73.04 73.04 (Han and Baldwin, 2011) 75.30 75.30 75.30 (Liu et al. 2012) LexNorm 1.1 84.13 78.38 81.15 (Hassan et al. 2013) 85.37 56.4 69.93 UNLOL 82.09 82.09 82.09 UNLOL LexNorm 1.2 82.06 82.06 82.06 Table 2: Empirical results In this corpus, we can decode with a trigram language model. Close analysis of LexNorm1.1 revealed some inconsistencies in annotation (for example, y’all and 2 are sometimes normalized to you and to, but are left unnormalized in other cases). In addition, several annotations disagree with existing resources on internet language and d</context>
+</contexts>
+<marker>Liu, Zhou, Zhou, Fu, Wei, 2012</marker>
+<rawString>Xiaohua Liu, Ming Zhou, Xiangyang Zhou, Zhongyang Fu, and Furu Wei. 2012b. Joint inference of named entity recognition and normalization for tweets. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Saša Petrovi´c</author>
+<author>Miles Osborne</author>
+<author>Victor Lavrenko</author>
+</authors>
+<title>The edinburgh twitter corpus.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the NAACL HLT Workshop on Computational Linguistics in a World of Social Media,</booktitle>
+<pages>25--26</pages>
+<marker>Petrovi´c, Osborne, Lavrenko, 2010</marker>
+<rawString>Saša Petrovi´c, Miles Osborne, and Victor Lavrenko. 2010. The edinburgh twitter corpus. In Proceedings of the NAACL HLT Workshop on Computational Linguistics in a World of Social Media, pages 25–26.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Noah A Smith</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Contrastive estimation: training log-linear models on unlabeled data.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05,</booktitle>
+<pages>354--362</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="10267" citStr="Smith and Eisner, 2005" startWordPosition="1566" endWordPosition="1569">age. The necessity for such holistic, joint inference and learning can be seen by changing the example above to: gimme suttin 2 beleive innnn. None of these tokens are standard (except 2, which appears in a nonstandard sense here), so without joint inference, it would not be possible to use context to help normalize suttin. Only by jointly reasoning over the entire message can we obtain the correct normalization. These desiderata point towards a featurized sequence model, which must be trained without labeled examples. While there is prior work on training sequence models without supervision (Smith and Eisner, 2005; Berg-Kirkpatrick et al., 2010), there is an additional complication not faced by models for tasks such as part-of-speech tagging and named entity recognition: the potential label space of standard words is large, on the order of at least 104. Naive application of Viterbi decoding — which is a component of training for both Contrastive Estimation (Smith and Eisner, 2005) and the locally-normalized sequence labeling model of Berg-Kirkpatrick et al. (2010) — will be stymied by Viterbi’s quadratic complexity in the dimension of the label space. While various pruning heuristics may be applied, we</context>
+<context position="13024" citStr="Smith and Eisner, 2005" startWordPosition="2013" endWordPosition="2016">ssible target sequences t grows exponentially in the length of the source sequence, it will not be practical to compute this expectation directly. Dynamic programming is the typical solution for computing feature expectations, and can be applied to sequence models when the feature function decomposes locally. There are two reasons this will not work in our case. First, while the forwardbackward algorithm would enable us to compute Et|s, it would not give us the nested expectation Et|s[Es,|t]; this is the classic challenge in training globally-normalized log-linear models without labeled data (Smith and Eisner, 2005). Second, both forward-backward and the Viterbi algorithm have time complexity that is quadratic in the dimension of the label space, at least 104 or 105. As we will show, Sequential Monte Carlo (SMC) algorithms have a number of advantages in this setting: they permit the efficient computation of both the outer and inner expectations, they are trivially parallelizable, and the number of samples provides an intuitive tuning tradeoff between accuracy and speed. 4.1 Sequential Monte Carlo approximation Sequential Monte Carlo algorithms are a class of sampling-based algorithms in which latent vari</context>
+</contexts>
+<marker>Smith, Eisner, 2005</marker>
+<rawString>Noah A. Smith and Jason Eisner. 2005. Contrastive estimation: training log-linear models on unlabeled data. In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL ’05, pages 354–362, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Sproat</author>
+<author>A W Black</author>
+<author>S Chen</author>
+<author>S Kumar</author>
+<author>M Ostendorf</author>
+<author>C Richards</author>
+</authors>
+<title>Normalization of non-standard words.</title>
+<date>2001</date>
+<journal>Computer Speech &amp; Language,</journal>
+<volume>15</volume>
+<issue>3</issue>
+<contexts>
+<context position="1340" citStr="Sproat et al., 2001" startWordPosition="190" endWordPosition="193">emented in a normalization system called UNLOL, which achieves the best known results on two normalization datasets, outperforming more complex systems. We use the output of UNLOL to automatically normalize a large corpus of social media text, revealing a set of coherent orthographic styles that underlie online language variation. 1 Introduction Social media language can differ substantially from other written text. Many of the attempts to characterize and overcome this variation have focused on normalization: transforming social media language into text that better matches standard datasets (Sproat et al., 2001; Liu et al., 2011). Because there is little available training data, and because social media language changes rapidly (Eisenstein, 2013b), fully supervised training is generally not considered appropriate for this task. However, due to the extremely high-dimensional output space — arbitrary sequences of words across the vocabulary — it is a very challenging problem for unsupervised learning. Perhaps it is for these reasons that the most successful systems are pipeline architectures that cobble together a diverse array of techniques and resources, including statistical language models, depend</context>
+<context position="4068" citStr="Sproat et al. (2001)" startWordPosition="599" endWordPosition="602">, Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics bilistic approach, relying only on a language model for the target domain; it can be adapted to new corpora text or new domains easily and quickly. Our evaluations show that UNLOL outperforms the state-of-the-art on standard normalization datasets. In addition, we demonstrate the linguistic insights that can be obtained from normalization, using UNLOL to identify classes of orthographic transformations that form coherent linguistic styles. 2 Background The text normalization task was introduced by Sproat et al. (2001), and attained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), pa</context>
+</contexts>
+<marker>Sproat, Black, Chen, Kumar, Ostendorf, Richards, 2001</marker>
+<rawString>R. Sproat, A.W. Black, S. Chen, S. Kumar, M. Ostendorf, and C. Richards. 2001. Normalization of non-standard words. Computer Speech &amp; Language, 15(3):287–333.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+</authors>
+<title>SRILM - an extensible language modeling toolkit.</title>
+<date>2002</date>
+<booktitle>In Proceedings of ICSLP,</booktitle>
+<pages>901--904</pages>
+<contexts>
+<context position="24955" citStr="Stolcke (2002)" startWordPosition="3959" endWordPosition="3960">rophe. This set includes contractions like &amp;quot;gonna&amp;quot; and &amp;quot;gotta&amp;quot;, which would not appear in the test set, but are nonetheless normalized 1Whether multiword shortenings should be normalized is arguable, but they are outside the scope of current normalization datasets (Han and Baldwin, 2011). during training. For each OOV token, we conduct a pre-normalization step by reducing any repetitions of more than two letters in the nonstandard words to exactly two letters (e.g., cooool —* cool). 5.2 Language modeling The Kneser-Ney smoothed trigram target language model is estimated with the SRILM toolkit Stolcke (2002), using Tweets from the Edinburgh Twitter corpus that contain no OOV words besides hashtags and username mentions (following (Han et al., 2013)). We use this language model for both training and decoding. We occasionally find training contexts in which the trigram (tn, tn_1, tn_2) is unobserved in the language model data; features resulting from such trigrams are not considered when computing the weight gradients. 5.3 Parameters The Monte Carlo approximations require two parameters: the number of samples for sequential Monte Carlo (K), and the number of samples for the non-sequential sampler o</context>
+</contexts>
+<marker>Stolcke, 2002</marker>
+<rawString>Andreas Stolcke. 2002. SRILM - an extensible language modeling toolkit. In Proceedings of ICSLP, pages 901–904.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sali Tagliamonte</author>
+<author>Rosalind Temple</author>
+</authors>
+<title>New perspectives on an ol’ variable: (t,d) in british english. Language Variation and Change,</title>
+<date>2005</date>
+<pages>17--281</pages>
+<marker>Tagliamonte, Temple, 2005</marker>
+<rawString>Sali Tagliamonte and Rosalind Temple. 2005. New perspectives on an ol’ variable: (t,d) in british english. Language Variation and Change, 17:281–302, September.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Congle Zhang</author>
+<author>Tyler Baldwin</author>
+<author>Howard Ho</author>
+<author>Benny Kimelfeld</author>
+<author>Yunyao Li</author>
+</authors>
+<title>Adaptive parsercentric text normalization.</title>
+<date>2013</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<pages>1159--1168</pages>
+<contexts>
+<context position="4694" citStr="Zhang et al., 2013" startWordPosition="693" endWordPosition="696">ttained popularity in the context of SMS messages (Choudhury et al., 2007b). It has become still more salient in the era of widespread social media, particularly Twitter. Han and Baldwin (2011) formally define a normalization task for Twitter, focusing on normalizations between single tokens, and excluding multi-word tokens like tot (laugh out loud). The normalization task has been criticized by Eisenstein (2013b), who argues that it strips away important social meanings. In recent work, normalization has been shown to yield improvements for part-of-speech tagging (Han et al., 2013), parsing (Zhang et al., 2013), and machine translation (Hassan and Menezes, 2013). As we will show in Section 7, accurate automated normalization can also improve our understanding of the nature of social media language. Supervised methods Early work on normalization focused on labeled SMS datasets, using approaches such as noisy-channel modeling (Choudhury et al., 2007a) and machine translation (Aw et al., 2006), as well as hybrid combinations of spelling correction and speech recognition (Kobus et al., 2008; Beaufort et al., 2010). This work sought to balance language models (favoring words that fit in context) with tra</context>
+</contexts>
+<marker>Zhang, Baldwin, Ho, Kimelfeld, Li, 2013</marker>
+<rawString>Congle Zhang, Tyler Baldwin, Howard Ho, Benny Kimelfeld, and Yunyao Li. 2013. Adaptive parsercentric text normalization. In Proceedings of ACL, pages 1159–1168.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

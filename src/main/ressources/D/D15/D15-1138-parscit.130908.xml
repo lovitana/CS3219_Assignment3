@@ -1,0 +1,1580 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000005">
+<title confidence="0.997218">
+Alignment-Based Compositional Semantics for Instruction Following
+</title>
+<author confidence="0.997026">
+Jacob Andreas and Dan Klein
+</author>
+<affiliation confidence="0.9985155">
+Computer Science Division
+University of California, Berkeley
+</affiliation>
+<email confidence="0.995056">
+{jda,klein}@cs.berkeley.edu
+</email>
+<sectionHeader confidence="0.997333" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999884277777778">
+This paper describes an alignment-based
+model for interpreting natural language in-
+structions in context. We approach in-
+struction following as a search over plans,
+scoring sequences of actions conditioned
+on structured observations of text and the
+environment. By explicitly modeling both
+the low-level compositional structure of
+individual actions and the high-level struc-
+ture of full plans, we are able to learn
+both grounded representations of sentence
+meaning and pragmatic constraints on in-
+terpretation. To demonstrate the model’s
+flexibility, we apply it to a diverse set
+of benchmark tasks. On every task, we
+outperform strong task-specific baselines,
+and achieve several new state-of-the-art
+results.
+</bodyText>
+<sectionHeader confidence="0.999517" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.99998825">
+In instruction-following tasks, an agent executes
+a sequence of actions in a real or simulated envi-
+ronment, in response to a sequence of natural lan-
+guage commands. Examples include giving nav-
+igational directions to robots and providing hints
+to automated game-playing agents. Plans speci-
+fied with natural language exhibit compositional-
+ity both at the level of individual actions and at
+the overall sequence level. This paper describes a
+framework for learning to follow instructions by
+leveraging structure at both levels.
+Our primary contribution is a new, alignment-
+based approach to grounded compositional se-
+mantics. Building on related logical approaches
+(Reddy et al., 2014; Pourdamghani et al., 2014),
+we recast instruction following as a pair of nested,
+structured alignment problems. Given instructions
+and a candidate plan, the model infers a sequence-
+to-sequence alignment between sentences and
+atomic actions. Within each sentence–action pair,
+the model infers a structure-to-structure alignment
+between the syntax of the sentence and a graph-
+based representation of the action.
+At a high level, our agent is a block-structured,
+graph-valued conditional random field, with align-
+ment potentials to relate instructions to actions and
+transition potentials to encode the environment
+model (Figure 3). Explicitly modeling sequence-
+to-sequence alignments between text and actions
+allows flexible reasoning about action sequences,
+enabling the agent to determine which actions are
+specified (perhaps redundantly) by text, and which
+actions must be performed automatically (in or-
+der to satisfy pragmatic constraints on interpreta-
+tion). Treating instruction following as a sequence
+prediction problem, rather than a series of inde-
+pendent decisions (Branavan et al., 2009; Artzi
+and Zettlemoyer, 2013), makes it possible to use
+general-purpose planning machinery, greatly in-
+creasing inferential power.
+The fragment of semantics necessary to com-
+plete most instruction-following tasks is essen-
+tially predicate–argument structure, with limited
+influence from quantification and scoping. Thus
+the problem of sentence interpretation can reason-
+ably be modeled as one of finding an alignment be-
+tween language and the environment it describes.
+We allow this structure-to-structure alignment—
+an “overlay” of language onto the world—to be
+mediated by linguistic structure (in the form of
+dependency parses) and structured perception (in
+what we term grounding graphs). Our model
+thereby reasons directly about the relationship be-
+tween language and observations of the environ-
+ment, without the need for an intermediate logi-
+cal representation of sentence meaning. This, in
+turn, makes it possible to incorporate flexible fea-
+ture representations that have been difficult to in-
+tegrate with previous work in semantic parsing.
+We apply our approach to three established
+</bodyText>
+<page confidence="0.942387">
+1165
+</page>
+<note confidence="0.993252">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1165–1174,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<page confidence="0.749616">
+2
+</page>
+<figure confidence="0.602644333333333">
+3
+1
+... right round the white water but
+stay quite close ’cause you don’t
+otherwise you’re going to be in that
+stone creek ...
+Go down the yellow hall. Turn left
+at the intersection of the yellow and
+the gray.
+Clear the right column. Then the
+other column. Then the row.
+(a) Map reading (b) Maze navigation (c) Puzzle solving
+</figure>
+<figureCaption confidence="0.994349">
+Figure 1: Example tasks handled by our framework. The tasks feature noisy text, over- and under-specification of plans, and
+challenging search problems.
+</figureCaption>
+<bodyText confidence="0.99990352631579">
+instruction-following benchmarks: the map read-
+ing task of Vogel and Jurafsky (2010), the maze
+navigation task of MacMahon et al. (2006), and
+the puzzle solving task of Branavan et al. (2009).
+An example from each is shown in Figure 1.
+These benchmarks exhibit a range of qualitative
+properties—both in the length and complexity of
+their plans, and in the quantity and quality of ac-
+companying language. Each task has been stud-
+ied in isolation, but we are unaware of any pub-
+lished approaches capable of robustly handling
+all three. Our general model outperforms strong,
+task-specific baselines in each case, achieving
+relative error reductions of 15–20% over sev-
+eral state-of-the-art results. Experiments demon-
+strate the importance of our contributions in both
+compositional semantics and search over plans.
+We have released all code for this project at
+github.com/jacobandreas/instructions.
+</bodyText>
+<sectionHeader confidence="0.9999" genericHeader="introduction">
+2 Related work
+</sectionHeader>
+<bodyText confidence="0.999887872340426">
+Existing work on instruction following can be
+roughly divided into two families: semantic
+parsers and linear policy estimators.
+Semantic parsers Parser-based approaches
+(Chen and Mooney, 2011; Artzi and Zettlemoyer,
+2013; Kim and Mooney, 2013) map from text into
+a formal language representing commands. These
+take familiar structured prediction models for
+semantic parsing (Zettlemoyer and Collins, 2005;
+Wong and Mooney, 2006), and train them with
+task-provided supervision. Instead of attempting
+to match the structure of a manually-annotated
+semantic parse, semantic parsers for instruction
+following are trained to maximize a reward signal
+provided by black-box execution of the predicted
+command in the environment. (It is possible to
+think of response-based learning for question
+answering (Liang et al., 2013) as a special case.)
+This approach uses a well-studied mechanism
+for compositional interpretation of language, but is
+subject to certain limitations. Because the environ-
+ment is manipulated only through black-box exe-
+cution of the completed semantic parse, there is no
+way to incorporate current or future environment
+state into the scoring function. It is also in general
+necessary to hand-engineer a task-specific formal
+language for describing agent behavior. Thus it is
+extremely difficult to work with environments that
+cannot be modeled with a fixed inventory of pred-
+icates (e.g. those involving novel strings or arbi-
+trary real quantities).
+Much of contemporary work in this family is
+evaluated on the maze navigation task introduced
+by MacMahon et al. (2006). Dukes (2013) also in-
+troduced a “blocks world” task for situated parsing
+of spatial robot commands.
+Linear policy estimators An alternative fam-
+ily of approaches is based on learning a pol-
+icy over primitive actions directly (Branavan et
+al., 2009; Vogel and Jurafsky, 2010).1 Policy-
+based approaches instantiate a Markov decision
+process representing the action domain, and ap-
+ply standard supervised or reinforcement-learning
+approaches to learn a function for greedily select-
+ing among actions. In linear policy approximators,
+natural language instructions are incorporated di-
+rectly into state observations, and reading order
+</bodyText>
+<footnote confidence="0.995951">
+1This is distinct from semantic parsers in which greedy
+inference happens to have an interpretation as a policy (Vla-
+chos and Clark, 2014).
+</footnote>
+<page confidence="0.99558">
+1166
+</page>
+<bodyText confidence="0.999670352941177">
+becomes part of the action selection process.
+Almost all existing policy-learning approaches
+make use of an unstructured parameterization,
+with a single (flat) feature vector representing all
+text and observations. Such approaches are thus
+restricted to problems that are simple enough (and
+have small enough action spaces) to be effectively
+characterized in this fashion. While there is a great
+deal of flexibility in the choice of feature func-
+tion (which is free to inspect the current and fu-
+ture state of the environment, the whole instruc-
+tion sequence, etc.), standard linear policy estima-
+tors have no way to model compositionality in lan-
+guage or actions.
+Agents in this family have been evaluated on a
+variety of tasks, including map reading (Anderson
+et al., 1991) and gameplay (Branavan et al., 2009).
+Though both families address the same class
+of instruction-following problems, they have been
+applied to a totally disjoint set of tasks. It should
+be emphasized that there is nothing inherent to
+policy learning that prevents the use of composi-
+tional structure, and nothing inherent to general
+compositional models that prevents more compli-
+cated dependence on environment state. Indeed,
+previous work (Branavan et al., 2011; Narasimhan
+et al., 2015) uses aspects of both to solve a differ-
+ent class of gameplay problems. In some sense,
+our goal in this paper is simply to combine the
+strengths of semantic parsers and linear policy es-
+timators for fully general instruction following.
+As we shall see, however, this requires changes
+to many aspects of representation, learning and in-
+ference.
+</bodyText>
+<sectionHeader confidence="0.997063" genericHeader="method">
+3 Representations
+</sectionHeader>
+<bodyText confidence="0.938277">
+We wish to train a model capable of following
+commands in a simulated environment. We do so
+by presenting the model with a sequence of train-
+ing pairs (x, y), where each x is a sequence of nat-
+ural language instructions (x1, x2, ... , xm), e.g.:
+(Go down the yellow hall., Turn left., ... )
+and each y is a demonstrated action sequence
+(y1, y2,. .. , yn), e.g.:
+</bodyText>
+<equation confidence="0.676931">
+(rotate(90), move(2), ... )
+</equation>
+<bodyText confidence="0.5949015">
+Given a start state, y can equivalently be char-
+acterized by a sequence of (state, action, state)
+</bodyText>
+<figure confidence="0.940681">
+(a) Text Go down the yellow hall
+</figure>
+<figureCaption confidence="0.9468511">
+Figure 2: Structure-to-structure alignment connecting a sin-
+gle sentence (via its syntactic analysis) to the environment
+state (via its grounding graph). The connecting alignments
+take the place of a traditional semantic parse and allow flexi-
+ble, feature-driven linking between lexical primitives and per-
+ceptual factors.
+triples resulting from execution of the environ-
+ment model. An example instruction is shown in
+Figure 2a. An example action, situated in the en-
+vironment where it occurs, is shown in Figure 2e.
+</figureCaption>
+<bodyText confidence="0.999966294117647">
+Our model performs compositional interpreta-
+tion of instructions by leveraging existing struc-
+ture inherent in both text and actions. Thus we
+interpret xi and yj not as raw strings and primitive
+actions, but rather as structured objects.
+Linguistic structure We assume access to a pre-
+trained parser, and in particular that each of the
+instructions xi is represented by a tree-structured
+dependency parse. An example is shown in Fig-
+ure 2b.
+Action structure By analogy to the represen-
+tation of instructions as parse trees, we assume
+that each (state, action, state) triple (provided by
+the environment model) can be characterized by
+a grounding graph. The structure and content of
+this representation is task-specific. An example
+grounding graph for the maze navigation task is
+</bodyText>
+<figure confidence="0.999446555555556">
+(b) Syntax
+* go down the yellow hall
+(c) Alignment
+(d) Perception
+move(2)
+(e) Environment
+the
+go down hall
+yellow
+</figure>
+<page confidence="0.984961">
+1167
+</page>
+<bodyText confidence="0.999733642857143">
+shown in Figure 2d. The example contains a node
+corresponding to the primitive action move(2)
+(in the upper left), and several nodes correspond-
+ing to locations in the environment that are visible
+after the action is performed.
+Each node in the graph (and, though not de-
+picted, each edge) is decorated with a list of fea-
+tures. These features might be simple indica-
+tors (e.g. whether the primitive action performed
+was move or rotate), real values (the distance
+traveled) or even string-valued (English-language
+names of visible landmarks, if available in the
+environment description). Formally, a grounding
+graph consists of a tuple (V, E, L, fV , fE), with
+</bodyText>
+<listItem confidence="0.9713062">
+– V a set of vertices
+– E E V x V a set of (directed) edges
+– L a space of labels (numbers, strings, etc.)
+– fV : V —* 2L a vertex feature function
+– fE : E —* 2L an edge feature function
+</listItem>
+<bodyText confidence="0.968196971830986">
+In this paper we have tried to remain agnostic
+to details of graph construction. Our goal with the
+grounding graph framework is simply to accom-
+modate a wider range of modeling decisions than
+allowed by existing formalisms. Graphs might
+be constructed directly, given access to a struc-
+tured virtual environment (as in all experiments
+in this paper), or alternatively from outputs of a
+perceptual system. For our experiments, we have
+remained as close as possible to task representa-
+tions described in the existing literature. Details
+for each task can be found in the accompanying
+software package.
+Graph-based representations are extremely
+common in formal semantics (Jones et al., 2012;
+Reddy et al., 2014), and the version presented here
+corresponds to a simple generalization of famil-
+iar formal methods. Indeed, if L is the set of all
+atomic entities and relations, fV returns a unique
+label for every v E V , and fE always returns
+a vector with one active feature, we recover the
+existentially-quantified portion of first order logic
+exactly, and in this form can implement large parts
+of classical neo-Davidsonian semantics (Parsons,
+1990) using grounding graphs.
+Crucially, with an appropriate choice of L this
+formalism also makes it possible to go beyond set-
+theoretic relations, and incorporate string-valued
+features (like names of entities and landmarks) and
+real-valued features (like colors and positions) as
+well.
+Figure 3: Our model is a conditional random field that de-
+scribes distributions over state-action sequences conditioned
+on input text. Each variable’s domain is a structured value.
+Sentences align to a subset of the state–action sequences,
+with the rest of the states filled in by pragmatic (planning)
+implication. State-to-state structure represents planning con-
+straints (environment model) while state-to-text structure rep-
+resents compositional alignment. All potentials are log-linear
+and feature-driven.
+Lexical semantics We must eventually combine
+features provided by parse trees with features pro-
+vided by the environment. Examples here might
+include simple conjunctions (word=yellow ∧
+rgb=(0.5, 0.5, 0.0)) or more compli-
+cated computations like edit distance between
+landmark names and lexical items. Features of
+the latter kind make it possible to behave correctly
+in environments containing novel strings or other
+features unseen during training.
+This aspect of the syntax–semantics inter-
+face has been troublesome for some logic-based
+approaches: while past work has used related
+machinery for selecting lexicon entries (Berant
+and Liang, 2014) or for rewriting logical forms
+(Kwiatkowski et al., 2013), the relationship be-
+tween text and the environment has ultimately
+been mediated by a discrete (and indeed finite) in-
+ventory of predicates. Several recent papers have
+investigated simple grounded models with real-
+valued output spaces (Andreas and Klein, 2014;
+McMahan and Stone, 2015), but we are unaware
+of any fully compositional system in recent lit-
+erature that can incorporate observations of these
+kinds.
+Formally, we assume access to a joining feature
+function 0 : (2L x 2L) —* Rd. As with grounding
+graphs, our goal is to make the general framework
+as flexible as possible, and for individual exper-
+iments have chosen 0 to emulate modeling deci-
+sions from previous work.
+</bodyText>
+<figure confidence="0.8598105">
+Text Go down the yellow hall. Turn left.
+Alignments
+Plans
+turn left
+</figure>
+<page confidence="0.962301">
+1168
+</page>
+<sectionHeader confidence="0.994904" genericHeader="method">
+4 Model
+</sectionHeader>
+<bodyText confidence="0.990985066666667">
+As noted in the introduction, we approach instruc-
+tion following as a sequence prediction problem.
+Thus we must place a distribution over sequences
+of actions conditioned on instructions. We decom-
+pose the problem into two components, describing
+interlocking models of “path structure” and “ac-
+tion structure”. Path structure captures how se-
+quences of instructions give rise to sequences of
+actions, while action structure captures the com-
+positional relationship between individual utter-
+ances and the actions they specify.
+Path structure: aligning utterances to actions
+The high-level path structure in the model is de-
+picted in Figure 3. Our goal here is to permit both
+under- and over-specification of plans, and to ex-
+pose a planning framework which allows plans to
+be computed with lookahead (i.e. non-greedily).
+These goals are achieved by introducing a se-
+quence of latent alignments between instructions
+and actions. Consider the multi-step example in
+Figure 1b. If the first instruction go down the yel-
+low hall were interpreted immediately, we would
+have a presupposition failure—the agent is facing
+a wall, and cannot move forward at all. Thus an
+implicit rotate action, unspecified by text, must
+be performed before any explicit instructions can
+be followed.
+To model this, we take the probability of a (text,
+plan, alignment) triple to be log-proportional to
+the sum of two quantities:
+</bodyText>
+<listItem confidence="0.9981017">
+1. a path-only score 0(n; θ) + Ej 0(yj; θ)
+2. a path-and-text score, itself the sum of all pair
+scores 0(xi, yj; θ) licensed by the alignment
+(1) captures our desire for pragmatic constraints
+on interpretation, and provides a means of encod-
+ing the inherent plausibility of paths. We take
+0(n; θ) and 0(y; θ) to be linear functions of θ.
+(2) provides context-dependent interpretation of
+text by means of the structured scoring function
+0(x, y; θ), described in the next section.
+</listItem>
+<bodyText confidence="0.96567025">
+Formally, we associate with each instruction xi
+a sequence-to-sequence alignment variable ai ∈
+1... n (recalling that n is the number of actions).
+Then we have2
+</bodyText>
+<equation confidence="0.99631675">
+n
+p(y,a|x; θ) ∝ exp S 0(n) + 1:0(yj)
+l j=1
+1 1[aj = i] 0(xi, yj) (1)
+</equation>
+<bodyText confidence="0.999940153846154">
+We additionally place a monotonicity constraint
+on the alignment variables. This model is globally
+normalized, and for a fixed alignment is equiva-
+lent to a linear-chain CRF. In this sense it is analo-
+gous to IBM Model I (Brown et al., 1993), with the
+structured potentials 0(xi, yj) taking the place of
+lexical translation probabilities. While alignment
+models from machine translation have previously
+been used to align words to fragments of semantic
+parses (Wong and Mooney, 2006; Pourdamghani
+et al., 2014), we are unaware of such models be-
+ing used to align entire instruction sequences to
+demonstrations.
+</bodyText>
+<sectionHeader confidence="0.337559" genericHeader="method">
+Action structure: aligning words to percepts
+</sectionHeader>
+<bodyText confidence="0.999957782608696">
+Intuitively, this scoring function 0(x, y) should
+capture how well a given utterance describes an
+action. If neither the utterances nor the actions had
+structure (i.e. both could be represented with sim-
+ple bags of features), we would recover something
+analogous to the conventional policy-learning ap-
+proach. As structure is essential for some of our
+tasks, 0(x, y) must instead fill the role of a seman-
+tic parser in a conventional compositional model.
+Our choice of 0(x, y) is driven by the following
+fundamental assumptions: Syntactic relations ap-
+proximately represent semantic relations. Syntac-
+tic proximity implies relational proximity. In this
+view, there is an additional hidden structure-to-
+structure alignment between the grounding graph
+and the parsed text describing it. 3 Words line up
+with nodes, and dependencies line up with rela-
+tions. Visualizations are shown in Figure 2c and
+the zoomed-in portion of Figure 3.
+As with the top-level alignment variables, this
+approach can viewed as a simple relaxation of a
+familiar model. CCG-based parsers assume that
+syntactic type strictly determines semantic type,
+</bodyText>
+<footnote confidence="0.930620625">
+2Here and the remainder of this paper, we suppress the
+dependence of the various potentials on θ in the interest of
+readability.
+3It is formally possible to regard the sequence-to-
+sequence and structure-to-structure alignments as a single
+(structured) random variable. However, the two kinds of
+alignments are treated differently for purposes of inference,
+so it is useful to maintain a notational distinction.
+</footnote>
+<equation confidence="0.969459">
+m
++�
+i=1
+n
+j=1
+</equation>
+<page confidence="0.960161">
+1169
+</page>
+<bodyText confidence="0.997952259259259">
+and that each lexical item is associated with a
+small set of functional forms. Here we simply
+allow all words to license all predicates, multi-
+ple words to specify the same predicate, and some
+edges to be skipped. We instead rely on a scoring
+function to impose soft versions of the hard con-
+straints typically provided by a grammar. Related
+models have previously been used for question an-
+swering (Reddy et al., 2014; Pasupat and Liang,
+2015).
+For the moment let us introduce variables b
+to denote these structure-to-structure alignments.
+(As will be seen in the following section, it is
+straightforward to marginalize over all choices of
+b. Thus the structure-to-structure alignments are
+never explicitly instantiated during inference, and
+do not appear in the final form of ψ(x, y).) For
+a fixed alignment, we define ψ(x, y, b) according
+to a recurrence relation. Let xi be the ith word of
+the sentence, and let yj be the jth node in the ac-
+tion graph (under some topological ordering). Let
+c(i) and c(j) give the indices of the dependents of
+xi and children of yj respectively. Finally, let xik
+and yjl denote the associated dependency type or
+relation. Define a “descendant” function:
+d(i, j) = {(k, l) : k ∈ c(i), l ∈ c(j), (k, l) ∈ b}
+Then,
+</bodyText>
+<equation confidence="0.993637333333333">
+Jψ(xi, yj, b) = exp θTφ(xi, yj)
+1θTφ(xik,yjl) · ψ(xkyi b)] }
+, &gt;
+</equation>
+<bodyText confidence="0.999880333333333">
+This is just an unnormalized synchronous deriva-
+tion between x and y—at any aligned (node, word)
+pair, the score for the entire derivation is the score
+produced by combining that word and node, times
+the scores at all the aligned descendants. Observe
+that as long as there are no cycles in the depen-
+dency parse, it is perfectly acceptable for the rela-
+tion graph to contain cycles and even self-loops—
+the recurrence still bottoms out appropriately.
+</bodyText>
+<sectionHeader confidence="0.958704" genericHeader="method">
+5 Learning and inference
+</sectionHeader>
+<bodyText confidence="0.999405909090909">
+Given a sequence of training pairs (x, y), we
+wish to find a parameter setting that maximizes
+p(y|x; θ). If there were no latent alignments a
+or b, this would simply involve minimization of
+a convex objective. The presence of latent vari-
+ables complicates things. Ideally, we would like
+Algorithm 1 Computing structure-to-structure
+alignments
+xi are words in reverse topological order
+yj are grounding graph nodes (root last)
+chart is an m × n array
+</bodyText>
+<equation confidence="0.863139666666667">
+for i = 1 to |x |do
+for j = 1 to |y |do
+score ← exp {θTφ(xi, yj)}
+for (k, l) ∈ d(i, j) do l
+s ← ElEc(j) I exp {θTφ(xik,yjl)}
+· chart[k, ll]]
+</equation>
+<listItem confidence="0.821302">
+score ← score · s
+end for
+chart[i, j] ← score
+end for
+end for
+</listItem>
+<bodyText confidence="0.978202892857143">
+return chart[n, m]
+to sum over the latent variables, but that sum is in-
+tractable. Instead we make a series of variational
+approximations: first we replace the sum with a
+maximization, then perform iterated conditional
+modes, alternating between maximization of the
+conditional probability of a and θ. We begin by
+initializing θ randomly.
+As noted in the preceding section, the vari-
+able b does not appear in these equations. Con-
+ditioned on a, the sum over structure-to-structure
+ψ(x, y) = Eb ψ(x, y, b) can be performed ex-
+actly using a simple dynamic program which runs
+in time O(|x||y|) (assuming out-degree bounded
+by a constant, and with |x |and |y |the number of
+words and graph nodes respectively). This is Al-
+gorithm 1.
+In our experiments, θ is optimized using L-
+BFGS (Liu and Nocedal, 1989). Calculation of
+the gradient with respect to θ requires computa-
+tion of a normalizing constant involving the sum
+over p(x, y&apos;, a) for all y&apos;. While in principle the
+normalizing constant can be computed using the
+forward algorithm, in practice the state spaces un-
+der consideration are so large that even this is in-
+tractable. Thus we make an additional approxima-
+tion, constructing a set Y˜ of alternative actions and
+taking
+</bodyText>
+<equation confidence="0.9472755">
+exp{ψ(yj)+Emi=1 1[ai=j]ψ(xi,yi)}
+E˜y∈ Y˜ exp{ψ(˜y)+Emi=1 1[ai=j]ψ(xi,˜y)}
+�
++
+(k,l)Ed(x,y)
+n
+p(y, a|x) ≈
+j=1
+</equation>
+<page confidence="0.904421">
+1170
+</page>
+<bodyText confidence="0.9998455625">
+Y˜ is constructed by sampling alternative actions
+from the environment model. Meanwhile, maxi-
+mization of a can be performed exactly using the
+Viterbi algorithm, without computation of normal-
+izers.
+Inference at test time involves a slightly differ-
+ent pair of optimization problems. We again per-
+form iterated conditional modes, here on the align-
+ments a and the unknown output path y. Max-
+imization of a is accomplished with the Viterbi
+algorithm, exactly as before; maximization of y
+also uses the Viterbi algorithm, or a beam search
+when this is computationally infeasible. If bounds
+on path length are known, it is straightforward to
+adapt these dynamic programs to efficiently con-
+sider paths of all lengths.
+</bodyText>
+<sectionHeader confidence="0.999472" genericHeader="evaluation">
+6 Evaluation
+</sectionHeader>
+<bodyText confidence="0.999782272727273">
+As one of the main advantages of this approach
+is its generality, we evaluate on several different
+benchmark tasks for instruction following. These
+exhibit great diversity in both environment struc-
+ture and language use. We compare our full
+system to recent state-of-the-art approaches to
+each task. In the introduction, we highlighted
+two core aspects of our approach to semantics:
+compositionality (by way of grounding graphs
+and structure-to-structure alignments) and plan-
+ning (by way of inference with lookahead and
+sequence-to-sequence alignments). To evaluate
+these, we additionally present a pair of ablation ex-
+periments: no grounding graphs (an agent with an
+unstructured representation of environment state),
+and no planning (a reflex agent with no looka-
+head).
+Map reading Our first application is the map
+navigation task established by Vogel and Jurafsky
+(2010), based on data collected for a psychological
+experiment by Anderson et al. (1991) (Figure 1a).
+Each training datum consists of a map with a des-
+ignated starting position, and a collection of land-
+marks, each labeled with a spatial coordinate and
+a string name. Names are not always unique, and
+landmarks in the test set are never observed dur-
+ing training. This map is accompanied by a set
+of instructions specifying a path from the start-
+ing position to some (unlabeled) destination point.
+These instruction sets are informal and redundant,
+involving as many as a hundred utterances. They
+are transcribed from spoken text, so grammatical
+errors, disfluencies, etc. are common. This is a
+</bodyText>
+<table confidence="0.998969666666667">
+P R F1
+Vogel and Jurafsky (2010) 0.46 0.51 0.48
+Andreas and Klein (2014) 0.43 0.51 0.45
+Model [no planning] 0.44 0.46 0.45
+Model [no grounding graphs] 0.52 0.52 0.52
+Model [full] 0.51 0.60 0.55
+</table>
+<tableCaption confidence="0.8649265">
+Table 1: Evaluation results for the map-reading task. P is pre-
+cision, R is recall and F1 is F-measure. Scores are calculated
+</tableCaption>
+<bodyText confidence="0.7880672">
+with respect to transitions between landmarks appearing in
+the reference path (for details see Vogel and Jurafsky (2010)).
+We use the same train / test split. Some variant of our model
+achieves the best published results on all three metrics.
+Feature Weight
+</bodyText>
+<equation confidence="0.8244605">
+word=top ∧ side=North 1.31
+word=top ∧ side=South 0.61
+word=top ∧ side=East −0.93
+dist=0 4.51
+dist=1 2.78
+dist=4 1.54
+</equation>
+<tableCaption confidence="0.949426428571429">
+Table 2: Learned feature values. The model learns that the
+word top often instructs the navigator to position itself above
+a landmark, occasionally to position itself below a landmark,
+but rarely to the side. The bottom portion of the table shows
+learned text-independent constraints: given a choice, near
+destinations are preferred to far ones (so shorter paths are pre-
+ferred overall).
+</tableCaption>
+<bodyText confidence="0.99946832">
+prime example of a domain that does not lend it-
+self to logical representation—grammars may be
+too rigid, and previously-unseen landmarks and
+real-valued positions are handled more easily with
+feature machinery than predicate logic.
+The map task was previously studied by Vo-
+gel and Jurafsky (2010), who implemented SARSA
+with a simple set of features. By combining these
+features with our alignment model and search pro-
+cedure, we achieve state-of-the-art results on this
+task by a substantial margin (Table 1).
+Some learned feature values are shown in Ta-
+ble 2. The model correctly infers cardinal direc-
+tions (the example shows the preferred side of a
+destination landmark modified by the word top).
+Like Vogel et al., we see support for both allocen-
+tric references (you are on top of the hill) and ego-
+centric references (the hill is on top of you). We
+can also see pragmatics at work: the model learns
+useful text-independent constraints—in this case,
+that near destinations should be preferred to far
+ones.
+Maze navigation The next application we con-
+sider is the maze navigation task of MacMahon et
+al. (2006) (Figure 1b). Here, a virtual agent is sit-
+</bodyText>
+<page confidence="0.98514">
+1171
+</page>
+<table confidence="0.986501375">
+Success (%)
+Kim and Mooney (2012) 57.2
+Chen (2012) 57.3
+Model [no planning] 58.9
+Model [no grounding graphs] 51.7
+Model [full] 59.6
+Kim and Mooney (2013) [reranked] 62.8
+Artzi et al. (2014) [semi-supervised] 65.3
+</table>
+<tableCaption confidence="0.999025">
+Table 3: Evaluation results for the maze navigation task.
+</tableCaption>
+<bodyText confidence="0.953037487179487">
+“Success” shows the percentage of actions resulting in a cor-
+rect position and orientation after observing a single instruc-
+tion. We use the leave-one-map-out evaluation employed by
+previous work.4 All systems are trained on full action se-
+quences. Our model outperforms several task-specific base-
+lines, as well as a baseline with path structure but no action
+structure.
+uated in a maze (whose hallways are distinguished
+with various wallpapers, carpets, and the presence
+of a small set of standard objects), and again given
+instructions for getting from one point to another.
+This task has been the subject of focused attention
+in semantic parsing for several years, resulting in
+a variety of sophisticated approaches.
+Despite superficial similarity to the previous
+navigation task, the language and plans required
+for this task are quite different. The proportion of
+instructions to actions is much higher (so redun-
+dancy much lower), and the interpretation of lan-
+guage is highly compositional.
+As can be seen in Table 3, we outperform a
+number of systems purpose-built for this naviga-
+tion task. We also outperform both variants of
+our system, most conspicuously the variant with-
+out grounding graphs. This highlights the impor-
+tance of compositional structure. Recent work by
+Kim and Mooney (2013) and Artzi et al. (2014)
+has achieved better results; these systems make
+use of techniques and resources (respectively, dis-
+criminative reranking and a seed lexicon of hand-
+annotated logical forms) that are largely orthogo-
+nal to the ones used here, and might be applied to
+improve our own results as well.
+Puzzle solving The last task we consider is the
+Crossblock task studied by Branavan et al. (2009)
+(Figure 1c). Here, again, natural language is used
+to specify a sequence of actions, in this case the
+solution to a simple game. The environment is
+simple enough to be captured with a flat feature
+</bodyText>
+<footnote confidence="0.991286333333333">
+4We specifically targeted the single-sentence version of
+this evaluation, as an alternative full-sequence evaluation
+does not align precisely with our data condition.
+</footnote>
+<table confidence="0.9999288">
+Match (%) Success (%)
+No text 54 78
+Branavan ’09 63 –
+Model [no planning] 64 66
+Model [full] 70 86
+</table>
+<tableCaption confidence="0.952385875">
+Table 4: Results for the puzzle solving task. “Match” shows
+the percentage of predicted action sequences that exactly
+match the annotation. “Success” shows the percentage of
+predicted action sequences that result in a winning game con-
+figuration, regardless of the action sequence performed. Fol-
+lowing Branavan et al. (2009), we average across five random
+train / test folds. Our model achieves state-of-the-art results
+on this task.
+</tableCaption>
+<bodyText confidence="0.999752482758621">
+representation, so there is no distinction between
+the full model and the variant without grounding
+graphs.
+Unlike the other tasks we consider, Crossblock
+is distinguished by a challenging associated search
+problem. Here it is nontrivial to find any sequence
+that eliminates all the blocks (the goal of the puz-
+zle). Thus this example allows us measure the ef-
+fectiveness of our search procedure.
+Results are shown in Table 4. As can be seen,
+our model achieves state-of-the-art performance
+on this task when attempting to match the human-
+specified plan exactly. If we are purely concerned
+with task completion (i.e. solving the puzzle, per-
+haps not with the exact set of moves specified
+in the instructions) we can measure this directly.
+Here, too, we substantially outperform a no-text
+baseline. Thus it can be seen that text induces a
+useful heuristic, allowing the model to solve a con-
+siderable fraction of problem instances not solved
+by naive beam search.
+The problem of inducing planning heuristics
+from side information like text is an important
+one in its own right, and future work might focus
+specifically on coupling our system with a more
+sophisticated planner. Even at present, the re-
+sults in this section demonstrate the importance of
+lookahead and high-level reasoning in instruction
+following.
+</bodyText>
+<sectionHeader confidence="0.999286" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999984857142857">
+We have described a new alignment-based com-
+positional model for following sequences of nat-
+ural language instructions, and demonstrated the
+effectiveness of this model on a variety of tasks. A
+fully general solution to the problem of contextual
+interpretation must address a wide range of well-
+studied problems, but the work we have described
+</bodyText>
+<page confidence="0.982101">
+1172
+</page>
+<bodyText confidence="0.999984725">
+here provides modular interfaces for the study of
+a number of fundamental linguistic issues from a
+machine learning perspective. These include:
+Pragmatics How do we respond to presup-
+position failures, and choose among possible
+interpretations of an instruction disambiguated
+only by context? The mechanism provided by
+the sequence-prediction architecture we have de-
+scribed provides a simple answer to this ques-
+tion, and our experimental results demonstrate that
+the learned pragmatics aid interpretation of in-
+structions in a number of concrete ways: am-
+biguous references are resolved by proximity in
+the map reading task, missing steps are inferred
+from an environment model in the maze naviga-
+tion task, and vague hints are turned into real plans
+by knowledge of the rules in Crossblock. A more
+comprehensive solution might explicitly describe
+the process by which instruction-givers’ own be-
+liefs (expressed as distributions over sequences)
+give rise to instructions.
+Compositional semantics The graph alignment
+model of semantics presented here is an expres-
+sive and computationally efficient generalization
+of classical logical techniques to accommodate en-
+vironments like the map task, or those explored
+in our previous work (Andreas and Klein, 2014).
+More broadly, our model provides a compositional
+approach to semantics that does not require an
+explicit formal language for encoding sentence
+meaning. Future work might extend this approach
+to tasks like question answering, where logic-
+based approaches have been successful.
+Our primary goal in this paper has been to ex-
+plore methods for integrating compositional se-
+mantics and the pragmatic context provided by se-
+quential structures. While there is a great deal
+of work left to do, we find it encouraging that
+this general approach results in substantial gains
+across multiple tasks and contexts.
+</bodyText>
+<sectionHeader confidence="0.998812" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.99722025">
+The authors would like to thank S.R.K. Brana-
+van for assistance with the Crossblock evaluation.
+The first author is supported by a National Science
+Foundation Graduate Fellowship.
+</bodyText>
+<sectionHeader confidence="0.995307" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999500942307692">
+Anne H. Anderson, Miles Bader, Ellen Gurman Bard,
+Elizabeth Boyle, Gwyneth Doherty, Simon Garrod,
+Stephen Isard, Jacqueline Kowtko, Jan McAllister,
+Jim Miller, et al. 1991. The HCRC map task corpus.
+Language and speech, 34(4):351–366.
+Jacob Andreas and Dan Klein. 2014. Grounding lan-
+guage with points and paths in continuous spaces. In
+Proceedings of the Conference on Natural Language
+Learning.
+Yoav Artzi and Luke Zettlemoyer. 2013. Weakly su-
+pervised learning of semantic parsers for mapping
+instructions to actions. Transactions of the Associa-
+tion for Computational Linguistics, 1(1):49–62.
+Yoav Artzi, Dipanjan Das, and Slav Petrov. 2014.
+Learning compact lexicons for CCG semantic pars-
+ing. In Proceedings of the Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+1273–1283, Doha, Qatar, October. Association for
+Computational Linguistics.
+Jonathan Berant and Percy Liang. 2014. Semantic
+parsing via paraphrasing. In Proceedings of the An-
+nual Meeting of the Association for Computational
+Linguistics, page 92.
+S.R.K. Branavan, Harr Chen, Luke S. Zettlemoyer, and
+Regina Barzilay. 2009. Reinforcement learning for
+mapping instructions to actions. In Proceedings of
+the Annual Meeting of the Association for Compu-
+tational Linguistics, pages 82–90. Association for
+Computational Linguistics.
+S.R.K. Branavan, David Silver, and Regina Barzilay.
+2011. Learning to win by reading manuals in a
+Monte-Carlo framework. In Proceedings of the Hu-
+man Language Technology Conference of the Asso-
+ciation for Computational Linguistics, pages 268–
+277.
+Peter Brown, Vincent Della Pietra, Stephen Della
+Pietra, and Robert Mercer. 1993. The mathemat-
+ics of statistical machine translation: Parameter esti-
+mation. Computational Linguistics, 19(2):263–311,
+June.
+David L. Chen and Raymond J. Mooney. 2011. Learn-
+ing to interpret natural language navigation instruc-
+tions from observations. In Proceedings of the Meet-
+ing of the Association for the Advancement of Artifi-
+cial Intelligence, volume 2, pages 1–2.
+David L Chen. 2012. Fast online lexicon learning for
+grounded language acquisition. In Proceedings of
+the Annual Meeting of the Association for Computa-
+tional Linguistics, pages 430–439.
+Kais Dukes. 2013. Semantic annotation of robotic spa-
+tial commands. In Language and Technology Con-
+ference (LTC).
+</reference>
+<page confidence="0.73856">
+1173
+</page>
+<reference confidence="0.999900026666667">
+Bevan Jones, Jacob Andreas, Daniel Bauer,
+Karl Moritz Hermann, and Kevin Knight. 2012.
+Semantics-based machine translation with hyper-
+edge replacement grammars. In Proceedings of
+the International Conference on Computational
+Linguistics, pages 1359–1376.
+Joohyun Kim and Raymond J. Mooney. 2012. Un-
+supervised PCFG induction for grounded language
+learning with highly ambiguous supervision. In Pro-
+ceedings of the Conference on Empirical Methods in
+Natural Language Processing, pages 433–444.
+Joohyun Kim and Raymond J. Mooney. 2013. Adapt-
+ing discriminative reranking to grounded language
+learning. In Proceedings of the Annual Meeting of
+the Association for Computational Linguistics.
+Tom Kwiatkowski, Eunsol Choi, Yoav Artzi, and Luke
+Zettlemoyer. 2013. Scaling semantic parsers with
+on-the-fly ontology matching. In Proceedings of the
+Conference on Empirical Methods in Natural Lan-
+guage Processing.
+Percy Liang, Michael I. Jordan, and Dan Klein. 2013.
+Learning dependency-based compositional seman-
+tics. Computational Linguistics, 39(2):389–446.
+Dong Liu and Jorge Nocedal. 1989. On the limited
+memory BFGS method for large scale optimization.
+Mathematical Programming, 45(1-3):503–528.
+Matt MacMahon, Brian Stankiewicz, and Benjamin
+Kuipers. 2006. Walk the talk: Connecting language,
+knowledge, and action in route instructions. Pro-
+ceedings of the Meeting of the Association for the
+Advancement of Artificial Intelligence, 2(6):4.
+Brian McMahan and Matthew Stone. 2015. A
+Bayesian model of grounded color semantics.
+Transactions of the Association for Computational
+Linguistics, 3:103–115.
+Karthik Narasimhan, Tejas Kulkarni, and Regina
+Barzilay. 2015. Language understanding for text-
+based games using deep reinforcement learning. In
+Proceedings of the Conference on Empirical Meth-
+ods in Natural Language Processing.
+Terence Parsons. 1990. Events in the semantics of En-
+glish. MIT Press.
+Panupong Pasupat and Percy Liang. 2015. Composi-
+tional semantic parsing on semi-structured tables. In
+Proceedings of the Annual Meeting of the Associa-
+tion for Computational Linguistics.
+Nima Pourdamghani, Yang Gao, Ulf Hermjakob, and
+Kevin Knight. 2014. Aligning english strings with
+abstract meaning representation graphs. In Proceed-
+ings of the Conference on Empirical Methods in Nat-
+ural Language Processing.
+Siva Reddy, Mirella Lapata, and Mark Steedman.
+2014. Large-scale semantic parsing without
+question-answer pairs. Transactions of the Associ-
+ation for Computational Linguistics, 2:377–392.
+Andreas Vlachos and Stephen Clark. 2014. A new cor-
+pus and imitation learning framework for context-
+dependent semantic parsing. Transactions of the As-
+sociation for Computational Linguistics, 2:547–559.
+Adam Vogel and Dan Jurafsky. 2010. Learning to
+follow navigational directions. In Proceedings of
+the Annual Meeting of the Association for Compu-
+tational Linguistics, pages 806–814. Association for
+Computational Linguistics.
+Yuk Wah Wong and Raymond Mooney. 2006. Learn-
+ing for semantic parsing with statistical machine
+translation. In Proceedings of the Human Lan-
+guage Technology Conference of the North Ameri-
+can Chapter of the Association for Computational
+Linguistics, pages 439–446, New York, New York.
+Luke S. Zettlemoyer and Michael Collins. 2005.
+Learning to map sentences to logical form: Struc-
+tured classification with probabilistic categorial
+grammars. In Proceedings of the Conference on Un-
+certainty in Artificial Intelligence, pages 658–666.
+</reference>
+<page confidence="0.996062">
+1174
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.941316">
+<title confidence="0.999521">Alignment-Based Compositional Semantics for Instruction Following</title>
+<author confidence="0.987944">Andreas</author>
+<affiliation confidence="0.999884">Computer Science University of California,</affiliation>
+<abstract confidence="0.997518631578947">This paper describes an alignment-based model for interpreting natural language instructions in context. We approach instruction following as a search over plans, scoring sequences of actions conditioned on structured observations of text and the environment. By explicitly modeling both the low-level compositional structure of individual actions and the high-level structure of full plans, we are able to learn both grounded representations of sentence meaning and pragmatic constraints on interpretation. To demonstrate the model’s flexibility, we apply it to a diverse set of benchmark tasks. On every task, we outperform strong task-specific baselines, and achieve several new state-of-the-art results.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Anne H Anderson</author>
+<author>Miles Bader</author>
+<author>Ellen Gurman Bard</author>
+<author>Elizabeth Boyle</author>
+<author>Gwyneth Doherty</author>
+<author>Simon Garrod</author>
+<author>Stephen Isard</author>
+<author>Jacqueline Kowtko</author>
+<author>Jan McAllister</author>
+<author>Jim Miller</author>
+</authors>
+<title>The HCRC map task corpus. Language and speech,</title>
+<date>1991</date>
+<pages>34--4</pages>
+<contexts>
+<context position="8473" citStr="Anderson et al., 1991" startWordPosition="1256" endWordPosition="1259">ngle (flat) feature vector representing all text and observations. Such approaches are thus restricted to problems that are simple enough (and have small enough action spaces) to be effectively characterized in this fashion. While there is a great deal of flexibility in the choice of feature function (which is free to inspect the current and future state of the environment, the whole instruction sequence, etc.), standard linear policy estimators have no way to model compositionality in language or actions. Agents in this family have been evaluated on a variety of tasks, including map reading (Anderson et al., 1991) and gameplay (Branavan et al., 2009). Though both families address the same class of instruction-following problems, they have been applied to a totally disjoint set of tasks. It should be emphasized that there is nothing inherent to policy learning that prevents the use of compositional structure, and nothing inherent to general compositional models that prevents more complicated dependence on environment state. Indeed, previous work (Branavan et al., 2011; Narasimhan et al., 2015) uses aspects of both to solve a different class of gameplay problems. In some sense, our goal in this paper is </context>
+<context position="25216" citStr="Anderson et al. (1991)" startWordPosition="3994" endWordPosition="3997">hted two core aspects of our approach to semantics: compositionality (by way of grounding graphs and structure-to-structure alignments) and planning (by way of inference with lookahead and sequence-to-sequence alignments). To evaluate these, we additionally present a pair of ablation experiments: no grounding graphs (an agent with an unstructured representation of environment state), and no planning (a reflex agent with no lookahead). Map reading Our first application is the map navigation task established by Vogel and Jurafsky (2010), based on data collected for a psychological experiment by Anderson et al. (1991) (Figure 1a). Each training datum consists of a map with a designated starting position, and a collection of landmarks, each labeled with a spatial coordinate and a string name. Names are not always unique, and landmarks in the test set are never observed during training. This map is accompanied by a set of instructions specifying a path from the starting position to some (unlabeled) destination point. These instruction sets are informal and redundant, involving as many as a hundred utterances. They are transcribed from spoken text, so grammatical errors, disfluencies, etc. are common. This is</context>
+</contexts>
+<marker>Anderson, Bader, Bard, Boyle, Doherty, Garrod, Isard, Kowtko, McAllister, Miller, 1991</marker>
+<rawString>Anne H. Anderson, Miles Bader, Ellen Gurman Bard, Elizabeth Boyle, Gwyneth Doherty, Simon Garrod, Stephen Isard, Jacqueline Kowtko, Jan McAllister, Jim Miller, et al. 1991. The HCRC map task corpus. Language and speech, 34(4):351–366.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Andreas</author>
+<author>Dan Klein</author>
+</authors>
+<title>Grounding language with points and paths in continuous spaces.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Conference on Natural Language Learning.</booktitle>
+<contexts>
+<context position="14980" citStr="Andreas and Klein, 2014" startWordPosition="2299" endWordPosition="2302">ossible to behave correctly in environments containing novel strings or other features unseen during training. This aspect of the syntax–semantics interface has been troublesome for some logic-based approaches: while past work has used related machinery for selecting lexicon entries (Berant and Liang, 2014) or for rewriting logical forms (Kwiatkowski et al., 2013), the relationship between text and the environment has ultimately been mediated by a discrete (and indeed finite) inventory of predicates. Several recent papers have investigated simple grounded models with realvalued output spaces (Andreas and Klein, 2014; McMahan and Stone, 2015), but we are unaware of any fully compositional system in recent literature that can incorporate observations of these kinds. Formally, we assume access to a joining feature function 0 : (2L x 2L) —* Rd. As with grounding graphs, our goal is to make the general framework as flexible as possible, and for individual experiments have chosen 0 to emulate modeling decisions from previous work. Text Go down the yellow hall. Turn left. Alignments Plans turn left 1168 4 Model As noted in the introduction, we approach instruction following as a sequence prediction problem. Thu</context>
+<context position="25891" citStr="Andreas and Klein (2014)" startWordPosition="4108" endWordPosition="4111"> with a designated starting position, and a collection of landmarks, each labeled with a spatial coordinate and a string name. Names are not always unique, and landmarks in the test set are never observed during training. This map is accompanied by a set of instructions specifying a path from the starting position to some (unlabeled) destination point. These instruction sets are informal and redundant, involving as many as a hundred utterances. They are transcribed from spoken text, so grammatical errors, disfluencies, etc. are common. This is a P R F1 Vogel and Jurafsky (2010) 0.46 0.51 0.48 Andreas and Klein (2014) 0.43 0.51 0.45 Model [no planning] 0.44 0.46 0.45 Model [no grounding graphs] 0.52 0.52 0.52 Model [full] 0.51 0.60 0.55 Table 1: Evaluation results for the map-reading task. P is precision, R is recall and F1 is F-measure. Scores are calculated with respect to transitions between landmarks appearing in the reference path (for details see Vogel and Jurafsky (2010)). We use the same train / test split. Some variant of our model achieves the best published results on all three metrics. Feature Weight word=top ∧ side=North 1.31 word=top ∧ side=South 0.61 word=top ∧ side=East −0.93 dist=0 4.51 di</context>
+<context position="33836" citStr="Andreas and Klein, 2014" startWordPosition="5379" endWordPosition="5382">ng steps are inferred from an environment model in the maze navigation task, and vague hints are turned into real plans by knowledge of the rules in Crossblock. A more comprehensive solution might explicitly describe the process by which instruction-givers’ own beliefs (expressed as distributions over sequences) give rise to instructions. Compositional semantics The graph alignment model of semantics presented here is an expressive and computationally efficient generalization of classical logical techniques to accommodate environments like the map task, or those explored in our previous work (Andreas and Klein, 2014). More broadly, our model provides a compositional approach to semantics that does not require an explicit formal language for encoding sentence meaning. Future work might extend this approach to tasks like question answering, where logicbased approaches have been successful. Our primary goal in this paper has been to explore methods for integrating compositional semantics and the pragmatic context provided by sequential structures. While there is a great deal of work left to do, we find it encouraging that this general approach results in substantial gains across multiple tasks and contexts. </context>
+</contexts>
+<marker>Andreas, Klein, 2014</marker>
+<rawString>Jacob Andreas and Dan Klein. 2014. Grounding language with points and paths in continuous spaces. In Proceedings of the Conference on Natural Language Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+</authors>
+<title>Weakly supervised learning of semantic parsers for mapping instructions to actions.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<contexts>
+<context position="2714" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="382" endWordPosition="385">eld, with alignment potentials to relate instructions to actions and transition potentials to encode the environment model (Figure 3). Explicitly modeling sequenceto-sequence alignments between text and actions allows flexible reasoning about action sequences, enabling the agent to determine which actions are specified (perhaps redundantly) by text, and which actions must be performed automatically (in order to satisfy pragmatic constraints on interpretation). Treating instruction following as a sequence prediction problem, rather than a series of independent decisions (Branavan et al., 2009; Artzi and Zettlemoyer, 2013), makes it possible to use general-purpose planning machinery, greatly increasing inferential power. The fragment of semantics necessary to complete most instruction-following tasks is essentially predicate–argument structure, with limited influence from quantification and scoping. Thus the problem of sentence interpretation can reasonably be modeled as one of finding an alignment between language and the environment it describes. We allow this structure-to-structure alignment— an “overlay” of language onto the world—to be mediated by linguistic structure (in the form of dependency parses) and</context>
+<context position="5574" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="814" endWordPosition="817">of robustly handling all three. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art results. Experiments demonstrate the importance of our contributions in both compositional semantics and search over plans. We have released all code for this project at github.com/jacobandreas/instructions. 2 Related work Existing work on instruction following can be roughly divided into two families: semantic parsers and linear policy estimators. Semantic parsers Parser-based approaches (Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answering (Liang et al., 2013) as</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Yoav Artzi and Luke Zettlemoyer. 2013. Weakly supervised learning of semantic parsers for mapping instructions to actions. Transactions of the Association for Computational Linguistics, 1(1):49–62.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Artzi</author>
+<author>Dipanjan Das</author>
+<author>Slav Petrov</author>
+</authors>
+<title>Learning compact lexicons for CCG semantic parsing.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1273--1283</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Doha, Qatar,</location>
+<contexts>
+<context position="28245" citStr="Artzi et al. (2014)" startWordPosition="4497" endWordPosition="4500">pport for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model learns useful text-independent constraints—in this case, that near destinations should be preferred to far ones. Maze navigation The next application we consider is the maze navigation task of MacMahon et al. (2006) (Figure 1b). Here, a virtual agent is sit1171 Success (%) Kim and Mooney (2012) 57.2 Chen (2012) 57.3 Model [no planning] 58.9 Model [no grounding graphs] 51.7 Model [full] 59.6 Kim and Mooney (2013) [reranked] 62.8 Artzi et al. (2014) [semi-supervised] 65.3 Table 3: Evaluation results for the maze navigation task. “Success” shows the percentage of actions resulting in a correct position and orientation after observing a single instruction. We use the leave-one-map-out evaluation employed by previous work.4 All systems are trained on full action sequences. Our model outperforms several task-specific baselines, as well as a baseline with path structure but no action structure. uated in a maze (whose hallways are distinguished with various wallpapers, carpets, and the presence of a small set of standard objects), and again gi</context>
+<context position="29645" citStr="Artzi et al. (2014)" startWordPosition="4717" endWordPosition="4720">cated approaches. Despite superficial similarity to the previous navigation task, the language and plans required for this task are quite different. The proportion of instructions to actions is much higher (so redundancy much lower), and the interpretation of language is highly compositional. As can be seen in Table 3, we outperform a number of systems purpose-built for this navigation task. We also outperform both variants of our system, most conspicuously the variant without grounding graphs. This highlights the importance of compositional structure. Recent work by Kim and Mooney (2013) and Artzi et al. (2014) has achieved better results; these systems make use of techniques and resources (respectively, discriminative reranking and a seed lexicon of handannotated logical forms) that are largely orthogonal to the ones used here, and might be applied to improve our own results as well. Puzzle solving The last task we consider is the Crossblock task studied by Branavan et al. (2009) (Figure 1c). Here, again, natural language is used to specify a sequence of actions, in this case the solution to a simple game. The environment is simple enough to be captured with a flat feature 4We specifically targeted</context>
+</contexts>
+<marker>Artzi, Das, Petrov, 2014</marker>
+<rawString>Yoav Artzi, Dipanjan Das, and Slav Petrov. 2014. Learning compact lexicons for CCG semantic parsing. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 1273–1283, Doha, Qatar, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Berant</author>
+<author>Percy Liang</author>
+</authors>
+<title>Semantic parsing via paraphrasing.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>92</pages>
+<contexts>
+<context position="14665" citStr="Berant and Liang, 2014" startWordPosition="2251" endWordPosition="2254">must eventually combine features provided by parse trees with features provided by the environment. Examples here might include simple conjunctions (word=yellow ∧ rgb=(0.5, 0.5, 0.0)) or more complicated computations like edit distance between landmark names and lexical items. Features of the latter kind make it possible to behave correctly in environments containing novel strings or other features unseen during training. This aspect of the syntax–semantics interface has been troublesome for some logic-based approaches: while past work has used related machinery for selecting lexicon entries (Berant and Liang, 2014) or for rewriting logical forms (Kwiatkowski et al., 2013), the relationship between text and the environment has ultimately been mediated by a discrete (and indeed finite) inventory of predicates. Several recent papers have investigated simple grounded models with realvalued output spaces (Andreas and Klein, 2014; McMahan and Stone, 2015), but we are unaware of any fully compositional system in recent literature that can incorporate observations of these kinds. Formally, we assume access to a joining feature function 0 : (2L x 2L) —* Rd. As with grounding graphs, our goal is to make the gener</context>
+</contexts>
+<marker>Berant, Liang, 2014</marker>
+<rawString>Jonathan Berant and Percy Liang. 2014. Semantic parsing via paraphrasing. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, page 92.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S R K Branavan</author>
+<author>Harr Chen</author>
+<author>Luke S Zettlemoyer</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Reinforcement learning for mapping instructions to actions.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>82--90</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2684" citStr="Branavan et al., 2009" startWordPosition="378" endWordPosition="381">d conditional random field, with alignment potentials to relate instructions to actions and transition potentials to encode the environment model (Figure 3). Explicitly modeling sequenceto-sequence alignments between text and actions allows flexible reasoning about action sequences, enabling the agent to determine which actions are specified (perhaps redundantly) by text, and which actions must be performed automatically (in order to satisfy pragmatic constraints on interpretation). Treating instruction following as a sequence prediction problem, rather than a series of independent decisions (Branavan et al., 2009; Artzi and Zettlemoyer, 2013), makes it possible to use general-purpose planning machinery, greatly increasing inferential power. The fragment of semantics necessary to complete most instruction-following tasks is essentially predicate–argument structure, with limited influence from quantification and scoping. Thus the problem of sentence interpretation can reasonably be modeled as one of finding an alignment between language and the environment it describes. We allow this structure-to-structure alignment— an “overlay” of language onto the world—to be mediated by linguistic structure (in the </context>
+<context position="4639" citStr="Branavan et al. (2009)" startWordPosition="676" endWordPosition="679">ite close ’cause you don’t otherwise you’re going to be in that stone creek ... Go down the yellow hall. Turn left at the intersection of the yellow and the gray. Clear the right column. Then the other column. Then the row. (a) Map reading (b) Maze navigation (c) Puzzle solving Figure 1: Example tasks handled by our framework. The tasks feature noisy text, over- and under-specification of plans, and challenging search problems. instruction-following benchmarks: the map reading task of Vogel and Jurafsky (2010), the maze navigation task of MacMahon et al. (2006), and the puzzle solving task of Branavan et al. (2009). An example from each is shown in Figure 1. These benchmarks exhibit a range of qualitative properties—both in the length and complexity of their plans, and in the quantity and quality of accompanying language. Each task has been studied in isolation, but we are unaware of any published approaches capable of robustly handling all three. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art results. Experiments demonstrate the importance of our contributions in both compositional semantics and sea</context>
+<context position="7180" citStr="Branavan et al., 2009" startWordPosition="1058" endWordPosition="1061">-engineer a task-specific formal language for describing agent behavior. Thus it is extremely difficult to work with environments that cannot be modeled with a fixed inventory of predicates (e.g. those involving novel strings or arbitrary real quantities). Much of contemporary work in this family is evaluated on the maze navigation task introduced by MacMahon et al. (2006). Dukes (2013) also introduced a “blocks world” task for situated parsing of spatial robot commands. Linear policy estimators An alternative family of approaches is based on learning a policy over primitive actions directly (Branavan et al., 2009; Vogel and Jurafsky, 2010).1 Policybased approaches instantiate a Markov decision process representing the action domain, and apply standard supervised or reinforcement-learning approaches to learn a function for greedily selecting among actions. In linear policy approximators, natural language instructions are incorporated directly into state observations, and reading order 1This is distinct from semantic parsers in which greedy inference happens to have an interpretation as a policy (Vlachos and Clark, 2014). 1166 becomes part of the action selection process. Almost all existing policy-lear</context>
+<context position="8510" citStr="Branavan et al., 2009" startWordPosition="1262" endWordPosition="1265">ng all text and observations. Such approaches are thus restricted to problems that are simple enough (and have small enough action spaces) to be effectively characterized in this fashion. While there is a great deal of flexibility in the choice of feature function (which is free to inspect the current and future state of the environment, the whole instruction sequence, etc.), standard linear policy estimators have no way to model compositionality in language or actions. Agents in this family have been evaluated on a variety of tasks, including map reading (Anderson et al., 1991) and gameplay (Branavan et al., 2009). Though both families address the same class of instruction-following problems, they have been applied to a totally disjoint set of tasks. It should be emphasized that there is nothing inherent to policy learning that prevents the use of compositional structure, and nothing inherent to general compositional models that prevents more complicated dependence on environment state. Indeed, previous work (Branavan et al., 2011; Narasimhan et al., 2015) uses aspects of both to solve a different class of gameplay problems. In some sense, our goal in this paper is simply to combine the strengths of se</context>
+<context position="30022" citStr="Branavan et al. (2009)" startWordPosition="4780" endWordPosition="4783">his navigation task. We also outperform both variants of our system, most conspicuously the variant without grounding graphs. This highlights the importance of compositional structure. Recent work by Kim and Mooney (2013) and Artzi et al. (2014) has achieved better results; these systems make use of techniques and resources (respectively, discriminative reranking and a seed lexicon of handannotated logical forms) that are largely orthogonal to the ones used here, and might be applied to improve our own results as well. Puzzle solving The last task we consider is the Crossblock task studied by Branavan et al. (2009) (Figure 1c). Here, again, natural language is used to specify a sequence of actions, in this case the solution to a simple game. The environment is simple enough to be captured with a flat feature 4We specifically targeted the single-sentence version of this evaluation, as an alternative full-sequence evaluation does not align precisely with our data condition. Match (%) Success (%) No text 54 78 Branavan ’09 63 – Model [no planning] 64 66 Model [full] 70 86 Table 4: Results for the puzzle solving task. “Match” shows the percentage of predicted action sequences that exactly match the annotati</context>
+</contexts>
+<marker>Branavan, Chen, Zettlemoyer, Barzilay, 2009</marker>
+<rawString>S.R.K. Branavan, Harr Chen, Luke S. Zettlemoyer, and Regina Barzilay. 2009. Reinforcement learning for mapping instructions to actions. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, pages 82–90. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S R K Branavan</author>
+<author>David Silver</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Learning to win by reading manuals in a Monte-Carlo framework.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Human Language Technology Conference of the Association for Computational Linguistics,</booktitle>
+<pages>268--277</pages>
+<contexts>
+<context position="8935" citStr="Branavan et al., 2011" startWordPosition="1326" endWordPosition="1329">o model compositionality in language or actions. Agents in this family have been evaluated on a variety of tasks, including map reading (Anderson et al., 1991) and gameplay (Branavan et al., 2009). Though both families address the same class of instruction-following problems, they have been applied to a totally disjoint set of tasks. It should be emphasized that there is nothing inherent to policy learning that prevents the use of compositional structure, and nothing inherent to general compositional models that prevents more complicated dependence on environment state. Indeed, previous work (Branavan et al., 2011; Narasimhan et al., 2015) uses aspects of both to solve a different class of gameplay problems. In some sense, our goal in this paper is simply to combine the strengths of semantic parsers and linear policy estimators for fully general instruction following. As we shall see, however, this requires changes to many aspects of representation, learning and inference. 3 Representations We wish to train a model capable of following commands in a simulated environment. We do so by presenting the model with a sequence of training pairs (x, y), where each x is a sequence of natural language instructio</context>
+</contexts>
+<marker>Branavan, Silver, Barzilay, 2011</marker>
+<rawString>S.R.K. Branavan, David Silver, and Regina Barzilay. 2011. Learning to win by reading manuals in a Monte-Carlo framework. In Proceedings of the Human Language Technology Conference of the Association for Computational Linguistics, pages 268– 277.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Peter Brown</author>
+<author>Vincent Della Pietra</author>
+<author>Stephen Della Pietra</author>
+<author>Robert Mercer</author>
+</authors>
+<title>The mathematics of statistical machine translation: Parameter estimation.</title>
+<date>1993</date>
+<journal>Computational Linguistics,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="17817" citStr="Brown et al., 1993" startWordPosition="2773" endWordPosition="2776">ns of θ. (2) provides context-dependent interpretation of text by means of the structured scoring function 0(x, y; θ), described in the next section. Formally, we associate with each instruction xi a sequence-to-sequence alignment variable ai ∈ 1... n (recalling that n is the number of actions). Then we have2 n p(y,a|x; θ) ∝ exp S 0(n) + 1:0(yj) l j=1 1 1[aj = i] 0(xi, yj) (1) We additionally place a monotonicity constraint on the alignment variables. This model is globally normalized, and for a fixed alignment is equivalent to a linear-chain CRF. In this sense it is analogous to IBM Model I (Brown et al., 1993), with the structured potentials 0(xi, yj) taking the place of lexical translation probabilities. While alignment models from machine translation have previously been used to align words to fragments of semantic parses (Wong and Mooney, 2006; Pourdamghani et al., 2014), we are unaware of such models being used to align entire instruction sequences to demonstrations. Action structure: aligning words to percepts Intuitively, this scoring function 0(x, y) should capture how well a given utterance describes an action. If neither the utterances nor the actions had structure (i.e. both could be repr</context>
+</contexts>
+<marker>Brown, Pietra, Pietra, Mercer, 1993</marker>
+<rawString>Peter Brown, Vincent Della Pietra, Stephen Della Pietra, and Robert Mercer. 1993. The mathematics of statistical machine translation: Parameter estimation. Computational Linguistics, 19(2):263–311, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David L Chen</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Learning to interpret natural language navigation instructions from observations.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Meeting of the Association for the Advancement of Artificial Intelligence,</booktitle>
+<volume>2</volume>
+<pages>1--2</pages>
+<contexts>
+<context position="5545" citStr="Chen and Mooney, 2011" startWordPosition="810" endWordPosition="813">hed approaches capable of robustly handling all three. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art results. Experiments demonstrate the importance of our contributions in both compositional semantics and search over plans. We have released all code for this project at github.com/jacobandreas/instructions. 2 Related work Existing work on instruction following can be roughly divided into two families: semantic parsers and linear policy estimators. Semantic parsers Parser-based approaches (Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answ</context>
+</contexts>
+<marker>Chen, Mooney, 2011</marker>
+<rawString>David L. Chen and Raymond J. Mooney. 2011. Learning to interpret natural language navigation instructions from observations. In Proceedings of the Meeting of the Association for the Advancement of Artificial Intelligence, volume 2, pages 1–2.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David L Chen</author>
+</authors>
+<title>Fast online lexicon learning for grounded language acquisition.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>430--439</pages>
+<contexts>
+<context position="28106" citStr="Chen (2012)" startWordPosition="4476" endWordPosition="4477"> directions (the example shows the preferred side of a destination landmark modified by the word top). Like Vogel et al., we see support for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model learns useful text-independent constraints—in this case, that near destinations should be preferred to far ones. Maze navigation The next application we consider is the maze navigation task of MacMahon et al. (2006) (Figure 1b). Here, a virtual agent is sit1171 Success (%) Kim and Mooney (2012) 57.2 Chen (2012) 57.3 Model [no planning] 58.9 Model [no grounding graphs] 51.7 Model [full] 59.6 Kim and Mooney (2013) [reranked] 62.8 Artzi et al. (2014) [semi-supervised] 65.3 Table 3: Evaluation results for the maze navigation task. “Success” shows the percentage of actions resulting in a correct position and orientation after observing a single instruction. We use the leave-one-map-out evaluation employed by previous work.4 All systems are trained on full action sequences. Our model outperforms several task-specific baselines, as well as a baseline with path structure but no action structure. uated in a </context>
+</contexts>
+<marker>Chen, 2012</marker>
+<rawString>David L Chen. 2012. Fast online lexicon learning for grounded language acquisition. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, pages 430–439.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kais Dukes</author>
+</authors>
+<title>Semantic annotation of robotic spatial commands.</title>
+<date>2013</date>
+<booktitle>In Language and Technology Conference (LTC).</booktitle>
+<contexts>
+<context position="6948" citStr="Dukes (2013)" startWordPosition="1022" endWordPosition="1023">ironment is manipulated only through black-box execution of the completed semantic parse, there is no way to incorporate current or future environment state into the scoring function. It is also in general necessary to hand-engineer a task-specific formal language for describing agent behavior. Thus it is extremely difficult to work with environments that cannot be modeled with a fixed inventory of predicates (e.g. those involving novel strings or arbitrary real quantities). Much of contemporary work in this family is evaluated on the maze navigation task introduced by MacMahon et al. (2006). Dukes (2013) also introduced a “blocks world” task for situated parsing of spatial robot commands. Linear policy estimators An alternative family of approaches is based on learning a policy over primitive actions directly (Branavan et al., 2009; Vogel and Jurafsky, 2010).1 Policybased approaches instantiate a Markov decision process representing the action domain, and apply standard supervised or reinforcement-learning approaches to learn a function for greedily selecting among actions. In linear policy approximators, natural language instructions are incorporated directly into state observations, and rea</context>
+</contexts>
+<marker>Dukes, 2013</marker>
+<rawString>Kais Dukes. 2013. Semantic annotation of robotic spatial commands. In Language and Technology Conference (LTC).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bevan Jones</author>
+<author>Jacob Andreas</author>
+<author>Daniel Bauer</author>
+<author>Karl Moritz Hermann</author>
+<author>Kevin Knight</author>
+</authors>
+<title>Semantics-based machine translation with hyperedge replacement grammars.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the International Conference on Computational Linguistics,</booktitle>
+<pages>1359--1376</pages>
+<contexts>
+<context position="12773" citStr="Jones et al., 2012" startWordPosition="1971" endWordPosition="1974">construction. Our goal with the grounding graph framework is simply to accommodate a wider range of modeling decisions than allowed by existing formalisms. Graphs might be constructed directly, given access to a structured virtual environment (as in all experiments in this paper), or alternatively from outputs of a perceptual system. For our experiments, we have remained as close as possible to task representations described in the existing literature. Details for each task can be found in the accompanying software package. Graph-based representations are extremely common in formal semantics (Jones et al., 2012; Reddy et al., 2014), and the version presented here corresponds to a simple generalization of familiar formal methods. Indeed, if L is the set of all atomic entities and relations, fV returns a unique label for every v E V , and fE always returns a vector with one active feature, we recover the existentially-quantified portion of first order logic exactly, and in this form can implement large parts of classical neo-Davidsonian semantics (Parsons, 1990) using grounding graphs. Crucially, with an appropriate choice of L this formalism also makes it possible to go beyond settheoretic relations,</context>
+</contexts>
+<marker>Jones, Andreas, Bauer, Hermann, Knight, 2012</marker>
+<rawString>Bevan Jones, Jacob Andreas, Daniel Bauer, Karl Moritz Hermann, and Kevin Knight. 2012. Semantics-based machine translation with hyperedge replacement grammars. In Proceedings of the International Conference on Computational Linguistics, pages 1359–1376.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joohyun Kim</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Unsupervised PCFG induction for grounded language learning with highly ambiguous supervision.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>433--444</pages>
+<contexts>
+<context position="28089" citStr="Kim and Mooney (2012)" startWordPosition="4471" endWordPosition="4474">l correctly infers cardinal directions (the example shows the preferred side of a destination landmark modified by the word top). Like Vogel et al., we see support for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model learns useful text-independent constraints—in this case, that near destinations should be preferred to far ones. Maze navigation The next application we consider is the maze navigation task of MacMahon et al. (2006) (Figure 1b). Here, a virtual agent is sit1171 Success (%) Kim and Mooney (2012) 57.2 Chen (2012) 57.3 Model [no planning] 58.9 Model [no grounding graphs] 51.7 Model [full] 59.6 Kim and Mooney (2013) [reranked] 62.8 Artzi et al. (2014) [semi-supervised] 65.3 Table 3: Evaluation results for the maze navigation task. “Success” shows the percentage of actions resulting in a correct position and orientation after observing a single instruction. We use the leave-one-map-out evaluation employed by previous work.4 All systems are trained on full action sequences. Our model outperforms several task-specific baselines, as well as a baseline with path structure but no action struc</context>
+</contexts>
+<marker>Kim, Mooney, 2012</marker>
+<rawString>Joohyun Kim and Raymond J. Mooney. 2012. Unsupervised PCFG induction for grounded language learning with highly ambiguous supervision. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 433–444.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joohyun Kim</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Adapting discriminative reranking to grounded language learning.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="5597" citStr="Kim and Mooney, 2013" startWordPosition="818" endWordPosition="821">e. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art results. Experiments demonstrate the importance of our contributions in both compositional semantics and search over plans. We have released all code for this project at github.com/jacobandreas/instructions. 2 Related work Existing work on instruction following can be roughly divided into two families: semantic parsers and linear policy estimators. Semantic parsers Parser-based approaches (Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answering (Liang et al., 2013) as a special case.) This </context>
+<context position="28209" citStr="Kim and Mooney (2013)" startWordPosition="4491" endWordPosition="4494">ord top). Like Vogel et al., we see support for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model learns useful text-independent constraints—in this case, that near destinations should be preferred to far ones. Maze navigation The next application we consider is the maze navigation task of MacMahon et al. (2006) (Figure 1b). Here, a virtual agent is sit1171 Success (%) Kim and Mooney (2012) 57.2 Chen (2012) 57.3 Model [no planning] 58.9 Model [no grounding graphs] 51.7 Model [full] 59.6 Kim and Mooney (2013) [reranked] 62.8 Artzi et al. (2014) [semi-supervised] 65.3 Table 3: Evaluation results for the maze navigation task. “Success” shows the percentage of actions resulting in a correct position and orientation after observing a single instruction. We use the leave-one-map-out evaluation employed by previous work.4 All systems are trained on full action sequences. Our model outperforms several task-specific baselines, as well as a baseline with path structure but no action structure. uated in a maze (whose hallways are distinguished with various wallpapers, carpets, and the presence of a small se</context>
+<context position="29621" citStr="Kim and Mooney (2013)" startWordPosition="4712" endWordPosition="4715">g in a variety of sophisticated approaches. Despite superficial similarity to the previous navigation task, the language and plans required for this task are quite different. The proportion of instructions to actions is much higher (so redundancy much lower), and the interpretation of language is highly compositional. As can be seen in Table 3, we outperform a number of systems purpose-built for this navigation task. We also outperform both variants of our system, most conspicuously the variant without grounding graphs. This highlights the importance of compositional structure. Recent work by Kim and Mooney (2013) and Artzi et al. (2014) has achieved better results; these systems make use of techniques and resources (respectively, discriminative reranking and a seed lexicon of handannotated logical forms) that are largely orthogonal to the ones used here, and might be applied to improve our own results as well. Puzzle solving The last task we consider is the Crossblock task studied by Branavan et al. (2009) (Figure 1c). Here, again, natural language is used to specify a sequence of actions, in this case the solution to a simple game. The environment is simple enough to be captured with a flat feature 4</context>
+</contexts>
+<marker>Kim, Mooney, 2013</marker>
+<rawString>Joohyun Kim and Raymond J. Mooney. 2013. Adapting discriminative reranking to grounded language learning. In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tom Kwiatkowski</author>
+<author>Eunsol Choi</author>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+</authors>
+<title>Scaling semantic parsers with on-the-fly ontology matching.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="14723" citStr="Kwiatkowski et al., 2013" startWordPosition="2260" endWordPosition="2263"> with features provided by the environment. Examples here might include simple conjunctions (word=yellow ∧ rgb=(0.5, 0.5, 0.0)) or more complicated computations like edit distance between landmark names and lexical items. Features of the latter kind make it possible to behave correctly in environments containing novel strings or other features unseen during training. This aspect of the syntax–semantics interface has been troublesome for some logic-based approaches: while past work has used related machinery for selecting lexicon entries (Berant and Liang, 2014) or for rewriting logical forms (Kwiatkowski et al., 2013), the relationship between text and the environment has ultimately been mediated by a discrete (and indeed finite) inventory of predicates. Several recent papers have investigated simple grounded models with realvalued output spaces (Andreas and Klein, 2014; McMahan and Stone, 2015), but we are unaware of any fully compositional system in recent literature that can incorporate observations of these kinds. Formally, we assume access to a joining feature function 0 : (2L x 2L) —* Rd. As with grounding graphs, our goal is to make the general framework as flexible as possible, and for individual e</context>
+</contexts>
+<marker>Kwiatkowski, Choi, Artzi, Zettlemoyer, 2013</marker>
+<rawString>Tom Kwiatkowski, Eunsol Choi, Yoav Artzi, and Luke Zettlemoyer. 2013. Scaling semantic parsers with on-the-fly ontology matching. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Michael I Jordan</author>
+<author>Dan Klein</author>
+</authors>
+<title>Learning dependency-based compositional semantics.</title>
+<date>2013</date>
+<journal>Computational Linguistics,</journal>
+<volume>39</volume>
+<issue>2</issue>
+<contexts>
+<context position="6171" citStr="Liang et al., 2013" startWordPosition="900" endWordPosition="903"> and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answering (Liang et al., 2013) as a special case.) This approach uses a well-studied mechanism for compositional interpretation of language, but is subject to certain limitations. Because the environment is manipulated only through black-box execution of the completed semantic parse, there is no way to incorporate current or future environment state into the scoring function. It is also in general necessary to hand-engineer a task-specific formal language for describing agent behavior. Thus it is extremely difficult to work with environments that cannot be modeled with a fixed inventory of predicates (e.g. those involving </context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2013</marker>
+<rawString>Percy Liang, Michael I. Jordan, and Dan Klein. 2013. Learning dependency-based compositional semantics. Computational Linguistics, 39(2):389–446.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dong Liu</author>
+<author>Jorge Nocedal</author>
+</authors>
+<title>On the limited memory BFGS method for large scale optimization.</title>
+<date>1989</date>
+<booktitle>Mathematical Programming,</booktitle>
+<pages>45--1</pages>
+<contexts>
+<context position="23007" citStr="Liu and Nocedal, 1989" startWordPosition="3649" endWordPosition="3652">ximization, then perform iterated conditional modes, alternating between maximization of the conditional probability of a and θ. We begin by initializing θ randomly. As noted in the preceding section, the variable b does not appear in these equations. Conditioned on a, the sum over structure-to-structure ψ(x, y) = Eb ψ(x, y, b) can be performed exactly using a simple dynamic program which runs in time O(|x||y|) (assuming out-degree bounded by a constant, and with |x |and |y |the number of words and graph nodes respectively). This is Algorithm 1. In our experiments, θ is optimized using LBFGS (Liu and Nocedal, 1989). Calculation of the gradient with respect to θ requires computation of a normalizing constant involving the sum over p(x, y&apos;, a) for all y&apos;. While in principle the normalizing constant can be computed using the forward algorithm, in practice the state spaces under consideration are so large that even this is intractable. Thus we make an additional approximation, constructing a set Y˜ of alternative actions and taking exp{ψ(yj)+Emi=1 1[ai=j]ψ(xi,yi)} E˜y∈ Y˜ exp{ψ(˜y)+Emi=1 1[ai=j]ψ(xi,˜y)} � + (k,l)Ed(x,y) n p(y, a|x) ≈ j=1 1170 Y˜ is constructed by sampling alternative actions from the envir</context>
+</contexts>
+<marker>Liu, Nocedal, 1989</marker>
+<rawString>Dong Liu and Jorge Nocedal. 1989. On the limited memory BFGS method for large scale optimization. Mathematical Programming, 45(1-3):503–528.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matt MacMahon</author>
+<author>Brian Stankiewicz</author>
+<author>Benjamin Kuipers</author>
+</authors>
+<title>Walk the talk: Connecting language, knowledge, and action in route instructions.</title>
+<date>2006</date>
+<booktitle>Proceedings of the Meeting of the Association for the Advancement of Artificial Intelligence,</booktitle>
+<volume>2</volume>
+<issue>6</issue>
+<contexts>
+<context position="4584" citStr="MacMahon et al. (2006)" startWordPosition="666" endWordPosition="669">tics. 2 3 1 ... right round the white water but stay quite close ’cause you don’t otherwise you’re going to be in that stone creek ... Go down the yellow hall. Turn left at the intersection of the yellow and the gray. Clear the right column. Then the other column. Then the row. (a) Map reading (b) Maze navigation (c) Puzzle solving Figure 1: Example tasks handled by our framework. The tasks feature noisy text, over- and under-specification of plans, and challenging search problems. instruction-following benchmarks: the map reading task of Vogel and Jurafsky (2010), the maze navigation task of MacMahon et al. (2006), and the puzzle solving task of Branavan et al. (2009). An example from each is shown in Figure 1. These benchmarks exhibit a range of qualitative properties—both in the length and complexity of their plans, and in the quantity and quality of accompanying language. Each task has been studied in isolation, but we are unaware of any published approaches capable of robustly handling all three. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art results. Experiments demonstrate the importance of ou</context>
+<context position="6934" citStr="MacMahon et al. (2006)" startWordPosition="1018" endWordPosition="1021">tations. Because the environment is manipulated only through black-box execution of the completed semantic parse, there is no way to incorporate current or future environment state into the scoring function. It is also in general necessary to hand-engineer a task-specific formal language for describing agent behavior. Thus it is extremely difficult to work with environments that cannot be modeled with a fixed inventory of predicates (e.g. those involving novel strings or arbitrary real quantities). Much of contemporary work in this family is evaluated on the maze navigation task introduced by MacMahon et al. (2006). Dukes (2013) also introduced a “blocks world” task for situated parsing of spatial robot commands. Linear policy estimators An alternative family of approaches is based on learning a policy over primitive actions directly (Branavan et al., 2009; Vogel and Jurafsky, 2010).1 Policybased approaches instantiate a Markov decision process representing the action domain, and apply standard supervised or reinforcement-learning approaches to learn a function for greedily selecting among actions. In linear policy approximators, natural language instructions are incorporated directly into state observa</context>
+<context position="28009" citStr="MacMahon et al. (2006)" startWordPosition="4456" endWordPosition="4459">tial margin (Table 1). Some learned feature values are shown in Table 2. The model correctly infers cardinal directions (the example shows the preferred side of a destination landmark modified by the word top). Like Vogel et al., we see support for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model learns useful text-independent constraints—in this case, that near destinations should be preferred to far ones. Maze navigation The next application we consider is the maze navigation task of MacMahon et al. (2006) (Figure 1b). Here, a virtual agent is sit1171 Success (%) Kim and Mooney (2012) 57.2 Chen (2012) 57.3 Model [no planning] 58.9 Model [no grounding graphs] 51.7 Model [full] 59.6 Kim and Mooney (2013) [reranked] 62.8 Artzi et al. (2014) [semi-supervised] 65.3 Table 3: Evaluation results for the maze navigation task. “Success” shows the percentage of actions resulting in a correct position and orientation after observing a single instruction. We use the leave-one-map-out evaluation employed by previous work.4 All systems are trained on full action sequences. Our model outperforms several task-s</context>
+</contexts>
+<marker>MacMahon, Stankiewicz, Kuipers, 2006</marker>
+<rawString>Matt MacMahon, Brian Stankiewicz, and Benjamin Kuipers. 2006. Walk the talk: Connecting language, knowledge, and action in route instructions. Proceedings of the Meeting of the Association for the Advancement of Artificial Intelligence, 2(6):4.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Brian McMahan</author>
+<author>Matthew Stone</author>
+</authors>
+<title>A Bayesian model of grounded color semantics.</title>
+<date>2015</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>3--103</pages>
+<contexts>
+<context position="15006" citStr="McMahan and Stone, 2015" startWordPosition="2303" endWordPosition="2306">ly in environments containing novel strings or other features unseen during training. This aspect of the syntax–semantics interface has been troublesome for some logic-based approaches: while past work has used related machinery for selecting lexicon entries (Berant and Liang, 2014) or for rewriting logical forms (Kwiatkowski et al., 2013), the relationship between text and the environment has ultimately been mediated by a discrete (and indeed finite) inventory of predicates. Several recent papers have investigated simple grounded models with realvalued output spaces (Andreas and Klein, 2014; McMahan and Stone, 2015), but we are unaware of any fully compositional system in recent literature that can incorporate observations of these kinds. Formally, we assume access to a joining feature function 0 : (2L x 2L) —* Rd. As with grounding graphs, our goal is to make the general framework as flexible as possible, and for individual experiments have chosen 0 to emulate modeling decisions from previous work. Text Go down the yellow hall. Turn left. Alignments Plans turn left 1168 4 Model As noted in the introduction, we approach instruction following as a sequence prediction problem. Thus we must place a distribu</context>
+</contexts>
+<marker>McMahan, Stone, 2015</marker>
+<rawString>Brian McMahan and Matthew Stone. 2015. A Bayesian model of grounded color semantics. Transactions of the Association for Computational Linguistics, 3:103–115.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karthik Narasimhan</author>
+<author>Tejas Kulkarni</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Language understanding for textbased games using deep reinforcement learning.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="8961" citStr="Narasimhan et al., 2015" startWordPosition="1330" endWordPosition="1333">y in language or actions. Agents in this family have been evaluated on a variety of tasks, including map reading (Anderson et al., 1991) and gameplay (Branavan et al., 2009). Though both families address the same class of instruction-following problems, they have been applied to a totally disjoint set of tasks. It should be emphasized that there is nothing inherent to policy learning that prevents the use of compositional structure, and nothing inherent to general compositional models that prevents more complicated dependence on environment state. Indeed, previous work (Branavan et al., 2011; Narasimhan et al., 2015) uses aspects of both to solve a different class of gameplay problems. In some sense, our goal in this paper is simply to combine the strengths of semantic parsers and linear policy estimators for fully general instruction following. As we shall see, however, this requires changes to many aspects of representation, learning and inference. 3 Representations We wish to train a model capable of following commands in a simulated environment. We do so by presenting the model with a sequence of training pairs (x, y), where each x is a sequence of natural language instructions (x1, x2, ... , xm), e.g</context>
+</contexts>
+<marker>Narasimhan, Kulkarni, Barzilay, 2015</marker>
+<rawString>Karthik Narasimhan, Tejas Kulkarni, and Regina Barzilay. 2015. Language understanding for textbased games using deep reinforcement learning. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Terence Parsons</author>
+</authors>
+<title>Events in the semantics of English.</title>
+<date>1990</date>
+<publisher>MIT Press.</publisher>
+<contexts>
+<context position="13231" citStr="Parsons, 1990" startWordPosition="2049" endWordPosition="2050">ls for each task can be found in the accompanying software package. Graph-based representations are extremely common in formal semantics (Jones et al., 2012; Reddy et al., 2014), and the version presented here corresponds to a simple generalization of familiar formal methods. Indeed, if L is the set of all atomic entities and relations, fV returns a unique label for every v E V , and fE always returns a vector with one active feature, we recover the existentially-quantified portion of first order logic exactly, and in this form can implement large parts of classical neo-Davidsonian semantics (Parsons, 1990) using grounding graphs. Crucially, with an appropriate choice of L this formalism also makes it possible to go beyond settheoretic relations, and incorporate string-valued features (like names of entities and landmarks) and real-valued features (like colors and positions) as well. Figure 3: Our model is a conditional random field that describes distributions over state-action sequences conditioned on input text. Each variable’s domain is a structured value. Sentences align to a subset of the state–action sequences, with the rest of the states filled in by pragmatic (planning) implication. Sta</context>
+</contexts>
+<marker>Parsons, 1990</marker>
+<rawString>Terence Parsons. 1990. Events in the semantics of English. MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Panupong Pasupat</author>
+<author>Percy Liang</author>
+</authors>
+<title>Compositional semantic parsing on semi-structured tables.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="20219" citStr="Pasupat and Liang, 2015" startWordPosition="3152" endWordPosition="3155">ed) random variable. However, the two kinds of alignments are treated differently for purposes of inference, so it is useful to maintain a notational distinction. m +� i=1 n j=1 1169 and that each lexical item is associated with a small set of functional forms. Here we simply allow all words to license all predicates, multiple words to specify the same predicate, and some edges to be skipped. We instead rely on a scoring function to impose soft versions of the hard constraints typically provided by a grammar. Related models have previously been used for question answering (Reddy et al., 2014; Pasupat and Liang, 2015). For the moment let us introduce variables b to denote these structure-to-structure alignments. (As will be seen in the following section, it is straightforward to marginalize over all choices of b. Thus the structure-to-structure alignments are never explicitly instantiated during inference, and do not appear in the final form of ψ(x, y).) For a fixed alignment, we define ψ(x, y, b) according to a recurrence relation. Let xi be the ith word of the sentence, and let yj be the jth node in the action graph (under some topological ordering). Let c(i) and c(j) give the indices of the dependents o</context>
+</contexts>
+<marker>Pasupat, Liang, 2015</marker>
+<rawString>Panupong Pasupat and Percy Liang. 2015. Compositional semantic parsing on semi-structured tables. In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nima Pourdamghani</author>
+<author>Yang Gao</author>
+<author>Ulf Hermjakob</author>
+<author>Kevin Knight</author>
+</authors>
+<title>Aligning english strings with abstract meaning representation graphs.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="1620" citStr="Pourdamghani et al., 2014" startWordPosition="227" endWordPosition="230">al or simulated environment, in response to a sequence of natural language commands. Examples include giving navigational directions to robots and providing hints to automated game-playing agents. Plans specified with natural language exhibit compositionality both at the level of individual actions and at the overall sequence level. This paper describes a framework for learning to follow instructions by leveraging structure at both levels. Our primary contribution is a new, alignmentbased approach to grounded compositional semantics. Building on related logical approaches (Reddy et al., 2014; Pourdamghani et al., 2014), we recast instruction following as a pair of nested, structured alignment problems. Given instructions and a candidate plan, the model infers a sequenceto-sequence alignment between sentences and atomic actions. Within each sentence–action pair, the model infers a structure-to-structure alignment between the syntax of the sentence and a graphbased representation of the action. At a high level, our agent is a block-structured, graph-valued conditional random field, with alignment potentials to relate instructions to actions and transition potentials to encode the environment model (Figure 3).</context>
+<context position="18086" citStr="Pourdamghani et al., 2014" startWordPosition="2812" endWordPosition="2815"> that n is the number of actions). Then we have2 n p(y,a|x; θ) ∝ exp S 0(n) + 1:0(yj) l j=1 1 1[aj = i] 0(xi, yj) (1) We additionally place a monotonicity constraint on the alignment variables. This model is globally normalized, and for a fixed alignment is equivalent to a linear-chain CRF. In this sense it is analogous to IBM Model I (Brown et al., 1993), with the structured potentials 0(xi, yj) taking the place of lexical translation probabilities. While alignment models from machine translation have previously been used to align words to fragments of semantic parses (Wong and Mooney, 2006; Pourdamghani et al., 2014), we are unaware of such models being used to align entire instruction sequences to demonstrations. Action structure: aligning words to percepts Intuitively, this scoring function 0(x, y) should capture how well a given utterance describes an action. If neither the utterances nor the actions had structure (i.e. both could be represented with simple bags of features), we would recover something analogous to the conventional policy-learning approach. As structure is essential for some of our tasks, 0(x, y) must instead fill the role of a semantic parser in a conventional compositional model. Our</context>
+</contexts>
+<marker>Pourdamghani, Gao, Hermjakob, Knight, 2014</marker>
+<rawString>Nima Pourdamghani, Yang Gao, Ulf Hermjakob, and Kevin Knight. 2014. Aligning english strings with abstract meaning representation graphs. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Siva Reddy</author>
+<author>Mirella Lapata</author>
+<author>Mark Steedman</author>
+</authors>
+<title>Large-scale semantic parsing without question-answer pairs.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>2--377</pages>
+<contexts>
+<context position="1592" citStr="Reddy et al., 2014" startWordPosition="223" endWordPosition="226">e of actions in a real or simulated environment, in response to a sequence of natural language commands. Examples include giving navigational directions to robots and providing hints to automated game-playing agents. Plans specified with natural language exhibit compositionality both at the level of individual actions and at the overall sequence level. This paper describes a framework for learning to follow instructions by leveraging structure at both levels. Our primary contribution is a new, alignmentbased approach to grounded compositional semantics. Building on related logical approaches (Reddy et al., 2014; Pourdamghani et al., 2014), we recast instruction following as a pair of nested, structured alignment problems. Given instructions and a candidate plan, the model infers a sequenceto-sequence alignment between sentences and atomic actions. Within each sentence–action pair, the model infers a structure-to-structure alignment between the syntax of the sentence and a graphbased representation of the action. At a high level, our agent is a block-structured, graph-valued conditional random field, with alignment potentials to relate instructions to actions and transition potentials to encode the e</context>
+<context position="12794" citStr="Reddy et al., 2014" startWordPosition="1975" endWordPosition="1978">al with the grounding graph framework is simply to accommodate a wider range of modeling decisions than allowed by existing formalisms. Graphs might be constructed directly, given access to a structured virtual environment (as in all experiments in this paper), or alternatively from outputs of a perceptual system. For our experiments, we have remained as close as possible to task representations described in the existing literature. Details for each task can be found in the accompanying software package. Graph-based representations are extremely common in formal semantics (Jones et al., 2012; Reddy et al., 2014), and the version presented here corresponds to a simple generalization of familiar formal methods. Indeed, if L is the set of all atomic entities and relations, fV returns a unique label for every v E V , and fE always returns a vector with one active feature, we recover the existentially-quantified portion of first order logic exactly, and in this form can implement large parts of classical neo-Davidsonian semantics (Parsons, 1990) using grounding graphs. Crucially, with an appropriate choice of L this formalism also makes it possible to go beyond settheoretic relations, and incorporate stri</context>
+<context position="20193" citStr="Reddy et al., 2014" startWordPosition="3148" endWordPosition="3151">s a single (structured) random variable. However, the two kinds of alignments are treated differently for purposes of inference, so it is useful to maintain a notational distinction. m +� i=1 n j=1 1169 and that each lexical item is associated with a small set of functional forms. Here we simply allow all words to license all predicates, multiple words to specify the same predicate, and some edges to be skipped. We instead rely on a scoring function to impose soft versions of the hard constraints typically provided by a grammar. Related models have previously been used for question answering (Reddy et al., 2014; Pasupat and Liang, 2015). For the moment let us introduce variables b to denote these structure-to-structure alignments. (As will be seen in the following section, it is straightforward to marginalize over all choices of b. Thus the structure-to-structure alignments are never explicitly instantiated during inference, and do not appear in the final form of ψ(x, y).) For a fixed alignment, we define ψ(x, y, b) according to a recurrence relation. Let xi be the ith word of the sentence, and let yj be the jth node in the action graph (under some topological ordering). Let c(i) and c(j) give the i</context>
+</contexts>
+<marker>Reddy, Lapata, Steedman, 2014</marker>
+<rawString>Siva Reddy, Mirella Lapata, and Mark Steedman. 2014. Large-scale semantic parsing without question-answer pairs. Transactions of the Association for Computational Linguistics, 2:377–392.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Vlachos</author>
+<author>Stephen Clark</author>
+</authors>
+<title>A new corpus and imitation learning framework for contextdependent semantic parsing.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>2--547</pages>
+<contexts>
+<context position="7696" citStr="Vlachos and Clark, 2014" startWordPosition="1131" endWordPosition="1135">ve family of approaches is based on learning a policy over primitive actions directly (Branavan et al., 2009; Vogel and Jurafsky, 2010).1 Policybased approaches instantiate a Markov decision process representing the action domain, and apply standard supervised or reinforcement-learning approaches to learn a function for greedily selecting among actions. In linear policy approximators, natural language instructions are incorporated directly into state observations, and reading order 1This is distinct from semantic parsers in which greedy inference happens to have an interpretation as a policy (Vlachos and Clark, 2014). 1166 becomes part of the action selection process. Almost all existing policy-learning approaches make use of an unstructured parameterization, with a single (flat) feature vector representing all text and observations. Such approaches are thus restricted to problems that are simple enough (and have small enough action spaces) to be effectively characterized in this fashion. While there is a great deal of flexibility in the choice of feature function (which is free to inspect the current and future state of the environment, the whole instruction sequence, etc.), standard linear policy estima</context>
+</contexts>
+<marker>Vlachos, Clark, 2014</marker>
+<rawString>Andreas Vlachos and Stephen Clark. 2014. A new corpus and imitation learning framework for contextdependent semantic parsing. Transactions of the Association for Computational Linguistics, 2:547–559.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adam Vogel</author>
+<author>Dan Jurafsky</author>
+</authors>
+<title>Learning to follow navigational directions.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>806--814</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4532" citStr="Vogel and Jurafsky (2010)" startWordPosition="657" endWordPosition="660">mber 2015. c�2015 Association for Computational Linguistics. 2 3 1 ... right round the white water but stay quite close ’cause you don’t otherwise you’re going to be in that stone creek ... Go down the yellow hall. Turn left at the intersection of the yellow and the gray. Clear the right column. Then the other column. Then the row. (a) Map reading (b) Maze navigation (c) Puzzle solving Figure 1: Example tasks handled by our framework. The tasks feature noisy text, over- and under-specification of plans, and challenging search problems. instruction-following benchmarks: the map reading task of Vogel and Jurafsky (2010), the maze navigation task of MacMahon et al. (2006), and the puzzle solving task of Branavan et al. (2009). An example from each is shown in Figure 1. These benchmarks exhibit a range of qualitative properties—both in the length and complexity of their plans, and in the quantity and quality of accompanying language. Each task has been studied in isolation, but we are unaware of any published approaches capable of robustly handling all three. Our general model outperforms strong, task-specific baselines in each case, achieving relative error reductions of 15–20% over several state-of-the-art r</context>
+<context position="7207" citStr="Vogel and Jurafsky, 2010" startWordPosition="1062" endWordPosition="1065">ic formal language for describing agent behavior. Thus it is extremely difficult to work with environments that cannot be modeled with a fixed inventory of predicates (e.g. those involving novel strings or arbitrary real quantities). Much of contemporary work in this family is evaluated on the maze navigation task introduced by MacMahon et al. (2006). Dukes (2013) also introduced a “blocks world” task for situated parsing of spatial robot commands. Linear policy estimators An alternative family of approaches is based on learning a policy over primitive actions directly (Branavan et al., 2009; Vogel and Jurafsky, 2010).1 Policybased approaches instantiate a Markov decision process representing the action domain, and apply standard supervised or reinforcement-learning approaches to learn a function for greedily selecting among actions. In linear policy approximators, natural language instructions are incorporated directly into state observations, and reading order 1This is distinct from semantic parsers in which greedy inference happens to have an interpretation as a policy (Vlachos and Clark, 2014). 1166 becomes part of the action selection process. Almost all existing policy-learning approaches make use of</context>
+<context position="25134" citStr="Vogel and Jurafsky (2010)" startWordPosition="3981" endWordPosition="3984">m to recent state-of-the-art approaches to each task. In the introduction, we highlighted two core aspects of our approach to semantics: compositionality (by way of grounding graphs and structure-to-structure alignments) and planning (by way of inference with lookahead and sequence-to-sequence alignments). To evaluate these, we additionally present a pair of ablation experiments: no grounding graphs (an agent with an unstructured representation of environment state), and no planning (a reflex agent with no lookahead). Map reading Our first application is the map navigation task established by Vogel and Jurafsky (2010), based on data collected for a psychological experiment by Anderson et al. (1991) (Figure 1a). Each training datum consists of a map with a designated starting position, and a collection of landmarks, each labeled with a spatial coordinate and a string name. Names are not always unique, and landmarks in the test set are never observed during training. This map is accompanied by a set of instructions specifying a path from the starting position to some (unlabeled) destination point. These instruction sets are informal and redundant, involving as many as a hundred utterances. They are transcrib</context>
+<context position="27196" citStr="Vogel and Jurafsky (2010)" startWordPosition="4317" endWordPosition="4321"> word top often instructs the navigator to position itself above a landmark, occasionally to position itself below a landmark, but rarely to the side. The bottom portion of the table shows learned text-independent constraints: given a choice, near destinations are preferred to far ones (so shorter paths are preferred overall). prime example of a domain that does not lend itself to logical representation—grammars may be too rigid, and previously-unseen landmarks and real-valued positions are handled more easily with feature machinery than predicate logic. The map task was previously studied by Vogel and Jurafsky (2010), who implemented SARSA with a simple set of features. By combining these features with our alignment model and search procedure, we achieve state-of-the-art results on this task by a substantial margin (Table 1). Some learned feature values are shown in Table 2. The model correctly infers cardinal directions (the example shows the preferred side of a destination landmark modified by the word top). Like Vogel et al., we see support for both allocentric references (you are on top of the hill) and egocentric references (the hill is on top of you). We can also see pragmatics at work: the model le</context>
+</contexts>
+<marker>Vogel, Jurafsky, 2010</marker>
+<rawString>Adam Vogel and Dan Jurafsky. 2010. Learning to follow navigational directions. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, pages 806–814. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuk Wah Wong</author>
+<author>Raymond Mooney</author>
+</authors>
+<title>Learning for semantic parsing with statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>439--446</pages>
+<location>New York, New York.</location>
+<contexts>
+<context position="5782" citStr="Wong and Mooney, 2006" startWordPosition="844" endWordPosition="847">ate the importance of our contributions in both compositional semantics and search over plans. We have released all code for this project at github.com/jacobandreas/instructions. 2 Related work Existing work on instruction following can be roughly divided into two families: semantic parsers and linear policy estimators. Semantic parsers Parser-based approaches (Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answering (Liang et al., 2013) as a special case.) This approach uses a well-studied mechanism for compositional interpretation of language, but is subject to certain limitations. Because the environment is manipulated only through black-box</context>
+<context position="18058" citStr="Wong and Mooney, 2006" startWordPosition="2808" endWordPosition="2811"> ai ∈ 1... n (recalling that n is the number of actions). Then we have2 n p(y,a|x; θ) ∝ exp S 0(n) + 1:0(yj) l j=1 1 1[aj = i] 0(xi, yj) (1) We additionally place a monotonicity constraint on the alignment variables. This model is globally normalized, and for a fixed alignment is equivalent to a linear-chain CRF. In this sense it is analogous to IBM Model I (Brown et al., 1993), with the structured potentials 0(xi, yj) taking the place of lexical translation probabilities. While alignment models from machine translation have previously been used to align words to fragments of semantic parses (Wong and Mooney, 2006; Pourdamghani et al., 2014), we are unaware of such models being used to align entire instruction sequences to demonstrations. Action structure: aligning words to percepts Intuitively, this scoring function 0(x, y) should capture how well a given utterance describes an action. If neither the utterances nor the actions had structure (i.e. both could be represented with simple bags of features), we would recover something analogous to the conventional policy-learning approach. As structure is essential for some of our tasks, 0(x, y) must instead fill the role of a semantic parser in a conventio</context>
+</contexts>
+<marker>Wong, Mooney, 2006</marker>
+<rawString>Yuk Wah Wong and Raymond Mooney. 2006. Learning for semantic parsing with statistical machine translation. In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics, pages 439–446, New York, New York.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Luke S Zettlemoyer</author>
+<author>Michael Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Conference on Uncertainty in Artificial Intelligence,</booktitle>
+<pages>658--666</pages>
+<contexts>
+<context position="5758" citStr="Zettlemoyer and Collins, 2005" startWordPosition="840" endWordPosition="843">t results. Experiments demonstrate the importance of our contributions in both compositional semantics and search over plans. We have released all code for this project at github.com/jacobandreas/instructions. 2 Related work Existing work on instruction following can be roughly divided into two families: semantic parsers and linear policy estimators. Semantic parsers Parser-based approaches (Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013; Kim and Mooney, 2013) map from text into a formal language representing commands. These take familiar structured prediction models for semantic parsing (Zettlemoyer and Collins, 2005; Wong and Mooney, 2006), and train them with task-provided supervision. Instead of attempting to match the structure of a manually-annotated semantic parse, semantic parsers for instruction following are trained to maximize a reward signal provided by black-box execution of the predicted command in the environment. (It is possible to think of response-based learning for question answering (Liang et al., 2013) as a special case.) This approach uses a well-studied mechanism for compositional interpretation of language, but is subject to certain limitations. Because the environment is manipulate</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Luke S. Zettlemoyer and Michael Collins. 2005. Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In Proceedings of the Conference on Uncertainty in Artificial Intelligence, pages 658–666.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

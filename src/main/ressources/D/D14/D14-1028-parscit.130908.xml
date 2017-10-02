@@ -1,0 +1,1090 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.003164">
+<title confidence="0.9978935">
+Two Improvements to Left-to-Right Decoding for Hierarchical
+Phrase-based Machine Translation
+</title>
+<author confidence="0.97691">
+Maryam Siahbani and Anoop Sarkar
+</author>
+<affiliation confidence="0.906905666666667">
+School of Computing Science
+Simon Fraser University
+Burnaby BC. Canada
+</affiliation>
+<email confidence="0.99558">
+msiahban,anoop@cs.sfu.ca
+</email>
+<sectionHeader confidence="0.993836" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9997316">
+Left-to-right (LR) decoding (Watanabe et
+al., 2006) is promising decoding algorithm
+for hierarchical phrase-based translation
+(Hiero) that visits input spans in arbitrary
+order producing the output translation in
+left to right order. This leads to far fewer
+language model calls, but while LR decod-
+ing is more efficient than CKY decoding,
+it is unable to capture some hierarchical
+phrase alignments reachable using CKY
+decoding and suffers from lower transla-
+tion quality as a result. This paper in-
+troduces two improvements to LR decod-
+ing that make it comparable in translation
+quality to CKY-based Hiero.
+</bodyText>
+<sectionHeader confidence="0.998798" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999934322033899">
+Hierarchical phrase-based translation (Hi-
+ero) (Chiang, 2007) uses a lexicalized syn-
+chronous context-free grammar (SCFG) extracted
+from word and phrase alignments of a bitext. De-
+coding for Hiero is typically done with CKY-style
+decoding with time complexity O(n3) for source
+input with n words. Computing the language
+model score for each hypothesis within CKY de-
+coding requires two histories, the left and the right
+edge of each span, due to the fact that the target
+side is built inside-out from sub-spans (Heafield
+et al., 2011; Heafield et al., 2013).
+LR-decoding algorithms exist for phrase-
+based (Koehn, 2004; Galley and Manning, 2010)
+and syntax-based (Huang and Mi, 2010; Feng et
+al., 2012) models and also for hierarchical phrase-
+based models (Watanabe et al., 2006; Siahbani et
+al., 2013), which is our focus in this paper.
+Watanabe et al. (2006) first proposed left-to-
+right (LR) decoding for Hiero (LR-Hiero hence-
+forth) which uses beam search and runs in O(n2b)
+in practice where n is the length of source sentence
+and b is the size of beam (Huang and Mi, 2010).
+To simplify target generation, SCFG rules are con-
+strained to be prefix-lexicalized on target side aka
+Griebach Normal Form (GNF). Throughout this
+paper we abuse the notation for simplicity and use
+the term GNF grammars for such SCFGs. This
+constraint drastically reduces the size of gram-
+mar for LR-Hiero in comparison to Hiero gram-
+mar (Siahbani et al., 2013). However, the orig-
+inal LR-Hiero decoding algorithm does not per-
+form well in comparison to current state-of-the-art
+Hiero and phrase-based translation systems. Siah-
+bani et al. (2013) propose an augmented version
+of LR decoding to address some limitations in the
+original LR-Hiero algorithm in terms of transla-
+tion quality and time efficiency.
+Although, LR-Hiero performs much faster than
+Hiero in decoding and obtains BLEU scores com-
+parable to phrase-based translation system on
+some language pairs, there is still a notable gap be-
+tween CKY-Hiero and LR-Hiero (Siahbani et al.,
+2013). We show in this paper using instructive ex-
+amples that CKY-Hiero can capture some complex
+phrasal re-orderings that are observed in language
+pairs such as Chinese-English that LR-Hiero can-
+not (c.f. Sec.3).
+We introduce two improvements to LR decod-
+ing of GNF grammars: (1) We add queue diversity
+to the cube pruning algorithm for LR-Hiero, and
+(2) We extend the LR-Hiero decoder to capture all
+the hierarchical phrasal alignments that are reach-
+able in CKY-Hiero (restricted to using GNF gram-
+mars). We evaluate our modifications on three
+language pairs and show that LR-Hiero can reach
+the translation scores comparable to CKY-Hiero in
+two language pairs, and reduce the gap between
+Hiero and LR-Hiero on the third one.
+</bodyText>
+<sectionHeader confidence="0.816307" genericHeader="method">
+2 LR Decoding with Queue Diversity
+</sectionHeader>
+<bodyText confidence="0.999776">
+LR-Hiero uses a constrained lexicalized SCFG
+which we call a GNF grammar: X → (γ,¯b Q)
+where γ is a string of non-terminal and terminal
+symbols, ¯b is a string of terminal symbols and Q is
+a possibly empty sequence of non-terminals. This
+ensures that as each rule is used in a derivation,
+</bodyText>
+<page confidence="0.944521">
+221
+</page>
+<note confidence="0.3985625">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 221–226,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<construct confidence="0.54093">
+Algorithm 1: LR-Hiero Decoding
+</construct>
+<listItem confidence="0.978867342857143">
+1: Input sentence: f = f0f1 ... fn
+2: F = FutureCost(f) (Precompute future cost1for spans)
+3: S0 = {} (Create empty initial stack)
+4: h0 = ((s), [[0, n]], 0, F[0,n]) (Initial hypothesis 4-tuple)
+5: Add h0 to S0 (Push initial hyp into first Stack)
+6: for i = 1, ... ,ndo
+7: cubeList = {} (MRL is max rule length)
+8: for p = max(i − MRL, 0), ... , i − 1 do
+9: {G} = Grouped(Sp) (based on the first uncovered
+span)
+10: for g E {G} do
+11: [u, v] = gspan
+12: R = GetSpanRules([u, v])
+13: for Rs E R do
+14: cube = [ghyps, Rs]
+15: Add cube to cubeList
+16: Si = Merge(cubeList, F) (Create stack Si and add
+new hypotheses to it, see Figure 1)
+17: return arg max(Sn)
+18: Merge(CubeList, F)
+19: heapQ = {}
+20: for each (H, R) in cubeList do
+21: hypList = getBestHypotheses((H, R), F, d) (d
+best hypotheses of each cube)
+22: for each h0 in hypList do
+23: push(heapQ, (h0c, h0, [H, R]) (Push new hyp
+in queue)
+24: hypList = {}
+25: while |heapQ |&gt; 0 and |hypList |&lt; K do
+26: (h0c, h0, [H, R]) = pop(heapQ) (pop the best
+hypothesis)
+27: push(heapQ, GetNeighbours([H, R]) (Push
+neighbours to queue)
+28: Add h0 to hypList
+29: return hypList
+</listItem>
+<bodyText confidence="0.999852842105263">
+the target string is generated from left to right.
+The rules are obtained from a word and phrase
+aligned bitext using the rule extraction algorithm
+in (Watanabe et al., 2006).
+LR-Hiero decoding uses a top-down depth-first
+search, which strictly grows the hypotheses in tar-
+get surface ordering. Search on the source side
+follows an Earley-style search (Earley, 1970), the
+dot jumps around on the source side of the rules
+based on the order of nonterminals on the target
+side. This search is integrated with beam search
+or cube pruning to find the k-best translations.
+Algorithm 1 shows the pseudocode for LR-
+Hiero decoding with cube pruning (Chiang, 2007)
+(CP). LR-Hiero with CP was introduced in (Siah-
+bani et al., 2013). In this pseudocode, we have in-
+troduced the notion of queue diversity (explained
+below). However to understand our change we
+need to understand the algorithm in more detail.
+</bodyText>
+<footnote confidence="0.981073">
+1The future cost is precomputed in a way similar to the
+phrase-based models (Koehn et al., 2007) using only the ter-
+minal rules of the grammar.
+</footnote>
+<figureCaption confidence="0.999473">
+Figure 1: Cubes (grids) are fed to a priority queue (trian-
+gle) and generated hypotheses are iteratively popped from the
+queue and added to stack Si. Lower scores are better. Scores
+of rules and hypotheses appear on the top and left side of the
+grids respectively. Shaded entries are hypotheses in the queue
+and black ones are popped from the queue and added to Si.
+</figureCaption>
+<bodyText confidence="0.999856611111111">
+Each source side non-terminal is instantiated with
+the legal spans given the input source string, e.g.
+if there is a Hiero rule (aX1, a&apos;X1) and if a only
+occurs at position 3 in the input then this rule can
+be applied to span [3, i] for all i, 4 &lt; i ≤ n for in-
+put of length n and source side X1 is instantiated
+to span [4, i]. A worked out example of how the
+decoder works is shown in Figure 2. Each partial
+hypothesis h is a 4-tuple (ht, hs, hcov, hc): con-
+sisting of a translation prefix ht, a (LIFO-ordered)
+list hs of uncovered spans, source words coverage
+set hcov and the hypothesis cost hc. The initial hy-
+pothesis is a null string with just a sentence-initial
+marker (s) and the list hs containing a span of the
+whole sentence, [0, n]. The hypotheses are stored
+in stacks S0, ... , Sn, where Sp contains hypothe-
+ses covering p source words just like in stack de-
+coding for phrase-based SMT (Koehn et al., 2003).
+To fill stack Si we consider hypotheses in each
+stack Sp2, which are first partitioned into a set of
+groups {G}, based on their first uncovered span
+(line 9). Each group g is a 2-tuple (gspan, ghyps),
+where ghyps is a list of hypotheses which share the
+same first uncovered span gspan. Rules matching
+the span gspan are obtained from routine GetSpan-
+Rules. Each ghyps and possible Rs create a cube
+which is added to cubeList.
+The Merge routine gets the best hypotheses
+from all cubes (see Fig.1). Hypotheses (rows) and
+columns (rules) are sorted based on their scores.
+GetBestHypotheses((H, R),F, d) uses current
+hypothesis H and rule R to produce new hypothe-
+ses. The first best hypothesis, h&apos; along with its
+score h&apos; c and corresponding cube (H, R) is placed
+in a priority queue heapQ (triangle in Figure 1
+and line 23 in Algorithm 1). Iteratively the K best
+</bodyText>
+<footnote confidence="0.6614355">
+2As the length of rules are limited (at most MRL), we can
+ignore stacks with index less than i − MRL
+</footnote>
+<figure confidence="0.993823580645161">
+8.2 8.4 9.1 8.9 9.3
+6.6 8.1 6.7
+6.7 8.05 8.5 8.6 6.8 8.7 8.5 9.0
+6.9 8.3 8.9 8.8 6.9 7.1 7.2 8.1
+0.9
+1.3
+3.2
+1.2
+1.3
+1.5
+...
+222
+rules hypotheses
+(s)[0, 15]
+G 1)(Taiguo shi X1/Thailand X1) (s) Thailand [2,15]
+G 2)(yao X1/wants X1)
+G 3)(liyong X1/to utilize X1)
+4)(zhe bi qian X1/this money X1)
+5)(X1zhuru geng duo X2/to inject more X2X1)
+6)(liudong X1/circulating X1)
+G 7)(zijin X1/capital X1)
+8)(./.)
+9)(xiang jingji/to the economy)
+(s)Thailand wants [3,15]
+(s)Thailand wants to utilize [4,15]
+(s)Thailand wants to utilize this money [7,15]
+(s)Thailand wants to utilize this money to inject more [12,15][7,9]
+(s)Thailand wants to utilize this money to inject more circulating [13,15][7,9]
+(s)Thailand wants to utilize this money to inject more circulating capital [14,15][7,9]
+(s)Thailand wants to utilize this money to inject more circulating capital . [7,9]
+(s)Thailand wants to utilize this money to inject more circulating capital . to the economy(/s)
+</figure>
+<figureCaption confidence="0.999697">
+Figure 2: The process of translating the Chinese sentence in Figure 3(b) in LR-Hiero. Left side shows the rules used in the
+derivation (G indicates glue rules as defined in (Watanabe et al., 2006)). The hypotheses column shows the translation prefix
+and the ordered list of yet-to-be-covered spans.
+</figureCaption>
+<figure confidence="0.9995665">
+X1
+X2
+utilize
+capital
+wants to
+Thailand
+circulating
+inject more
+this money to
+to the economy
+zījīn
+liúdòng
+xiàng jīngjì
+zhùrù gèng duō
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+yào
+lìyòng
+Tàiguó shì
+zhè bǐ qián
+.
+.
+X,
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18
+Tā buch6ng shu6 ,
+liánhé zhèngfu
+mùqián
+zhuàngkuàng
+wěndìng
+, bìngqiě y6u nénglì
+guànchè
+jīngjì
+g6igé jìhuà
+.
+and
+capable of
+carrying out
+the economic
+is now in stable
+reform plan
+condition
+.
+He added that the coalition government
+</figure>
+<figureCaption confidence="0.941447333333333">
+Figure 3: Two Chinese-English sentence pairs from devset data in experiments. (a) Correct rule cannot be matched to [6,18],
+our modifications match the rule to the first subspan [6,9] (b) LR-Hiero detects a wrong span for X2 [12,15], we modify the
+rule matching match X2 to all subspans [12,13], [12,14] and [12,15], corresponding to 3 hypotheses.
+</figureCaption>
+<bodyText confidence="0.999794290322581">
+hypotheses in the queue are popped (line 26) and
+for each hypothesis its neighbours in the cube are
+added to the priority queue (line 27). Decoding
+finishes when stack S,,, has been filled.
+The language model (LM) score violates the
+hypotheses generation assumption of CP and can
+cause search errors. In Figure 1, the topmost
+and leftmost entry of the right cube has a score
+worse than many hypotheses in the left cube due
+to the LM score. This means the right cube
+has hypotheses that are ignored. This type of
+search error hurts LR-Hiero more than CKY-
+Hiero, due to the fact that hypotheses scores in
+LR-Hiero rely on a future cost, while CKY-Hiero
+uses the inside score for each hypothesis. To
+solve this issue for LR-Hiero we introduce the no-
+tion of queue diversity which is the parameter d
+in GetBestHypotheses((H, R), .F, d). This pa-
+rameter guarantees that each cube will produce at
+least d candidate hypotheses for the priority queue.
+d=1 in standard cube pruning for LR-Hiero (Siah-
+bani et al., 2013). We apply the idea of diver-
+sity at queue level, before generating K best hy-
+pothesis, such that the GetBestHypotheses rou-
+tine generates d best hypotheses from each cube
+and all these hypotheses are pushed to the prior-
+ity queue (line 22-23). We fill each stack differ-
+ently from CKY-Hiero and so queue diversity is
+different from lazy cube pruning (Pust and Knight,
+2009) or cube growing (Huang and Chiang, 2007;
+Vilar and Ney, 2009; Xu and Koehn, 2012).
+</bodyText>
+<sectionHeader confidence="0.969592" genericHeader="method">
+3 Capturing Missing Alignments
+</sectionHeader>
+<bodyText confidence="0.999503416666667">
+Figure 3(a) and Figure 3(b) show two examples of
+a common problem in LR-Hiero decoding. The
+decoder steps for Figure 3(b) are shown in Fig-
+ure 2. The problem occurs in Step 5 of Figure 2
+where rule #5 is matched to span [7,15]. Dur-
+ing decoding LR-Hiero maintains a stack (last-
+in-first-out) of yet-to-be-covered spans and tries
+to translate the first uncovered span (span [7,15]
+in Step 5). LR-Hiero should match rule #5 to
+span [7,15], therefore X2 is forced to match span
+[12,15] which leads to the translation of span [7,9]
+(corresponding to X1) being reordered around it
+</bodyText>
+<page confidence="0.997824">
+223
+</page>
+<table confidence="0.999114333333333">
+Corpus Train/Dev/Test
+Cs-En Europarl(v7) + CzEng(v0.9); News 7.95M/3000/3003
+commentary(nc) 2008&amp;2009; nc 2011
+De-En Europarl(v7); WMT2006; WMT2006 1.5M/2000/2000
+Zh-En HK + GALE phase-1; MTC part 1&amp;3; 2.3M/1928/919
+MTC part 4
+</table>
+<tableCaption confidence="0.996826">
+Table 1: Corpus statistics in number of sentences. Tuning and test sets for Chinese-English has 4 references.
+</tableCaption>
+<table confidence="0.9684361">
+Model Cs-En De-En Zh-En
+Hiero 20.77 25.72 27.65
+LR-Hiero (Watanabe et al., 2006) 20.72 25.10 25.99
+LR-Hiero+CP (Siahbani et al., 2013) 20.15 24.83 -
+LR-Hiero+CP (QD=1) 20.68 25.14 24.44
+LR-Hiero+CP (QD=15) - - 26.10
+LR-Hiero+CP+(ab) 20.88 25.22 26.55
+LR-Hiero+CP+(abc) 20.89 25.22 26.52
+(a) BLEU scores for different baselines and modifications of this paper.
+QD=15 for Zh-En in last three rows. (b) Average number of language model queries.
+</table>
+<tableCaption confidence="0.999887">
+Table 2: (a) BLEU (b) LM calls
+</tableCaption>
+<bodyText confidence="0.999782135135135">
+causing the incorrect translation in Step 9. If we
+use the same set of rules for translation in Hi-
+ero (CKY-based decoder), the decoder is able to
+generate the correct translation for span [7,14] (it
+works bottom-up and generate best translation for
+each source span). Then it combines translation of
+[7,14] with translation of spans [0, 7] and [14,15]
+using glue rules (monotonic combination).
+In Figure 3(a) monotonic translations after span
+[6, 9] are out of reach of the LR-Hiero decoder
+which has to use the non-terminals to support
+the reordering within span [6, 9]. In this exam-
+ple the first few phrases are translated monoton-
+ically, then for span [6,18] we have to apply rule
+( muqian X1 wending, is now in stable X1) to ob-
+tain the correct translation. But this rule cannot
+be matched to span [6,18] and the decoder fails
+to generate the correct translation. While CKY-
+Hiero can apply this rule to span [6, 9], generate
+correct translation for this span and monotonically
+combine it with translation of other spans ([0, 6],
+[9,18]).
+In both these cases, CKY-Hiero has no diffi-
+culty in reaching the target sentence with the same
+GNF rules. The fact that we have to process spans
+as they appear in the stack in LR-Hiero means
+that we cannot combine arbitrary adjacent spans
+to deal with such cases. So purely bottom-up de-
+coders such as CKY-Hiero can capture the align-
+ments in Figure 3 but LR-Hiero cannot.
+We extend the LR-Hiero decoder to handle such
+cases by making the GNF grammar more expres-
+sive. Rules are partitioned to three types based on
+the right boundary in the source and target side.
+The rhs after the shows the new rules we create
+within the decoder using a new non-terminal Xr
+to match the right boundary.
+</bodyText>
+<equation confidence="0.645253">
+(a) (γ¯a, bβ) (γ¯aXr, bβXr)
+(b) (γXn, bβXn) (γXnXr, bβXnXr) (1)
+(c) (γXn,¯bβXm) (γXnXr,¯bβXmXr)
+</equation>
+<bodyText confidence="0.999983133333333">
+where γ is a string of terminals and non-terminals,
+a¯ and ¯b are terminal sequences of source and tar-
+get respectively, β is a possibly empty sequence
+of non-terminals and Xn and Xm are different
+non-terminals distinct from Xr3. The extra non-
+terminal Xr lets us add a new yet-to-be-covered
+span to the bottom of the stack at each rule appli-
+cation which lets us match any two adjacent spans
+just as in CKY-Hiero. This captures the missing
+alignments that could not be previously captured
+in the LR-Hiero decoder4.
+In Table 4 we translated devset sentences using
+forced decoding to show that our modifications to
+LR-Hiero in this section improves the alignment
+coverage when compared to CKY-Hiero.
+</bodyText>
+<sectionHeader confidence="0.999297" genericHeader="evaluation">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.9817675">
+We evaluate our modifications to LR-Hiero de-
+coder on three language pairs (Table 1): German-
+English (De-En), Czech-English (Cs-En) and
+Chinese-English (Zh-En).
+</bodyText>
+<footnote confidence="0.99568675">
+3In rule type (c) X. will be in β and X. will be in γ.
+4For the sake of simplicity, in rule type (b) we can merge
+X. and X, as they are in the same order on both source and
+target side.
+</footnote>
+<page confidence="0.997798">
+224
+</page>
+<bodyText confidence="0.999964489361702">
+We use a 5-gram LM trained on the Gigaword
+corpus and use KenLM (Heafield, 2011). We
+tune weights by minimizing BLEU loss on the dev
+set through MERT (Och, 2003) and report BLEU
+scores on the test set. Pop limit for Hiero and LR-
+Hiero+CP is 500 and beam size LR-Hiero is 500.
+Other extraction and decoder settings such as max-
+imum phrase length, etc. were identical across set-
+tings. To make the results comparable we use the
+same feature set for all baselines, Hiero as well
+(including new features proposed by (Siahbani et
+al., 2013)).
+We use 3 baselines: (i) our implementation of
+(Watanabe et al., 2006): LR-Hiero with beam
+search (LR-Hiero) and (ii) LR-Hiero with cube
+pruning (Siahbani et al., 2013): (LR-Hiero+CP);
+and (iii) Kriya, an open-source implementation of
+Hiero in Python, which performs comparably to
+other open-source Hiero systems (Sankaran et al.,
+2012).
+Table 3 shows model sizes for LR-Hiero (GNF)
+and Hiero (SCFG). Typical Hiero rule extraction
+excludes phrase-pairs with unaligned words on
+boundaries (loose phrases). We use similar rule
+extraction as Hiero, except that exclude non-GNF
+rules and include loose phrase-pairs as terminal
+rules.
+Table 2a shows the translation quality of dif-
+ferent systems in terms of BLEU score. Row
+3 is from (Siahbani et al., 2013)5. As we dis-
+cussed in Section 2, LR-Hiero+CP suffers from
+severe search errors on Zh-En (1.5 BLEU) but us-
+ing queue diversity (QD=15) we fill this gap. We
+use the same QD(=15) in next rows for Zh-en.
+For Cs-En and De-En we use regular cube prun-
+ing (QD=1), as it works as well as beam search
+(compare rows 4 and 2).
+We measure the benefit of the new modified
+rules from Section 3: (ab): adding modifications
+for rules type (a) and (b); (abc): modification
+of all rules. We can see that for all language
+pairs (ab) constantly improves performance of LR-
+Hiero, significantly better than LR-Hiero+CP and
+LR-Hiero (p-value&lt;0.05) on Cs-En and Zh-En,
+evaluated by MultEval (Clark et al., 2011). But
+modifying rule type (c) does not show any im-
+provement due to spurious ambiguity created by
+</bodyText>
+<footnote confidence="0.7249058">
+5We report results on Cs-En and De-En in (Siahbani et
+al., 2013). Row 4 is the same translation system as row 3
+(LR-Hiero+CP). We achieve better results than our previous
+work (Siahbani et al., 2013) (row 4 vs. row 3) due to bug
+corrections and adding loose phrases as terminal rules.
+</footnote>
+<table confidence="0.894052333333333">
+Model Cs-En De-En Zh-En
+Hiero 1,961.6 858.5 471.9
+LR-Hiero 266.5 116.0 100.9
+</table>
+<tableCaption confidence="0.979509">
+Table 3: Model sizes (millions of rules).
+</tableCaption>
+<table confidence="0.999291">
+Model Cs-En De-En Zh-En
+Hiero 318 351 187
+LR-Hiero 278 300 132
+LR-Hiero+(abc) 338 361 174
+</table>
+<tableCaption confidence="0.9528195">
+Table 4: No. of sentence covered in forced decoding of a sam-
+ple of sentences from the devset. We improve the coverage
+by 31% for Chinese-English and more than 20% for the other
+two language pairs.
+</tableCaption>
+<bodyText confidence="0.989518709677419">
+type (c) rules.
+Figure 2b shows the results in terms of average
+number of language model queries on a sample set
+of 50 sentences from test sets. All of the base-
+lines use the same wrapper to KenLM (Heafield,
+2011) to query the language model, and we have
+instrumented the wrapper to count the statistics.
+In (Siahbani et al., 2013) we discuss that LR-Hiero
+with beam search (Watanabe et al., 2006) does not
+perform at the same level of state-of-the-art Hi-
+ero (more LM calls and less translation quality).
+As we can see in this figure, adding new mod-
+ified rules slightly increases the number of lan-
+guage model queries on Cs-En and De-En so that
+LR-Hiero+CP still works 2 to 3 times faster than
+Hiero. On Zh-En, LR-Hiero+CP applies queue
+diversity (QD=15) which reduces search errors
+and improves translation quality but increases the
+number of hypothesis generation as well. LR-
+Hiero+CP with our modifications works substan-
+tially faster than LR-Hiero while obtain signifi-
+cantly better translation quality on Zh-En.
+Comparing Table 2a with Figure 2b we can see
+that overall our modifications to LR-Hiero decoder
+significantly improves the BLEU scores compared
+to previous LR decoders for Hiero. We obtain
+comparable results to CKY-Hiero for Cs-En and
+De-En and remarkably improve results on Zh-En,
+while at the same time making 2 to 3 times less
+LM calls on Cs-En and De-En compared to CKY-
+Hiero.
+</bodyText>
+<sectionHeader confidence="0.998291" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9998425">
+This research was partially supported by NSERC,
+Canada RGPIN: 262313 and RGPAS: 446348
+grants to the second author. The authors wish to
+thank Baskaran Sankaran for his valuable discus-
+sions and the anonymous reviewers for their help-
+ful comments.
+</bodyText>
+<page confidence="0.997781">
+225
+</page>
+<sectionHeader confidence="0.990322" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999930285714286">
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Computational Linguistics, 33.
+Jonathan H. Clark, Chris Dyer, Alon Lavie, and
+Noah A. Smith. 2011. Better hypothesis testing for
+statistical machine translation: controlling for opti-
+mizer instability. In Proceedings of the 49th Annual
+Meeting of the Association for Computational Lin-
+guistics: Human Language Technologies: short pa-
+pers - Volume 2, HLT ’11, pages 176–181, Strouds-
+burg, PA, USA. Association for Computational Lin-
+guistics.
+Jay Earley. 1970. An efficient context-free parsing al-
+gorithm. Commun. ACM, 13(2):94–102, February.
+Yang Feng, Yang Liu, Qun Liu, and Trevor Cohn.
+2012. Left-to-right tree-to-string decoding with pre-
+diction. In Proceedings of the 2012 Joint Confer-
+ence on Empirical Methods in Natural Language
+Processing and Computational Natural Language
+Learning, EMNLP-CoNLL ’12, pages 1191–1200,
+Stroudsburg, PA, USA. Association for Computa-
+tional Linguistics.
+Michel Galley and Christopher D. Manning. 2010.
+Accurate non-hierarchical phrase-based translation.
+In Human Language Technologies: The 2010 An-
+nual Conference of the North American Chapter
+of the Association for Computational Linguistics,
+pages 966–974, Los Angeles, California, June. As-
+sociation for Computational Linguistics.
+Kenneth Heafield, Hieu Hoang, Philipp Koehn, Tet-
+suo Kiso, and Marcello Federico. 2011. Left lan-
+guage model state for syntactic machine translation.
+In Proceedings of the International Workshop on
+Spoken Language Translation, pages 183–190, San
+Francisco, California, USA, 12.
+Kenneth Heafield, Philipp Koehn, and Alon Lavie.
+2013. Grouping language model boundary words
+to speed K-Best extraction from hypergraphs. In
+Proceedings of the 2013 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies,
+Atlanta, Georgia, USA, 6.
+Kenneth Heafield. 2011. KenLM: Faster and smaller
+language model queries. In In Proc. of the Sixth
+Workshop on Statistical Machine Translation.
+Liang Huang and David Chiang. 2007. Forest rescor-
+ing: Faster decoding with integrated language mod-
+els. In In ACL 07.
+Liang Huang and Haitao Mi. 2010. Efficient incre-
+mental decoding for tree-to-string translation. In
+Proceedings of the 2010 Conference on Empirical
+Methods in Natural Language Processing, pages
+273–283, Cambridge, MA, October. Association for
+Computational Linguistics.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Proc.
+of NAACL.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: open
+source toolkit for statistical machine translation. In
+Proceedings of the 45th Annual Meeting of the ACL
+on Interactive Poster and Demonstration Sessions,
+ACL ’07, pages 177–180, Stroudsburg, PA, USA.
+Association for Computational Linguistics.
+Philipp Koehn. 2004. Pharaoh: A beam search de-
+coder for phrase-based statistical machine transla-
+tion models. In AMTA, pages 115–124.
+Franz Josef Och. 2003. Minimum error rate training in
+statistical machine translation. In Proceedings of the
+41st Annual Meeting on Association for Computa-
+tional Linguistics - Volume 1, ACL ’03, pages 160–
+167, Stroudsburg, PA, USA. Association for Com-
+putational Linguistics.
+Michael Pust and Kevin Knight. 2009. Faster mt
+decoding through pervasive laziness. In Proceed-
+ings of Human Language Technologies: The 2009
+Annual Conference of the North American Chap-
+ter of the Association for Computational Linguistics,
+Companion Volume: Short Papers, pages 141–144,
+Boulder, Colorado, June. Association for Computa-
+tional Linguistics.
+Baskaran Sankaran, Majid Razmara, and Anoop
+Sarkar. 2012. Kriya - an end-to-end hierarchi-
+cal phrase-based mt system. The Prague Bulletin
+of Mathematical Linguistics (PBML), 97(97):83–98,
+apr.
+Maryam Siahbani, Baskaran Sankaran, and Anoop
+Sarkar. 2013. Efficient left-to-right hierarchical
+phrase-based translation with improved reordering.
+In Proceedings of the 2013 Conference on Empirical
+Methods in Natural Language Processing, Seattle,
+USA, October. Association for Computational Lin-
+guistics.
+David Vilar and Hermann Ney. 2009. On lm heuris-
+tics for the cube growing algorithm. In Annual Con-
+ference of the European Association for Machine
+Translation, pages 242–249, Barcelona, Spain, may.
+Taro Watanabe, Hajime Tsukada, and Hideki Isozaki.
+2006. Left-to-right target generation for hierarchical
+phrase-based translation. In Proc. of ACL.
+Wenduan Xu and Philipp Koehn. 2012. Extending hi-
+ero decoding in moses with cube growing. Prague
+Bull. Math. Linguistics, 98:133–.
+</reference>
+<page confidence="0.998846">
+226
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.357648">
+<title confidence="0.9996255">Two Improvements to Left-to-Right Decoding for Phrase-based Machine Translation</title>
+<author confidence="0.621121">Siahbani</author>
+<affiliation confidence="0.614068">School of Computing</affiliation>
+<author confidence="0.8893865">Simon Fraser Burnaby BC</author>
+<email confidence="0.993071">msiahban,anoop@cs.sfu.ca</email>
+<abstract confidence="0.9915050625">Left-to-right (LR) decoding (Watanabe et al., 2006) is promising decoding algorithm for hierarchical phrase-based translation (Hiero) that visits input spans in arbitrary order producing the output translation in left to right order. This leads to far fewer language model calls, but while LR decoding is more efficient than CKY decoding, it is unable to capture some hierarchical phrase alignments reachable using CKY decoding and suffers from lower translation quality as a result. This paper introduces two improvements to LR decoding that make it comparable in translation quality to CKY-based Hiero.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Computational Linguistics,</journal>
+<volume>33</volume>
+<contexts>
+<context position="911" citStr="Chiang, 2007" startWordPosition="128" endWordPosition="129">coding algorithm for hierarchical phrase-based translation (Hiero) that visits input spans in arbitrary order producing the output translation in left to right order. This leads to far fewer language model calls, but while LR decoding is more efficient than CKY decoding, it is unable to capture some hierarchical phrase alignments reachable using CKY decoding and suffers from lower translation quality as a result. This paper introduces two improvements to LR decoding that make it comparable in translation quality to CKY-based Hiero. 1 Introduction Hierarchical phrase-based translation (Hiero) (Chiang, 2007) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Hu</context>
+<context position="5912" citStr="Chiang, 2007" startWordPosition="988" endWordPosition="989"> to right. The rules are obtained from a word and phrase aligned bitext using the rule extraction algorithm in (Watanabe et al., 2006). LR-Hiero decoding uses a top-down depth-first search, which strictly grows the hypotheses in target surface ordering. Search on the source side follows an Earley-style search (Earley, 1970), the dot jumps around on the source side of the rules based on the order of nonterminals on the target side. This search is integrated with beam search or cube pruning to find the k-best translations. Algorithm 1 shows the pseudocode for LRHiero decoding with cube pruning (Chiang, 2007) (CP). LR-Hiero with CP was introduced in (Siahbani et al., 2013). In this pseudocode, we have introduced the notion of queue diversity (explained below). However to understand our change we need to understand the algorithm in more detail. 1The future cost is precomputed in a way similar to the phrase-based models (Koehn et al., 2007) using only the terminal rules of the grammar. Figure 1: Cubes (grids) are fed to a priority queue (triangle) and generated hypotheses are iteratively popped from the queue and added to stack Si. Lower scores are better. Scores of rules and hypotheses appear on th</context>
+<context position="12047" citStr="Chiang, 2007" startWordPosition="2080" endWordPosition="2081">tHypotheses((H, R), .F, d). This parameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure 3(b) are shown in Figure 2. The problem occurs in Step 5 of Figure 2 where rule #5 is matched to span [7,15]. During decoding LR-Hiero maintains a stack (lastin-first-out) of yet-to-be-covered spans and tries to translate the first uncovered span (span [7,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] </context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Computational Linguistics, 33.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Jonathan H Clark</author>
+<author>Chris Dyer</author>
+<author>Alon Lavie</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Better hypothesis testing for statistical machine translation: controlling for optimizer instability.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies: short papers - Volume 2, HLT ’11,</booktitle>
+<pages>176--181</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="18358" citStr="Clark et al., 2011" startWordPosition="3144" endWordPosition="3147">search errors on Zh-En (1.5 BLEU) but using queue diversity (QD=15) we fill this gap. We use the same QD(=15) in next rows for Zh-en. For Cs-En and De-En we use regular cube pruning (QD=1), as it works as well as beam search (compare rows 4 and 2). We measure the benefit of the new modified rules from Section 3: (ab): adding modifications for rules type (a) and (b); (abc): modification of all rules. We can see that for all language pairs (ab) constantly improves performance of LRHiero, significantly better than LR-Hiero+CP and LR-Hiero (p-value&lt;0.05) on Cs-En and Zh-En, evaluated by MultEval (Clark et al., 2011). But modifying rule type (c) does not show any improvement due to spurious ambiguity created by 5We report results on Cs-En and De-En in (Siahbani et al., 2013). Row 4 is the same translation system as row 3 (LR-Hiero+CP). We achieve better results than our previous work (Siahbani et al., 2013) (row 4 vs. row 3) due to bug corrections and adding loose phrases as terminal rules. Model Cs-En De-En Zh-En Hiero 1,961.6 858.5 471.9 LR-Hiero 266.5 116.0 100.9 Table 3: Model sizes (millions of rules). Model Cs-En De-En Zh-En Hiero 318 351 187 LR-Hiero 278 300 132 LR-Hiero+(abc) 338 361 174 Table 4: </context>
+</contexts>
+<marker>Clark, Dyer, Lavie, Smith, 2011</marker>
+<rawString>Jonathan H. Clark, Chris Dyer, Alon Lavie, and Noah A. Smith. 2011. Better hypothesis testing for statistical machine translation: controlling for optimizer instability. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies: short papers - Volume 2, HLT ’11, pages 176–181, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jay Earley</author>
+</authors>
+<title>An efficient context-free parsing algorithm.</title>
+<date>1970</date>
+<journal>Commun. ACM,</journal>
+<volume>13</volume>
+<issue>2</issue>
+<contexts>
+<context position="5624" citStr="Earley, 1970" startWordPosition="938" endWordPosition="939">sh new hyp in queue) 24: hypList = {} 25: while |heapQ |&gt; 0 and |hypList |&lt; K do 26: (h0c, h0, [H, R]) = pop(heapQ) (pop the best hypothesis) 27: push(heapQ, GetNeighbours([H, R]) (Push neighbours to queue) 28: Add h0 to hypList 29: return hypList the target string is generated from left to right. The rules are obtained from a word and phrase aligned bitext using the rule extraction algorithm in (Watanabe et al., 2006). LR-Hiero decoding uses a top-down depth-first search, which strictly grows the hypotheses in target surface ordering. Search on the source side follows an Earley-style search (Earley, 1970), the dot jumps around on the source side of the rules based on the order of nonterminals on the target side. This search is integrated with beam search or cube pruning to find the k-best translations. Algorithm 1 shows the pseudocode for LRHiero decoding with cube pruning (Chiang, 2007) (CP). LR-Hiero with CP was introduced in (Siahbani et al., 2013). In this pseudocode, we have introduced the notion of queue diversity (explained below). However to understand our change we need to understand the algorithm in more detail. 1The future cost is precomputed in a way similar to the phrase-based mod</context>
+</contexts>
+<marker>Earley, 1970</marker>
+<rawString>Jay Earley. 1970. An efficient context-free parsing algorithm. Commun. ACM, 13(2):94–102, February.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yang Feng</author>
+<author>Yang Liu</author>
+<author>Qun Liu</author>
+<author>Trevor Cohn</author>
+</authors>
+<title>Left-to-right tree-to-string decoding with prediction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, EMNLP-CoNLL ’12,</booktitle>
+<pages>1191--1200</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="1547" citStr="Feng et al., 2012" startWordPosition="230" endWordPosition="233">d synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout this paper we abuse the notation for simplicity and use the term GNF grammars for su</context>
+</contexts>
+<marker>Feng, Liu, Liu, Cohn, 2012</marker>
+<rawString>Yang Feng, Yang Liu, Qun Liu, and Trevor Cohn. 2012. Left-to-right tree-to-string decoding with prediction. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, EMNLP-CoNLL ’12, pages 1191–1200, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Accurate non-hierarchical phrase-based translation.</title>
+<date>2010</date>
+<booktitle>In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>966--974</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Los Angeles, California,</location>
+<contexts>
+<context position="1490" citStr="Galley and Manning, 2010" startWordPosition="220" endWordPosition="223">hrase-based translation (Hiero) (Chiang, 2007) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout this paper we abuse the not</context>
+</contexts>
+<marker>Galley, Manning, 2010</marker>
+<rawString>Michel Galley and Christopher D. Manning. 2010. Accurate non-hierarchical phrase-based translation. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 966–974, Los Angeles, California, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Hieu Hoang</author>
+<author>Philipp Koehn</author>
+<author>Tetsuo Kiso</author>
+<author>Marcello Federico</author>
+</authors>
+<title>Left language model state for syntactic machine translation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the International Workshop on Spoken Language Translation,</booktitle>
+<pages>183--190</pages>
+<location>San Francisco, California, USA,</location>
+<contexts>
+<context position="1380" citStr="Heafield et al., 2011" startWordPosition="204" endWordPosition="207"> decoding that make it comparable in translation quality to CKY-based Hiero. 1 Introduction Hierarchical phrase-based translation (Hiero) (Chiang, 2007) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained </context>
+</contexts>
+<marker>Heafield, Hoang, Koehn, Kiso, Federico, 2011</marker>
+<rawString>Kenneth Heafield, Hieu Hoang, Philipp Koehn, Tetsuo Kiso, and Marcello Federico. 2011. Left language model state for syntactic machine translation. In Proceedings of the International Workshop on Spoken Language Translation, pages 183–190, San Francisco, California, USA, 12.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Philipp Koehn</author>
+<author>Alon Lavie</author>
+</authors>
+<title>Grouping language model boundary words to speed K-Best extraction from hypergraphs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<location>Atlanta, Georgia, USA, 6.</location>
+<contexts>
+<context position="1404" citStr="Heafield et al., 2013" startWordPosition="208" endWordPosition="211">comparable in translation quality to CKY-based Hiero. 1 Introduction Hierarchical phrase-based translation (Hiero) (Chiang, 2007) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized</context>
+</contexts>
+<marker>Heafield, Koehn, Lavie, 2013</marker>
+<rawString>Kenneth Heafield, Philipp Koehn, and Alon Lavie. 2013. Grouping language model boundary words to speed K-Best extraction from hypergraphs. In Proceedings of the 2013 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Atlanta, Georgia, USA, 6.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+</authors>
+<title>KenLM: Faster and smaller language model queries. In</title>
+<date>2011</date>
+<booktitle>In Proc. of the Sixth Workshop on Statistical Machine Translation.</booktitle>
+<contexts>
+<context position="16469" citStr="Heafield, 2011" startWordPosition="2829" endWordPosition="2830">we translated devset sentences using forced decoding to show that our modifications to LR-Hiero in this section improves the alignment coverage when compared to CKY-Hiero. 4 Experiments We evaluate our modifications to LR-Hiero decoder on three language pairs (Table 1): GermanEnglish (De-En), Czech-English (Cs-En) and Chinese-English (Zh-En). 3In rule type (c) X. will be in β and X. will be in γ. 4For the sake of simplicity, in rule type (b) we can merge X. and X, as they are in the same order on both source and target side. 224 We use a 5-gram LM trained on the Gigaword corpus and use KenLM (Heafield, 2011). We tune weights by minimizing BLEU loss on the dev set through MERT (Och, 2003) and report BLEU scores on the test set. Pop limit for Hiero and LRHiero+CP is 500 and beam size LR-Hiero is 500. Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings. To make the results comparable we use the same feature set for all baselines, Hiero as well (including new features proposed by (Siahbani et al., 2013)). We use 3 baselines: (i) our implementation of (Watanabe et al., 2006): LR-Hiero with beam search (LR-Hiero) and (ii) LR-Hiero with cube pruning (</context>
+<context position="19358" citStr="Heafield, 2011" startWordPosition="3325" endWordPosition="3326">el Cs-En De-En Zh-En Hiero 1,961.6 858.5 471.9 LR-Hiero 266.5 116.0 100.9 Table 3: Model sizes (millions of rules). Model Cs-En De-En Zh-En Hiero 318 351 187 LR-Hiero 278 300 132 LR-Hiero+(abc) 338 361 174 Table 4: No. of sentence covered in forced decoding of a sample of sentences from the devset. We improve the coverage by 31% for Chinese-English and more than 20% for the other two language pairs. type (c) rules. Figure 2b shows the results in terms of average number of language model queries on a sample set of 50 sentences from test sets. All of the baselines use the same wrapper to KenLM (Heafield, 2011) to query the language model, and we have instrumented the wrapper to count the statistics. In (Siahbani et al., 2013) we discuss that LR-Hiero with beam search (Watanabe et al., 2006) does not perform at the same level of state-of-the-art Hiero (more LM calls and less translation quality). As we can see in this figure, adding new modified rules slightly increases the number of language model queries on Cs-En and De-En so that LR-Hiero+CP still works 2 to 3 times faster than Hiero. On Zh-En, LR-Hiero+CP applies queue diversity (QD=15) which reduces search errors and improves translation qualit</context>
+</contexts>
+<marker>Heafield, 2011</marker>
+<rawString>Kenneth Heafield. 2011. KenLM: Faster and smaller language model queries. In In Proc. of the Sixth Workshop on Statistical Machine Translation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Forest rescoring: Faster decoding with integrated language models.</title>
+<date>2007</date>
+<booktitle>In In ACL 07.</booktitle>
+<contexts>
+<context position="12047" citStr="Huang and Chiang, 2007" startWordPosition="2078" endWordPosition="2081"> in GetBestHypotheses((H, R), .F, d). This parameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure 3(b) are shown in Figure 2. The problem occurs in Step 5 of Figure 2 where rule #5 is matched to span [7,15]. During decoding LR-Hiero maintains a stack (lastin-first-out) of yet-to-be-covered spans and tries to translate the first uncovered span (span [7,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] </context>
+</contexts>
+<marker>Huang, Chiang, 2007</marker>
+<rawString>Liang Huang and David Chiang. 2007. Forest rescoring: Faster decoding with integrated language models. In In ACL 07.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Haitao Mi</author>
+</authors>
+<title>Efficient incremental decoding for tree-to-string translation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>273--283</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Cambridge, MA,</location>
+<contexts>
+<context position="1527" citStr="Huang and Mi, 2010" startWordPosition="226" endWordPosition="229">7) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout this paper we abuse the notation for simplicity and use the term</context>
+</contexts>
+<marker>Huang, Mi, 2010</marker>
+<rawString>Liang Huang and Haitao Mi. 2010. Efficient incremental decoding for tree-to-string translation. In Proceedings of the 2010 Conference on Empirical Methods in Natural Language Processing, pages 273–283, Cambridge, MA, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proc. of NAACL.</booktitle>
+<contexts>
+<context position="7574" citStr="Koehn et al., 2003" startWordPosition="1294" endWordPosition="1297">is instantiated to span [4, i]. A worked out example of how the decoder works is shown in Figure 2. Each partial hypothesis h is a 4-tuple (ht, hs, hcov, hc): consisting of a translation prefix ht, a (LIFO-ordered) list hs of uncovered spans, source words coverage set hcov and the hypothesis cost hc. The initial hypothesis is a null string with just a sentence-initial marker (s) and the list hs containing a span of the whole sentence, [0, n]. The hypotheses are stored in stacks S0, ... , Sn, where Sp contains hypotheses covering p source words just like in stack decoding for phrase-based SMT (Koehn et al., 2003). To fill stack Si we consider hypotheses in each stack Sp2, which are first partitioned into a set of groups {G}, based on their first uncovered span (line 9). Each group g is a 2-tuple (gspan, ghyps), where ghyps is a list of hypotheses which share the same first uncovered span gspan. Rules matching the span gspan are obtained from routine GetSpanRules. Each ghyps and possible Rs create a cube which is added to cubeList. The Merge routine gets the best hypotheses from all cubes (see Fig.1). Hypotheses (rows) and columns (rules) are sorted based on their scores. GetBestHypotheses((H, R),F, d)</context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proc. of NAACL.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+<author>Chris Dyer</author>
+<author>Ondˇrej Bojar</author>
+<author>Alexandra Constantin</author>
+<author>Evan Herbst</author>
+</authors>
+<title>Moses: open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07,</booktitle>
+<pages>177--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="6248" citStr="Koehn et al., 2007" startWordPosition="1043" endWordPosition="1046"> dot jumps around on the source side of the rules based on the order of nonterminals on the target side. This search is integrated with beam search or cube pruning to find the k-best translations. Algorithm 1 shows the pseudocode for LRHiero decoding with cube pruning (Chiang, 2007) (CP). LR-Hiero with CP was introduced in (Siahbani et al., 2013). In this pseudocode, we have introduced the notion of queue diversity (explained below). However to understand our change we need to understand the algorithm in more detail. 1The future cost is precomputed in a way similar to the phrase-based models (Koehn et al., 2007) using only the terminal rules of the grammar. Figure 1: Cubes (grids) are fed to a priority queue (triangle) and generated hypotheses are iteratively popped from the queue and added to stack Si. Lower scores are better. Scores of rules and hypotheses appear on the top and left side of the grids respectively. Shaded entries are hypotheses in the queue and black ones are popped from the queue and added to Si. Each source side non-terminal is instantiated with the legal spans given the input source string, e.g. if there is a Hiero rule (aX1, a&apos;X1) and if a only occurs at position 3 in the input </context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, Dyer, Bojar, Constantin, Herbst, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: open source toolkit for statistical machine translation. In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL ’07, pages 177–180, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Pharaoh: A beam search decoder for phrase-based statistical machine translation models.</title>
+<date>2004</date>
+<booktitle>In AMTA,</booktitle>
+<pages>115--124</pages>
+<contexts>
+<context position="1463" citStr="Koehn, 2004" startWordPosition="218" endWordPosition="219">ierarchical phrase-based translation (Hiero) (Chiang, 2007) uses a lexicalized synchronous context-free grammar (SCFG) extracted from word and phrase alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout </context>
+</contexts>
+<marker>Koehn, 2004</marker>
+<rawString>Philipp Koehn. 2004. Pharaoh: A beam search decoder for phrase-based statistical machine translation models. In AMTA, pages 115–124.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+</authors>
+<title>Minimum error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics - Volume 1, ACL ’03,</booktitle>
+<pages>160--167</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="16550" citStr="Och, 2003" startWordPosition="2844" endWordPosition="2845"> LR-Hiero in this section improves the alignment coverage when compared to CKY-Hiero. 4 Experiments We evaluate our modifications to LR-Hiero decoder on three language pairs (Table 1): GermanEnglish (De-En), Czech-English (Cs-En) and Chinese-English (Zh-En). 3In rule type (c) X. will be in β and X. will be in γ. 4For the sake of simplicity, in rule type (b) we can merge X. and X, as they are in the same order on both source and target side. 224 We use a 5-gram LM trained on the Gigaword corpus and use KenLM (Heafield, 2011). We tune weights by minimizing BLEU loss on the dev set through MERT (Och, 2003) and report BLEU scores on the test set. Pop limit for Hiero and LRHiero+CP is 500 and beam size LR-Hiero is 500. Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings. To make the results comparable we use the same feature set for all baselines, Hiero as well (including new features proposed by (Siahbani et al., 2013)). We use 3 baselines: (i) our implementation of (Watanabe et al., 2006): LR-Hiero with beam search (LR-Hiero) and (ii) LR-Hiero with cube pruning (Siahbani et al., 2013): (LR-Hiero+CP); and (iii) Kriya, an open-source implementa</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Josef Och. 2003. Minimum error rate training in statistical machine translation. In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics - Volume 1, ACL ’03, pages 160– 167, Stroudsburg, PA, USA. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Pust</author>
+<author>Kevin Knight</author>
+</authors>
+<title>Faster mt decoding through pervasive laziness.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers,</booktitle>
+<pages>141--144</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Boulder, Colorado,</location>
+<contexts>
+<context position="12007" citStr="Pust and Knight, 2009" startWordPosition="2071" endWordPosition="2074">queue diversity which is the parameter d in GetBestHypotheses((H, R), .F, d). This parameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure 3(b) are shown in Figure 2. The problem occurs in Step 5 of Figure 2 where rule #5 is matched to span [7,15]. During decoding LR-Hiero maintains a stack (lastin-first-out) of yet-to-be-covered spans and tries to translate the first uncovered span (span [7,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which</context>
+</contexts>
+<marker>Pust, Knight, 2009</marker>
+<rawString>Michael Pust and Kevin Knight. 2009. Faster mt decoding through pervasive laziness. In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, Companion Volume: Short Papers, pages 141–144, Boulder, Colorado, June. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Baskaran Sankaran</author>
+<author>Majid Razmara</author>
+<author>Anoop Sarkar</author>
+</authors>
+<title>Kriya - an end-to-end hierarchical phrase-based mt system.</title>
+<date>2012</date>
+<booktitle>The Prague Bulletin of Mathematical Linguistics (PBML),</booktitle>
+<volume>97</volume>
+<issue>97</issue>
+<contexts>
+<context position="17259" citStr="Sankaran et al., 2012" startWordPosition="2958" endWordPosition="2961">beam size LR-Hiero is 500. Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings. To make the results comparable we use the same feature set for all baselines, Hiero as well (including new features proposed by (Siahbani et al., 2013)). We use 3 baselines: (i) our implementation of (Watanabe et al., 2006): LR-Hiero with beam search (LR-Hiero) and (ii) LR-Hiero with cube pruning (Siahbani et al., 2013): (LR-Hiero+CP); and (iii) Kriya, an open-source implementation of Hiero in Python, which performs comparably to other open-source Hiero systems (Sankaran et al., 2012). Table 3 shows model sizes for LR-Hiero (GNF) and Hiero (SCFG). Typical Hiero rule extraction excludes phrase-pairs with unaligned words on boundaries (loose phrases). We use similar rule extraction as Hiero, except that exclude non-GNF rules and include loose phrase-pairs as terminal rules. Table 2a shows the translation quality of different systems in terms of BLEU score. Row 3 is from (Siahbani et al., 2013)5. As we discussed in Section 2, LR-Hiero+CP suffers from severe search errors on Zh-En (1.5 BLEU) but using queue diversity (QD=15) we fill this gap. We use the same QD(=15) in next ro</context>
+</contexts>
+<marker>Sankaran, Razmara, Sarkar, 2012</marker>
+<rawString>Baskaran Sankaran, Majid Razmara, and Anoop Sarkar. 2012. Kriya - an end-to-end hierarchical phrase-based mt system. The Prague Bulletin of Mathematical Linguistics (PBML), 97(97):83–98, apr.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Maryam Siahbani</author>
+<author>Baskaran Sankaran</author>
+<author>Anoop Sarkar</author>
+</authors>
+<title>Efficient left-to-right hierarchical phrase-based translation with improved reordering.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Seattle, USA,</location>
+<contexts>
+<context position="1646" citStr="Siahbani et al., 2013" startWordPosition="246" endWordPosition="249">. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout this paper we abuse the notation for simplicity and use the term GNF grammars for such SCFGs. This constraint drastically reduces the size of grammar for LR-Hiero in comparison to Hie</context>
+<context position="5977" citStr="Siahbani et al., 2013" startWordPosition="997" endWordPosition="1001"> aligned bitext using the rule extraction algorithm in (Watanabe et al., 2006). LR-Hiero decoding uses a top-down depth-first search, which strictly grows the hypotheses in target surface ordering. Search on the source side follows an Earley-style search (Earley, 1970), the dot jumps around on the source side of the rules based on the order of nonterminals on the target side. This search is integrated with beam search or cube pruning to find the k-best translations. Algorithm 1 shows the pseudocode for LRHiero decoding with cube pruning (Chiang, 2007) (CP). LR-Hiero with CP was introduced in (Siahbani et al., 2013). In this pseudocode, we have introduced the notion of queue diversity (explained below). However to understand our change we need to understand the algorithm in more detail. 1The future cost is precomputed in a way similar to the phrase-based models (Koehn et al., 2007) using only the terminal rules of the grammar. Figure 1: Cubes (grids) are fed to a priority queue (triangle) and generated hypotheses are iteratively popped from the queue and added to stack Si. Lower scores are better. Scores of rules and hypotheses appear on the top and left side of the grids respectively. Shaded entries are</context>
+<context position="11638" citStr="Siahbani et al., 2013" startWordPosition="2006" endWordPosition="2010">n many hypotheses in the left cube due to the LM score. This means the right cube has hypotheses that are ignored. This type of search error hurts LR-Hiero more than CKYHiero, due to the fact that hypotheses scores in LR-Hiero rely on a future cost, while CKY-Hiero uses the inside score for each hypothesis. To solve this issue for LR-Hiero we introduce the notion of queue diversity which is the parameter d in GetBestHypotheses((H, R), .F, d). This parameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure</context>
+<context position="13170" citStr="Siahbani et al., 2013" startWordPosition="2258" endWordPosition="2261"> [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] (corresponding to X1) being reordered around it 223 Corpus Train/Dev/Test Cs-En Europarl(v7) + CzEng(v0.9); News 7.95M/3000/3003 commentary(nc) 2008&amp;2009; nc 2011 De-En Europarl(v7); WMT2006; WMT2006 1.5M/2000/2000 Zh-En HK + GALE phase-1; MTC part 1&amp;3; 2.3M/1928/919 MTC part 4 Table 1: Corpus statistics in number of sentences. Tuning and test sets for Chinese-English has 4 references. Model Cs-En De-En Zh-En Hiero 20.77 25.72 27.65 LR-Hiero (Watanabe et al., 2006) 20.72 25.10 25.99 LR-Hiero+CP (Siahbani et al., 2013) 20.15 24.83 - LR-Hiero+CP (QD=1) 20.68 25.14 24.44 LR-Hiero+CP (QD=15) - - 26.10 LR-Hiero+CP+(ab) 20.88 25.22 26.55 LR-Hiero+CP+(abc) 20.89 25.22 26.52 (a) BLEU scores for different baselines and modifications of this paper. QD=15 for Zh-En in last three rows. (b) Average number of language model queries. Table 2: (a) BLEU (b) LM calls causing the incorrect translation in Step 9. If we use the same set of rules for translation in Hiero (CKY-based decoder), the decoder is able to generate the correct translation for span [7,14] (it works bottom-up and generate best translation for each source </context>
+<context position="16921" citStr="Siahbani et al., 2013" startWordPosition="2908" endWordPosition="2911"> we can merge X. and X, as they are in the same order on both source and target side. 224 We use a 5-gram LM trained on the Gigaword corpus and use KenLM (Heafield, 2011). We tune weights by minimizing BLEU loss on the dev set through MERT (Och, 2003) and report BLEU scores on the test set. Pop limit for Hiero and LRHiero+CP is 500 and beam size LR-Hiero is 500. Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings. To make the results comparable we use the same feature set for all baselines, Hiero as well (including new features proposed by (Siahbani et al., 2013)). We use 3 baselines: (i) our implementation of (Watanabe et al., 2006): LR-Hiero with beam search (LR-Hiero) and (ii) LR-Hiero with cube pruning (Siahbani et al., 2013): (LR-Hiero+CP); and (iii) Kriya, an open-source implementation of Hiero in Python, which performs comparably to other open-source Hiero systems (Sankaran et al., 2012). Table 3 shows model sizes for LR-Hiero (GNF) and Hiero (SCFG). Typical Hiero rule extraction excludes phrase-pairs with unaligned words on boundaries (loose phrases). We use similar rule extraction as Hiero, except that exclude non-GNF rules and include loose </context>
+<context position="18519" citStr="Siahbani et al., 2013" startWordPosition="3173" endWordPosition="3176">se regular cube pruning (QD=1), as it works as well as beam search (compare rows 4 and 2). We measure the benefit of the new modified rules from Section 3: (ab): adding modifications for rules type (a) and (b); (abc): modification of all rules. We can see that for all language pairs (ab) constantly improves performance of LRHiero, significantly better than LR-Hiero+CP and LR-Hiero (p-value&lt;0.05) on Cs-En and Zh-En, evaluated by MultEval (Clark et al., 2011). But modifying rule type (c) does not show any improvement due to spurious ambiguity created by 5We report results on Cs-En and De-En in (Siahbani et al., 2013). Row 4 is the same translation system as row 3 (LR-Hiero+CP). We achieve better results than our previous work (Siahbani et al., 2013) (row 4 vs. row 3) due to bug corrections and adding loose phrases as terminal rules. Model Cs-En De-En Zh-En Hiero 1,961.6 858.5 471.9 LR-Hiero 266.5 116.0 100.9 Table 3: Model sizes (millions of rules). Model Cs-En De-En Zh-En Hiero 318 351 187 LR-Hiero 278 300 132 LR-Hiero+(abc) 338 361 174 Table 4: No. of sentence covered in forced decoding of a sample of sentences from the devset. We improve the coverage by 31% for Chinese-English and more than 20% for the</context>
+</contexts>
+<marker>Siahbani, Sankaran, Sarkar, 2013</marker>
+<rawString>Maryam Siahbani, Baskaran Sankaran, and Anoop Sarkar. 2013. Efficient left-to-right hierarchical phrase-based translation with improved reordering. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, Seattle, USA, October. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Vilar</author>
+<author>Hermann Ney</author>
+</authors>
+<title>On lm heuristics for the cube growing algorithm.</title>
+<date>2009</date>
+<booktitle>In Annual Conference of the European Association for Machine Translation,</booktitle>
+<pages>242--249</pages>
+<location>Barcelona, Spain,</location>
+<contexts>
+<context position="12068" citStr="Vilar and Ney, 2009" startWordPosition="2082" endWordPosition="2085">, R), .F, d). This parameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure 3(b) are shown in Figure 2. The problem occurs in Step 5 of Figure 2 where rule #5 is matched to span [7,15]. During decoding LR-Hiero maintains a stack (lastin-first-out) of yet-to-be-covered spans and tries to translate the first uncovered span (span [7,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] (corresponding to X1)</context>
+</contexts>
+<marker>Vilar, Ney, 2009</marker>
+<rawString>David Vilar and Hermann Ney. 2009. On lm heuristics for the cube growing algorithm. In Annual Conference of the European Association for Machine Translation, pages 242–249, Barcelona, Spain, may.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taro Watanabe</author>
+<author>Hajime Tsukada</author>
+<author>Hideki Isozaki</author>
+</authors>
+<title>Left-to-right target generation for hierarchical phrase-based translation.</title>
+<date>2006</date>
+<booktitle>In Proc. of ACL.</booktitle>
+<contexts>
+<context position="1622" citStr="Watanabe et al., 2006" startWordPosition="242" endWordPosition="245"> alignments of a bitext. Decoding for Hiero is typically done with CKY-style decoding with time complexity O(n3) for source input with n words. Computing the language model score for each hypothesis within CKY decoding requires two histories, the left and the right edge of each span, due to the fact that the target side is built inside-out from sub-spans (Heafield et al., 2011; Heafield et al., 2013). LR-decoding algorithms exist for phrasebased (Koehn, 2004; Galley and Manning, 2010) and syntax-based (Huang and Mi, 2010; Feng et al., 2012) models and also for hierarchical phrasebased models (Watanabe et al., 2006; Siahbani et al., 2013), which is our focus in this paper. Watanabe et al. (2006) first proposed left-toright (LR) decoding for Hiero (LR-Hiero henceforth) which uses beam search and runs in O(n2b) in practice where n is the length of source sentence and b is the size of beam (Huang and Mi, 2010). To simplify target generation, SCFG rules are constrained to be prefix-lexicalized on target side aka Griebach Normal Form (GNF). Throughout this paper we abuse the notation for simplicity and use the term GNF grammars for such SCFGs. This constraint drastically reduces the size of grammar for LR-Hi</context>
+<context position="5433" citStr="Watanabe et al., 2006" startWordPosition="908" endWordPosition="911"> F) 19: heapQ = {} 20: for each (H, R) in cubeList do 21: hypList = getBestHypotheses((H, R), F, d) (d best hypotheses of each cube) 22: for each h0 in hypList do 23: push(heapQ, (h0c, h0, [H, R]) (Push new hyp in queue) 24: hypList = {} 25: while |heapQ |&gt; 0 and |hypList |&lt; K do 26: (h0c, h0, [H, R]) = pop(heapQ) (pop the best hypothesis) 27: push(heapQ, GetNeighbours([H, R]) (Push neighbours to queue) 28: Add h0 to hypList 29: return hypList the target string is generated from left to right. The rules are obtained from a word and phrase aligned bitext using the rule extraction algorithm in (Watanabe et al., 2006). LR-Hiero decoding uses a top-down depth-first search, which strictly grows the hypotheses in target surface ordering. Search on the source side follows an Earley-style search (Earley, 1970), the dot jumps around on the source side of the rules based on the order of nonterminals on the target side. This search is integrated with beam search or cube pruning to find the k-best translations. Algorithm 1 shows the pseudocode for LRHiero decoding with cube pruning (Chiang, 2007) (CP). LR-Hiero with CP was introduced in (Siahbani et al., 2013). In this pseudocode, we have introduced the notion of q</context>
+<context position="9689" citStr="Watanabe et al., 2006" startWordPosition="1654" endWordPosition="1657">ney [7,15] (s)Thailand wants to utilize this money to inject more [12,15][7,9] (s)Thailand wants to utilize this money to inject more circulating [13,15][7,9] (s)Thailand wants to utilize this money to inject more circulating capital [14,15][7,9] (s)Thailand wants to utilize this money to inject more circulating capital . [7,9] (s)Thailand wants to utilize this money to inject more circulating capital . to the economy(/s) Figure 2: The process of translating the Chinese sentence in Figure 3(b) in LR-Hiero. Left side shows the rules used in the derivation (G indicates glue rules as defined in (Watanabe et al., 2006)). The hypotheses column shows the translation prefix and the ordered list of yet-to-be-covered spans. X1 X2 utilize capital wants to Thailand circulating inject more this money to to the economy zījīn liúdòng xiàng jīngjì zhùrù gèng duō 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 yào lìyòng Tàiguó shì zhè bǐ qián . . X, 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 Tā buch6ng shu6 , liánhé zhèngfu mùqián zhuàngkuàng wěndìng , bìngqiě y6u nénglì guànchè jīngjì g6igé jìhuà . and capable of carrying out the economic is now in stable reform plan condition . He added that the coalition government Figur</context>
+<context position="13116" citStr="Watanabe et al., 2006" startWordPosition="2250" endWordPosition="2253">,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] (corresponding to X1) being reordered around it 223 Corpus Train/Dev/Test Cs-En Europarl(v7) + CzEng(v0.9); News 7.95M/3000/3003 commentary(nc) 2008&amp;2009; nc 2011 De-En Europarl(v7); WMT2006; WMT2006 1.5M/2000/2000 Zh-En HK + GALE phase-1; MTC part 1&amp;3; 2.3M/1928/919 MTC part 4 Table 1: Corpus statistics in number of sentences. Tuning and test sets for Chinese-English has 4 references. Model Cs-En De-En Zh-En Hiero 20.77 25.72 27.65 LR-Hiero (Watanabe et al., 2006) 20.72 25.10 25.99 LR-Hiero+CP (Siahbani et al., 2013) 20.15 24.83 - LR-Hiero+CP (QD=1) 20.68 25.14 24.44 LR-Hiero+CP (QD=15) - - 26.10 LR-Hiero+CP+(ab) 20.88 25.22 26.55 LR-Hiero+CP+(abc) 20.89 25.22 26.52 (a) BLEU scores for different baselines and modifications of this paper. QD=15 for Zh-En in last three rows. (b) Average number of language model queries. Table 2: (a) BLEU (b) LM calls causing the incorrect translation in Step 9. If we use the same set of rules for translation in Hiero (CKY-based decoder), the decoder is able to generate the correct translation for span [7,14] (it works bo</context>
+<context position="16993" citStr="Watanabe et al., 2006" startWordPosition="2920" endWordPosition="2923"> target side. 224 We use a 5-gram LM trained on the Gigaword corpus and use KenLM (Heafield, 2011). We tune weights by minimizing BLEU loss on the dev set through MERT (Och, 2003) and report BLEU scores on the test set. Pop limit for Hiero and LRHiero+CP is 500 and beam size LR-Hiero is 500. Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings. To make the results comparable we use the same feature set for all baselines, Hiero as well (including new features proposed by (Siahbani et al., 2013)). We use 3 baselines: (i) our implementation of (Watanabe et al., 2006): LR-Hiero with beam search (LR-Hiero) and (ii) LR-Hiero with cube pruning (Siahbani et al., 2013): (LR-Hiero+CP); and (iii) Kriya, an open-source implementation of Hiero in Python, which performs comparably to other open-source Hiero systems (Sankaran et al., 2012). Table 3 shows model sizes for LR-Hiero (GNF) and Hiero (SCFG). Typical Hiero rule extraction excludes phrase-pairs with unaligned words on boundaries (loose phrases). We use similar rule extraction as Hiero, except that exclude non-GNF rules and include loose phrase-pairs as terminal rules. Table 2a shows the translation quality o</context>
+<context position="19542" citStr="Watanabe et al., 2006" startWordPosition="3354" endWordPosition="3357">2 LR-Hiero+(abc) 338 361 174 Table 4: No. of sentence covered in forced decoding of a sample of sentences from the devset. We improve the coverage by 31% for Chinese-English and more than 20% for the other two language pairs. type (c) rules. Figure 2b shows the results in terms of average number of language model queries on a sample set of 50 sentences from test sets. All of the baselines use the same wrapper to KenLM (Heafield, 2011) to query the language model, and we have instrumented the wrapper to count the statistics. In (Siahbani et al., 2013) we discuss that LR-Hiero with beam search (Watanabe et al., 2006) does not perform at the same level of state-of-the-art Hiero (more LM calls and less translation quality). As we can see in this figure, adding new modified rules slightly increases the number of language model queries on Cs-En and De-En so that LR-Hiero+CP still works 2 to 3 times faster than Hiero. On Zh-En, LR-Hiero+CP applies queue diversity (QD=15) which reduces search errors and improves translation quality but increases the number of hypothesis generation as well. LRHiero+CP with our modifications works substantially faster than LR-Hiero while obtain significantly better translation qu</context>
+</contexts>
+<marker>Watanabe, Tsukada, Isozaki, 2006</marker>
+<rawString>Taro Watanabe, Hajime Tsukada, and Hideki Isozaki. 2006. Left-to-right target generation for hierarchical phrase-based translation. In Proc. of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wenduan Xu</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Extending hiero decoding in moses with cube growing.</title>
+<date>2012</date>
+<journal>Prague Bull. Math. Linguistics,</journal>
+<pages>98--133</pages>
+<contexts>
+<context position="12089" citStr="Xu and Koehn, 2012" startWordPosition="2086" endWordPosition="2089">rameter guarantees that each cube will produce at least d candidate hypotheses for the priority queue. d=1 in standard cube pruning for LR-Hiero (Siahbani et al., 2013). We apply the idea of diversity at queue level, before generating K best hypothesis, such that the GetBestHypotheses routine generates d best hypotheses from each cube and all these hypotheses are pushed to the priority queue (line 22-23). We fill each stack differently from CKY-Hiero and so queue diversity is different from lazy cube pruning (Pust and Knight, 2009) or cube growing (Huang and Chiang, 2007; Vilar and Ney, 2009; Xu and Koehn, 2012). 3 Capturing Missing Alignments Figure 3(a) and Figure 3(b) show two examples of a common problem in LR-Hiero decoding. The decoder steps for Figure 3(b) are shown in Figure 2. The problem occurs in Step 5 of Figure 2 where rule #5 is matched to span [7,15]. During decoding LR-Hiero maintains a stack (lastin-first-out) of yet-to-be-covered spans and tries to translate the first uncovered span (span [7,15] in Step 5). LR-Hiero should match rule #5 to span [7,15], therefore X2 is forced to match span [12,15] which leads to the translation of span [7,9] (corresponding to X1) being reordered arou</context>
+</contexts>
+<marker>Xu, Koehn, 2012</marker>
+<rawString>Wenduan Xu and Philipp Koehn. 2012. Extending hiero decoding in moses with cube growing. Prague Bull. Math. Linguistics, 98:133–.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

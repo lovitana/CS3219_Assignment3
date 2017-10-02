@@ -1,0 +1,1288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000289">
+<title confidence="0.99593">
+An Empirical Analysis of Optimization for Max-Margin NLP
+</title>
+<author confidence="0.998796">
+Jonathan K. Kummerfeld, Taylor Berg-Kirkpatrick and Dan Klein
+</author>
+<affiliation confidence="0.998575">
+Computer Science Division
+University of California, Berkeley
+</affiliation>
+<address confidence="0.613586">
+Berkeley, CA 94720, USA
+</address>
+<email confidence="0.999072">
+{jkk,tberg,klein}@cs.berkeley.edu
+</email>
+<sectionHeader confidence="0.993894" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999922523809524">
+Despite the convexity of structured max-
+margin objectives (Taskar et al., 2004;
+Tsochantaridis et al., 2004), the many
+ways to optimize them are not equally ef-
+fective in practice. We compare a range of
+online optimization methods over a vari-
+ety of structured NLP tasks (coreference,
+summarization, parsing, etc) and find sev-
+eral broad trends. First, margin methods
+do tend to outperform both likelihood and
+the perceptron. Second, for max-margin
+objectives, primal optimization methods
+are often more robust and progress faster
+than dual methods. This advantage is
+most pronounced for tasks with dense or
+continuous-valued features. Overall, we
+argue for a particularly simple online pri-
+mal subgradient descent method that, de-
+spite being rarely mentioned in the litera-
+ture, is surprisingly effective in relation to
+its alternatives.
+</bodyText>
+<sectionHeader confidence="0.998993" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999953659090909">
+Structured discriminative models have proven ef-
+fective across a range of tasks in NLP includ-
+ing tagging (Lafferty et al., 2001; Collins, 2002),
+reranking parses (Charniak and Johnson, 2005),
+and many more (Taskar, 2004; Smith, 2011).
+Common approaches to training such models in-
+clude margin methods, likelihood methods, and
+mistake-driven procedures like the averaged per-
+ceptron algorithm. In this paper, we primarily con-
+sider the relative empirical behavior of several on-
+line optimization methods for margin-based objec-
+tives, with secondary attention to other approaches
+for calibration.
+It is increasingly common to train structured
+models using a max-margin objective that incor-
+porates a loss function that decomposes in the
+same way as the dynamic program used for in-
+ference (Taskar, 2004). Fortunately, most struc-
+tured margin objectives are convex, so a range
+of optimization methods with similar theoretical
+properties are available – in short, any of these
+methods will work in the end. However, in prac-
+tice, how fast each method converges varies across
+tasks. Moreover, some of the most popular meth-
+ods more loosely associated with the margin ob-
+jective, such as the MIRA algorithm (Crammer
+and Singer, 2003) or even the averaged perceptron
+(Freund and Schapire, 1999) are not global opti-
+mizations and can have different properties.
+We analyze a range of methods empirically, to
+understand on which tasks and with which fea-
+ture types, they are most effective. We modified
+six existing, high-performance, systems to enable
+loss-augmented decoding, and trained these mod-
+els with six different methods. We have released
+our learning code as a Java library.1 Our results
+provide support for the conventional wisdom that
+margin-based optimization is broadly effective,
+frequently outperforming likelihood optimization
+and the perceptron algorithm. We also found that
+directly optimizing the primal structured margin
+objective based on subgradients calculated from
+single training instances is surprisingly effective,
+performing consistently well across all tasks.
+</bodyText>
+<sectionHeader confidence="0.975828" genericHeader="method">
+2 Learning Algorithms
+</sectionHeader>
+<bodyText confidence="0.999480111111111">
+We implemented a range of optimization methods
+that are widely used in NLP; below we categorize
+them into margin, likelihood, and perceptron-like
+methods. In each case, we used a structured loss
+function, modified to suit each task. In general,
+we focus on online methods because of their sub-
+stantial speed advantages, rather than algorithms
+such as LBFGS (Liu and Nocedal, 1989) or batch
+Exponentiated Gradient (Collins et al., 2008).
+</bodyText>
+<footnote confidence="0.98968">
+1http://nlp.cs.berkeley.edu/software.shtml
+</footnote>
+<page confidence="0.947679">
+273
+</page>
+<note confidence="0.8712865">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 273–279,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<figure confidence="0.8937605">
+Algorithm 1 The Online Primal Subgradient Algorithm with E1 or E2 regularization, and sparse updates
+Parameters:
+iters Number of iterations
+C Regularization constant (10−1 to 10−8)
+η Learning rate (100 to 10−4)
+S Initializer for q (10−6)
+</figure>
+<bodyText confidence="0.4473115">
+The AdaGrad update
+function UPDATE-ACTIVE(w, g, q)
+</bodyText>
+<equation confidence="0.984936416666667">
+√q−ηg
+return w [E2]
+ηC+√q
+d=|w− η √q g|−η √q C [E1]
+return sign(w − η
+√qg) · max(0, d) [E1]
+w = 0 Weight vector
+q = δ Cumulative squared gradient
+u = 0 Time of last update for each weight
+n = 0 Number of updates so far
+for iter E [1, iters] do
+for batch E data do
+Sum gradients from loss-aug. decodes
+g = 0
+for (xi, yi) E batch do
+y = argmax [SCORE(y0) + L(y0, yi)]
+y&apos;∈Y (xi)
+g += (f(y) − f(yi))
+Update the active features
+q += g2Element-wise square
+n += 1
+for f E nonzero features in g do
+wf = UPDATE-ACTIVE(wf, gf, qf)
+uf = n
+</equation>
+<bodyText confidence="0.9356604">
+Functions only needed for sparse updates
+A single update equivalent to a series of AdaGrad
+updates where the weight’s subgradient was zero
+function UPDATE-CATCHUP(w, q, t)
+(ηC+√q
+\return w It [E2]
+return sign(w) · max(0, |w |− ηC√qt) [E1]
+Compute w&gt;f(y0), but for each weight, apply an
+update to catch up on the steps in which the gra-
+dient for that weight was zero
+</bodyText>
+<equation confidence="0.974161">
+function SCORE(y0)
+s = 0
+for f E f(y0) do
+wf = UPDATE-CATCHUP(wf, qf, n−uf)
+uf = n
+s += wf
+return s
+</equation>
+<bodyText confidence="0.7512465">
+Note: To implement without the sparse update, use SCORE = wTf(y&apos;), and run the update loop on the left over all features.
+Also, for comparison, to implement perceptron, remove the sparse update and use UPDATE-ACTIVE = return w + g.
+</bodyText>
+<subsectionHeader confidence="0.964499">
+2.1 Margin
+</subsectionHeader>
+<bodyText confidence="0.998138875">
+Cutting Plane (Tsochantaridis et al., 2004)
+Solves a sequence of quadratic programs (QP),
+each of which is an approximation to the dual
+formulation of the margin-based learning prob-
+lem. At each iteration, the current QP is refined
+by adding additional active constraints. We solve
+each approximate QP using Sequential Minimal
+Optimization (Platt, 1999; Taskar et al., 2004).
+</bodyText>
+<subsectionHeader confidence="0.71012">
+Online Cutting Plane (Chang and Yih, 2013)
+</subsectionHeader>
+<bodyText confidence="0.9999806">
+A modified form of cutting plane that only par-
+tially solves the QP on each iteration, operating in
+the dual space and optimizing a single dual vari-
+able on each iteration. We use a variant of Chang
+and Yih (2013) for the L1 loss margin objective.
+</bodyText>
+<subsectionHeader confidence="0.751655">
+Online Primal Subgradient (Ratliff et al., 2007)
+</subsectionHeader>
+<bodyText confidence="0.999780235294118">
+Computes the subgradient of the margin objective
+on each instance by performing a loss-augmented
+decode, then uses these instance-wise subgradi-
+ents to optimize the global objective using Ada-
+Grad (Duchi et al., 2011) with either L1 or L2 reg-
+ularization. The simplest implementation of Ada-
+Grad touches every weight when doing the update
+for a batch. To save time, we distinguish between
+two different types of update. When the subgradi-
+ent is nonzero, we apply the usual update. When
+the subgradient is zero, we apply a numerically
+equivalent update later, at the next time the weight
+is queried. This saves time, as we only touch
+the weights corresponding to the (usually sparse)
+nonzero directions in the current batch’s subgradi-
+ent. Algorithm 1 gives pseudocode for our imple-
+mentation, which was based on Dyer (2013).
+</bodyText>
+<subsectionHeader confidence="0.997536">
+2.2 Likelihood
+</subsectionHeader>
+<bodyText confidence="0.999395285714286">
+Stochastic Gradient Descent The built-in train-
+ing method for many of the systems was
+softmax-margin likelihood optimization (Gimpel
+and Smith, 2010) via subgradient descent with ei-
+ther AdaGrad or AdaDelta (Duchi et al., 2011;
+Zeiler, 2012). We include results with each sys-
+tem’s default settings as a point of comparison.
+</bodyText>
+<subsectionHeader confidence="0.99749">
+2.3 Mistake Driven
+</subsectionHeader>
+<bodyText confidence="0.94922275">
+Averaged Perceptron (Freund and Schapire,
+1999; Collins, 2002) On a mistake, weights for
+features on the system output are decremented and
+weights for features on the gold output are incre-
+</bodyText>
+<page confidence="0.98615">
+274
+</page>
+<bodyText confidence="0.9765045">
+mented. Weights are averaged over the course of
+training, and decoding is not loss-augmented.
+Margin Infused Relaxed Algorithm (Crammer
+and Singer, 2003) A modified form of the per-
+ceptron that uses loss-augmented decoding and
+makes the smallest update necessary to give a mar-
+gin at least as large as the loss of each solution.
+MIRA is generally presented as being related to
+the perceptron because it does not explicitly op-
+timize a global objective, but it also has connec-
+tions to margin methods, as explored by Chiang
+(2012). We consider one-best decoding, where the
+quadratic program for determining the magnitude
+of the update has a closed form.
+</bodyText>
+<sectionHeader confidence="0.977044" genericHeader="method">
+3 Tasks and Systems
+</sectionHeader>
+<bodyText confidence="0.98471">
+We considered tasks covering a range of structured
+output spaces, from sequences to non-projective
+trees. Most of the corresponding systems use
+models designed for likelihood-based structured
+prediction. Some use sparse indicator features,
+while others use dense continuous-valued features.
+Named Entity Recognition This task provides
+a case of sequence prediction. We used the NER
+component of Durrett and Klein (2014)’s entity
+stack, training it independently of the other com-
+ponents. We define the loss as the number of in-
+correctly labelled words, and train on the CoNLL
+2012 division of OntoNotes (Pradhan et al., 2007).
+Coreference Resolution This gives an example
+of training when there are multiple gold outputs
+for each instance. The system we consider uses
+latent links between mentions in the same cluster,
+marginalizing over the possibilities during learn-
+ing (Durrett and Klein, 2013). Since the model
+decomposes across mentions, we train by treat-
+ing them as independent predictions with multiple
+gold outputs, comparing the inferred link with the
+gold link that is scored highest under the current
+model. We use the system’s weighted loss func-
+tion, and the same data as for NER.
+Constituency Parsing We considered two dif-
+ferent systems. The first uses only sparse indicator
+features (Hall et al., 2014), while the second is pa-
+rameterized via a neural network and adds dense
+features derived from word vectors (Durrett and
+Klein, 2015).2 We define the loss as the number
+2Our results are slightly lower as we save time by only
+using the dense features and a reduced n-gram context.
+of incorrect rule productions, and use the standard
+Penn Treebank division (Marcus et al., 1993).
+Dependency Parsing We used the first-order
+MST parser in two modes, Eisner’s algorithm
+for projective trees (Eisner, 1996; McDonald et
+al., 2005b), and the Chu-Liu-Edmonds algorithm
+for non-projective trees (Chu and Liu, 1965; Ed-
+monds, 1967; McDonald et al., 2005a). The loss
+function was the number of arcs with an incorrect
+parent or label, and we used the standard division
+of the English Universal Dependencies (Agi´c et
+al., 2015). The built-in training method for MST
+parser is averaged, 1-best MIRA, which we in-
+clude for comparison purposes.
+Summarization With this task, we explore a
+case in which there is relatively little training data
+and the model uses a small number of dense fea-
+tures. The system uses a linear model with fea-
+tures considering counts of bigrams in the input
+document collection. The system forms the out-
+put summary by selecting a subset of the sen-
+tences in the input collection that does not exceed
+a fixed word-length limit (Berg-Kirkpatrick et al.,
+2011). Inference involves solving an integer linear
+program, the loss function is bigram recall, and
+the data is from the TAC shared tasks (Dang and
+Owczarzak, 2008; Dang and Owczarzak, 2009).
+</bodyText>
+<subsectionHeader confidence="0.996063">
+3.1 Tuning
+</subsectionHeader>
+<bodyText confidence="0.999956222222222">
+For each method we tuned hyperparameters by
+considering a grid of values and measuring dev
+set performance over five training iterations, ex-
+cept for constituency parsing, where we took five
+measurements, 4k instances apart. For the cutting
+plane methods we cached constraints in memory
+to save time, but the memory cost was too great
+to run batch cutting plane on constituency parsing
+(over 60 Gb), and so is not included in the results.
+</bodyText>
+<sectionHeader confidence="0.998824" genericHeader="method">
+4 Observations
+</sectionHeader>
+<bodyText confidence="0.9658792">
+From the results in Figure 1 and during tuning,
+we can make several observations about these op-
+timization methods’ performance on these tasks.
+Observation 1: Margin methods generally per-
+form best As expected given prior work, mar-
+gin methods equal or surpass the performance
+of likelihood and perceptron methods across al-
+most all of these tasks. Coreference resolution
+is an exception, but that model has latent vari-
+ables that likelihood may treat more effectively,
+</bodyText>
+<page confidence="0.989109">
+275
+276
+</page>
+<figure confidence="0.995332909090909">
+0
+0 3 6 9 12 15 18
+82
+80
+78
+76
+74
+37
+Named Entity Recognition
+0
+0 3 6 9 12 15 18
+90
+88
+86
+84
+82
+80
+40
+Constituency Parsing
+0
+0 3 6 9 12 15 18
+82
+81
+80
+79
+78
+77
+38
+Dependency Parsing, Projective Decoder
+0
+0 5 10 15 20
+8
+7
+6
+5
+2.5
+Summarization
+61
+60
+59
+0
+0 3 6 9 12 15 18
+62
+58
+29
+Coreference Resolution
+0
+0 3 6 9 12 15 18
+90
+88
+86
+84
+82
+80
+40
+Constituency Parsing, Neural CRF
+0
+0 3 6 9 12 15 18
+82
+81
+80
+79
+78
+77
+38
+Dependency Parsing, Non-Proj. Decoder
+Margin
+Cutting Plane
+Online Cutting Plane
+Online Primal Subgradient &amp; L1
+Online Primal Subgradient &amp; L2
+Mistake
+Driven
+Averaged Perceptron
+MIRA
+Averaged MIRA (MST built-in)
+Llhood Stochastic Gradient Descent
+</figure>
+<figureCaption confidence="0.999133">
+Figure 1: Variation in dev set performance (y)
+across training iterations (x). To show all varia-
+tion, the scale of the y-axis changes partway, as
+indicated. Lines that stop early had converged.
+</figureCaption>
+<table confidence="0.999806375">
+Method NER Coref Time per iteration relative to averaged perceptron Summ.
+Span Parser Neural Parser MST Proj. MST Non-Proj.
+AP 1.0 1.0 1.0 - 1.0 1.0 1.0
+MIRA 1.9 1.0 1.0 1.0 1.0 1.0 1.0
+CP 60.8 2.7 - - 6.8 8.4 0.6
+OCP 2.7 1.7 0.9 0.9 1.5 1.6 1.1
+OPS 3.9 1.3 1.1 1.0 1.8 2.0 0.9
+Decoding 0.6 0.2 0.9 0.7 0.7 0.6 0.7
+</table>
+<tableCaption confidence="0.999873">
+Table 1: Comparison of time per iteration relative to the perceptron (or MIRA for the Neural Parser).
+</tableCaption>
+<bodyText confidence="0.936123810810811">
+Decoding shows the time spent on inference. Times were averaged across the entire run. OPS uses batch
+size 10 for NER to save time, but performs just as well as with batch size 1 in Figure 1.
+and has a weighted loss function tuned for like-
+lihood (softmax-margin).
+Observation 2: Dual cutting plane methods ap-
+pear to learn more slowly Both cutting plane
+methods took more iterations to reach peak per-
+formance than the other methods. In addition, for
+batch cutting plane, accuracy varied so drastically
+that we extended tuning to ten iterations, and even
+then choosing the best parameters was sometimes
+difficult. Table 1 shows that the online cutting
+plane method did take slightly less time per iter-
+ation than OPS, but not enough to compensate for
+the slower learning rate.
+Observation 3: Learning with real-valued
+features is difficult for perceptron methods
+Learning models for tasks such as NER, which are
+driven by sparse indicator features, often roughly
+amounts to tallying the features that are con-
+trastively present in correct hypotheses. In such
+cases, most learning methods work fairly well.
+However, when models use real-valued features,
+learning may involve determining a more delicate
+balance between features. In the models we con-
+sider that have real-valued features, summariza-
+tion and parsing with a neural model, we can see
+that perceptron methods indeed have difficulty.3
+Observation 4: Online Primal Subgradient is
+robust and effective All of the margin based
+methods, and gradient descent on likelihood, re-
+quire tuning of a regularization constant and a step
+size (or convergence requirements for SMO). The
+dual methods were particularly sensitive to these
+hyperparameters, performing poorly if they were
+not chosen carefully. In contrast, performance for
+the primal methods remained high over a broad
+</bodyText>
+<footnote confidence="0.587112">
+3For the neural parser, the perceptron took a gradient step
+for each mistake, but this had dismal performance.
+</footnote>
+<bodyText confidence="0.9967556">
+range of values.
+Our implementation of sparse updates for Ada-
+Grad was crucial for high-speed performance, de-
+creasing time by an order of magnitude on tasks
+with many sparse features, such as NER and de-
+pendency parsing.
+Observation 5: Other minor properties We
+found that varying the batch size did not substan-
+tially impact performance after a given number of
+decodes, but did enable a speed improvement as
+decoding of multiple instances can occur in paral-
+lel. Increasing batch sizes leads to a further im-
+provement to OPS, as overall there are fewer up-
+dates per iteration. For some tasks, re-tuning the
+step size was necessary when changing batch size.
+</bodyText>
+<sectionHeader confidence="0.994534" genericHeader="conclusions">
+5 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999816875">
+The effectiveness of max-margin optimization
+methods is widely known, but the default choice
+of learning algorithm in NLP is often a form of the
+perceptron (or likelihood) instead. Our results il-
+lustrate some of the pitfalls of perceptron methods
+and suggest that online optimization of the max-
+margin objective via primal subgradients is a sim-
+ple, well-behaved alternative.
+</bodyText>
+<sectionHeader confidence="0.995194" genericHeader="acknowledgments">
+6 Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.999972">
+We would like to thank Greg Durrett for assis-
+tance running his code, Adam Pauls for advice
+on dual methods, and the anonymous reviewers
+for their helpful suggestions. This work was
+supported by National Science Foundation grant
+CNS-1237265, Office of Naval Research MURI
+grant N000140911081, and a General Sir John
+Monash Fellowship to the first author. Opinions,
+findings, conclusions and recommendations ex-
+pressed in this material are those of the authors and
+do not necessarily reflect the views of sponsors.
+</bodyText>
+<page confidence="0.995552">
+277
+</page>
+<sectionHeader confidence="0.948991" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.997891056074766">
+ˇZeljko Agi´c, Maria Jesus Aranzabe, Aitziber Atutxa,
+Cristina Bosco, Jinho Choi, Marie-Catherine
+de Marneffe, Timothy Dozat, Rich´ard Farkas,
+Jennifer Foster, Filip Ginter, Iakes Goenaga,
+Koldo Gojenola, Yoav Goldberg, Jan Hajiˇc, An-
+ders Trærup Johannsen, Jenna Kanerva, Juha
+Kuokkala, Veronika Laippala, Alessandro Lenci,
+Krister Lind´en, Nikola Ljubeˇsi´c, Teresa Lynn,
+Christopher Manning, H´ector Alonso Martinez,
+Ryan McDonald, Anna Missil¨a, Simonetta Monte-
+magni, Joakim Nivre, Hanna Nurmi, Petya Osen-
+ova, Slav Petrov, Jussi Piitulainen, Barbara Plank,
+Prokopis Prokopidis, Sampo Pyysalo, Wolfgang
+Seeker, Mojgan Seraji, Natalia Silveira, Maria Simi,
+Kiril Simov, Aaron Smith, Reut Tsarfaty, Veronika
+Vincze, and Daniel Zeman. 2015. Universal depen-
+dencies 1.1.
+Taylor Berg-Kirkpatrick, Dan Gillick, and Dan Klein.
+2011. Jointly learning to extract and compress. In
+Proceedings of the 49th Annual Meeting of the Asso-
+ciation for Computational Linguistics: Human Lan-
+guage Technologies, pages 481–490, Portland, Ore-
+gon, USA, June.
+Ming-Wei Chang and Wen-Tau Yih. 2013. Dual coor-
+dinate descent algorithms for efficient large margin
+structured prediction. Transactions of the Associa-
+tion for Computational Linguistics, 1:207–218.
+Eugene Charniak and Mark Johnson. 2005. Coarse-
+to-fine N-best parsing and MaxEnt discriminative
+reranking. In Proceedings of the 43rd Annual Meet-
+ing of the Association for Computational Linguistics
+(ACL’05), pages 173–180, June.
+David Chiang. 2012. Hope and fear for discriminative
+training of statistical translation models. Journal
+of Machine Learning Research, 13(1):1159–1187,
+April.
+Yoeng-jin Chu and Tseng-hong Liu. 1965. On the
+shortest arborescence of a directed graph. Science
+Sinica, pages 1396–1400.
+Michael Collins, Amir Globerson, Terry Koo, Xavier
+Carreras, and Peter L. Bartlett. 2008. Exponen-
+tiated gradient algorithms for conditional random
+fields and max-margin markov networks. Journal
+of Machine Learning Research, 9:1775–1822, June.
+Michael Collins. 2002. Discriminative training meth-
+ods for hidden markov models: Theory and exper-
+iments with perceptron algorithms. In Proceedings
+of the ACL-02 Conference on Empirical Methods in
+Natural Language Processing - Volume 10, pages 1–
+8.
+Koby Crammer and Yoram Singer. 2003. Ultracon-
+servative online algorithms for multiclass problems.
+Journal of Machine Learning Research, 3:951–991,
+March.
+Hoa Trang Dang and Karolina Owczarzak. 2008.
+Overview of the TAC 2008 update summarization
+task. In Text Analysis Conference.
+Hoa Trang Dang and Karolina Owczarzak. 2009.
+Overview of the TAC 2009 summarization track. In
+Text Analysis Conference.
+John Duchi, Elad Hazan, and Yoram Singer. 2011.
+Adaptive subgradient methods for online learning
+and stochastic optimization. Journal of Machine
+Learning Research, 12:2121–2159, July.
+Greg Durrett and Dan Klein. 2013. Easy victories and
+uphill battles in coreference resolution. In Proceed-
+ings of the 2013 Conference on Empirical Methods
+in Natural Language Processing, pages 1971–1982,
+Seattle, Washington, USA, October.
+Greg Durrett and Dan Klein. 2014. A joint model
+for entity analysis: Coreference, typing, and linking.
+volume 2, pages 477–490.
+Greg Durrett and Dan Klein. 2015. Neural CRF
+parsing. In Proceedings of the 53rd Annual Meet-
+ing of the Association for Computational Linguistics
+and the 7th International Joint Conference on Natu-
+ral Language Processing (Volume 1: Long Papers),
+pages 302–312, Beijing, China, July.
+Chris Dyer. 2013. Notes on AdaGrad. Technical re-
+port, Carnegie Mellon University, June.
+Jack Edmonds. 1967. Optimum branchings. Jour-
+nal of Research of the National Bureau of Standards,
+71B:233–240.
+Jason Eisner. 1996. Three new probabilistic models
+for dependency parsing: An exploration. In Pro-
+ceedings of the 16th Conference on Computational
+Linguistics - Volume 1, pages 340–345.
+Yoav Freund and Robert E. Schapire. 1999. Large
+margin classification using the perceptron algorithm.
+Machine Learning, 37(3):277–296, December.
+Kevin Gimpel and Noah A. Smith. 2010. Softmax-
+margin CRFs: Training log-linear models with cost
+functions. In Human Language Technologies: The
+2010 Annual Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics, pages 733–736.
+David Hall, Greg Durrett, and Dan Klein. 2014. Less
+grammar, more features. In Proceedings of the 52nd
+Annual Meeting of the Association for Computa-
+tional Linguistics (Volume 1: Long Papers), pages
+228–237, Baltimore, Maryland, USA, June.
+John D. Lafferty, Andrew McCallum, and Fernando
+C. N. Pereira. 2001. Conditional random fields:
+Probabilistic models for segmenting and labeling se-
+quence data. In Proceedings of the Eighteenth In-
+ternational Conference on Machine Learning, pages
+282–289.
+</reference>
+<page confidence="0.966699">
+278
+</page>
+<reference confidence="0.999798218181818">
+D. C. Liu and J. Nocedal. 1989. On the limited
+memory BFGS method for large scale optimiza-
+tion. Mathematical Programming, 45(3):503–528,
+December.
+Mitchell P. Marcus, Mary Ann Marcinkiewicz, and
+Beatrice Santorini. 1993. Building a large anno-
+tated corpus of english: the penn treebank. Compu-
+tational Linguistics, 19(2):313–330.
+Ryan McDonald, Koby Crammer, and Fernando
+Pereira. 2005a. Online large-margin training of
+dependency parsers. In Proceedings of the 43rd
+Annual Meeting of the Association for Computa-
+tional Linguistics (ACL’05), pages 91–98, Ann Ar-
+bor, Michigan, USA, June.
+Ryan McDonald, Fernando Pereira, Kiril Ribarov, and
+Jan Hajic. 2005b. Non-projective dependency pars-
+ing using spanning tree algorithms. In Proceed-
+ings of Human Language Technology Conference
+and Conference on Empirical Methods in Natural
+Language Processing, pages 523–530, Vancouver,
+British Columbia, Canada, October.
+John C. Platt. 1999. Fast training of support vec-
+tor machines using sequential minimal optimization.
+In Bernhard Sch¨olkopf, Christopher J. C. Burges,
+and Alexander J. Smola, editors, Advances in Ker-
+nel Methods, pages 185–208. MIT Press.
+Sameer Pradhan, Lance Ramshaw, Ralph Weischedel,
+Jessica MacBride, and Linnea Micciulla. 2007.
+Unrestricted coreference: Identifying entities and
+events in OntoNotes. In Proceedings of the Inter-
+national Conference on Semantic Computing, pages
+446–453, September.
+Nathan Ratliff, J. Andrew (Drew) Bagnell, and Mar-
+tin Zinkevich. 2007. (Online) subgradient methods
+for structured prediction. In Eleventh International
+Conference on Artificial Intelligence and Statistics
+(AIStats), March.
+Noah A. Smith. 2011. Linguistic Structure Prediction.
+Synthesis Lectures on Human Language Technolo-
+gies. Morgan and Claypool.
+Ben Taskar, Dan Klein, Michael Collins, Daphne
+Koller, and Chris Manning. 2004. Max-margin
+parsing. In Proceedings of EMNLP 2004, pages 1–
+8, Barcelona, Spain, July.
+Ben Taskar. 2004. Learning Structured Prediction
+Models: A Large Margin Approach. Ph.D. thesis,
+Stanford University.
+Ioannis Tsochantaridis, Thomas Hofmann, Thorsten
+Joachims, and Yasemin Altun. 2004. Support vector
+machine learning for interdependent and structured
+output spaces. In Proceedings of the Twenty-first In-
+ternational Conference on Machine Learning, pages
+104–112, July.
+Matthew D. Zeiler. 2012. ADADELTA: an adaptive
+learning rate method. CoRR, abs/1212.5701.
+</reference>
+<page confidence="0.998566">
+279
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.984547">
+<title confidence="0.999707">An Empirical Analysis of Optimization for Max-Margin NLP</title>
+<author confidence="0.998926">K Kummerfeld</author>
+<author confidence="0.998926">Taylor Berg-Kirkpatrick</author>
+<affiliation confidence="0.9998225">Computer Science University of California,</affiliation>
+<address confidence="0.999651">Berkeley, CA 94720,</address>
+<abstract confidence="0.999373727272727">Despite the convexity of structured maxmargin objectives (Taskar et al., 2004; Tsochantaridis et al., 2004), the many ways to optimize them are not equally effective in practice. We compare a range of online optimization methods over a variety of structured NLP tasks (coreference, summarization, parsing, etc) and find several broad trends. First, margin methods do tend to outperform both likelihood and the perceptron. Second, for max-margin objectives, primal optimization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="false">
+<authors>
+<author>ˇZeljko Agi´c</author>
+<author>Maria Jesus Aranzabe</author>
+<author>Aitziber Atutxa</author>
+<author>Cristina Bosco</author>
+<author>Jinho Choi</author>
+<author>Marie-Catherine de Marneffe</author>
+<author>Timothy Dozat</author>
+<author>Rich´ard Farkas</author>
+<author>Jennifer Foster</author>
+<author>Filip Ginter</author>
+</authors>
+<title>Iakes Goenaga, Koldo Gojenola, Yoav Goldberg, Jan Hajiˇc, Anders Trærup Johannsen, Jenna Kanerva, Juha Kuokkala, Veronika Laippala, Alessandro Lenci, Krister Lind´en, Nikola Ljubeˇsi´c,</title>
+<date>2015</date>
+<journal>Universal dependencies</journal>
+<volume>1</volume>
+<location>Teresa Lynn, Christopher Manning, H´ector Alonso Martinez, Ryan McDonald, Anna Missil¨a, Simonetta Montemagni, Joakim Nivre, Hanna</location>
+<marker>Agi´c, Aranzabe, Atutxa, Bosco, Choi, de Marneffe, Dozat, Farkas, Foster, Ginter, 2015</marker>
+<rawString>ˇZeljko Agi´c, Maria Jesus Aranzabe, Aitziber Atutxa, Cristina Bosco, Jinho Choi, Marie-Catherine de Marneffe, Timothy Dozat, Rich´ard Farkas, Jennifer Foster, Filip Ginter, Iakes Goenaga, Koldo Gojenola, Yoav Goldberg, Jan Hajiˇc, Anders Trærup Johannsen, Jenna Kanerva, Juha Kuokkala, Veronika Laippala, Alessandro Lenci, Krister Lind´en, Nikola Ljubeˇsi´c, Teresa Lynn, Christopher Manning, H´ector Alonso Martinez, Ryan McDonald, Anna Missil¨a, Simonetta Montemagni, Joakim Nivre, Hanna Nurmi, Petya Osenova, Slav Petrov, Jussi Piitulainen, Barbara Plank, Prokopis Prokopidis, Sampo Pyysalo, Wolfgang Seeker, Mojgan Seraji, Natalia Silveira, Maria Simi, Kiril Simov, Aaron Smith, Reut Tsarfaty, Veronika Vincze, and Daniel Zeman. 2015. Universal dependencies 1.1.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Taylor Berg-Kirkpatrick</author>
+<author>Dan Gillick</author>
+<author>Dan Klein</author>
+</authors>
+<title>Jointly learning to extract and compress.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies,</booktitle>
+<pages>481--490</pages>
+<location>Portland, Oregon, USA,</location>
+<contexts>
+<context position="10808" citStr="Berg-Kirkpatrick et al., 2011" startWordPosition="1729" endWordPosition="1732">he standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features considering counts of bigrams in the input document collection. The system forms the output summary by selecting a subset of the sentences in the input collection that does not exceed a fixed word-length limit (Berg-Kirkpatrick et al., 2011). Inference involves solving an integer linear program, the loss function is bigram recall, and the data is from the TAC shared tasks (Dang and Owczarzak, 2008; Dang and Owczarzak, 2009). 3.1 Tuning For each method we tuned hyperparameters by considering a grid of values and measuring dev set performance over five training iterations, except for constituency parsing, where we took five measurements, 4k instances apart. For the cutting plane methods we cached constraints in memory to save time, but the memory cost was too great to run batch cutting plane on constituency parsing (over 60 Gb), an</context>
+</contexts>
+<marker>Berg-Kirkpatrick, Gillick, Klein, 2011</marker>
+<rawString>Taylor Berg-Kirkpatrick, Dan Gillick, and Dan Klein. 2011. Jointly learning to extract and compress. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies, pages 481–490, Portland, Oregon, USA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ming-Wei Chang</author>
+<author>Wen-Tau Yih</author>
+</authors>
+<title>Dual coordinate descent algorithms for efficient large margin structured prediction.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>1--207</pages>
+<contexts>
+<context position="5800" citStr="Chang and Yih, 2013" startWordPosition="914" endWordPosition="917">date, use SCORE = wTf(y&apos;), and run the update loop on the left over all features. Also, for comparison, to implement perceptron, remove the sparse update and use UPDATE-ACTIVE = return w + g. 2.1 Margin Cutting Plane (Tsochantaridis et al., 2004) Solves a sequence of quadratic programs (QP), each of which is an approximation to the dual formulation of the margin-based learning problem. At each iteration, the current QP is refined by adding additional active constraints. We solve each approximate QP using Sequential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 loss margin objective. Online Primal Subgradient (Ratliff et al., 2007) Computes the subgradient of the margin objective on each instance by performing a loss-augmented decode, then uses these instance-wise subgradients to optimize the global objective using AdaGrad (Duchi et al., 2011) with either L1 or L2 regularization. The simplest implementation of AdaGrad touches ever</context>
+</contexts>
+<marker>Chang, Yih, 2013</marker>
+<rawString>Ming-Wei Chang and Wen-Tau Yih. 2013. Dual coordinate descent algorithms for efficient large margin structured prediction. Transactions of the Association for Computational Linguistics, 1:207–218.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eugene Charniak</author>
+<author>Mark Johnson</author>
+</authors>
+<title>Coarseto-fine N-best parsing and MaxEnt discriminative reranking.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05),</booktitle>
+<pages>173--180</pages>
+<contexts>
+<context position="1283" citStr="Charniak and Johnson, 2005" startWordPosition="183" endWordPosition="186"> perceptron. Second, for max-margin objectives, primal optimization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives. 1 Introduction Structured discriminative models have proven effective across a range of tasks in NLP including tagging (Lafferty et al., 2001; Collins, 2002), reranking parses (Charniak and Johnson, 2005), and many more (Taskar, 2004; Smith, 2011). Common approaches to training such models include margin methods, likelihood methods, and mistake-driven procedures like the averaged perceptron algorithm. In this paper, we primarily consider the relative empirical behavior of several online optimization methods for margin-based objectives, with secondary attention to other approaches for calibration. It is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in the same way as the dynamic program used for inference (Taskar, 2</context>
+</contexts>
+<marker>Charniak, Johnson, 2005</marker>
+<rawString>Eugene Charniak and Mark Johnson. 2005. Coarseto-fine N-best parsing and MaxEnt discriminative reranking. In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05), pages 173–180, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hope and fear for discriminative training of statistical translation models.</title>
+<date>2012</date>
+<journal>Journal of Machine Learning Research,</journal>
+<volume>13</volume>
+<issue>1</issue>
+<contexts>
+<context position="7987" citStr="Chiang (2012)" startWordPosition="1277" endWordPosition="1278"> system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented decoding and makes the smallest update necessary to give a margin at least as large as the loss of each solution. MIRA is generally presented as being related to the perceptron because it does not explicitly optimize a global objective, but it also has connections to margin methods, as explored by Chiang (2012). We consider one-best decoding, where the quadratic program for determining the magnitude of the update has a closed form. 3 Tasks and Systems We considered tasks covering a range of structured output spaces, from sequences to non-projective trees. Most of the corresponding systems use models designed for likelihood-based structured prediction. Some use sparse indicator features, while others use dense continuous-valued features. Named Entity Recognition This task provides a case of sequence prediction. We used the NER component of Durrett and Klein (2014)’s entity stack, training it independ</context>
+</contexts>
+<marker>Chiang, 2012</marker>
+<rawString>David Chiang. 2012. Hope and fear for discriminative training of statistical translation models. Journal of Machine Learning Research, 13(1):1159–1187, April.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoeng-jin Chu</author>
+<author>Tseng-hong Liu</author>
+</authors>
+<title>On the shortest arborescence of a directed graph. Science Sinica,</title>
+<date>1965</date>
+<pages>1396--1400</pages>
+<contexts>
+<context position="10047" citStr="Chu and Liu, 1965" startWordPosition="1599" endWordPosition="1602">l et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features considering counts of bigrams in the input document collection. The system forms</context>
+</contexts>
+<marker>Chu, Liu, 1965</marker>
+<rawString>Yoeng-jin Chu and Tseng-hong Liu. 1965. On the shortest arborescence of a directed graph. Science Sinica, pages 1396–1400.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+<author>Amir Globerson</author>
+<author>Terry Koo</author>
+<author>Xavier Carreras</author>
+<author>Peter L Bartlett</author>
+</authors>
+<title>Exponentiated gradient algorithms for conditional random fields and max-margin markov networks.</title>
+<date>2008</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>9--1775</pages>
+<contexts>
+<context position="3616" citStr="Collins et al., 2008" startWordPosition="535" endWordPosition="538">tructured margin objective based on subgradients calculated from single training instances is surprisingly effective, performing consistently well across all tasks. 2 Learning Algorithms We implemented a range of optimization methods that are widely used in NLP; below we categorize them into margin, likelihood, and perceptron-like methods. In each case, we used a structured loss function, modified to suit each task. In general, we focus on online methods because of their substantial speed advantages, rather than algorithms such as LBFGS (Liu and Nocedal, 1989) or batch Exponentiated Gradient (Collins et al., 2008). 1http://nlp.cs.berkeley.edu/software.shtml 273 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 273–279, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. Algorithm 1 The Online Primal Subgradient Algorithm with E1 or E2 regularization, and sparse updates Parameters: iters Number of iterations C Regularization constant (10−1 to 10−8) η Learning rate (100 to 10−4) S Initializer for q (10−6) The AdaGrad update function UPDATE-ACTIVE(w, g, q) √q−ηg return w [E2] ηC+√q d=|w− η √q g|−η √q C [E1] return sign(w − η</context>
+</contexts>
+<marker>Collins, Globerson, Koo, Carreras, Bartlett, 2008</marker>
+<rawString>Michael Collins, Amir Globerson, Terry Koo, Xavier Carreras, and Peter L. Bartlett. 2008. Exponentiated gradient algorithms for conditional random fields and max-margin markov networks. Journal of Machine Learning Research, 9:1775–1822, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the ACL-02 Conference on Empirical Methods in Natural Language Processing - Volume 10,</booktitle>
+<pages>1--8</pages>
+<contexts>
+<context position="1236" citStr="Collins, 2002" startWordPosition="179" endWordPosition="180">outperform both likelihood and the perceptron. Second, for max-margin objectives, primal optimization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives. 1 Introduction Structured discriminative models have proven effective across a range of tasks in NLP including tagging (Lafferty et al., 2001; Collins, 2002), reranking parses (Charniak and Johnson, 2005), and many more (Taskar, 2004; Smith, 2011). Common approaches to training such models include margin methods, likelihood methods, and mistake-driven procedures like the averaged perceptron algorithm. In this paper, we primarily consider the relative empirical behavior of several online optimization methods for margin-based objectives, with secondary attention to other approaches for calibration. It is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in the same way as th</context>
+<context position="7332" citStr="Collins, 2002" startWordPosition="1166" endWordPosition="1167">touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013). 2.2 Likelihood Stochastic Gradient Descent The built-in training method for many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented decoding and makes the smallest update necessary to give a margin at least as large as the loss of each solution. MIRA is generally presented as being related to the perceptron because it does not explicitly optimize a global objective, but it also has conn</context>
+</contexts>
+<marker>Collins, 2002</marker>
+<rawString>Michael Collins. 2002. Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms. In Proceedings of the ACL-02 Conference on Empirical Methods in Natural Language Processing - Volume 10, pages 1– 8.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Ultraconservative online algorithms for multiclass problems.</title>
+<date>2003</date>
+<journal>Journal of Machine Learning Research,</journal>
+<volume>3</volume>
+<contexts>
+<context position="2309" citStr="Crammer and Singer, 2003" startWordPosition="343" endWordPosition="346">t is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in the same way as the dynamic program used for inference (Taskar, 2004). Fortunately, most structured margin objectives are convex, so a range of optimization methods with similar theoretical properties are available – in short, any of these methods will work in the end. However, in practice, how fast each method converges varies across tasks. Moreover, some of the most popular methods more loosely associated with the margin objective, such as the MIRA algorithm (Crammer and Singer, 2003) or even the averaged perceptron (Freund and Schapire, 1999) are not global optimizations and can have different properties. We analyze a range of methods empirically, to understand on which tasks and with which feature types, they are most effective. We modified six existing, high-performance, systems to enable loss-augmented decoding, and trained these models with six different methods. We have released our learning code as a Java library.1 Our results provide support for the conventional wisdom that margin-based optimization is broadly effective, frequently outperforming likelihood optimiza</context>
+<context position="7615" citStr="Crammer and Singer, 2003" startWordPosition="1209" endWordPosition="1212">many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented decoding and makes the smallest update necessary to give a margin at least as large as the loss of each solution. MIRA is generally presented as being related to the perceptron because it does not explicitly optimize a global objective, but it also has connections to margin methods, as explored by Chiang (2012). We consider one-best decoding, where the quadratic program for determining the magnitude of the update has a closed form. 3 Tasks and Systems We considered tasks covering a range of structured output spaces, from sequences to </context>
+</contexts>
+<marker>Crammer, Singer, 2003</marker>
+<rawString>Koby Crammer and Yoram Singer. 2003. Ultraconservative online algorithms for multiclass problems. Journal of Machine Learning Research, 3:951–991, March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hoa Trang Dang</author>
+<author>Karolina Owczarzak</author>
+</authors>
+<title>update summarization task.</title>
+<date>2008</date>
+<journal>Overview of the TAC</journal>
+<booktitle>In Text Analysis Conference.</booktitle>
+<contexts>
+<context position="10967" citStr="Dang and Owczarzak, 2008" startWordPosition="1755" endWordPosition="1758">de for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features considering counts of bigrams in the input document collection. The system forms the output summary by selecting a subset of the sentences in the input collection that does not exceed a fixed word-length limit (Berg-Kirkpatrick et al., 2011). Inference involves solving an integer linear program, the loss function is bigram recall, and the data is from the TAC shared tasks (Dang and Owczarzak, 2008; Dang and Owczarzak, 2009). 3.1 Tuning For each method we tuned hyperparameters by considering a grid of values and measuring dev set performance over five training iterations, except for constituency parsing, where we took five measurements, 4k instances apart. For the cutting plane methods we cached constraints in memory to save time, but the memory cost was too great to run batch cutting plane on constituency parsing (over 60 Gb), and so is not included in the results. 4 Observations From the results in Figure 1 and during tuning, we can make several observations about these optimization m</context>
+</contexts>
+<marker>Dang, Owczarzak, 2008</marker>
+<rawString>Hoa Trang Dang and Karolina Owczarzak. 2008. Overview of the TAC 2008 update summarization task. In Text Analysis Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hoa Trang Dang</author>
+<author>Karolina Owczarzak</author>
+</authors>
+<title>summarization track.</title>
+<date>2009</date>
+<journal>Overview of the TAC</journal>
+<booktitle>In Text Analysis Conference.</booktitle>
+<contexts>
+<context position="10994" citStr="Dang and Owczarzak, 2009" startWordPosition="1759" endWordPosition="1762">. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features considering counts of bigrams in the input document collection. The system forms the output summary by selecting a subset of the sentences in the input collection that does not exceed a fixed word-length limit (Berg-Kirkpatrick et al., 2011). Inference involves solving an integer linear program, the loss function is bigram recall, and the data is from the TAC shared tasks (Dang and Owczarzak, 2008; Dang and Owczarzak, 2009). 3.1 Tuning For each method we tuned hyperparameters by considering a grid of values and measuring dev set performance over five training iterations, except for constituency parsing, where we took five measurements, 4k instances apart. For the cutting plane methods we cached constraints in memory to save time, but the memory cost was too great to run batch cutting plane on constituency parsing (over 60 Gb), and so is not included in the results. 4 Observations From the results in Figure 1 and during tuning, we can make several observations about these optimization methods’ performance on thes</context>
+</contexts>
+<marker>Dang, Owczarzak, 2009</marker>
+<rawString>Hoa Trang Dang and Karolina Owczarzak. 2009. Overview of the TAC 2009 summarization track. In Text Analysis Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2011</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>12--2121</pages>
+<contexts>
+<context position="6311" citStr="Duchi et al., 2011" startWordPosition="1000" endWordPosition="1003">quential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 loss margin objective. Online Primal Subgradient (Ratliff et al., 2007) Computes the subgradient of the margin objective on each instance by performing a loss-augmented decode, then uses these instance-wise subgradients to optimize the global objective using AdaGrad (Duchi et al., 2011) with either L1 or L2 regularization. The simplest implementation of AdaGrad touches every weight when doing the update for a batch. To save time, we distinguish between two different types of update. When the subgradient is nonzero, we apply the usual update. When the subgradient is zero, we apply a numerically equivalent update later, at the next time the weight is queried. This saves time, as we only touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2011</marker>
+<rawString>John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research, 12:2121–2159, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>Easy victories and uphill battles in coreference resolution.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1971--1982</pages>
+<location>Seattle, Washington, USA,</location>
+<contexts>
+<context position="9026" citStr="Durrett and Klein, 2013" startWordPosition="1433" endWordPosition="1436">us-valued features. Named Entity Recognition This task provides a case of sequence prediction. We used the NER component of Durrett and Klein (2014)’s entity stack, training it independently of the other components. We define the loss as the number of incorrectly labelled words, and train on the CoNLL 2012 division of OntoNotes (Pradhan et al., 2007). Coreference Resolution This gives an example of training when there are multiple gold outputs for each instance. The system we consider uses latent links between mentions in the same cluster, marginalizing over the possibilities during learning (Durrett and Klein, 2013). Since the model decomposes across mentions, we train by treating them as independent predictions with multiple gold outputs, comparing the inferred link with the gold link that is scored highest under the current model. We use the system’s weighted loss function, and the same data as for NER. Constituency Parsing We considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results </context>
+</contexts>
+<marker>Durrett, Klein, 2013</marker>
+<rawString>Greg Durrett and Dan Klein. 2013. Easy victories and uphill battles in coreference resolution. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1971–1982, Seattle, Washington, USA, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>A joint model for entity analysis: Coreference, typing, and linking.</title>
+<date>2014</date>
+<volume>2</volume>
+<pages>477--490</pages>
+<contexts>
+<context position="8550" citStr="Durrett and Klein (2014)" startWordPosition="1357" endWordPosition="1360">s connections to margin methods, as explored by Chiang (2012). We consider one-best decoding, where the quadratic program for determining the magnitude of the update has a closed form. 3 Tasks and Systems We considered tasks covering a range of structured output spaces, from sequences to non-projective trees. Most of the corresponding systems use models designed for likelihood-based structured prediction. Some use sparse indicator features, while others use dense continuous-valued features. Named Entity Recognition This task provides a case of sequence prediction. We used the NER component of Durrett and Klein (2014)’s entity stack, training it independently of the other components. We define the loss as the number of incorrectly labelled words, and train on the CoNLL 2012 division of OntoNotes (Pradhan et al., 2007). Coreference Resolution This gives an example of training when there are multiple gold outputs for each instance. The system we consider uses latent links between mentions in the same cluster, marginalizing over the possibilities during learning (Durrett and Klein, 2013). Since the model decomposes across mentions, we train by treating them as independent predictions with multiple gold output</context>
+</contexts>
+<marker>Durrett, Klein, 2014</marker>
+<rawString>Greg Durrett and Dan Klein. 2014. A joint model for entity analysis: Coreference, typing, and linking. volume 2, pages 477–490.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>Neural CRF parsing.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers),</booktitle>
+<pages>302--312</pages>
+<location>Beijing, China,</location>
+<contexts>
+<context position="9577" citStr="Durrett and Klein, 2015" startWordPosition="1524" endWordPosition="1527">nalizing over the possibilities during learning (Durrett and Klein, 2013). Since the model decomposes across mentions, we train by treating them as independent predictions with multiple gold outputs, comparing the inferred link with the gold link that is scored highest under the current model. We use the system’s weighted loss function, and the same data as for NER. Constituency Parsing We considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used </context>
+</contexts>
+<marker>Durrett, Klein, 2015</marker>
+<rawString>Greg Durrett and Dan Klein. 2015. Neural CRF parsing. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages 302–312, Beijing, China, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Dyer</author>
+</authors>
+<title>Notes on AdaGrad.</title>
+<date>2013</date>
+<tech>Technical report,</tech>
+<institution>Carnegie Mellon University,</institution>
+<contexts>
+<context position="6912" citStr="Dyer (2013)" startWordPosition="1103" endWordPosition="1104">al., 2011) with either L1 or L2 regularization. The simplest implementation of AdaGrad touches every weight when doing the update for a batch. To save time, we distinguish between two different types of update. When the subgradient is nonzero, we apply the usual update. When the subgradient is zero, we apply a numerically equivalent update later, at the next time the weight is queried. This saves time, as we only touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013). 2.2 Likelihood Stochastic Gradient Descent The built-in training method for many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of tr</context>
+</contexts>
+<marker>Dyer, 2013</marker>
+<rawString>Chris Dyer. 2013. Notes on AdaGrad. Technical report, Carnegie Mellon University, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jack Edmonds</author>
+</authors>
+<title>Optimum branchings.</title>
+<date>1967</date>
+<journal>Journal of Research of the National Bureau of Standards,</journal>
+<pages>71--233</pages>
+<contexts>
+<context position="10062" citStr="Edmonds, 1967" startWordPosition="1603" endWordPosition="1605">ile the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features considering counts of bigrams in the input document collection. The system forms the output sum</context>
+</contexts>
+<marker>Edmonds, 1967</marker>
+<rawString>Jack Edmonds. 1967. Optimum branchings. Journal of Research of the National Bureau of Standards, 71B:233–240.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jason Eisner</author>
+</authors>
+<title>Three new probabilistic models for dependency parsing: An exploration.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the 16th Conference on Computational Linguistics -</booktitle>
+<volume>1</volume>
+<pages>340--345</pages>
+<contexts>
+<context position="9943" citStr="Eisner, 1996" startWordPosition="1586" endWordPosition="1587">ncy Parsing We considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a lin</context>
+</contexts>
+<marker>Eisner, 1996</marker>
+<rawString>Jason Eisner. 1996. Three new probabilistic models for dependency parsing: An exploration. In Proceedings of the 16th Conference on Computational Linguistics - Volume 1, pages 340–345.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Freund</author>
+<author>Robert E Schapire</author>
+</authors>
+<title>Large margin classification using the perceptron algorithm.</title>
+<date>1999</date>
+<booktitle>Machine Learning,</booktitle>
+<volume>37</volume>
+<issue>3</issue>
+<contexts>
+<context position="2369" citStr="Freund and Schapire, 1999" startWordPosition="352" endWordPosition="355"> max-margin objective that incorporates a loss function that decomposes in the same way as the dynamic program used for inference (Taskar, 2004). Fortunately, most structured margin objectives are convex, so a range of optimization methods with similar theoretical properties are available – in short, any of these methods will work in the end. However, in practice, how fast each method converges varies across tasks. Moreover, some of the most popular methods more loosely associated with the margin objective, such as the MIRA algorithm (Crammer and Singer, 2003) or even the averaged perceptron (Freund and Schapire, 1999) are not global optimizations and can have different properties. We analyze a range of methods empirically, to understand on which tasks and with which feature types, they are most effective. We modified six existing, high-performance, systems to enable loss-augmented decoding, and trained these models with six different methods. We have released our learning code as a Java library.1 Our results provide support for the conventional wisdom that margin-based optimization is broadly effective, frequently outperforming likelihood optimization and the perceptron algorithm. We also found that direct</context>
+<context position="7316" citStr="Freund and Schapire, 1999" startWordPosition="1162" endWordPosition="1165">his saves time, as we only touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013). 2.2 Likelihood Stochastic Gradient Descent The built-in training method for many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented decoding and makes the smallest update necessary to give a margin at least as large as the loss of each solution. MIRA is generally presented as being related to the perceptron because it does not explicitly optimize a global objective, but </context>
+</contexts>
+<marker>Freund, Schapire, 1999</marker>
+<rawString>Yoav Freund and Robert E. Schapire. 1999. Large margin classification using the perceptron algorithm. Machine Learning, 37(3):277–296, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Softmaxmargin CRFs: Training log-linear models with cost functions.</title>
+<date>2010</date>
+<booktitle>In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>733--736</pages>
+<contexts>
+<context position="7077" citStr="Gimpel and Smith, 2010" startWordPosition="1124" endWordPosition="1127">me, we distinguish between two different types of update. When the subgradient is nonzero, we apply the usual update. When the subgradient is zero, we apply a numerically equivalent update later, at the next time the weight is queried. This saves time, as we only touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013). 2.2 Likelihood Stochastic Gradient Descent The built-in training method for many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented de</context>
+</contexts>
+<marker>Gimpel, Smith, 2010</marker>
+<rawString>Kevin Gimpel and Noah A. Smith. 2010. Softmaxmargin CRFs: Training log-linear models with cost functions. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 733–736.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Hall</author>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>Less grammar, more features.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),</booktitle>
+<pages>228--237</pages>
+<location>Baltimore, Maryland, USA,</location>
+<contexts>
+<context position="9445" citStr="Hall et al., 2014" startWordPosition="1502" endWordPosition="1505"> multiple gold outputs for each instance. The system we consider uses latent links between mentions in the same cluster, marginalizing over the possibilities during learning (Durrett and Klein, 2013). Since the model decomposes across mentions, we train by treating them as independent predictions with multiple gold outputs, comparing the inferred link with the gold link that is scored highest under the current model. We use the system’s weighted loss function, and the same data as for NER. Constituency Parsing We considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 19</context>
+</contexts>
+<marker>Hall, Durrett, Klein, 2014</marker>
+<rawString>David Hall, Greg Durrett, and Dan Klein. 2014. Less grammar, more features. In Proceedings of the 52nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 228–237, Baltimore, Maryland, USA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John D Lafferty</author>
+<author>Andrew McCallum</author>
+<author>Fernando C N Pereira</author>
+</authors>
+<title>Conditional random fields: Probabilistic models for segmenting and labeling sequence data.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the Eighteenth International Conference on Machine Learning,</booktitle>
+<pages>282--289</pages>
+<contexts>
+<context position="1220" citStr="Lafferty et al., 2001" startWordPosition="175" endWordPosition="178">gin methods do tend to outperform both likelihood and the perceptron. Second, for max-margin objectives, primal optimization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives. 1 Introduction Structured discriminative models have proven effective across a range of tasks in NLP including tagging (Lafferty et al., 2001; Collins, 2002), reranking parses (Charniak and Johnson, 2005), and many more (Taskar, 2004; Smith, 2011). Common approaches to training such models include margin methods, likelihood methods, and mistake-driven procedures like the averaged perceptron algorithm. In this paper, we primarily consider the relative empirical behavior of several online optimization methods for margin-based objectives, with secondary attention to other approaches for calibration. It is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in th</context>
+</contexts>
+<marker>Lafferty, McCallum, Pereira, 2001</marker>
+<rawString>John D. Lafferty, Andrew McCallum, and Fernando C. N. Pereira. 2001. Conditional random fields: Probabilistic models for segmenting and labeling sequence data. In Proceedings of the Eighteenth International Conference on Machine Learning, pages 282–289.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D C Liu</author>
+<author>J Nocedal</author>
+</authors>
+<title>On the limited memory BFGS method for large scale optimization.</title>
+<date>1989</date>
+<booktitle>Mathematical Programming,</booktitle>
+<volume>45</volume>
+<issue>3</issue>
+<contexts>
+<context position="3561" citStr="Liu and Nocedal, 1989" startWordPosition="527" endWordPosition="530">thm. We also found that directly optimizing the primal structured margin objective based on subgradients calculated from single training instances is surprisingly effective, performing consistently well across all tasks. 2 Learning Algorithms We implemented a range of optimization methods that are widely used in NLP; below we categorize them into margin, likelihood, and perceptron-like methods. In each case, we used a structured loss function, modified to suit each task. In general, we focus on online methods because of their substantial speed advantages, rather than algorithms such as LBFGS (Liu and Nocedal, 1989) or batch Exponentiated Gradient (Collins et al., 2008). 1http://nlp.cs.berkeley.edu/software.shtml 273 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 273–279, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. Algorithm 1 The Online Primal Subgradient Algorithm with E1 or E2 regularization, and sparse updates Parameters: iters Number of iterations C Regularization constant (10−1 to 10−8) η Learning rate (100 to 10−4) S Initializer for q (10−6) The AdaGrad update function UPDATE-ACTIVE(w, g, q) √q−ηg return w</context>
+</contexts>
+<marker>Liu, Nocedal, 1989</marker>
+<rawString>D. C. Liu and J. Nocedal. 1989. On the limited memory BFGS method for large scale optimization. Mathematical Programming, 45(3):503–528, December.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Mary Ann Marcinkiewicz</author>
+<author>Beatrice Santorini</author>
+</authors>
+<title>Building a large annotated corpus of english: the penn treebank.</title>
+<date>1993</date>
+<journal>Computational Linguistics,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="9820" citStr="Marcus et al., 1993" startWordPosition="1566" endWordPosition="1569">that is scored highest under the current model. We use the system’s weighted loss function, and the same data as for NER. Constituency Parsing We considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case i</context>
+</contexts>
+<marker>Marcus, Marcinkiewicz, Santorini, 1993</marker>
+<rawString>Mitchell P. Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. 1993. Building a large annotated corpus of english: the penn treebank. Computational Linguistics, 19(2):313–330.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Koby Crammer</author>
+<author>Fernando Pereira</author>
+</authors>
+<title>Online large-margin training of dependency parsers.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05),</booktitle>
+<pages>91--98</pages>
+<location>Ann Arbor, Michigan, USA,</location>
+<contexts>
+<context position="9966" citStr="McDonald et al., 2005" startWordPosition="1588" endWordPosition="1591"> considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features</context>
+</contexts>
+<marker>McDonald, Crammer, Pereira, 2005</marker>
+<rawString>Ryan McDonald, Koby Crammer, and Fernando Pereira. 2005a. Online large-margin training of dependency parsers. In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL’05), pages 91–98, Ann Arbor, Michigan, USA, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ryan McDonald</author>
+<author>Fernando Pereira</author>
+<author>Kiril Ribarov</author>
+<author>Jan Hajic</author>
+</authors>
+<title>Non-projective dependency parsing using spanning tree algorithms.</title>
+<date>2005</date>
+<booktitle>In Proceedings of Human Language Technology Conference and Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>523--530</pages>
+<location>Vancouver, British Columbia, Canada,</location>
+<contexts>
+<context position="9966" citStr="McDonald et al., 2005" startWordPosition="1588" endWordPosition="1591"> considered two different systems. The first uses only sparse indicator features (Hall et al., 2014), while the second is parameterized via a neural network and adds dense features derived from word vectors (Durrett and Klein, 2015).2 We define the loss as the number 2Our results are slightly lower as we save time by only using the dense features and a reduced n-gram context. of incorrect rule productions, and use the standard Penn Treebank division (Marcus et al., 1993). Dependency Parsing We used the first-order MST parser in two modes, Eisner’s algorithm for projective trees (Eisner, 1996; McDonald et al., 2005b), and the Chu-Liu-Edmonds algorithm for non-projective trees (Chu and Liu, 1965; Edmonds, 1967; McDonald et al., 2005a). The loss function was the number of arcs with an incorrect parent or label, and we used the standard division of the English Universal Dependencies (Agi´c et al., 2015). The built-in training method for MST parser is averaged, 1-best MIRA, which we include for comparison purposes. Summarization With this task, we explore a case in which there is relatively little training data and the model uses a small number of dense features. The system uses a linear model with features</context>
+</contexts>
+<marker>McDonald, Pereira, Ribarov, Hajic, 2005</marker>
+<rawString>Ryan McDonald, Fernando Pereira, Kiril Ribarov, and Jan Hajic. 2005b. Non-projective dependency parsing using spanning tree algorithms. In Proceedings of Human Language Technology Conference and Conference on Empirical Methods in Natural Language Processing, pages 523–530, Vancouver, British Columbia, Canada, October.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John C Platt</author>
+</authors>
+<title>Fast training of support vector machines using sequential minimal optimization.</title>
+<date>1999</date>
+<booktitle>Advances in Kernel Methods,</booktitle>
+<pages>185--208</pages>
+<editor>In Bernhard Sch¨olkopf, Christopher J. C. Burges, and Alexander J. Smola, editors,</editor>
+<publisher>MIT Press.</publisher>
+<contexts>
+<context position="5734" citStr="Platt, 1999" startWordPosition="905" endWordPosition="906">s += wf return s Note: To implement without the sparse update, use SCORE = wTf(y&apos;), and run the update loop on the left over all features. Also, for comparison, to implement perceptron, remove the sparse update and use UPDATE-ACTIVE = return w + g. 2.1 Margin Cutting Plane (Tsochantaridis et al., 2004) Solves a sequence of quadratic programs (QP), each of which is an approximation to the dual formulation of the margin-based learning problem. At each iteration, the current QP is refined by adding additional active constraints. We solve each approximate QP using Sequential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 loss margin objective. Online Primal Subgradient (Ratliff et al., 2007) Computes the subgradient of the margin objective on each instance by performing a loss-augmented decode, then uses these instance-wise subgradients to optimize the global objective using AdaGrad (Duchi et al., 2011) with either L1 or L2 r</context>
+</contexts>
+<marker>Platt, 1999</marker>
+<rawString>John C. Platt. 1999. Fast training of support vector machines using sequential minimal optimization. In Bernhard Sch¨olkopf, Christopher J. C. Burges, and Alexander J. Smola, editors, Advances in Kernel Methods, pages 185–208. MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sameer Pradhan</author>
+<author>Lance Ramshaw</author>
+<author>Ralph Weischedel</author>
+<author>Jessica MacBride</author>
+<author>Linnea Micciulla</author>
+</authors>
+<title>Unrestricted coreference: Identifying entities and events in OntoNotes.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the International Conference on Semantic Computing,</booktitle>
+<pages>446--453</pages>
+<contexts>
+<context position="8754" citStr="Pradhan et al., 2007" startWordPosition="1392" endWordPosition="1395"> considered tasks covering a range of structured output spaces, from sequences to non-projective trees. Most of the corresponding systems use models designed for likelihood-based structured prediction. Some use sparse indicator features, while others use dense continuous-valued features. Named Entity Recognition This task provides a case of sequence prediction. We used the NER component of Durrett and Klein (2014)’s entity stack, training it independently of the other components. We define the loss as the number of incorrectly labelled words, and train on the CoNLL 2012 division of OntoNotes (Pradhan et al., 2007). Coreference Resolution This gives an example of training when there are multiple gold outputs for each instance. The system we consider uses latent links between mentions in the same cluster, marginalizing over the possibilities during learning (Durrett and Klein, 2013). Since the model decomposes across mentions, we train by treating them as independent predictions with multiple gold outputs, comparing the inferred link with the gold link that is scored highest under the current model. We use the system’s weighted loss function, and the same data as for NER. Constituency Parsing We consider</context>
+</contexts>
+<marker>Pradhan, Ramshaw, Weischedel, MacBride, Micciulla, 2007</marker>
+<rawString>Sameer Pradhan, Lance Ramshaw, Ralph Weischedel, Jessica MacBride, and Linnea Micciulla. 2007. Unrestricted coreference: Identifying entities and events in OntoNotes. In Proceedings of the International Conference on Semantic Computing, pages 446–453, September.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nathan Ratliff</author>
+<author>J Andrew Bagnell</author>
+<author>Martin Zinkevich</author>
+</authors>
+<title>(Online) subgradient methods for structured prediction.</title>
+<date>2007</date>
+<booktitle>In Eleventh International Conference on Artificial Intelligence and Statistics (AIStats),</booktitle>
+<contexts>
+<context position="6095" citStr="Ratliff et al., 2007" startWordPosition="967" endWordPosition="970">ach of which is an approximation to the dual formulation of the margin-based learning problem. At each iteration, the current QP is refined by adding additional active constraints. We solve each approximate QP using Sequential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 loss margin objective. Online Primal Subgradient (Ratliff et al., 2007) Computes the subgradient of the margin objective on each instance by performing a loss-augmented decode, then uses these instance-wise subgradients to optimize the global objective using AdaGrad (Duchi et al., 2011) with either L1 or L2 regularization. The simplest implementation of AdaGrad touches every weight when doing the update for a batch. To save time, we distinguish between two different types of update. When the subgradient is nonzero, we apply the usual update. When the subgradient is zero, we apply a numerically equivalent update later, at the next time the weight is queried. This </context>
+</contexts>
+<marker>Ratliff, Bagnell, Zinkevich, 2007</marker>
+<rawString>Nathan Ratliff, J. Andrew (Drew) Bagnell, and Martin Zinkevich. 2007. (Online) subgradient methods for structured prediction. In Eleventh International Conference on Artificial Intelligence and Statistics (AIStats), March.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Noah A Smith</author>
+</authors>
+<title>Linguistic Structure Prediction. Synthesis Lectures on Human Language Technologies.</title>
+<date>2011</date>
+<publisher>Morgan</publisher>
+<contexts>
+<context position="1326" citStr="Smith, 2011" startWordPosition="192" endWordPosition="193">imization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives. 1 Introduction Structured discriminative models have proven effective across a range of tasks in NLP including tagging (Lafferty et al., 2001; Collins, 2002), reranking parses (Charniak and Johnson, 2005), and many more (Taskar, 2004; Smith, 2011). Common approaches to training such models include margin methods, likelihood methods, and mistake-driven procedures like the averaged perceptron algorithm. In this paper, we primarily consider the relative empirical behavior of several online optimization methods for margin-based objectives, with secondary attention to other approaches for calibration. It is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in the same way as the dynamic program used for inference (Taskar, 2004). Fortunately, most structured margin o</context>
+</contexts>
+<marker>Smith, 2011</marker>
+<rawString>Noah A. Smith. 2011. Linguistic Structure Prediction. Synthesis Lectures on Human Language Technologies. Morgan and Claypool.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ben Taskar</author>
+<author>Dan Klein</author>
+<author>Michael Collins</author>
+<author>Daphne Koller</author>
+<author>Chris Manning</author>
+</authors>
+<title>Max-margin parsing.</title>
+<date>2004</date>
+<booktitle>In Proceedings of EMNLP 2004,</booktitle>
+<volume>1</volume>
+<pages>pages</pages>
+<location>Barcelona, Spain,</location>
+<contexts>
+<context position="5756" citStr="Taskar et al., 2004" startWordPosition="907" endWordPosition="910">n s Note: To implement without the sparse update, use SCORE = wTf(y&apos;), and run the update loop on the left over all features. Also, for comparison, to implement perceptron, remove the sparse update and use UPDATE-ACTIVE = return w + g. 2.1 Margin Cutting Plane (Tsochantaridis et al., 2004) Solves a sequence of quadratic programs (QP), each of which is an approximation to the dual formulation of the margin-based learning problem. At each iteration, the current QP is refined by adding additional active constraints. We solve each approximate QP using Sequential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 loss margin objective. Online Primal Subgradient (Ratliff et al., 2007) Computes the subgradient of the margin objective on each instance by performing a loss-augmented decode, then uses these instance-wise subgradients to optimize the global objective using AdaGrad (Duchi et al., 2011) with either L1 or L2 regularization. The sim</context>
+</contexts>
+<marker>Taskar, Klein, Collins, Koller, Manning, 2004</marker>
+<rawString>Ben Taskar, Dan Klein, Michael Collins, Daphne Koller, and Chris Manning. 2004. Max-margin parsing. In Proceedings of EMNLP 2004, pages 1– 8, Barcelona, Spain, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ben Taskar</author>
+</authors>
+<title>Learning Structured Prediction Models: A Large Margin Approach.</title>
+<date>2004</date>
+<tech>Ph.D. thesis,</tech>
+<institution>Stanford University.</institution>
+<contexts>
+<context position="1312" citStr="Taskar, 2004" startWordPosition="190" endWordPosition="191">es, primal optimization methods are often more robust and progress faster than dual methods. This advantage is most pronounced for tasks with dense or continuous-valued features. Overall, we argue for a particularly simple online primal subgradient descent method that, despite being rarely mentioned in the literature, is surprisingly effective in relation to its alternatives. 1 Introduction Structured discriminative models have proven effective across a range of tasks in NLP including tagging (Lafferty et al., 2001; Collins, 2002), reranking parses (Charniak and Johnson, 2005), and many more (Taskar, 2004; Smith, 2011). Common approaches to training such models include margin methods, likelihood methods, and mistake-driven procedures like the averaged perceptron algorithm. In this paper, we primarily consider the relative empirical behavior of several online optimization methods for margin-based objectives, with secondary attention to other approaches for calibration. It is increasingly common to train structured models using a max-margin objective that incorporates a loss function that decomposes in the same way as the dynamic program used for inference (Taskar, 2004). Fortunately, most struc</context>
+</contexts>
+<marker>Taskar, 2004</marker>
+<rawString>Ben Taskar. 2004. Learning Structured Prediction Models: A Large Margin Approach. Ph.D. thesis, Stanford University.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ioannis Tsochantaridis</author>
+<author>Thomas Hofmann</author>
+<author>Thorsten Joachims</author>
+<author>Yasemin Altun</author>
+</authors>
+<title>Support vector machine learning for interdependent and structured output spaces.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the Twenty-first International Conference on Machine Learning,</booktitle>
+<pages>104--112</pages>
+<contexts>
+<context position="5426" citStr="Tsochantaridis et al., 2004" startWordPosition="856" endWordPosition="859">adient was zero function UPDATE-CATCHUP(w, q, t) (ηC+√q \return w It [E2] return sign(w) · max(0, |w |− ηC√qt) [E1] Compute w&gt;f(y0), but for each weight, apply an update to catch up on the steps in which the gradient for that weight was zero function SCORE(y0) s = 0 for f E f(y0) do wf = UPDATE-CATCHUP(wf, qf, n−uf) uf = n s += wf return s Note: To implement without the sparse update, use SCORE = wTf(y&apos;), and run the update loop on the left over all features. Also, for comparison, to implement perceptron, remove the sparse update and use UPDATE-ACTIVE = return w + g. 2.1 Margin Cutting Plane (Tsochantaridis et al., 2004) Solves a sequence of quadratic programs (QP), each of which is an approximation to the dual formulation of the margin-based learning problem. At each iteration, the current QP is refined by adding additional active constraints. We solve each approximate QP using Sequential Minimal Optimization (Platt, 1999; Taskar et al., 2004). Online Cutting Plane (Chang and Yih, 2013) A modified form of cutting plane that only partially solves the QP on each iteration, operating in the dual space and optimizing a single dual variable on each iteration. We use a variant of Chang and Yih (2013) for the L1 lo</context>
+</contexts>
+<marker>Tsochantaridis, Hofmann, Joachims, Altun, 2004</marker>
+<rawString>Ioannis Tsochantaridis, Thomas Hofmann, Thorsten Joachims, and Yasemin Altun. 2004. Support vector machine learning for interdependent and structured output spaces. In Proceedings of the Twenty-first International Conference on Machine Learning, pages 104–112, July.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew D Zeiler</author>
+</authors>
+<title>ADADELTA: an adaptive learning rate method.</title>
+<date>2012</date>
+<location>CoRR, abs/1212.5701.</location>
+<contexts>
+<context position="7168" citStr="Zeiler, 2012" startWordPosition="1141" endWordPosition="1142">he usual update. When the subgradient is zero, we apply a numerically equivalent update later, at the next time the weight is queried. This saves time, as we only touch the weights corresponding to the (usually sparse) nonzero directions in the current batch’s subgradient. Algorithm 1 gives pseudocode for our implementation, which was based on Dyer (2013). 2.2 Likelihood Stochastic Gradient Descent The built-in training method for many of the systems was softmax-margin likelihood optimization (Gimpel and Smith, 2010) via subgradient descent with either AdaGrad or AdaDelta (Duchi et al., 2011; Zeiler, 2012). We include results with each system’s default settings as a point of comparison. 2.3 Mistake Driven Averaged Perceptron (Freund and Schapire, 1999; Collins, 2002) On a mistake, weights for features on the system output are decremented and weights for features on the gold output are incre274 mented. Weights are averaged over the course of training, and decoding is not loss-augmented. Margin Infused Relaxed Algorithm (Crammer and Singer, 2003) A modified form of the perceptron that uses loss-augmented decoding and makes the smallest update necessary to give a margin at least as large as the lo</context>
+</contexts>
+<marker>Zeiler, 2012</marker>
+<rawString>Matthew D. Zeiler. 2012. ADADELTA: an adaptive learning rate method. CoRR, abs/1212.5701.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

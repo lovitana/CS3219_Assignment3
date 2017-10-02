@@ -1,0 +1,1842 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000058">
+<title confidence="0.997652">
+Segmentation for Efficient Supervised Language Annotation with an
+Explicit Cost-Utility Tradeoff
+</title>
+<author confidence="0.999033">
+Matthias Sperber&apos;, Mirjam Simantzik&apos;, Graham Neubig&apos;, Satoshi Nakamura&apos;, Alex Waibel&apos;
+</author>
+<affiliation confidence="0.999684333333333">
+&apos;Karlsruhe Institute of Technology, Institute for Anthropomatics, Germany
+&apos;Mobile Technologies GmbH, Germany
+&apos;Nara Institute of Science and Technology, AHC Laboratory, Japan
+</affiliation>
+<email confidence="0.9875575">
+matthias.sperber@kit.edu, mirjam.simantzik@jibbigo.com, neubig@is.naist.jp
+s-nakamura@is.naist.jp, waibel@kit.edu
+</email>
+<sectionHeader confidence="0.99858" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999627923076923">
+In this paper, we study the problem of manu-
+ally correcting automatic annotations of natu-
+ral language in as efficient a manner as pos-
+sible. We introduce a method for automati-
+cally segmenting a corpus into chunks such
+that many uncertain labels are grouped into
+the same chunk, while human supervision
+can be omitted altogether for other segments.
+A tradeoff must be found for segment sizes.
+Choosing short segments allows us to reduce
+the number of highly confident labels that are
+supervised by the annotator, which is useful
+because these labels are often already correct
+and supervising correct labels is a waste of
+effort. In contrast, long segments reduce the
+cognitive effort due to context switches. Our
+method helps find the segmentation that opti-
+mizes supervision efficiency by defining user
+models to predict the cost and utility of su-
+pervising each segment and solving a con-
+strained optimization problem balancing these
+contradictory objectives. A user study demon-
+strates noticeable gains over pre-segmented,
+confidence-ordered baselines on two natural
+language processing tasks: speech transcrip-
+tion and word segmentation.
+</bodyText>
+<sectionHeader confidence="0.99963" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999880428571428">
+Many natural language processing (NLP) tasks re-
+quire human supervision to be useful in practice,
+be it to collect suitable training material or to meet
+some desired output quality. Given the high cost of
+human intervention, how to minimize the supervi-
+sion effort is an important research problem. Previ-
+ous works in areas such as active learning, post edit-
+</bodyText>
+<listItem confidence="0.885997166666667">
+(a) It was a bright cold (they) in (apron), and (a) clocks
+were striking thirteen.
+(b) It was a bright cold (they) in (apron), and (a) clocks
+were striking thirteen.
+(c) It was a bright cold (they) in (apron), and (a) clocks
+were striking thirteen.
+</listItem>
+<figureCaption confidence="0.948202">
+Figure 1: Three automatic transcripts of the sentence “It
+was a bright cold day in April, and the clocks were strik-
+ing thirteen”, with recognition errors in parentheses. The
+underlined parts are to be corrected by a human for (a)
+sentences, (b) words, or (c) the proposed segmentation.
+</figureCaption>
+<bodyText confidence="0.999805095238096">
+ing, and interactive pattern recognition have inves-
+tigated this question with notable success (Settles,
+2008; Specia, 2011; Gonz´alez-Rubio et al., 2010).
+The most common framework for efficient anno-
+tation in the NLP context consists of training an NLP
+system on a small amount of baseline data, and then
+running the system on unannotated data to estimate
+confidence scores of the system’s predictions (Set-
+tles, 2008). Sentences with the lowest confidence
+are then used as the data to be annotated (Figure 1
+(a)). However, it has been noted that when the NLP
+system in question already has relatively high accu-
+racy, annotating entire sentences can be wasteful, as
+most words will already be correct (Tomanek and
+Hahn, 2009; Neubig et al., 2011). In these cases, it
+is possible to achieve much higher benefit per anno-
+tated word by annotating sub-sentential units (Fig-
+ure 1 (b)).
+However, as Settles et al. (2008) point out, sim-
+ply maximizing the benefit per annotated instance
+is not enough, as the real supervision effort varies
+</bodyText>
+<page confidence="0.986208">
+169
+</page>
+<note confidence="0.3875985">
+Transactions of the Association for Computational Linguistics, 2 (2014) 169–180. Action Editor: Eric Fosler-Lussier.
+Submitted 11/2013; Revised 2/2014; Published 4/2014. c�2014 Association for Computational Linguistics.
+</note>
+<figure confidence="0.456001">
+Segment length
+</figure>
+<figureCaption confidence="0.965354333333333">
+Figure 2: Average annotation time per instance, plotted
+over different segment lengths. For both tasks, the effort
+clearly increases for short segments.
+</figureCaption>
+<bodyText confidence="0.999970125">
+greatly across instances. This is particularly impor-
+tant in the context of choosing segments to annotate,
+as human annotators heavily rely on semantics and
+context information to process language, and intu-
+itively, a consecutive sequence of words can be su-
+pervised faster and more accurately than the same
+number of words spread out over several locations in
+a text. This intuition can also be seen in our empiri-
+cal data in Figure 2, which shows that for the speech
+transcription and word segmentation tasks described
+later in Section 5, short segments had a longer anno-
+tation time per word. Based on this fact, we argue
+it would be desirable to present the annotator with
+a segmentation of the data into easily supervisable
+chunks that are both large enough to reduce the num-
+ber of context switches, and small enough to prevent
+unnecessary annotation (Figure 1 (c)).
+In this paper, we introduce a new strategy for nat-
+ural language supervision tasks that attempts to op-
+timize supervision efficiency by choosing an appro-
+priate segmentation. It relies on a user model that,
+given a specific segment, predicts the cost and the
+utility of supervising that segment. Given this user
+model, the goal is to find a segmentation that mini-
+mizes the total predicted cost while maximizing the
+utility. We balance these two criteria by defining a
+constrained optimization problem in which one cri-
+terion is the optimization objective, while the other
+criterion is used as a constraint. Doing so allows
+specifying practical optimization goals such as “re-
+move as many errors as possible given a limited time
+budget,” or “annotate data to obtain some required
+classifier accuracy in as little time as possible.”
+Solving this optimization task is computationally
+difficult, an NP-hard problem. Nevertheless, we
+demonstrate that by making realistic assumptions
+about the segment length, an optimal solution can
+be found using an integer linear programming for-
+mulation for mid-sized corpora, as are common for
+supervised annotation tasks. For larger corpora, we
+provide simple heuristics to obtain an approximate
+solution in a reasonable amount of time.
+Experiments over two example scenarios demon-
+strate the usefulness of our method: Post editing
+for speech transcription, and active learning for
+Japanese word segmentation. Our model predicts
+noticeable efficiency gains, which are confirmed in
+experiments with human annotators.
+</bodyText>
+<sectionHeader confidence="0.995523" genericHeader="method">
+2 Problem Definition
+</sectionHeader>
+<bodyText confidence="0.999657612903225">
+The goal of our method is to find a segmentation
+over a corpus of word tokens w that optimizes
+supervision efficiency according to some predictive
+user model. The user model is denoted as a set of
+functions ul,k(wa) that evaluate any possible sub-
+sequence wa of tokens in the corpus according to
+criteria l2L, and supervision modes kEK.
+Let us illustrate this with an example. Sperber et
+al. (2013) defined a framework for speech transcrip-
+tion in which an initial, erroneous transcript is cre-
+ated using automatic speech recognition (ASR), and
+an annotator corrects the transcript either by correct-
+ing the words by keyboard, by respeaking the con-
+tent, or by leaving the words as is. In this case,
+we could define K={TYPE, RESPEAK, SKIP}, each
+constant representing one of these three supervision
+modes. Our method will automatically determine
+the appropriate supervision mode for each segment.
+The user model in this example might evaluate ev-
+ery segment according to two criteria L, a cost crite-
+rion (in terms of supervision time) and a utility cri-
+terion (in terms of number of removed errors), when
+using each mode. Intuitively, respeaking should be
+assigned both lower cost (because speaking is faster
+than typing), but also lower utility than typing on a
+keyboard (because respeaking recognition errors can
+occur). The SKIP mode denotes the special, unsuper-
+vised mode that always returns 0 cost and 0 utility.
+Other possible supervision modes include mul-
+tiple input modalities (Suhm et al., 2001), several
+human annotators with different expertise and cost
+</bodyText>
+<figure confidence="0.995757">
+Avg. time / instance [sec]
+4
+01 3 5 7 9 11 13 15 17 19
+6
+2
+Transcription task
+Word segmentation task
+</figure>
+<page confidence="0.990756">
+170
+</page>
+<bodyText confidence="0.999761875">
+(Donmez and Carbonell, 2008), and correction vs.
+translation from scratch in machine translation (Spe-
+cia, 2011). Similarly, cost could instead be ex-
+pressed in monetary terms, or the utility function
+could predict the improvement of a classifier when
+the resulting annotation is not intended for direct hu-
+man consumption, but as training data for a classifier
+in an active learning framework.
+</bodyText>
+<sectionHeader confidence="0.995276" genericHeader="method">
+3 Optimization Framework
+</sectionHeader>
+<bodyText confidence="0.99927275">
+Given this setting, we are interested in simulta-
+neously finding optimal locations and supervision
+modes for all segments, according to the given cri-
+teria. Each resulting segment will be assigned ex-
+actly one of these supervision modes. We de-
+note a segmentation of the N tokens of corpus wN1
+into MG_N segments by specifying segment bound-
+ary markers sM+1
+</bodyText>
+<equation confidence="0.80503">
+1 =(s1=1, s2, ... , sM+1=N+1).
+</equation>
+<bodyText confidence="0.998713285714286">
+Setting a boundary marker si=a means that we
+put a segment boundary before the a-th word to-
+ken (or the end-of-corpus marker for a=N+1).
+Thus our corpus is segmented into token sequences
+[(wsj, ..., wsj+1—1)]Mj=1. The supervision modes
+assigned to each segment are denoted by mj. We
+favor those segmentations that minimize the cumu-
+lative value �M j=1[ul,mj(wsj+1
+sj )] for each criterion l.
+For any criterion where larger values are intuitively
+better, we flip the sign before defining ul,mj(wsj+1
+sj )
+to maintain consistency (e.g. negative number of er-
+rors removed).
+</bodyText>
+<subsectionHeader confidence="0.998744">
+3.1 Multiple Criteria Optimization
+</subsectionHeader>
+<bodyText confidence="0.999992">
+In the case of a single criterion (|L|=1), we obtain
+a simple, single-objective unconstrained linear opti-
+mization problem, efficiently solvable via dynamic
+programming (Terzi and Tsaparas, 2006). However,
+in practice one usually encounters several compet-
+ing criteria, such as cost and utility, and here we
+will focus on this more realistic setting. We balance
+competing criteria by using one as an optimization
+objective, and the others as constraints.1 Let crite-
+</bodyText>
+<footnote confidence="0.999726285714286">
+1This approach is known as the bounded objective function
+method in multi-objective optimization literature (Marler and
+Arora, 2004). The very popular weighted sum method merges
+criteria into a single efficiency measure, but is problematic in
+our case because the number of supervised tokens is unspec-
+ified. Unless the weights are carefully chosen, the algorithm
+might find, e.g., the completely unsupervised or completely su-
+</footnote>
+<figureCaption confidence="0.983882571428571">
+Figure 3: Excerpt of a segmentation graph for an ex-
+ample transcription task similar to Figure 1 (some edges
+are omitted for readability). Edges are labeled with their
+mode, predicted number of errors that can be removed,
+and necessary supervision time. A segmentation scheme
+might prefer solid edges over dashed ones in this exam-
+ple.
+</figureCaption>
+<bodyText confidence="0.99522175">
+rion l&apos; be the optimization objective criterion, and
+let Cl denote the constraining constants for the cri-
+teria l 2 L_l, = L \ {l0}. We state the optimization
+problem:
+</bodyText>
+<equation confidence="0.98785175">
+sj
+Lul0,mj (wsj+1)
+Lul,mj (wsj+1 )J � Cl (bl 2 L—l0)
+sj
+</equation>
+<bodyText confidence="0.98827212">
+This constrained optimization problem is difficult
+to solve. In fact, the NP-hard multiple-choice knap-
+sack problem (Pisinger, 1994) corresponds to a spe-
+cial case of our problem in which the number of seg-
+ments is equal to the number of tokens, implying
+that our more general problem is NP-hard as well.
+In order to overcome this problem, we refor-
+mulate search for the optimal segmentation as a
+resource-constrained shortest path problem in a di-
+rected, acyclic multigraph. While still not efficiently
+solvable in theory, this problem is well studied in
+domains such as vehicle routing and crew schedul-
+ing (Irnich and Desaulniers, 2005), and it is known
+that in many practical situations the problem can
+be solved reasonably efficiently using integer linear
+programming relaxations (Toth and Vigo, 2001).
+In our formalism, the set of nodes V represents
+the spaces between neighboring tokens, at which the
+algorithm may insert segment boundaries. A node
+with index i represents a segment break before the
+i-th token, and thus the sequence of the indices in
+a path directly corresponds to sM+1
+1 . Edges E de-
+note the grouping of tokens between the respective
+pervised segmentation to be most “efficient.”
+</bodyText>
+<equation confidence="0.573131941176471">
+1 2 3 4 5 6
+(at) (what’s) a bright cold ...
+[TYPE:1/4] [TYPE:1/4]
+[RESPEAK:1.5/2]
+[SKIP:0/0]
+[TYPE:2/5]
+[RESPEAK:0/3]
+[SKIP:0/0]
+min
+M;sM+1
+1 ;mM 1
+M
+s.t. E
+j=1
+M
+E
+j=1
+</equation>
+<page confidence="0.976658">
+171
+</page>
+<bodyText confidence="0.999796666666667">
+nodes into one segment. Edges are always directed
+from left to right, and labeled with a supervision
+mode. In addition, each edge between nodes i and j
+is assigned ul,k(wj—1
+i ), the corresponding predicted
+value for each criterion l E L and supervision mode
+k E K, indicating that the supervision mode of the
+j-th segment in a path directly corresponds to mj.
+Figure 3 shows an example of what the result-
+ing graph may look like. Our original optimization
+problem is now equivalent to finding the shortest
+path between the first and last nodes according to
+criterion l&apos;, while obeying the given resource con-
+straints. According to a widely used formulation for
+the resource constrained shortest path problem, we
+can define Eij as the set of competing edges between
+i and j, and express this optimization problem with
+the following integer linear program (ILP):
+</bodyText>
+<equation confidence="0.994868909090909">
+� �xijk =
+iEV iEV
+kEEij kEEij
+(bj E V \{1, n})
+� x1jk = 1 (4)
+jEV
+kEEij
+� xink = 1 (5)
+iEV
+kEEin
+xijk E {0, 1} (bxijk E x) (6)
+</equation>
+<bodyText confidence="0.997855571428572">
+The variables x={xijk|i, j E V , k E Eij} denote
+the activation of the k’th edge between nodes i and
+j. The shortest path according to the minimization
+objective (1), that still meets the resource constraints
+for the specified criteria (2), is to be computed. The
+degree constraints (3,4,5) specify that all but the first
+and last nodes must have as many incoming as out-
+going edges, while the first node must have exactly
+one outgoing, and the last node exactly one incom-
+ing edge. Finally, the integrality condition (6) forces
+all edges to be either fully activated or fully deacti-
+vated. The outlined problem formulation can solved
+directly by using off-the-shelf ILP solvers, here we
+employ GUROBI (Gurobi Optimization, 2012).
+</bodyText>
+<subsectionHeader confidence="0.995691">
+3.2 Heuristics for Approximation
+</subsectionHeader>
+<bodyText confidence="0.999988733333333">
+In general, edges are inserted for every supervision
+mode between every combination of two nodes. The
+search space can be constrained by removing some
+of these edges to increase efficiency. In this study,
+we only consider edges spanning at most 20 tokens.
+For cases in which larger corpora are to be anno-
+tated, or when the acceptable delay for delivering re-
+sults is small, a suitable segmentation can be found
+approximately. The easiest way would be to parti-
+tion the corpus, e.g. according to its individual doc-
+uments, divide the budget constraints evenly across
+all partitions, and then segment each partition inde-
+pendently. More sophisticated methods might ap-
+proximate the Pareto front for each partition, and
+distribute the budgets in an intelligent way.
+</bodyText>
+<sectionHeader confidence="0.992563" genericHeader="method">
+4 User Modeling
+</sectionHeader>
+<bodyText confidence="0.9997812">
+While the proposed framework is able to optimize
+the segmentation with respect to each criterion, it
+also rests upon the assumption that we can provide
+user models ul,k(wj—1
+i ) that accurately evaluate ev-
+ery segment according to the specified criteria and
+supervision modes. In this section, we discuss our
+strategies for estimating three conceivable criteria:
+annotation cost, correction of errors, and improve-
+ment of a classifier.
+</bodyText>
+<subsectionHeader confidence="0.991971">
+4.1 Annotation Cost Modeling
+</subsectionHeader>
+<bodyText confidence="0.999886785714286">
+Modeling cost requires solving a regression prob-
+lem from features of a candidate segment to annota-
+tion cost, for example in terms of supervision time.
+Appropriate input features depend on the task, but
+should include notions of complexity (e.g. a confi-
+dence measure) and length of the segment, as both
+are expected to strongly influence supervision time.
+We propose using Gaussian process (GP) regres-
+sion for cost prediction, a start-of-the-art nonpara-
+metric Bayesian regression technique (Rasmussen
+and Williams, 2006)2. As reported on a similar
+task by Cohn and Specia (2013), and confirmed by
+our preliminary experiments, GP regression signifi-
+cantly outperforms popular techniques such as sup-
+</bodyText>
+<footnote confidence="0.738851">
+2Code available at http://www.gaussianprocess.org/gpml/
+</footnote>
+<figure confidence="0.992037">
+�
+kEEij
+�
+min
+X
+i,jEV
+xijkul0,k(sj—1i ) (1)
+�
+kEEij
+�s.t.
+i,jEV
+xijkul,k(sj—1
+i ) G Cl
+(bl E L—l0)
+xjik
+</figure>
+<page confidence="0.983029">
+172
+</page>
+<bodyText confidence="0.999635052631579">
+port vector regression and least-squares linear re-
+gression. We also follow their settings for GP, em-
+ploying GP regression with a squared exponential
+kernel with automatic relevance determination. De-
+pending on the number of users and amount of train-
+ing data available for each user, models may be
+trained separately for each user (as we do here), or
+in a combined fashion via multi-task learning as pro-
+posed by Cohn and Specia (2013).
+It is also crucial for the predictions to be reliable
+throughout the whole relevant space of segments.
+If the cost of certain types of segments is system-
+atically underpredicted, the segmentation algorithm
+might be misled to prefer these, possibly a large
+number of times.3 An effective trick to prevent such
+underpredictions is to predict the log time instead of
+the actual time. In this way, errors in the critical low
+end are penalized more strongly, and the time can
+never become negative.
+</bodyText>
+<subsectionHeader confidence="0.655882">
+4.2 Error Correction Modeling
+</subsectionHeader>
+<bodyText confidence="0.95258515625">
+As one utility measure, we can use the number of
+errors corrected, a useful measure for post editing
+tasks over automatically produced annotations. In
+order to measure how many errors can be removed
+by supervising a particular segment, we must es-
+timate both how many errors are in the automatic
+annotation, and how reliably a human can remove
+these for a given supervision mode.
+Most machine learning techniques can estimate
+confidence scores in the form of posterior probabil-
+ities. To estimate the number of errors, we can sum
+over one minus the posterior for all tokens, which
+estimates the Hamming distance from the reference
+annotation. This measure is appropriate for tasks in
+which the number of tokens is fixed in advance (e.g.
+a part-of-speech estimation task), and a reasonable
+approximation for tasks in which the number of to-
+kens is not known in advance (e.g. speech transcrip-
+tion, cf. Section 5.1.1).
+Predicting the particular tokens at which a human
+will make a mistake is known to be a difficult task
+(Olson and Olson, 1990), but a simplifying constant
+3For instance, consider a model that predicts well for seg-
+ments of medium size or longer, but underpredicts the supervi-
+sion time of single-token segments. This may lead the segmen-
+tation algorithm to put every token into its own segment, which
+is clearly undesirable.
+human error rate can still be useful. For example,
+in the task from Section 2, we may suspect a certain
+number of errors in a transcript segment, and predict,
+say, 95% of those errors to be removed via typing,
+but only 85% via respeaking.
+</bodyText>
+<subsectionHeader confidence="0.976609">
+4.3 Classifier Improvement Modeling
+</subsectionHeader>
+<bodyText confidence="0.99998075">
+Another reasonable utility measure is accuracy of a
+classifier trained on the data we choose to annotate
+in an active learning framework. Confidence scores
+have been found useful for ranking particular tokens
+with regards to how much they will improve a clas-
+sifier (Settles, 2008). Here, we may similarly score
+segment utility as the sum of its token confidences,
+although care must be taken to normalize and cali-
+brate the token confidences to be linearly compara-
+ble before doing so. While the resulting utility score
+has no interpretation in absolute terms, it can still be
+used as an optimization objective (cf. Section 5.2.1).
+</bodyText>
+<sectionHeader confidence="0.999742" genericHeader="method">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.9996455">
+In this section, we present experimental results ex-
+amining the effectiveness of the proposed method
+over two tasks: speech transcription and Japanese
+word segmentation.4
+</bodyText>
+<subsectionHeader confidence="0.986706">
+5.1 Speech Transcription Experiments
+</subsectionHeader>
+<bodyText confidence="0.9998757">
+Accurate speech transcripts are a much-demanded
+NLP product, useful by themselves, as training ma-
+terial for ASR, or as input for follow-up tasks like
+speech translation. With recognition accuracies
+plateauing, manually correcting (post editing) auto-
+matic speech transcripts has become popular. Com-
+mon approaches are to identify words (Sanchez-
+Cortina et al., 2012) or (sub-)sentences (Sperber et
+al., 2013) of low confidence, and have a human edi-
+tor correct these.
+</bodyText>
+<subsubsectionHeader confidence="0.605286">
+5.1.1 Experimental Setup
+</subsubsectionHeader>
+<bodyText confidence="0.999957">
+We conduct a user study in which participants
+post-edited speech transcripts, given a fixed goal
+word error rate. The transcription setup was such
+that the transcriber could see the ASR transcript of
+parts before and after the segment that he was edit-
+ing, providing context if needed. When imprecise
+time alignment resulted in segment breaks that were
+</bodyText>
+<footnote confidence="0.9862855">
+4Software and experimental data can be downloaded from
+http://www.msperber.com/research/tacl-segmentation/
+</footnote>
+<page confidence="0.997649">
+173
+</page>
+<bodyText confidence="0.999916977777778">
+slightly “off,” as happened occasionally, that context
+helped guess what was said. The segment itself was
+transcribed from scratch, as opposed to editing the
+ASR transcript; besides being arguably more effi-
+cient when the ASR transcript contains many mis-
+takes (Nanjo et al., 2006; Akita et al., 2009), prelim-
+inary experiments also showed that supervision time
+is far easier to predict this way. Figure 4 illustrates
+what the setup looked like.
+We used a self-developed transcription tool to
+conduct experiments. It presents our computed seg-
+ments one by one, allows convenient input and play-
+back via keyboard shortcuts, and logs user interac-
+tions with their time stamps. A selection of TED
+talks5 (English talks on technology, entertainment,
+and design) served as experimental data. While
+some of these talks contain jargon such as medi-
+cal terms, they are presented by skilled speakers,
+making them comparably easy to understand. Initial
+transcripts were created using the Janus recognition
+toolkit (Soltau et al., 2001) with a standard, TED-
+optimized setup. We used confusion networks for
+decoding and obtaining confidence scores.
+For reasons of simplicity, and better compara-
+bility to our baseline, we restricted our experiment
+to two supervision modes: TYPE and SKIP. We
+conducted experiments with 3 participants, 1 with
+several years of experience in transcription, 2 with
+none. Each participant received an explanation on
+the transcription guidelines, and a short hands-on
+training to learn to use our tool. Next, they tran-
+scribed a balanced selection of 200 segments of
+varying length and quality in random order. This
+data was used to train the user models.
+Finally, each participant transcribed another 2
+TED talks, with word error rate (WER) 19.96%
+(predicted: 22.33%). We set a target (predicted)
+WER of 15% as our optimization constraint,6 and
+minimize the predicted supervision time as our ob-
+jective function. Both TED talks were transcribed
+once using the baseline strategy, and once using the
+proposed strategy. The order of both strategies was
+reversed between talks, to minimize learning bias
+due to transcribing each talk twice.
+The baseline strategy was adopted according to
+</bodyText>
+<footnote confidence="0.936800333333333">
+5www.ted.com
+6Depending on the level of accuracy required by our final
+application, this target may be set lower or higher.
+</footnote>
+<bodyText confidence="0.999179033333333">
+Sperber et al. (2013): We segmented the talk into
+natural, subsentential units, using Matusov et al.
+(2006)’s segmenter, which we tuned to reproduce
+the TED subtitle segmentation, producing a mean
+segment length of 8.6 words. Segments were added
+in order of increasing average word confidence, until
+the user model predicted a WER&lt;15%. The second
+segmentation strategy was the proposed method,
+similarly with a resource constraint of WER&lt;15%.
+Supervision time was predicted via GP regres-
+sion (cf. Section 4.1), using segment length, au-
+dio duration, and mean confidence as input features.
+The output variable was assumed subject to addi-
+tive Gaussian noise with zero mean, a variance of
+5 seconds was chosen empirically to minimize the
+mean squared error. Utility prediction (cf. Section
+4.2) was based on posterior scores obtained from
+the confusion networks. We found it important to
+calibrate them, as the posteriors were overconfident
+especially in the upper range. To do so, we automat-
+ically transcribed a development set of TED data,
+grouped the recognized words into buckets accord-
+ing to their posteriors, and determined the average
+number of errors per word in each bucket from an
+alignment with the reference transcript. The map-
+ping from average posterior to average number of
+errors was estimated via GP regression. The result
+was summed over all tokens, and multiplied by a
+constant human confidence, separately determined
+for each participant.7
+</bodyText>
+<subsubsectionHeader confidence="0.884679">
+5.1.2 Simulation Results
+</subsubsectionHeader>
+<bodyText confidence="0.999970181818182">
+To convey a better understanding of the poten-
+tial gains afforded by our method, we first present a
+simulated experiment. We assume a transcriber who
+makes no mistakes, and needs exactly the amount of
+time predicted by a user model trained on the data of
+a randomly selected participant. We compare three
+scenarios: A baseline simulation, in which the base-
+line segments are transcribed in ascending order of
+confidence; a simulation using the proposed method,
+in which we change the WER constraint in small in-
+crements; finally, an oracle simulation, which uses
+</bodyText>
+<footnote confidence="0.9840234">
+7More elaborate methods for WER estimation exist, such as
+by Ogawa et al. (2013), but if our method achieves improve-
+ments using simple Hamming distance, incorporating more so-
+phisticated measures will likely achieve similar, or even better
+accuracy.
+</footnote>
+<page confidence="0.994668">
+174
+</page>
+<listItem confidence="0.9858082">
+(3) SKIP: “nineteen forty six until today you see the green”
+(4) TYPE: &lt;annotator types: “is the traditional”&gt;
+(5) SKIP: “Interstate conflict”
+(6) TYPE: &lt;annotator types: “the ones we used to”&gt;
+(7) SKIP:...
+</listItem>
+<figureCaption confidence="0.9987398">
+Figure 4: Result of our segmentation method (excerpt).
+TYPE segments are displayed empty and should be tran-
+scribed from scratch. For SKIP segments, the ASR tran-
+script is displayed to provide context. When annotating a
+segment, the corresponding audio is played back.
+</figureCaption>
+<figure confidence="0.9874725">
+0 10 20 30 40 50 60
+Post editing time [min]
+</figure>
+<figureCaption confidence="0.997654">
+Figure 5: Simulation of post editing on example TED
+talk. The proposed method reduces the WER consider-
+ably faster than the baseline at first, later both converge.
+The much superior oracle simulation indicates room for
+further improvement.
+</figureCaption>
+<bodyText confidence="0.995393583333333">
+the proposed method, but uses a utility model that
+knows the actual number of errors in each segment.
+For each supervised segment, we simply replace the
+ASR output with the reference, and measure the re-
+sulting WER.
+Figure 5 shows the simulation on an example
+TED talk, based on an initial transcript with 21.9%
+WER. The proposed method is able to reduce the
+WER faster than the baseline, up to a certain point
+where they converge. The oracle simulation is even
+faster, indicating room for improvement through
+better confidence scores.
+</bodyText>
+<subsectionHeader confidence="0.602219">
+5.1.3 User Study Results
+</subsectionHeader>
+<bodyText confidence="0.998736833333333">
+Table 1 shows the results of the user study. First,
+we note that the WER estimation by our utility
+model was off by about 2.5%: While the predicted
+improvement in WER was from 22.33% to 15.0%,
+the actual improvement was from 19.96% to about
+12.5%. The actual resulting WER was consistent
+</bodyText>
+<table confidence="0.999295833333333">
+Participant Baseline Proposed
+WER Time WER Time
+P1 12.26 44:05 12.18 33:01
+P2 12.75 36:19 12.77 29:54
+P3 12.70 52:42 12.50 37:57
+AVG 12.57 44:22 12.48 33:37
+</table>
+<tableCaption confidence="0.999876">
+Table 1: Transcription task results. For each user, the
+</tableCaption>
+<bodyText confidence="0.960200107142857">
+resulting WER [%] after supervision is shown, along with
+the time [min] they needed. The unsupervised WER was
+19.96%.
+across all users, and we observe strong, consistent
+reductions in supervision time for all participants.
+Prediction of the necessary supervision time was ac-
+curate: Averaged over participants, 45:41 minutes
+were predicted for the baseline, 44:22 minutes mea-
+sured. For the proposed method, 32:11 minutes were
+predicted, 33:37 minutes measured. On average,
+participants removed 6.68 errors per minute using
+the baseline, and 8.93 errors per minute using the
+proposed method, a speed-up of 25.2%.
+Note that predicted and measured values are not
+strictly comparable: In the experiments, to provide
+a fair comparison participants transcribed the same
+talks twice (once using baseline, once the proposed
+method, in alternating order), resulting in a notice-
+able learning effect. The user model, on the other
+hand, is trained to predict the case in which a tran-
+scriber conducts only one transcription pass.
+As an interesting finding, without being informed
+about the order of baseline and proposed method,
+participants reported that transcribing according to
+the proposed segmentation seemed harder, as they
+found the baseline segmentation more linguistically
+reasonable. However, this perceived increase in dif-
+ficulty did not show in efficiency numbers.
+</bodyText>
+<subsectionHeader confidence="0.998851">
+5.2 Japanese Word Segmentation Experiments
+</subsectionHeader>
+<bodyText confidence="0.999520222222222">
+Word segmentation is the first step in NLP for lan-
+guages that are commonly written without word
+boundaries, such as Japanese and Chinese. We ap-
+ply our method to a task in which we domain-adapt a
+word segmentation classifier via active learning. In
+this experiment, participants annotated whether or
+not a word boundary occurred at certain positions in
+a Japanese sentence. The tokens to be grouped into
+segments are positions between adjacent characters.
+</bodyText>
+<figure confidence="0.9989927">
+Resulting WER [%]
+25
+20
+15
+10
+0
+5
+Baseline
+Proposed
+Oracle
+</figure>
+<page confidence="0.978499">
+175
+</page>
+<subsectionHeader confidence="0.487939">
+5.2.1 Experimental Setup
+</subsectionHeader>
+<bodyText confidence="0.999751333333334">
+Neubig et al. (2011) have proposed a pointwise
+method for Japanese word segmentation that can be
+trained using partially annotated sentences, which
+makes it attractive in combination with active learn-
+ing, as well as our segmentation method. The
+authors released their method as a software pack-
+age “KyTea” that we employed in this user study.
+We used KyTea’s active learning domain adaptation
+toolkit8 as a baseline.
+For data, we used the Balanced Corpus of Con-
+temporary Written Japanese (BCCWJ), created by
+Maekawa (2008), with the internet Q&amp;A subcor-
+pus as in-domain data, and the whitepaper subcor-
+pus as background data, a domain adaptation sce-
+nario. Sentences were drawn from the in-domain
+corpus, and the manually annotated data was then
+used to train KyTea, along with the pre-annotated
+background data. The goal (objective function) was
+to improve KyTea’s classification accuracy on an in-
+domain test set, given a constrained time budget of
+30 minutes. There were again 2 supervision modes:
+ANNOTATE and SKIP. Note that this is essentially a
+batch active learning setup with only one iteration.
+We conducted experiments with one expert with
+several years of experience with Japanese word seg-
+mentation annotation, and three non-expert native
+speakers with no prior experience. Japanese word
+segmentation is not a trivial task, so we provided
+non-experts with training, including explanation of
+the segmentation standard, a supervised test with
+immediate feedback and explanations, and hands-on
+training to get used to the annotation software.
+Supervision time was predicted via GP regression
+(cf. Section 4.1), using the segment length and mean
+confidence as input features. As before, the output
+variable was assumed subject to additive Gaussian
+noise with zero mean and 5 seconds variance. To ob-
+tain training data for these models, each participant
+annotated about 500 example instances, drawn from
+the adaptation corpus, grouped into segments and
+balanced regarding segment length and difficulty.
+For utility modeling (cf. Section 4.3), we first nor-
+malized KyTea’s confidence scores, which are given
+in terms of SVM margin, using a sigmoid function
+(Platt, 1999). The normalization parameter was se-
+</bodyText>
+<footnote confidence="0.721865">
+8http://www.phontron.com/kytea/active.html
+</footnote>
+<bodyText confidence="0.999489102564103">
+lected so that the mean confidence on a development
+set corresponded to the actual classifier accuracy.
+We derive our measure of classifier improvement for
+correcting a segment by summing over one minus
+the calibrated confidence for each of its tokens. To
+analyze how well this measure describes the actual
+training utility, we trained KyTea using the back-
+ground data plus disjoint groups of 100 in-domain
+instances with similar probabilities and measured
+the achieved reduction of prediction errors. The cor-
+relation between each group’s mean utility and the
+achieved error reduction was 0.87. Note that we ig-
+nore the decaying returns usually observed as more
+data is added to the training set. Also, we did not
+attempt to model user errors. Employing a con-
+stant base error rate, as in the transcription scenario,
+would change segment utilities only by a constant
+factor, without changing the resulting segmentation.
+After creating the user models, we conducted the
+main experiment, in which each participant anno-
+tated data that was selected from a pool of 1000
+in-domain sentences using two strategies. The first,
+baseline strategy was as proposed by Neubig et al.
+(2011). Queries are those instances with the low-
+est confidence scores. Each query is then extended
+to the left and right, until a word boundary is pre-
+dicted. This strategy follows similar reasoning as
+was the premise to this paper: To decide whether or
+not a position in a text corresponds to a word bound-
+ary, the annotator has to acquire surrounding context
+information. This context acquisition is relatively
+time consuming, so he might as well label the sur-
+rounding instances with little additional effort. The
+second strategy was our proposed, more principled
+approach. Queries of both methods were shuffled
+to minimize bias due to learning effects. Finally, we
+trained KyTea using the results of both methods, and
+compared the achieved classifier improvement and
+supervision times.
+</bodyText>
+<subsectionHeader confidence="0.92112">
+5.2.2 User Study Results
+</subsectionHeader>
+<bodyText confidence="0.999939285714286">
+Table 2 summarizes the results of our experi-
+ment. It shows that the annotations by each partic-
+ipant resulted in a better classifier for the proposed
+method than the baseline, but also took up consider-
+ably more time, a less clear improvement than for
+the transcription task. In fact, the total error for
+time predictions was as high as 12.5% on average,
+</bodyText>
+<page confidence="0.995197">
+176
+</page>
+<table confidence="0.999758666666667">
+Participant Baseline Proposed
+Time Acc. Time Acc.
+Expert 25:50 96.17 32:45 96.55
+NonExp1 22:05 95.79 26:44 95.98
+NonExp2 23:37 96.15 31:28 96.21
+NonExp3 25:23 96.38 33:36 96.45
+</table>
+<tableCaption confidence="0.995356">
+Table 2: Word segmentation task results, for our ex-
+</tableCaption>
+<bodyText confidence="0.985376435897436">
+pert and 3 non-expert participants. For each participant,
+the resulting classifier accuracy [%] after supervision is
+shown, along with the time [min] they needed. The unsu-
+pervised accuracy was 95.14%.
+where the baseline method tended take less time than
+predicted, the proposed method more time. This is
+in contrast to a much lower total error (within 1%)
+when cross-validating our user model training data.
+This is likely due to the fact that the data for train-
+ing the user model was selected in a balanced man-
+ner, as opposed to selecting difficult examples, as
+our method is prone to do. Thus, we may expect
+much better predictions when selecting user model
+training data that is more similar to the test case.
+Plotting classifier accuracy over annotation time
+draws a clearer picture. Let us first analyze the re-
+sults for the expert annotator. Figure 6 (E.1) shows
+that the proposed method resulted in consistently
+better results, indicating that time predictions were
+still effective. Note that this comparison may put the
+proposed method at a slight disadvantage by com-
+paring intermediate results despite optimizing glob-
+ally.
+For the non-experts, the improvement over the
+baseline is less consistent, as can be seen in Fig-
+ure 6 (N.1) for one representative. According to
+our analysis, this can be explained by two factors:
+(1) The non-experts’ annotation error (6.5% on av-
+erage) was much higher than the expert’s (2.7%),
+resulting in a somewhat irregular classifier learn-
+ing curve. (2) The variance in annotation time
+per segment was consistently higher for the non-
+experts than the expert, indicated by an average
+per-segment prediction error of 71% vs. 58% rela-
+tive to the mean actual value, respectively. Infor-
+mally speaking, non-experts made more mistakes,
+and were more strongly influenced by the difficulty
+of a particular segment (which was higher on av-
+erage with the proposed method, as indicated by a
+</bodyText>
+<figure confidence="0.744390375">
+E.1 N.1
+E.2 N.2
+E.3 N.3
+E.4 N.4
+Prop.
+Basel.
+0 10 20 30 0 10 20 30
+Annotation time [min.]
+</figure>
+<figureCaption confidence="0.981843166666667">
+Figure 6: Classifier improvement over time, depicted for
+the expert (E) and a non-expert (N). The graphs show
+numbers based on (1) actual annotations and user mod-
+els as in Sections 4.1 and 4.3, (2) error-free annotations,
+(3) measured times replaced by predicted times, and (4)
+both reference annotations and replaced time predictions.
+</figureCaption>
+<bodyText confidence="0.948991647058823">
+lower average confidence).9
+In Figures 6 (2-4) we present a simulation experi-
+ment in which we first pretend as if annotators made
+no mistakes, then as if they needed exactly as much
+time as predicted for each segment, and then both.
+This cheating experiment works in favor of the pro-
+posed method, especially for the non-expert. We
+may conclude that our segmentation approach is ef-
+fective for the word segmentation task, but requires
+more accurate time predictions. Better user models
+will certainly help, although for the presented sce-
+nario our method may be most useful for an expert
+annotator.
+9Note that the non-expert in the figure annotated much faster
+than the expert, which explains the comparable classification
+result despite making more annotation errors. This is in contrast
+to the other non-experts, who were slower.
+</bodyText>
+<figure confidence="0.994642777777778">
+0.965
+0.955
+0.965
+Classifier Accuracy
+0.955
+0.965
+0.955
+0.965
+0.955
+</figure>
+<page confidence="0.937562">
+177
+</page>
+<subsectionHeader confidence="0.991815">
+5.3 Computational Efficiency
+</subsectionHeader>
+<bodyText confidence="0.999952538461538">
+Since our segmentation algorithm does not guar-
+antee polynomial runtime, computational efficiency
+was a concern, but did not turn out problematic.
+On a consumer laptop, the solver produced seg-
+mentations within a few seconds for a single docu-
+ment containing several thousand tokens, and within
+hours for corpora consisting of several dozen doc-
+uments. Runtime increased roughly quadratically
+with respect to the number of segmented tokens. We
+feel that this is acceptable, considering that the time
+needed for human supervision will likely dominate
+the computation time, and reasonable approxima-
+tions can be made as noted in Section 3.2.
+</bodyText>
+<sectionHeader confidence="0.997062" genericHeader="method">
+6 Relation to Prior Work
+</sectionHeader>
+<bodyText confidence="0.999947344827587">
+Efficient supervision strategies have been studied
+across a variety of NLP-related research areas, and
+received increasing attention in recent years. Ex-
+amples include post editing for speech recogni-
+tion (Sanchez-Cortina et al., 2012), interactive ma-
+chine translation (Gonz´alez-Rubio et al., 2010), ac-
+tive learning for machine translation (Haffari et al.,
+2009; Gonz´alez-Rubio et al., 2011) and many other
+NLP tasks (Olsson, 2009), to name but a few studies.
+It has also been recognized by the active learn-
+ing community that correcting the most useful parts
+first is often not optimal in terms of efficiency, since
+these parts tend to be the most difficult to manually
+annotate (Settles et al., 2008). The authors advocate
+the use of a user model to predict the supervision ef-
+fort, and select the instances with best “bang-for-the-
+buck.” This prediction of supervision effort was suc-
+cessful, and was further refined in other NLP-related
+studies (Tomanek et al., 2010; Specia, 2011; Cohn
+and Specia, 2013). Our approach to user modeling
+using GP regression is inspired by the latter.
+Most studies on user models consider only super-
+vision effort, while neglecting the accuracy of hu-
+man annotations. The view on humans as a perfect
+oracle has been criticized (Donmez and Carbonell,
+2008), since human errors are common and can
+negatively affect supervision utility. Research on
+human-computer-interaction has identified the mod-
+eling of human errors as very difficult (Olson and
+Olson, 1990), depending on factors such as user ex-
+perience, cognitive load, user interface design, and
+fatigue. Nevertheless, even the simple error model
+used in our post editing task was effective.
+The active learning community has addressed the
+problem of balancing utility and cost in some more
+detail. The previously reported “bang-for-the-buck”
+approach is a very simple, greedy approach to com-
+bine both into one measure. A more theoretically
+founded scalar optimization objective is the net ben-
+efit (utility minus costs) as proposed by Vijaya-
+narasimhan and Grauman (2009), but unfortunately
+is restricted to applications where both can be ex-
+pressed in terms of the same monetary unit. Vijaya-
+narasimhan et al. (2010) and Donmez and Carbonell
+(2008) use a more practical approach that specifies a
+constrained optimization problem by allowing only
+a limited time budget for supervision. Our approach
+is a generalization thereof and allows either specify-
+ing an upper bound on the predicted cost, or a lower
+bound on the predicted utility.
+The main novelty of our presented approach is
+the explicit modeling and selection of segments of
+various sizes, such that annotation efficiency is opti-
+mized according to the specified constraints. While
+some works (Sassano and Kurohashi, 2010; Neubig
+et al., 2011) have proposed using subsentential seg-
+ments, we are not aware of any previous work that
+explicitly optimizes that segmentation.
+</bodyText>
+<sectionHeader confidence="0.999173" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999996545454546">
+We presented a method that can effectively choose
+a segmentation of a language corpus that optimizes
+supervision efficiency, considering not only the ac-
+tual usefulness of each segment, but also the anno-
+tation cost. We reported noticeable improvements
+over strong baselines in two user studies. Future user
+experiments with more participants would be desir-
+able to verify our observations, and allow further
+analysis of different factors such as annotator ex-
+pertise. Also, future research may improve the user
+modeling, which will be beneficial for our method.
+</bodyText>
+<sectionHeader confidence="0.998812" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9978316">
+The research leading to these results has received
+funding from the European Union Seventh Frame-
+work Programme (FP7/2007-2013) under grant
+agreement n 287658 Bridges Across the Language
+Divide (EU-BRIDGE).
+</bodyText>
+<page confidence="0.997623">
+178
+</page>
+<sectionHeader confidence="0.996344" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999561820754717">
+Yuya Akita, Masato Mimura, and Tatsuya Kawahara.
+2009. Automatic Transcription System for Meetings
+of the Japanese National Congress. In Interspeech,
+pages 84–87, Brighton, UK.
+Trevor Cohn and Lucia Specia. 2013. Modelling Anno-
+tator Bias with Multi-task Gaussian Processes: An Ap-
+plication to Machine Translation Quality Estimation.
+In Association for Computational Linguistics Confer-
+ence (ACL), Sofia, Bulgaria.
+Pinar Donmez and Jaime Carbonell. 2008. Proactive
+Learning : Cost-Sensitive Active Learning with Mul-
+tiple Imperfect Oracles. In Conference on Information
+and Knowledge Management (CIKM), pages 619–628,
+Napa Valley, CA, USA.
+Jes´us Gonz´alez-Rubio, Daniel Ortiz-Martinez, and Fran-
+cisco Casacuberta. 2010. Balancing User Effort and
+Translation Error in Interactive Machine Translation
+Via Confidence Measures. In Association for Compu-
+tational Linguistics Conference (ACL), Short Papers
+Track, pages 173–177, Uppsala, Sweden.
+Jes´us Gonz´alez-Rubio, Daniel Ortiz-Martinez, and Fran-
+cisco Casacuberta. 2011. An active learning scenario
+for interactive machine translation. In International
+Conference on Multimodal Interfaces (ICMI), pages
+197–200, Alicante, Spain.
+Gurobi Optimization. 2012. Gurobi Optimizer Refer-
+ence Manual.
+Gholamreza Haffari, Maxim Roy, and Anoop Sarkar.
+2009. Active Learning for Statistical Phrase-based
+Machine Translation. In North American Chapter
+of the Association for Computational Linguistics -
+Human Language Technologies Conference (NAACL-
+HLT), pages 415–423, Boulder, CO, USA.
+Stefan Irnich and Guy Desaulniers. 2005. Shortest Path
+Problems with Resource Constraints. In Column Gen-
+eration, pages 33–65. Springer US.
+Kikuo Maekawa. 2008. Balanced Corpus of Contem-
+porary Written Japanese. In International Joint Con-
+ference on Natural Language Processing (IJCNLP),
+pages 101–102, Hyderabad, India.
+R. Timothy Marler and Jasbir S. Arora. 2004. Survey
+of multi-objective optimization methods for engineer-
+ing. Structural and Multidisciplinary Optimization,
+26(6):369–395, April.
+Evgeny Matusov, Arne Mauser, and Hermann Ney. 2006.
+Automatic Sentence Segmentation and Punctuation
+Prediction for Spoken Language Translation. In Inter-
+national Workshop on Spoken Language Translation
+(IWSLT), pages 158–165, Kyoto, Japan.
+Hiroaki Nanjo, Yuya Akita, and Tatsuya Kawahara.
+2006. Computer Assisted Speech Transcription Sys-
+tem for Efficient Speech Archive. In Western Pacific
+Acoustics Conference (WESPAC), Seoul, Korea.
+Graham Neubig, Yosuke Nakata, and Shinsuke Mori.
+2011. Pointwise Prediction for Robust , Adapt-
+able Japanese Morphological Analysis. In Associa-
+tion for Computational Linguistics: Human Language
+Technologies Conference (ACL-HLT), pages 529–533,
+Portland, OR, USA.
+Atsunori Ogawa, Takaaki Hori, and Atsushi Naka-
+mura. 2013. Discriminative Recognition Rate Esti-
+mation For N-Best List and Its Application To N-Best
+Rescoring. In International Conference on Acoustics,
+Speech, and Signal Processing (ICASSP), pages 6832–
+6836, Vancouver, Canada.
+Judith Reitman Olson and Gary Olson. 1990. The
+Growth of Cognitive Modeling in Human-Computer
+Interaction Since GOMS. Human-Computer Interac-
+tion, 5(2):221–265, June.
+Fredrik Olsson. 2009. A literature survey of active ma-
+chine learning in the context of natural language pro-
+cessing. Technical report, SICS Sweden.
+David Pisinger. 1994. A Minimal Algorithm for the
+Multiple-Choice Knapsack Problem. European Jour-
+nal of Operational Research, 83(2):394–410.
+John C. Platt. 1999. Probabilistic Outputs for Sup-
+port Vector Machines and Comparisons to Regularized
+Likelihood Methods. In Advances in Large Margin
+Classifiers, pages 61–74. MIT Press.
+Carl E. Rasmussen and Christopher K.I. Williams. 2006.
+Gaussian Processes for Machine Learning. MIT
+Press, Cambridge, MA, USA.
+Isaias Sanchez-Cortina, Nicolas Serrano, Alberto San-
+chis, and Alfons Juan. 2012. A prototype for Inter-
+active Speech Transcription Balancing Error and Su-
+pervision Effort. In International Conference on Intel-
+ligent User Interfaces (IUI), pages 325–326, Lisbon,
+Portugal.
+Manabu Sassano and Sadao Kurohashi. 2010. Using
+Smaller Constituents Rather Than Sentences in Ac-
+tive Learning for Japanese Dependency Parsing. In
+Association for Computational Linguistics Conference
+(ACL), pages 356–365, Uppsala, Sweden.
+Burr Settles, Mark Craven, and Lewis Friedland. 2008.
+Active Learning with Real Annotation Costs. In
+Neural Information Processing Systems Conference
+(NIPS) - Workshop on Cost-Sensitive Learning, Lake
+Tahoe, NV, United States.
+Burr Settles. 2008. An Analysis of Active Learning
+Strategies for Sequence Labeling Tasks. In Confer-
+ence on Empirical Methods in Natural Language Pro-
+cessing (EMNLP), pages 1070–1079, Honolulu, USA.
+Hagen Soltau, Florian Metze, Christian F¨ugen, and Alex
+Waibel. 2001. A One-Pass Decoder Based on Poly-
+morphic Linguistic Context Assignment. In Auto-
+matic Speech Recognition and Understanding Work-
+</reference>
+<page confidence="0.988002">
+179
+</page>
+<reference confidence="0.99565145">
+shop (ASRU), pages 214–217, Madonna di Campiglio,
+Italy.
+Lucia Specia. 2011. Exploiting Objective Annota-
+tions for Measuring Translation Post-editing Effort. In
+Conference of the European Association for Machine
+Translation (EAMT), pages 73–80, Nice, France.
+Matthias Sperber, Graham Neubig, Christian F¨ugen,
+Satoshi Nakamura, and Alex Waibel. 2013. Efficient
+Speech Transcription Through Respeaking. In Inter-
+speech, pages 1087–1091, Lyon, France.
+Bernhard Suhm, Brad Myers, and Alex Waibel. 2001.
+Multimodal error correction for speech user inter-
+faces. Transactions on Computer-Human Interaction,
+8(1):60–98.
+Evimaria Terzi and Panayiotis Tsaparas. 2006. Efficient
+algorithms for sequence segmentation. In SIAM Con-
+ference on Data Mining (SDM), Bethesda, MD, USA.
+Katrin Tomanek and Udo Hahn. 2009. Semi-Supervised
+Active Learning for Sequence Labeling. In Interna-
+tional Joint Conference on Natural Language Process-
+ing (IJCNLP), pages 1039–1047, Singapore.
+Katrin Tomanek, Udo Hahn, and Steffen Lohmann.
+2010. A Cognitive Cost Model of Annotations Based
+on Eye-Tracking Data. In Association for Compu-
+tational Linguistics Conference (ACL), pages 1158–
+1167, Uppsala, Sweden.
+Paolo Toth and Daniele Vigo. 2001. The Vehicle Routing
+Problem. Society for Industrial &amp; Applied Mathemat-
+ics (SIAM), Philadelphia.
+Sudheendra Vijayanarasimhan and Kristen Grauman.
+2009. Whats It Going to Cost You?: Predicting Ef-
+fort vs. Informativeness for Multi-Label Image Anno-
+tations. In Conference on Computer Vision and Pat-
+tern Recognition (CVPR), pages 2262–2269, Miami
+Beach, FL, USA.
+Sudheendra Vijayanarasimhan, Prateek Jain, and Kristen
+Grauman. 2010. Far-sighted active learning on a bud-
+get for image and video recognition. In Conference
+on Computer Vision and Pattern Recognition (CVPR),
+pages 3035–3042, San Francisco, CA, USA, June.
+</reference>
+<page confidence="0.997742">
+180
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.870039">
+<title confidence="0.9949375">Segmentation for Efficient Supervised Language Annotation with Explicit Cost-Utility Tradeoff</title>
+<author confidence="0.99619">Mirjam Graham Satoshi Alex</author>
+<affiliation confidence="0.991480333333333">Institute of Technology, Institute for Anthropomatics, Technologies GmbH, Institute of Science and Technology, AHC Laboratory, Japan</affiliation>
+<email confidence="0.975711">matthias.sperber@kit.edu,mirjam.simantzik@jibbigo.com,s-nakamura@is.naist.jp,waibel@kit.edu</email>
+<abstract confidence="0.998166703703704">In this paper, we study the problem of manually correcting automatic annotations of natural language in as efficient a manner as possible. We introduce a method for automatically segmenting a corpus into chunks such that many uncertain labels are grouped into the same chunk, while human supervision can be omitted altogether for other segments. A tradeoff must be found for segment sizes. Choosing short segments allows us to reduce the number of highly confident labels that are supervised by the annotator, which is useful because these labels are often already correct and supervising correct labels is a waste of effort. In contrast, long segments reduce the cognitive effort due to context switches. Our method helps find the segmentation that optimizes supervision efficiency by defining user models to predict the cost and utility of supervising each segment and solving a constrained optimization problem balancing these contradictory objectives. A user study demonstrates noticeable gains over pre-segmented, confidence-ordered baselines on two natural language processing tasks: speech transcription and word segmentation.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yuya Akita</author>
+<author>Masato Mimura</author>
+<author>Tatsuya Kawahara</author>
+</authors>
+<date>2009</date>
+<booktitle>Automatic Transcription System for Meetings of the Japanese National Congress. In Interspeech,</booktitle>
+<pages>84--87</pages>
+<location>Brighton, UK.</location>
+<contexts>
+<context position="20768" citStr="Akita et al., 2009" startWordPosition="3325" endWordPosition="3328">uch that the transcriber could see the ASR transcript of parts before and after the segment that he was editing, providing context if needed. When imprecise time alignment resulted in segment breaks that were 4Software and experimental data can be downloaded from http://www.msperber.com/research/tacl-segmentation/ 173 slightly “off,” as happened occasionally, that context helped guess what was said. The segment itself was transcribed from scratch, as opposed to editing the ASR transcript; besides being arguably more efficient when the ASR transcript contains many mistakes (Nanjo et al., 2006; Akita et al., 2009), preliminary experiments also showed that supervision time is far easier to predict this way. Figure 4 illustrates what the setup looked like. We used a self-developed transcription tool to conduct experiments. It presents our computed segments one by one, allows convenient input and playback via keyboard shortcuts, and logs user interactions with their time stamps. A selection of TED talks5 (English talks on technology, entertainment, and design) served as experimental data. While some of these talks contain jargon such as medical terms, they are presented by skilled speakers, making them co</context>
+</contexts>
+<marker>Akita, Mimura, Kawahara, 2009</marker>
+<rawString>Yuya Akita, Masato Mimura, and Tatsuya Kawahara. 2009. Automatic Transcription System for Meetings of the Japanese National Congress. In Interspeech, pages 84–87, Brighton, UK.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Trevor Cohn</author>
+<author>Lucia Specia</author>
+</authors>
+<title>Modelling Annotator Bias with Multi-task Gaussian Processes: An Application to Machine Translation Quality Estimation.</title>
+<date>2013</date>
+<booktitle>In Association for Computational Linguistics Conference (ACL),</booktitle>
+<location>Sofia, Bulgaria.</location>
+<contexts>
+<context position="15818" citStr="Cohn and Specia (2013)" startWordPosition="2532" endWordPosition="2535">f a classifier. 4.1 Annotation Cost Modeling Modeling cost requires solving a regression problem from features of a candidate segment to annotation cost, for example in terms of supervision time. Appropriate input features depend on the task, but should include notions of complexity (e.g. a confidence measure) and length of the segment, as both are expected to strongly influence supervision time. We propose using Gaussian process (GP) regression for cost prediction, a start-of-the-art nonparametric Bayesian regression technique (Rasmussen and Williams, 2006)2. As reported on a similar task by Cohn and Specia (2013), and confirmed by our preliminary experiments, GP regression significantly outperforms popular techniques such as sup2Code available at http://www.gaussianprocess.org/gpml/ � kEEij � min X i,jEV xijkul0,k(sj—1i ) (1) � kEEij �s.t. i,jEV xijkul,k(sj—1 i ) G Cl (bl E L—l0) xjik 172 port vector regression and least-squares linear regression. We also follow their settings for GP, employing GP regression with a squared exponential kernel with automatic relevance determination. Depending on the number of users and amount of training data available for each user, models may be trained separately for</context>
+<context position="38589" citStr="Cohn and Specia, 2013" startWordPosition="6159" endWordPosition="6162">l., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human errors are common and can negatively affect supervision utility. Research on human-computer-interaction has identified the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface design, and fatigue. Nevertheless, eve</context>
+</contexts>
+<marker>Cohn, Specia, 2013</marker>
+<rawString>Trevor Cohn and Lucia Specia. 2013. Modelling Annotator Bias with Multi-task Gaussian Processes: An Application to Machine Translation Quality Estimation. In Association for Computational Linguistics Conference (ACL), Sofia, Bulgaria.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pinar Donmez</author>
+<author>Jaime Carbonell</author>
+</authors>
+<title>Proactive Learning : Cost-Sensitive Active Learning with Multiple Imperfect Oracles.</title>
+<date>2008</date>
+<booktitle>In Conference on Information and Knowledge Management (CIKM),</booktitle>
+<pages>619--628</pages>
+<location>Napa Valley, CA, USA.</location>
+<contexts>
+<context position="8062" citStr="Donmez and Carbonell, 2008" startWordPosition="1260" endWordPosition="1263">f number of removed errors), when using each mode. Intuitively, respeaking should be assigned both lower cost (because speaking is faster than typing), but also lower utility than typing on a keyboard (because respeaking recognition errors can occur). The SKIP mode denotes the special, unsupervised mode that always returns 0 cost and 0 utility. Other possible supervision modes include multiple input modalities (Suhm et al., 2001), several human annotators with different expertise and cost Avg. time / instance [sec] 4 01 3 5 7 9 11 13 15 17 19 6 2 Transcription task Word segmentation task 170 (Donmez and Carbonell, 2008), and correction vs. translation from scratch in machine translation (Specia, 2011). Similarly, cost could instead be expressed in monetary terms, or the utility function could predict the improvement of a classifier when the resulting annotation is not intended for direct human consumption, but as training data for a classifier in an active learning framework. 3 Optimization Framework Given this setting, we are interested in simultaneously finding optimal locations and supervision modes for all segments, according to the given criteria. Each resulting segment will be assigned exactly one of t</context>
+<context position="38869" citStr="Donmez and Carbonell, 2008" startWordPosition="6205" endWordPosition="6208"> to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human errors are common and can negatively affect supervision utility. Research on human-computer-interaction has identified the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface design, and fatigue. Nevertheless, even the simple error model used in our post editing task was effective. The active learning community has addressed the problem of balancing utility and cost in some more detail. The previously reported “bang-for-the-buck” approach is a very simple, greedy approach to combine both </context>
+</contexts>
+<marker>Donmez, Carbonell, 2008</marker>
+<rawString>Pinar Donmez and Jaime Carbonell. 2008. Proactive Learning : Cost-Sensitive Active Learning with Multiple Imperfect Oracles. In Conference on Information and Knowledge Management (CIKM), pages 619–628, Napa Valley, CA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jes´us Gonz´alez-Rubio</author>
+<author>Daniel Ortiz-Martinez</author>
+<author>Francisco Casacuberta</author>
+</authors>
+<title>Balancing User Effort and Translation Error in Interactive Machine Translation Via Confidence Measures.</title>
+<date>2010</date>
+<booktitle>In Association for Computational Linguistics Conference (ACL), Short Papers Track,</booktitle>
+<pages>173--177</pages>
+<location>Uppsala,</location>
+<marker>Gonz´alez-Rubio, Ortiz-Martinez, Casacuberta, 2010</marker>
+<rawString>Jes´us Gonz´alez-Rubio, Daniel Ortiz-Martinez, and Francisco Casacuberta. 2010. Balancing User Effort and Translation Error in Interactive Machine Translation Via Confidence Measures. In Association for Computational Linguistics Conference (ACL), Short Papers Track, pages 173–177, Uppsala, Sweden.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jes´us Gonz´alez-Rubio</author>
+<author>Daniel Ortiz-Martinez</author>
+<author>Francisco Casacuberta</author>
+</authors>
+<title>An active learning scenario for interactive machine translation.</title>
+<date>2011</date>
+<booktitle>In International Conference on Multimodal Interfaces (ICMI),</booktitle>
+<pages>197--200</pages>
+<location>Alicante,</location>
+<marker>Gonz´alez-Rubio, Ortiz-Martinez, Casacuberta, 2011</marker>
+<rawString>Jes´us Gonz´alez-Rubio, Daniel Ortiz-Martinez, and Francisco Casacuberta. 2011. An active learning scenario for interactive machine translation. In International Conference on Multimodal Interfaces (ICMI), pages 197–200, Alicante, Spain.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gurobi Optimization</author>
+</authors>
+<date>2012</date>
+<journal>Gurobi Optimizer Reference Manual.</journal>
+<contexts>
+<context position="13969" citStr="Optimization, 2012" startWordPosition="2243" endWordPosition="2244"> shortest path according to the minimization objective (1), that still meets the resource constraints for the specified criteria (2), is to be computed. The degree constraints (3,4,5) specify that all but the first and last nodes must have as many incoming as outgoing edges, while the first node must have exactly one outgoing, and the last node exactly one incoming edge. Finally, the integrality condition (6) forces all edges to be either fully activated or fully deactivated. The outlined problem formulation can solved directly by using off-the-shelf ILP solvers, here we employ GUROBI (Gurobi Optimization, 2012). 3.2 Heuristics for Approximation In general, edges are inserted for every supervision mode between every combination of two nodes. The search space can be constrained by removing some of these edges to increase efficiency. In this study, we only consider edges spanning at most 20 tokens. For cases in which larger corpora are to be annotated, or when the acceptable delay for delivering results is small, a suitable segmentation can be found approximately. The easiest way would be to partition the corpus, e.g. according to its individual documents, divide the budget constraints evenly across al</context>
+</contexts>
+<marker>Optimization, 2012</marker>
+<rawString>Gurobi Optimization. 2012. Gurobi Optimizer Reference Manual.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gholamreza Haffari</author>
+<author>Maxim Roy</author>
+<author>Anoop Sarkar</author>
+</authors>
+<title>Active Learning for Statistical Phrase-based Machine Translation.</title>
+<date>2009</date>
+<booktitle>In North American Chapter of the Association for Computational Linguistics -Human Language Technologies Conference (NAACLHLT),</booktitle>
+<pages>415--423</pages>
+<location>Boulder, CO, USA.</location>
+<contexts>
+<context position="37945" citStr="Haffari et al., 2009" startWordPosition="6051" endWordPosition="6054">t to the number of segmented tokens. We feel that this is acceptable, considering that the time needed for human supervision will likely dominate the computation time, and reasonable approximations can be made as noted in Section 3.2. 6 Relation to Prior Work Efficient supervision strategies have been studied across a variety of NLP-related research areas, and received increasing attention in recent years. Examples include post editing for speech recognition (Sanchez-Cortina et al., 2012), interactive machine translation (Gonz´alez-Rubio et al., 2010), active learning for machine translation (Haffari et al., 2009; Gonz´alez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al.</context>
+</contexts>
+<marker>Haffari, Roy, Sarkar, 2009</marker>
+<rawString>Gholamreza Haffari, Maxim Roy, and Anoop Sarkar. 2009. Active Learning for Statistical Phrase-based Machine Translation. In North American Chapter of the Association for Computational Linguistics -Human Language Technologies Conference (NAACLHLT), pages 415–423, Boulder, CO, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stefan Irnich</author>
+<author>Guy Desaulniers</author>
+</authors>
+<title>Shortest Path Problems with Resource Constraints.</title>
+<date>2005</date>
+<booktitle>In Column Generation,</booktitle>
+<pages>33--65</pages>
+<publisher>Springer US.</publisher>
+<contexts>
+<context position="11516" citStr="Irnich and Desaulniers, 2005" startWordPosition="1814" endWordPosition="1817"> constrained optimization problem is difficult to solve. In fact, the NP-hard multiple-choice knapsack problem (Pisinger, 1994) corresponds to a special case of our problem in which the number of segments is equal to the number of tokens, implying that our more general problem is NP-hard as well. In order to overcome this problem, we reformulate search for the optimal segmentation as a resource-constrained shortest path problem in a directed, acyclic multigraph. While still not efficiently solvable in theory, this problem is well studied in domains such as vehicle routing and crew scheduling (Irnich and Desaulniers, 2005), and it is known that in many practical situations the problem can be solved reasonably efficiently using integer linear programming relaxations (Toth and Vigo, 2001). In our formalism, the set of nodes V represents the spaces between neighboring tokens, at which the algorithm may insert segment boundaries. A node with index i represents a segment break before the i-th token, and thus the sequence of the indices in a path directly corresponds to sM+1 1 . Edges E denote the grouping of tokens between the respective pervised segmentation to be most “efficient.” 1 2 3 4 5 6 (at) (what’s) a brigh</context>
+</contexts>
+<marker>Irnich, Desaulniers, 2005</marker>
+<rawString>Stefan Irnich and Guy Desaulniers. 2005. Shortest Path Problems with Resource Constraints. In Column Generation, pages 33–65. Springer US.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kikuo Maekawa</author>
+</authors>
+<title>Balanced Corpus of Contemporary Written Japanese.</title>
+<date>2008</date>
+<booktitle>In International Joint Conference on Natural Language Processing (IJCNLP),</booktitle>
+<pages>101--102</pages>
+<location>Hyderabad, India.</location>
+<contexts>
+<context position="29365" citStr="Maekawa (2008)" startWordPosition="4689" endWordPosition="4690">ers. Resulting WER [%] 25 20 15 10 0 5 Baseline Proposed Oracle 175 5.2.1 Experimental Setup Neubig et al. (2011) have proposed a pointwise method for Japanese word segmentation that can be trained using partially annotated sentences, which makes it attractive in combination with active learning, as well as our segmentation method. The authors released their method as a software package “KyTea” that we employed in this user study. We used KyTea’s active learning domain adaptation toolkit8 as a baseline. For data, we used the Balanced Corpus of Contemporary Written Japanese (BCCWJ), created by Maekawa (2008), with the internet Q&amp;A subcorpus as in-domain data, and the whitepaper subcorpus as background data, a domain adaptation scenario. Sentences were drawn from the in-domain corpus, and the manually annotated data was then used to train KyTea, along with the pre-annotated background data. The goal (objective function) was to improve KyTea’s classification accuracy on an indomain test set, given a constrained time budget of 30 minutes. There were again 2 supervision modes: ANNOTATE and SKIP. Note that this is essentially a batch active learning setup with only one iteration. We conducted experime</context>
+</contexts>
+<marker>Maekawa, 2008</marker>
+<rawString>Kikuo Maekawa. 2008. Balanced Corpus of Contemporary Written Japanese. In International Joint Conference on Natural Language Processing (IJCNLP), pages 101–102, Hyderabad, India.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Timothy Marler</author>
+<author>Jasbir S Arora</author>
+</authors>
+<title>Survey of multi-objective optimization methods for engineering.</title>
+<date>2004</date>
+<journal>Structural and Multidisciplinary Optimization,</journal>
+<volume>26</volume>
+<issue>6</issue>
+<contexts>
+<context position="10033" citStr="Marler and Arora, 2004" startWordPosition="1569" endWordPosition="1572">tiple Criteria Optimization In the case of a single criterion (|L|=1), we obtain a simple, single-objective unconstrained linear optimization problem, efficiently solvable via dynamic programming (Terzi and Tsaparas, 2006). However, in practice one usually encounters several competing criteria, such as cost and utility, and here we will focus on this more realistic setting. We balance competing criteria by using one as an optimization objective, and the others as constraints.1 Let crite1This approach is known as the bounded objective function method in multi-objective optimization literature (Marler and Arora, 2004). The very popular weighted sum method merges criteria into a single efficiency measure, but is problematic in our case because the number of supervised tokens is unspecified. Unless the weights are carefully chosen, the algorithm might find, e.g., the completely unsupervised or completely suFigure 3: Excerpt of a segmentation graph for an example transcription task similar to Figure 1 (some edges are omitted for readability). Edges are labeled with their mode, predicted number of errors that can be removed, and necessary supervision time. A segmentation scheme might prefer solid edges over da</context>
+</contexts>
+<marker>Marler, Arora, 2004</marker>
+<rawString>R. Timothy Marler and Jasbir S. Arora. 2004. Survey of multi-objective optimization methods for engineering. Structural and Multidisciplinary Optimization, 26(6):369–395, April.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Evgeny Matusov</author>
+<author>Arne Mauser</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Automatic Sentence Segmentation and Punctuation Prediction for Spoken Language Translation.</title>
+<date>2006</date>
+<booktitle>In International Workshop on Spoken Language Translation (IWSLT),</booktitle>
+<pages>158--165</pages>
+<location>Kyoto, Japan.</location>
+<contexts>
+<context position="22890" citStr="Matusov et al. (2006)" startWordPosition="3657" endWordPosition="3660">ed) WER of 15% as our optimization constraint,6 and minimize the predicted supervision time as our objective function. Both TED talks were transcribed once using the baseline strategy, and once using the proposed strategy. The order of both strategies was reversed between talks, to minimize learning bias due to transcribing each talk twice. The baseline strategy was adopted according to 5www.ted.com 6Depending on the level of accuracy required by our final application, this target may be set lower or higher. Sperber et al. (2013): We segmented the talk into natural, subsentential units, using Matusov et al. (2006)’s segmenter, which we tuned to reproduce the TED subtitle segmentation, producing a mean segment length of 8.6 words. Segments were added in order of increasing average word confidence, until the user model predicted a WER&lt;15%. The second segmentation strategy was the proposed method, similarly with a resource constraint of WER&lt;15%. Supervision time was predicted via GP regression (cf. Section 4.1), using segment length, audio duration, and mean confidence as input features. The output variable was assumed subject to additive Gaussian noise with zero mean, a variance of 5 seconds was chosen e</context>
+</contexts>
+<marker>Matusov, Mauser, Ney, 2006</marker>
+<rawString>Evgeny Matusov, Arne Mauser, and Hermann Ney. 2006. Automatic Sentence Segmentation and Punctuation Prediction for Spoken Language Translation. In International Workshop on Spoken Language Translation (IWSLT), pages 158–165, Kyoto, Japan.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hiroaki Nanjo</author>
+<author>Yuya Akita</author>
+<author>Tatsuya Kawahara</author>
+</authors>
+<title>Computer Assisted Speech Transcription System for Efficient Speech Archive.</title>
+<date>2006</date>
+<booktitle>In Western Pacific Acoustics Conference (WESPAC), Seoul,</booktitle>
+<contexts>
+<context position="20747" citStr="Nanjo et al., 2006" startWordPosition="3321" endWordPosition="3324">cription setup was such that the transcriber could see the ASR transcript of parts before and after the segment that he was editing, providing context if needed. When imprecise time alignment resulted in segment breaks that were 4Software and experimental data can be downloaded from http://www.msperber.com/research/tacl-segmentation/ 173 slightly “off,” as happened occasionally, that context helped guess what was said. The segment itself was transcribed from scratch, as opposed to editing the ASR transcript; besides being arguably more efficient when the ASR transcript contains many mistakes (Nanjo et al., 2006; Akita et al., 2009), preliminary experiments also showed that supervision time is far easier to predict this way. Figure 4 illustrates what the setup looked like. We used a self-developed transcription tool to conduct experiments. It presents our computed segments one by one, allows convenient input and playback via keyboard shortcuts, and logs user interactions with their time stamps. A selection of TED talks5 (English talks on technology, entertainment, and design) served as experimental data. While some of these talks contain jargon such as medical terms, they are presented by skilled spe</context>
+</contexts>
+<marker>Nanjo, Akita, Kawahara, 2006</marker>
+<rawString>Hiroaki Nanjo, Yuya Akita, and Tatsuya Kawahara. 2006. Computer Assisted Speech Transcription System for Efficient Speech Archive. In Western Pacific Acoustics Conference (WESPAC), Seoul, Korea.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Graham Neubig</author>
+<author>Yosuke Nakata</author>
+<author>Shinsuke Mori</author>
+</authors>
+<title>Pointwise Prediction for Robust , Adaptable Japanese Morphological Analysis.</title>
+<date>2011</date>
+<booktitle>In Association for Computational Linguistics: Human Language Technologies Conference (ACL-HLT),</booktitle>
+<pages>529--533</pages>
+<location>Portland, OR, USA.</location>
+<contexts>
+<context position="3263" citStr="Neubig et al., 2011" startWordPosition="495" endWordPosition="498">Gonz´alez-Rubio et al., 2010). The most common framework for efficient annotation in the NLP context consists of training an NLP system on a small amount of baseline data, and then running the system on unannotated data to estimate confidence scores of the system’s predictions (Settles, 2008). Sentences with the lowest confidence are then used as the data to be annotated (Figure 1 (a)). However, it has been noted that when the NLP system in question already has relatively high accuracy, annotating entire sentences can be wasteful, as most words will already be correct (Tomanek and Hahn, 2009; Neubig et al., 2011). In these cases, it is possible to achieve much higher benefit per annotated word by annotating sub-sentential units (Figure 1 (b)). However, as Settles et al. (2008) point out, simply maximizing the benefit per annotated instance is not enough, as the real supervision effort varies 169 Transactions of the Association for Computational Linguistics, 2 (2014) 169–180. Action Editor: Eric Fosler-Lussier. Submitted 11/2013; Revised 2/2014; Published 4/2014. c�2014 Association for Computational Linguistics. Segment length Figure 2: Average annotation time per instance, plotted over different segme</context>
+<context position="28864" citStr="Neubig et al. (2011)" startWordPosition="4608" endWordPosition="4611">ency numbers. 5.2 Japanese Word Segmentation Experiments Word segmentation is the first step in NLP for languages that are commonly written without word boundaries, such as Japanese and Chinese. We apply our method to a task in which we domain-adapt a word segmentation classifier via active learning. In this experiment, participants annotated whether or not a word boundary occurred at certain positions in a Japanese sentence. The tokens to be grouped into segments are positions between adjacent characters. Resulting WER [%] 25 20 15 10 0 5 Baseline Proposed Oracle 175 5.2.1 Experimental Setup Neubig et al. (2011) have proposed a pointwise method for Japanese word segmentation that can be trained using partially annotated sentences, which makes it attractive in combination with active learning, as well as our segmentation method. The authors released their method as a software package “KyTea” that we employed in this user study. We used KyTea’s active learning domain adaptation toolkit8 as a baseline. For data, we used the Balanced Corpus of Contemporary Written Japanese (BCCWJ), created by Maekawa (2008), with the internet Q&amp;A subcorpus as in-domain data, and the whitepaper subcorpus as background dat</context>
+<context position="32264" citStr="Neubig et al. (2011)" startWordPosition="5134" endWordPosition="5137">nd the achieved error reduction was 0.87. Note that we ignore the decaying returns usually observed as more data is added to the training set. Also, we did not attempt to model user errors. Employing a constant base error rate, as in the transcription scenario, would change segment utilities only by a constant factor, without changing the resulting segmentation. After creating the user models, we conducted the main experiment, in which each participant annotated data that was selected from a pool of 1000 in-domain sentences using two strategies. The first, baseline strategy was as proposed by Neubig et al. (2011). Queries are those instances with the lowest confidence scores. Each query is then extended to the left and right, until a word boundary is predicted. This strategy follows similar reasoning as was the premise to this paper: To decide whether or not a position in a text corresponds to a word boundary, the annotator has to acquire surrounding context information. This context acquisition is relatively time consuming, so he might as well label the surrounding instances with little additional effort. The second strategy was our proposed, more principled approach. Queries of both methods were shu</context>
+<context position="40365" citStr="Neubig et al., 2011" startWordPosition="6437" endWordPosition="6440">unit. Vijayanarasimhan et al. (2010) and Donmez and Carbonell (2008) use a more practical approach that specifies a constrained optimization problem by allowing only a limited time budget for supervision. Our approach is a generalization thereof and allows either specifying an upper bound on the predicted cost, or a lower bound on the predicted utility. The main novelty of our presented approach is the explicit modeling and selection of segments of various sizes, such that annotation efficiency is optimized according to the specified constraints. While some works (Sassano and Kurohashi, 2010; Neubig et al., 2011) have proposed using subsentential segments, we are not aware of any previous work that explicitly optimizes that segmentation. 7 Conclusion We presented a method that can effectively choose a segmentation of a language corpus that optimizes supervision efficiency, considering not only the actual usefulness of each segment, but also the annotation cost. We reported noticeable improvements over strong baselines in two user studies. Future user experiments with more participants would be desirable to verify our observations, and allow further analysis of different factors such as annotator exper</context>
+</contexts>
+<marker>Neubig, Nakata, Mori, 2011</marker>
+<rawString>Graham Neubig, Yosuke Nakata, and Shinsuke Mori. 2011. Pointwise Prediction for Robust , Adaptable Japanese Morphological Analysis. In Association for Computational Linguistics: Human Language Technologies Conference (ACL-HLT), pages 529–533, Portland, OR, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Atsunori Ogawa</author>
+<author>Takaaki Hori</author>
+<author>Atsushi Nakamura</author>
+</authors>
+<title>Discriminative Recognition Rate Estimation For N-Best List and Its Application To N-Best Rescoring.</title>
+<date>2013</date>
+<booktitle>In International Conference on Acoustics, Speech, and Signal Processing (ICASSP),</booktitle>
+<pages>6832--6836</pages>
+<location>Vancouver, Canada.</location>
+<contexts>
+<context position="24903" citStr="Ogawa et al. (2013)" startWordPosition="3977" endWordPosition="3980">derstanding of the potential gains afforded by our method, we first present a simulated experiment. We assume a transcriber who makes no mistakes, and needs exactly the amount of time predicted by a user model trained on the data of a randomly selected participant. We compare three scenarios: A baseline simulation, in which the baseline segments are transcribed in ascending order of confidence; a simulation using the proposed method, in which we change the WER constraint in small increments; finally, an oracle simulation, which uses 7More elaborate methods for WER estimation exist, such as by Ogawa et al. (2013), but if our method achieves improvements using simple Hamming distance, incorporating more sophisticated measures will likely achieve similar, or even better accuracy. 174 (3) SKIP: “nineteen forty six until today you see the green” (4) TYPE: &lt;annotator types: “is the traditional”&gt; (5) SKIP: “Interstate conflict” (6) TYPE: &lt;annotator types: “the ones we used to”&gt; (7) SKIP:... Figure 4: Result of our segmentation method (excerpt). TYPE segments are displayed empty and should be transcribed from scratch. For SKIP segments, the ASR transcript is displayed to provide context. When annotating a se</context>
+</contexts>
+<marker>Ogawa, Hori, Nakamura, 2013</marker>
+<rawString>Atsunori Ogawa, Takaaki Hori, and Atsushi Nakamura. 2013. Discriminative Recognition Rate Estimation For N-Best List and Its Application To N-Best Rescoring. In International Conference on Acoustics, Speech, and Signal Processing (ICASSP), pages 6832– 6836, Vancouver, Canada.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Judith Reitman Olson</author>
+<author>Gary Olson</author>
+</authors>
+<date>1990</date>
+<booktitle>The Growth of Cognitive Modeling in Human-Computer Interaction Since GOMS. Human-Computer Interaction,</booktitle>
+<volume>5</volume>
+<issue>2</issue>
+<contexts>
+<context position="18095" citStr="Olson and Olson, 1990" startWordPosition="2908" endWordPosition="2911">estimate confidence scores in the form of posterior probabilities. To estimate the number of errors, we can sum over one minus the posterior for all tokens, which estimates the Hamming distance from the reference annotation. This measure is appropriate for tasks in which the number of tokens is fixed in advance (e.g. a part-of-speech estimation task), and a reasonable approximation for tasks in which the number of tokens is not known in advance (e.g. speech transcription, cf. Section 5.1.1). Predicting the particular tokens at which a human will make a mistake is known to be a difficult task (Olson and Olson, 1990), but a simplifying constant 3For instance, consider a model that predicts well for segments of medium size or longer, but underpredicts the supervision time of single-token segments. This may lead the segmentation algorithm to put every token into its own segment, which is clearly undesirable. human error rate can still be useful. For example, in the task from Section 2, we may suspect a certain number of errors in a transcript segment, and predict, say, 95% of those errors to be removed via typing, but only 85% via respeaking. 4.3 Classifier Improvement Modeling Another reasonable utility me</context>
+<context position="39072" citStr="Olson and Olson, 1990" startWordPosition="6234" endWordPosition="6237">ion effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human errors are common and can negatively affect supervision utility. Research on human-computer-interaction has identified the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface design, and fatigue. Nevertheless, even the simple error model used in our post editing task was effective. The active learning community has addressed the problem of balancing utility and cost in some more detail. The previously reported “bang-for-the-buck” approach is a very simple, greedy approach to combine both into one measure. A more theoretically founded scalar optimization objective is the net benefit (utility minus costs) as proposed by Vijayanarasimhan and Grauman (2009), but unfortunately is restricted t</context>
+</contexts>
+<marker>Olson, Olson, 1990</marker>
+<rawString>Judith Reitman Olson and Gary Olson. 1990. The Growth of Cognitive Modeling in Human-Computer Interaction Since GOMS. Human-Computer Interaction, 5(2):221–265, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fredrik Olsson</author>
+</authors>
+<title>A literature survey of active machine learning in the context of natural language processing.</title>
+<date>2009</date>
+<tech>Technical report, SICS Sweden.</tech>
+<contexts>
+<context position="38016" citStr="Olsson, 2009" startWordPosition="6064" endWordPosition="6065">ing that the time needed for human supervision will likely dominate the computation time, and reasonable approximations can be made as noted in Section 3.2. 6 Relation to Prior Work Efficient supervision strategies have been studied across a variety of NLP-related research areas, and received increasing attention in recent years. Examples include post editing for speech recognition (Sanchez-Cortina et al., 2012), interactive machine translation (Gonz´alez-Rubio et al., 2010), active learning for machine translation (Haffari et al., 2009; Gonz´alez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user mode</context>
+</contexts>
+<marker>Olsson, 2009</marker>
+<rawString>Fredrik Olsson. 2009. A literature survey of active machine learning in the context of natural language processing. Technical report, SICS Sweden.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Pisinger</author>
+</authors>
+<title>A Minimal Algorithm for the Multiple-Choice Knapsack Problem.</title>
+<date>1994</date>
+<journal>European Journal of Operational Research,</journal>
+<volume>83</volume>
+<issue>2</issue>
+<contexts>
+<context position="11014" citStr="Pisinger, 1994" startWordPosition="1731" endWordPosition="1732">sk similar to Figure 1 (some edges are omitted for readability). Edges are labeled with their mode, predicted number of errors that can be removed, and necessary supervision time. A segmentation scheme might prefer solid edges over dashed ones in this example. rion l&apos; be the optimization objective criterion, and let Cl denote the constraining constants for the criteria l 2 L_l, = L \ {l0}. We state the optimization problem: sj Lul0,mj (wsj+1) Lul,mj (wsj+1 )J � Cl (bl 2 L—l0) sj This constrained optimization problem is difficult to solve. In fact, the NP-hard multiple-choice knapsack problem (Pisinger, 1994) corresponds to a special case of our problem in which the number of segments is equal to the number of tokens, implying that our more general problem is NP-hard as well. In order to overcome this problem, we reformulate search for the optimal segmentation as a resource-constrained shortest path problem in a directed, acyclic multigraph. While still not efficiently solvable in theory, this problem is well studied in domains such as vehicle routing and crew scheduling (Irnich and Desaulniers, 2005), and it is known that in many practical situations the problem can be solved reasonably efficient</context>
+</contexts>
+<marker>Pisinger, 1994</marker>
+<rawString>David Pisinger. 1994. A Minimal Algorithm for the Multiple-Choice Knapsack Problem. European Journal of Operational Research, 83(2):394–410.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John C Platt</author>
+</authors>
+<title>Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods.</title>
+<date>1999</date>
+<booktitle>In Advances in Large Margin Classifiers,</booktitle>
+<pages>61--74</pages>
+<publisher>MIT Press.</publisher>
+<contexts>
+<context position="31013" citStr="Platt, 1999" startWordPosition="4942" endWordPosition="4943">n time was predicted via GP regression (cf. Section 4.1), using the segment length and mean confidence as input features. As before, the output variable was assumed subject to additive Gaussian noise with zero mean and 5 seconds variance. To obtain training data for these models, each participant annotated about 500 example instances, drawn from the adaptation corpus, grouped into segments and balanced regarding segment length and difficulty. For utility modeling (cf. Section 4.3), we first normalized KyTea’s confidence scores, which are given in terms of SVM margin, using a sigmoid function (Platt, 1999). The normalization parameter was se8http://www.phontron.com/kytea/active.html lected so that the mean confidence on a development set corresponded to the actual classifier accuracy. We derive our measure of classifier improvement for correcting a segment by summing over one minus the calibrated confidence for each of its tokens. To analyze how well this measure describes the actual training utility, we trained KyTea using the background data plus disjoint groups of 100 in-domain instances with similar probabilities and measured the achieved reduction of prediction errors. The correlation betw</context>
+</contexts>
+<marker>Platt, 1999</marker>
+<rawString>John C. Platt. 1999. Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods. In Advances in Large Margin Classifiers, pages 61–74. MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Carl E Rasmussen</author>
+<author>Christopher K I Williams</author>
+</authors>
+<date>2006</date>
+<booktitle>Gaussian Processes for Machine Learning.</booktitle>
+<publisher>MIT Press,</publisher>
+<location>Cambridge, MA, USA.</location>
+<contexts>
+<context position="15760" citStr="Rasmussen and Williams, 2006" startWordPosition="2521" endWordPosition="2524">riteria: annotation cost, correction of errors, and improvement of a classifier. 4.1 Annotation Cost Modeling Modeling cost requires solving a regression problem from features of a candidate segment to annotation cost, for example in terms of supervision time. Appropriate input features depend on the task, but should include notions of complexity (e.g. a confidence measure) and length of the segment, as both are expected to strongly influence supervision time. We propose using Gaussian process (GP) regression for cost prediction, a start-of-the-art nonparametric Bayesian regression technique (Rasmussen and Williams, 2006)2. As reported on a similar task by Cohn and Specia (2013), and confirmed by our preliminary experiments, GP regression significantly outperforms popular techniques such as sup2Code available at http://www.gaussianprocess.org/gpml/ � kEEij � min X i,jEV xijkul0,k(sj—1i ) (1) � kEEij �s.t. i,jEV xijkul,k(sj—1 i ) G Cl (bl E L—l0) xjik 172 port vector regression and least-squares linear regression. We also follow their settings for GP, employing GP regression with a squared exponential kernel with automatic relevance determination. Depending on the number of users and amount of training data ava</context>
+</contexts>
+<marker>Rasmussen, Williams, 2006</marker>
+<rawString>Carl E. Rasmussen and Christopher K.I. Williams. 2006. Gaussian Processes for Machine Learning. MIT Press, Cambridge, MA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Isaias Sanchez-Cortina</author>
+<author>Nicolas Serrano</author>
+<author>Alberto Sanchis</author>
+<author>Alfons Juan</author>
+</authors>
+<title>A prototype for Interactive Speech Transcription Balancing Error and Supervision Effort.</title>
+<date>2012</date>
+<booktitle>In International Conference on Intelligent User Interfaces (IUI),</booktitle>
+<pages>325--326</pages>
+<location>Lisbon, Portugal.</location>
+<contexts>
+<context position="37818" citStr="Sanchez-Cortina et al., 2012" startWordPosition="6033" endWordPosition="6036">thousand tokens, and within hours for corpora consisting of several dozen documents. Runtime increased roughly quadratically with respect to the number of segmented tokens. We feel that this is acceptable, considering that the time needed for human supervision will likely dominate the computation time, and reasonable approximations can be made as noted in Section 3.2. 6 Relation to Prior Work Efficient supervision strategies have been studied across a variety of NLP-related research areas, and received increasing attention in recent years. Examples include post editing for speech recognition (Sanchez-Cortina et al., 2012), interactive machine translation (Gonz´alez-Rubio et al., 2010), active learning for machine translation (Haffari et al., 2009; Gonz´alez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebu</context>
+</contexts>
+<marker>Sanchez-Cortina, Serrano, Sanchis, Juan, 2012</marker>
+<rawString>Isaias Sanchez-Cortina, Nicolas Serrano, Alberto Sanchis, and Alfons Juan. 2012. A prototype for Interactive Speech Transcription Balancing Error and Supervision Effort. In International Conference on Intelligent User Interfaces (IUI), pages 325–326, Lisbon, Portugal.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Manabu Sassano</author>
+<author>Sadao Kurohashi</author>
+</authors>
+<title>Using Smaller Constituents Rather Than Sentences in Active Learning for Japanese Dependency Parsing.</title>
+<date>2010</date>
+<booktitle>In Association for Computational Linguistics Conference (ACL),</booktitle>
+<pages>356--365</pages>
+<location>Uppsala,</location>
+<contexts>
+<context position="40343" citStr="Sassano and Kurohashi, 2010" startWordPosition="6433" endWordPosition="6436">n terms of the same monetary unit. Vijayanarasimhan et al. (2010) and Donmez and Carbonell (2008) use a more practical approach that specifies a constrained optimization problem by allowing only a limited time budget for supervision. Our approach is a generalization thereof and allows either specifying an upper bound on the predicted cost, or a lower bound on the predicted utility. The main novelty of our presented approach is the explicit modeling and selection of segments of various sizes, such that annotation efficiency is optimized according to the specified constraints. While some works (Sassano and Kurohashi, 2010; Neubig et al., 2011) have proposed using subsentential segments, we are not aware of any previous work that explicitly optimizes that segmentation. 7 Conclusion We presented a method that can effectively choose a segmentation of a language corpus that optimizes supervision efficiency, considering not only the actual usefulness of each segment, but also the annotation cost. We reported noticeable improvements over strong baselines in two user studies. Future user experiments with more participants would be desirable to verify our observations, and allow further analysis of different factors s</context>
+</contexts>
+<marker>Sassano, Kurohashi, 2010</marker>
+<rawString>Manabu Sassano and Sadao Kurohashi. 2010. Using Smaller Constituents Rather Than Sentences in Active Learning for Japanese Dependency Parsing. In Association for Computational Linguistics Conference (ACL), pages 356–365, Uppsala, Sweden.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Burr Settles</author>
+<author>Mark Craven</author>
+<author>Lewis Friedland</author>
+</authors>
+<title>Active Learning with Real Annotation Costs.</title>
+<date>2008</date>
+<booktitle>In Neural Information Processing Systems Conference (NIPS) - Workshop on Cost-Sensitive Learning,</booktitle>
+<location>Lake Tahoe, NV, United States.</location>
+<contexts>
+<context position="3430" citStr="Settles et al. (2008)" startWordPosition="524" endWordPosition="527">data, and then running the system on unannotated data to estimate confidence scores of the system’s predictions (Settles, 2008). Sentences with the lowest confidence are then used as the data to be annotated (Figure 1 (a)). However, it has been noted that when the NLP system in question already has relatively high accuracy, annotating entire sentences can be wasteful, as most words will already be correct (Tomanek and Hahn, 2009; Neubig et al., 2011). In these cases, it is possible to achieve much higher benefit per annotated word by annotating sub-sentential units (Figure 1 (b)). However, as Settles et al. (2008) point out, simply maximizing the benefit per annotated instance is not enough, as the real supervision effort varies 169 Transactions of the Association for Computational Linguistics, 2 (2014) 169–180. Action Editor: Eric Fosler-Lussier. Submitted 11/2013; Revised 2/2014; Published 4/2014. c�2014 Association for Computational Linguistics. Segment length Figure 2: Average annotation time per instance, plotted over different segment lengths. For both tasks, the effort clearly increases for short segments. greatly across instances. This is particularly important in the context of choosing segmen</context>
+<context position="38286" citStr="Settles et al., 2008" startWordPosition="6110" endWordPosition="6113">ed research areas, and received increasing attention in recent years. Examples include post editing for speech recognition (Sanchez-Cortina et al., 2012), interactive machine translation (Gonz´alez-Rubio et al., 2010), active learning for machine translation (Haffari et al., 2009; Gonz´alez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human err</context>
+</contexts>
+<marker>Settles, Craven, Friedland, 2008</marker>
+<rawString>Burr Settles, Mark Craven, and Lewis Friedland. 2008. Active Learning with Real Annotation Costs. In Neural Information Processing Systems Conference (NIPS) - Workshop on Cost-Sensitive Learning, Lake Tahoe, NV, United States.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Burr Settles</author>
+</authors>
+<title>An Analysis of Active Learning Strategies for Sequence Labeling Tasks.</title>
+<date>2008</date>
+<booktitle>In Conference on Empirical Methods in Natural Language Processing (EMNLP),</booktitle>
+<pages>1070--1079</pages>
+<location>Honolulu, USA.</location>
+<contexts>
+<context position="2627" citStr="Settles, 2008" startWordPosition="391" endWordPosition="392">) in (apron), and (a) clocks were striking thirteen. (b) It was a bright cold (they) in (apron), and (a) clocks were striking thirteen. (c) It was a bright cold (they) in (apron), and (a) clocks were striking thirteen. Figure 1: Three automatic transcripts of the sentence “It was a bright cold day in April, and the clocks were striking thirteen”, with recognition errors in parentheses. The underlined parts are to be corrected by a human for (a) sentences, (b) words, or (c) the proposed segmentation. ing, and interactive pattern recognition have investigated this question with notable success (Settles, 2008; Specia, 2011; Gonz´alez-Rubio et al., 2010). The most common framework for efficient annotation in the NLP context consists of training an NLP system on a small amount of baseline data, and then running the system on unannotated data to estimate confidence scores of the system’s predictions (Settles, 2008). Sentences with the lowest confidence are then used as the data to be annotated (Figure 1 (a)). However, it has been noted that when the NLP system in question already has relatively high accuracy, annotating entire sentences can be wasteful, as most words will already be correct (Tomanek </context>
+<context position="18946" citStr="Settles, 2008" startWordPosition="3051" endWordPosition="3052"> token into its own segment, which is clearly undesirable. human error rate can still be useful. For example, in the task from Section 2, we may suspect a certain number of errors in a transcript segment, and predict, say, 95% of those errors to be removed via typing, but only 85% via respeaking. 4.3 Classifier Improvement Modeling Another reasonable utility measure is accuracy of a classifier trained on the data we choose to annotate in an active learning framework. Confidence scores have been found useful for ranking particular tokens with regards to how much they will improve a classifier (Settles, 2008). Here, we may similarly score segment utility as the sum of its token confidences, although care must be taken to normalize and calibrate the token confidences to be linearly comparable before doing so. While the resulting utility score has no interpretation in absolute terms, it can still be used as an optimization objective (cf. Section 5.2.1). 5 Experiments In this section, we present experimental results examining the effectiveness of the proposed method over two tasks: speech transcription and Japanese word segmentation.4 5.1 Speech Transcription Experiments Accurate speech transcripts a</context>
+</contexts>
+<marker>Settles, 2008</marker>
+<rawString>Burr Settles. 2008. An Analysis of Active Learning Strategies for Sequence Labeling Tasks. In Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1070–1079, Honolulu, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hagen Soltau</author>
+<author>Florian Metze</author>
+<author>Christian F¨ugen</author>
+<author>Alex Waibel</author>
+</authors>
+<title>A One-Pass Decoder Based on Polymorphic Linguistic Context Assignment.</title>
+<date>2001</date>
+<booktitle>In Automatic Speech Recognition and Understanding Workshop (ASRU),</booktitle>
+<pages>214--217</pages>
+<location>Madonna di Campiglio, Italy.</location>
+<marker>Soltau, Metze, F¨ugen, Waibel, 2001</marker>
+<rawString>Hagen Soltau, Florian Metze, Christian F¨ugen, and Alex Waibel. 2001. A One-Pass Decoder Based on Polymorphic Linguistic Context Assignment. In Automatic Speech Recognition and Understanding Workshop (ASRU), pages 214–217, Madonna di Campiglio, Italy.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lucia Specia</author>
+</authors>
+<title>Exploiting Objective Annotations for Measuring Translation Post-editing Effort.</title>
+<date>2011</date>
+<booktitle>In Conference of the European Association for Machine Translation (EAMT),</booktitle>
+<pages>73--80</pages>
+<location>Nice, France.</location>
+<contexts>
+<context position="2641" citStr="Specia, 2011" startWordPosition="393" endWordPosition="394">nd (a) clocks were striking thirteen. (b) It was a bright cold (they) in (apron), and (a) clocks were striking thirteen. (c) It was a bright cold (they) in (apron), and (a) clocks were striking thirteen. Figure 1: Three automatic transcripts of the sentence “It was a bright cold day in April, and the clocks were striking thirteen”, with recognition errors in parentheses. The underlined parts are to be corrected by a human for (a) sentences, (b) words, or (c) the proposed segmentation. ing, and interactive pattern recognition have investigated this question with notable success (Settles, 2008; Specia, 2011; Gonz´alez-Rubio et al., 2010). The most common framework for efficient annotation in the NLP context consists of training an NLP system on a small amount of baseline data, and then running the system on unannotated data to estimate confidence scores of the system’s predictions (Settles, 2008). Sentences with the lowest confidence are then used as the data to be annotated (Figure 1 (a)). However, it has been noted that when the NLP system in question already has relatively high accuracy, annotating entire sentences can be wasteful, as most words will already be correct (Tomanek and Hahn, 2009</context>
+<context position="8145" citStr="Specia, 2011" startWordPosition="1273" endWordPosition="1275">h lower cost (because speaking is faster than typing), but also lower utility than typing on a keyboard (because respeaking recognition errors can occur). The SKIP mode denotes the special, unsupervised mode that always returns 0 cost and 0 utility. Other possible supervision modes include multiple input modalities (Suhm et al., 2001), several human annotators with different expertise and cost Avg. time / instance [sec] 4 01 3 5 7 9 11 13 15 17 19 6 2 Transcription task Word segmentation task 170 (Donmez and Carbonell, 2008), and correction vs. translation from scratch in machine translation (Specia, 2011). Similarly, cost could instead be expressed in monetary terms, or the utility function could predict the improvement of a classifier when the resulting annotation is not intended for direct human consumption, but as training data for a classifier in an active learning framework. 3 Optimization Framework Given this setting, we are interested in simultaneously finding optimal locations and supervision modes for all segments, according to the given criteria. Each resulting segment will be assigned exactly one of these supervision modes. We denote a segmentation of the N tokens of corpus wN1 into</context>
+<context position="38565" citStr="Specia, 2011" startWordPosition="6157" endWordPosition="6158">lez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human errors are common and can negatively affect supervision utility. Research on human-computer-interaction has identified the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface design, and fa</context>
+</contexts>
+<marker>Specia, 2011</marker>
+<rawString>Lucia Specia. 2011. Exploiting Objective Annotations for Measuring Translation Post-editing Effort. In Conference of the European Association for Machine Translation (EAMT), pages 73–80, Nice, France.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthias Sperber</author>
+<author>Graham Neubig</author>
+<author>Christian F¨ugen</author>
+<author>Satoshi Nakamura</author>
+<author>Alex Waibel</author>
+</authors>
+<title>Efficient Speech Transcription Through Respeaking. In</title>
+<date>2013</date>
+<booktitle>Interspeech,</booktitle>
+<pages>1087--1091</pages>
+<location>Lyon, France.</location>
+<marker>Sperber, Neubig, F¨ugen, Nakamura, Waibel, 2013</marker>
+<rawString>Matthias Sperber, Graham Neubig, Christian F¨ugen, Satoshi Nakamura, and Alex Waibel. 2013. Efficient Speech Transcription Through Respeaking. In Interspeech, pages 1087–1091, Lyon, France.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bernhard Suhm</author>
+<author>Brad Myers</author>
+<author>Alex Waibel</author>
+</authors>
+<title>Multimodal error correction for speech user interfaces.</title>
+<date>2001</date>
+<journal>Transactions on Computer-Human Interaction,</journal>
+<volume>8</volume>
+<issue>1</issue>
+<contexts>
+<context position="7868" citStr="Suhm et al., 2001" startWordPosition="1224" endWordPosition="1227">ach segment. The user model in this example might evaluate every segment according to two criteria L, a cost criterion (in terms of supervision time) and a utility criterion (in terms of number of removed errors), when using each mode. Intuitively, respeaking should be assigned both lower cost (because speaking is faster than typing), but also lower utility than typing on a keyboard (because respeaking recognition errors can occur). The SKIP mode denotes the special, unsupervised mode that always returns 0 cost and 0 utility. Other possible supervision modes include multiple input modalities (Suhm et al., 2001), several human annotators with different expertise and cost Avg. time / instance [sec] 4 01 3 5 7 9 11 13 15 17 19 6 2 Transcription task Word segmentation task 170 (Donmez and Carbonell, 2008), and correction vs. translation from scratch in machine translation (Specia, 2011). Similarly, cost could instead be expressed in monetary terms, or the utility function could predict the improvement of a classifier when the resulting annotation is not intended for direct human consumption, but as training data for a classifier in an active learning framework. 3 Optimization Framework Given this settin</context>
+</contexts>
+<marker>Suhm, Myers, Waibel, 2001</marker>
+<rawString>Bernhard Suhm, Brad Myers, and Alex Waibel. 2001. Multimodal error correction for speech user interfaces. Transactions on Computer-Human Interaction, 8(1):60–98.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Evimaria Terzi</author>
+<author>Panayiotis Tsaparas</author>
+</authors>
+<title>Efficient algorithms for sequence segmentation.</title>
+<date>2006</date>
+<booktitle>In SIAM Conference on Data Mining (SDM),</booktitle>
+<location>Bethesda, MD, USA.</location>
+<contexts>
+<context position="9632" citStr="Terzi and Tsaparas, 2006" startWordPosition="1508" endWordPosition="1511">ken sequences [(wsj, ..., wsj+1—1)]Mj=1. The supervision modes assigned to each segment are denoted by mj. We favor those segmentations that minimize the cumulative value �M j=1[ul,mj(wsj+1 sj )] for each criterion l. For any criterion where larger values are intuitively better, we flip the sign before defining ul,mj(wsj+1 sj ) to maintain consistency (e.g. negative number of errors removed). 3.1 Multiple Criteria Optimization In the case of a single criterion (|L|=1), we obtain a simple, single-objective unconstrained linear optimization problem, efficiently solvable via dynamic programming (Terzi and Tsaparas, 2006). However, in practice one usually encounters several competing criteria, such as cost and utility, and here we will focus on this more realistic setting. We balance competing criteria by using one as an optimization objective, and the others as constraints.1 Let crite1This approach is known as the bounded objective function method in multi-objective optimization literature (Marler and Arora, 2004). The very popular weighted sum method merges criteria into a single efficiency measure, but is problematic in our case because the number of supervised tokens is unspecified. Unless the weights are </context>
+</contexts>
+<marker>Terzi, Tsaparas, 2006</marker>
+<rawString>Evimaria Terzi and Panayiotis Tsaparas. 2006. Efficient algorithms for sequence segmentation. In SIAM Conference on Data Mining (SDM), Bethesda, MD, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katrin Tomanek</author>
+<author>Udo Hahn</author>
+</authors>
+<title>Semi-Supervised Active Learning for Sequence Labeling.</title>
+<date>2009</date>
+<booktitle>In International Joint Conference on Natural Language Processing (IJCNLP),</booktitle>
+<pages>1039--1047</pages>
+<contexts>
+<context position="3241" citStr="Tomanek and Hahn, 2009" startWordPosition="491" endWordPosition="494">es, 2008; Specia, 2011; Gonz´alez-Rubio et al., 2010). The most common framework for efficient annotation in the NLP context consists of training an NLP system on a small amount of baseline data, and then running the system on unannotated data to estimate confidence scores of the system’s predictions (Settles, 2008). Sentences with the lowest confidence are then used as the data to be annotated (Figure 1 (a)). However, it has been noted that when the NLP system in question already has relatively high accuracy, annotating entire sentences can be wasteful, as most words will already be correct (Tomanek and Hahn, 2009; Neubig et al., 2011). In these cases, it is possible to achieve much higher benefit per annotated word by annotating sub-sentential units (Figure 1 (b)). However, as Settles et al. (2008) point out, simply maximizing the benefit per annotated instance is not enough, as the real supervision effort varies 169 Transactions of the Association for Computational Linguistics, 2 (2014) 169–180. Action Editor: Eric Fosler-Lussier. Submitted 11/2013; Revised 2/2014; Published 4/2014. c�2014 Association for Computational Linguistics. Segment length Figure 2: Average annotation time per instance, plotte</context>
+</contexts>
+<marker>Tomanek, Hahn, 2009</marker>
+<rawString>Katrin Tomanek and Udo Hahn. 2009. Semi-Supervised Active Learning for Sequence Labeling. In International Joint Conference on Natural Language Processing (IJCNLP), pages 1039–1047, Singapore.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katrin Tomanek</author>
+<author>Udo Hahn</author>
+<author>Steffen Lohmann</author>
+</authors>
+<title>A Cognitive Cost Model of Annotations Based on Eye-Tracking Data.</title>
+<date>2010</date>
+<booktitle>In Association for Computational Linguistics Conference (ACL),</booktitle>
+<pages>1158--1167</pages>
+<location>Uppsala,</location>
+<contexts>
+<context position="38551" citStr="Tomanek et al., 2010" startWordPosition="6153" endWordPosition="6156">i et al., 2009; Gonz´alez-Rubio et al., 2011) and many other NLP tasks (Olsson, 2009), to name but a few studies. It has also been recognized by the active learning community that correcting the most useful parts first is often not optimal in terms of efficiency, since these parts tend to be the most difficult to manually annotate (Settles et al., 2008). The authors advocate the use of a user model to predict the supervision effort, and select the instances with best “bang-for-thebuck.” This prediction of supervision effort was successful, and was further refined in other NLP-related studies (Tomanek et al., 2010; Specia, 2011; Cohn and Specia, 2013). Our approach to user modeling using GP regression is inspired by the latter. Most studies on user models consider only supervision effort, while neglecting the accuracy of human annotations. The view on humans as a perfect oracle has been criticized (Donmez and Carbonell, 2008), since human errors are common and can negatively affect supervision utility. Research on human-computer-interaction has identified the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface </context>
+</contexts>
+<marker>Tomanek, Hahn, Lohmann, 2010</marker>
+<rawString>Katrin Tomanek, Udo Hahn, and Steffen Lohmann. 2010. A Cognitive Cost Model of Annotations Based on Eye-Tracking Data. In Association for Computational Linguistics Conference (ACL), pages 1158– 1167, Uppsala, Sweden.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Paolo Toth</author>
+<author>Daniele Vigo</author>
+</authors>
+<title>The Vehicle Routing Problem.</title>
+<date>2001</date>
+<journal>Society for Industrial &amp; Applied Mathematics (SIAM), Philadelphia.</journal>
+<contexts>
+<context position="11683" citStr="Toth and Vigo, 2001" startWordPosition="1839" endWordPosition="1842">which the number of segments is equal to the number of tokens, implying that our more general problem is NP-hard as well. In order to overcome this problem, we reformulate search for the optimal segmentation as a resource-constrained shortest path problem in a directed, acyclic multigraph. While still not efficiently solvable in theory, this problem is well studied in domains such as vehicle routing and crew scheduling (Irnich and Desaulniers, 2005), and it is known that in many practical situations the problem can be solved reasonably efficiently using integer linear programming relaxations (Toth and Vigo, 2001). In our formalism, the set of nodes V represents the spaces between neighboring tokens, at which the algorithm may insert segment boundaries. A node with index i represents a segment break before the i-th token, and thus the sequence of the indices in a path directly corresponds to sM+1 1 . Edges E denote the grouping of tokens between the respective pervised segmentation to be most “efficient.” 1 2 3 4 5 6 (at) (what’s) a bright cold ... [TYPE:1/4] [TYPE:1/4] [RESPEAK:1.5/2] [SKIP:0/0] [TYPE:2/5] [RESPEAK:0/3] [SKIP:0/0] min M;sM+1 1 ;mM 1 M s.t. E j=1 M E j=1 171 nodes into one segment. Edg</context>
+</contexts>
+<marker>Toth, Vigo, 2001</marker>
+<rawString>Paolo Toth and Daniele Vigo. 2001. The Vehicle Routing Problem. Society for Industrial &amp; Applied Mathematics (SIAM), Philadelphia.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sudheendra Vijayanarasimhan</author>
+<author>Kristen Grauman</author>
+</authors>
+<title>Whats It Going to Cost You?: Predicting Effort vs. Informativeness for Multi-Label Image Annotations.</title>
+<date>2009</date>
+<booktitle>In Conference on Computer Vision and Pattern Recognition (CVPR),</booktitle>
+<pages>2262--2269</pages>
+<location>Miami Beach, FL, USA.</location>
+<contexts>
+<context position="39637" citStr="Vijayanarasimhan and Grauman (2009)" startWordPosition="6320" endWordPosition="6324">the modeling of human errors as very difficult (Olson and Olson, 1990), depending on factors such as user experience, cognitive load, user interface design, and fatigue. Nevertheless, even the simple error model used in our post editing task was effective. The active learning community has addressed the problem of balancing utility and cost in some more detail. The previously reported “bang-for-the-buck” approach is a very simple, greedy approach to combine both into one measure. A more theoretically founded scalar optimization objective is the net benefit (utility minus costs) as proposed by Vijayanarasimhan and Grauman (2009), but unfortunately is restricted to applications where both can be expressed in terms of the same monetary unit. Vijayanarasimhan et al. (2010) and Donmez and Carbonell (2008) use a more practical approach that specifies a constrained optimization problem by allowing only a limited time budget for supervision. Our approach is a generalization thereof and allows either specifying an upper bound on the predicted cost, or a lower bound on the predicted utility. The main novelty of our presented approach is the explicit modeling and selection of segments of various sizes, such that annotation eff</context>
+</contexts>
+<marker>Vijayanarasimhan, Grauman, 2009</marker>
+<rawString>Sudheendra Vijayanarasimhan and Kristen Grauman. 2009. Whats It Going to Cost You?: Predicting Effort vs. Informativeness for Multi-Label Image Annotations. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 2262–2269, Miami Beach, FL, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sudheendra Vijayanarasimhan</author>
+<author>Prateek Jain</author>
+<author>Kristen Grauman</author>
+</authors>
+<title>Far-sighted active learning on a budget for image and video recognition.</title>
+<date>2010</date>
+<booktitle>In Conference on Computer Vision and Pattern Recognition (CVPR),</booktitle>
+<pages>3035--3042</pages>
+<location>San Francisco, CA, USA,</location>
+<contexts>
+<context position="39781" citStr="Vijayanarasimhan et al. (2010)" startWordPosition="6344" endWordPosition="6348">design, and fatigue. Nevertheless, even the simple error model used in our post editing task was effective. The active learning community has addressed the problem of balancing utility and cost in some more detail. The previously reported “bang-for-the-buck” approach is a very simple, greedy approach to combine both into one measure. A more theoretically founded scalar optimization objective is the net benefit (utility minus costs) as proposed by Vijayanarasimhan and Grauman (2009), but unfortunately is restricted to applications where both can be expressed in terms of the same monetary unit. Vijayanarasimhan et al. (2010) and Donmez and Carbonell (2008) use a more practical approach that specifies a constrained optimization problem by allowing only a limited time budget for supervision. Our approach is a generalization thereof and allows either specifying an upper bound on the predicted cost, or a lower bound on the predicted utility. The main novelty of our presented approach is the explicit modeling and selection of segments of various sizes, such that annotation efficiency is optimized according to the specified constraints. While some works (Sassano and Kurohashi, 2010; Neubig et al., 2011) have proposed u</context>
+</contexts>
+<marker>Vijayanarasimhan, Jain, Grauman, 2010</marker>
+<rawString>Sudheendra Vijayanarasimhan, Prateek Jain, and Kristen Grauman. 2010. Far-sighted active learning on a budget for image and video recognition. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 3035–3042, San Francisco, CA, USA, June.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

@@ -1,0 +1,2327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.9875905">
+Neural Networks Leverage Corpus-wide Information
+for Part-of-speech Tagging
+</title>
+<author confidence="0.966802">
+Yuta Tsuboi
+</author>
+<affiliation confidence="0.92371">
+IBM Research - Tokyo
+</affiliation>
+<email confidence="0.974699">
+yutat@jp.ibm.com
+</email>
+<sectionHeader confidence="0.994358" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999950157894737">
+We propose a neural network approach to
+benefit from the non-linearity of corpus-
+wide statistics for part-of-speech (POS)
+tagging. We investigated several types
+of corpus-wide information for the words,
+such as word embeddings and POS tag dis-
+tributions. Since these statistics are en-
+coded as dense continuous features, it is
+not trivial to combine these features com-
+paring with sparse discrete features. Our
+tagger is designed as a combination of
+a linear model for discrete features and
+a feed-forward neural network that cap-
+tures the non-linear interactions among the
+continuous features. By using several re-
+cent advances in the activation functions
+for neural networks, the proposed method
+marks new state-of-the-art accuracies for
+English POS tagging tasks.
+</bodyText>
+<sectionHeader confidence="0.998777" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999801406779661">
+Almost all of the approaches to NLP tasks such
+as part-of-speech tagging and syntactic parsing
+mainly use sparse discrete features to represent lo-
+cal information such as word surfaces in a size-
+limited window. The non-linearity of those dis-
+crete features is often used in many NLP tasks
+since the simple conjunction (AND) of discrete
+features represents the co-occurrence of the fea-
+tures and is intuitively understandable. In addi-
+tion, the thresholding of these combinatorial fea-
+tures by simple counts effectively suppresses the
+combinatorial increase of the parameters. At the
+same time, although global information had also
+been used in several reports (Nakagawa and Mat-
+sumoto, 2006; Huang and Yates, 2009; Turian et
+al., 2010; Schnabel and Sch¨utze, 2014), the non-
+linear interactions of these features were not well
+investigated since these features are often dense
+continuous features and the explicit non-linear ex-
+pansions are counterintuitive and drastically in-
+crease the number of the model parameters. In our
+work, we investigate neural networks used to rep-
+resent the non-linearity of global information for
+POS tagging in a compact way.
+We focus on four kinds of corpus-wide infor-
+mation: (1) word embeddings, (2) POS tag dis-
+tributions, (3) supertag distributions, and (4) con-
+text word distributions. All of them are continuous
+dense features and we use a feed-forward neural
+network to exploit the non-linearity of these fea-
+tures. Although all of them except (3) have been
+used for POS tagging in previous work (Nakamura
+et al., 1990; Schmid, 1994; Schnabel and Sch¨utze,
+2014; Huang and Yates, 2009), we propose a neu-
+ral network approach to capture the non-linear in-
+teractions of these features. By feeding these fea-
+tures into neural networks as an input vector, we
+can expect our tagger can handle not only the non-
+linearity of the N-grams of the same kinds of fea-
+tures but also the non-linear interactions among
+the different kind of features.
+Our tagger combines a linear model using
+sparse high-dimensional features and a neural net-
+work using continuous dense features. Although
+Collobert et al. (2011) seeks to solve NLP tasks
+without depending on the feature engineering of
+conventional NLP methods, our architecture is
+more practical because it integrates the neural
+networks into a well-tuned conventional method.
+Thus, our tagger enjoys both the manually ex-
+plored combinations of discrete features and the
+automatically learned non-linearity of the contin-
+uous features. We also studied some of the newer
+activation functions: Rectified Linear Units (Nair
+and Hinton, 2010), Maxout networks (Goodfel-
+low et al., 2013), and LP-pooling (Gulcehre et al.,
+2014; Zhang et al., 2014).
+Deep neural networks have been a hot topic
+in many application areas such as computer vi-
+</bodyText>
+<page confidence="0.9623">
+938
+</page>
+<note confidence="0.910702">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999306793103448">
+sion and voice recognition. However, although
+neural networks show state-of-the-art results on
+a few semantic tasks (Zhila et al., 2013; Socher
+et al., 2013; Socher et al., 2011), neural net-
+work approaches have not performed better than
+the state-of-the-art systems for traditional syn-
+tactic tasks. Our neural tagger shows state-of-
+the-art results: 97.51% accuracy in the standard
+benchmark on the Penn Treebank (Marcus et al.,
+1993) and 98.02% accuracy in POS tagging on
+CoNLL2009 (Hajiˇc et al., 2009). In our experi-
+ments, we found that the selection of the activation
+functions led to large differences in the tagging ac-
+curacies. We also observed that the POS tags of
+the words are effectively clustered by the hidden
+activations of the intermediate layer. This obser-
+vation is evidence that the neural network can find
+good representations for POS tagging.
+The remainder of this paper is organized as fol-
+lows. Section 2 introduces our deterministic tag-
+ger and its learning algorithm. Section 3 describes
+the continuous features that represent corpus-wide
+information and Section 4 is about the neural net-
+work we used. Section 5 presents our empiri-
+cal study of the effects of corpus-wide informa-
+tion and neural networks on English POS tagging
+tasks. Section 6 describes related work, and Sec-
+tion 7 concludes and suggests items for future
+work.
+</bodyText>
+<sectionHeader confidence="0.97838" genericHeader="method">
+2 Transition-based tagging
+</sectionHeader>
+<bodyText confidence="0.999965909090909">
+Our tagging model is a deterministic tagger based
+on Choi and Palmer (2012), which is a one-pass,
+left-to-right tagging algorithm that uses well-tuned
+binary features.
+Let x = (x1, x2,. . . , xT) ∈ XT be an
+input token sequence of length T and y =
+(y1, y2,. .. , yT) ∈ YT be a corresponding POS
+tag sequence of x. We denote the predicted tags
+by a tagger as y� and the subsequence from r to t
+as ytr. The prediction of the t-th tag is determinis-
+tically done by the classifier:
+</bodyText>
+<equation confidence="0.960895">
+yt = argmax fe(zt, y), (1)
+y∈Y
+</equation>
+<bodyText confidence="0.965854">
+where fe is a scoring function with arbitrary pa-
+rameters, 0 ∈ Rd, that are to be learned and zt is
+an arbitrary feature representation of the t-th po-
+sition using x and �yt−1
+1 which is the prediction
+history of the previous tokens.
+We extend Choi and Palmer (2012) in three
+ways: (1) an online SVM learning algorithm with
+L1 and L2 regularization, (2) continuous features
+for corpus-wide information, and (3) the compos-
+ite function of a linear model for discrete features
+and a non-linear model for continuous features.
+Since (2) and (3) are the main topics of this pa-
+per, they are explained in detail in Sections 3 and
+4 and we describe only (1) here.
+First, our learning algorithm trains a multi-class
+SVM with L1 and L2 regularization based on Fol-
+low the Proximally Regularized Leader (FTRL-
+Proximal) (McMahan, 2011). In the k-th iteration,
+the parameter update is done by
+jgl · 0+ 21l ��0−0l
+</bodyText>
+<sectionHeader confidence="0.71336" genericHeader="method">
+2 I +R(0),
+</sectionHeader>
+<bodyText confidence="0.96552525">
+where gk ∈ Rd is a subgradient of the hinge loss
+function and R(0) = A1 ||0||1 + X2 2 ||0||2 2 is the
+composite function of the L1 and L2 regulariza-
+tion terms with hyper-parameters A1 ≥ 0 and
+A2 ≥ 0. To incorporate an adaptive learning rate
+scheduling, Adagrad (Duchi et al., 2010), we use
+per-coordinate learning rates for {i|1 ≤ i &lt; d}:
+ηi =
+</bodyText>
+<equation confidence="0.973547">
+k αi
+j�Ek
+βi + l=1(gli)2
+</equation>
+<bodyText confidence="0.999123">
+where α ≥ 0 and β ≥ 0. Although the
+naive implementation may require O(k) compu-
+tation in the k-th iteration, FTRL-Proximal can
+be implemented efficiently by maintaining two
+</bodyText>
+<equation confidence="0.678623">
+length-d vectors, m = Ekl gl − 1
+27�0l and n =
+Ekl (gli)2 (McMahan et al., 2013).
+</equation>
+<bodyText confidence="0.999092266666667">
+Second, to overcome the error propagation
+problem, we train the classifier with a simple vari-
+ant of the on-the-fly example generation algorithm
+from Goldberg and Nivre (2012). Since the scor-
+ing function refers to the prediction history, Choi
+and Palmer (2012) uses the gold POS tags, yt−1
+1 ,
+to generate training examples, which means they
+assume all of the past decisions are correct. How-
+ever, this causes error propagation problems, since
+each state depends on the history of the past deci-
+sions. Therefore, at the k-th iteration and the t-th
+position of the input sequence, we simply use the
+predictions of the previously learned classifiers to
+generate training examples, i.e.,
+</bodyText>
+<equation confidence="0.9336705">
+Pt−r = argmax fek_,.(zt−r, y)
+y∈Y
+</equation>
+<bodyText confidence="0.7860085">
+for all {r|1 ≤ r &lt; t − 1}. Although it is
+not theoretically justified, it empirically runs as a
+</bodyText>
+<equation confidence="0.9961598">
+k
+0k = argminy:
+e
+l=1
+I,
+</equation>
+<page confidence="0.994686">
+939
+</page>
+<bodyText confidence="0.60903625">
+stochastic version of DAGGER (Ross et al., 2011)
+or SEARN (Daum´e III et al., 2009) with the speed
+benefit of online learning.
+Algorithm 1 Learning algorithm
+function LEARN(α,β, A1, A2, m, n, 0k)
+while ¬ stop do
+Select a random sentence (x, y)
+fort = 1 to T do
+</bodyText>
+<equation confidence="0.947726064516129">
+u=UPDATE(α,β, A1, A2, m, n, 0k)
+yt = argmaxyEY fu(zt, y)
+y� = argmaxy,�yt fu(zt, , y)
+if fu(zt, yt) − fu(zt, y) &lt; 1 then
+g =∂uℓ(zt, yt, y) ▷ Subgradient
+For all i ∈ I compute
+�� )
+σi = ni + g2 i − √ni /αi
+mi ← mi + gi − σiui
+ni ← ni + g2i
+end if
+k ← k + 1
+end for
+end while
+return 0k
+end function
+function UPDATE(α,β, A1, A2, m, n, 0k)
+for i ∈ I do
+{ 0 if |mi |≤ λ1
+−mi+ sgn(mi)λ1 otherwise
+(βiλ2+,/ni)/αi+λ2
+ui ← θk i
+if acceleration then
+ui ← θki + kk r0ki − θk−1)
+end if l
+end for
+for i ∉ I do
+ui ← θk i ← θk−1 i
+▷ Leaving all θ for inactive i unchanged
+end for
+return u
+</equation>
+<subsectionHeader confidence="0.468264">
+end function
+</subsectionHeader>
+<bodyText confidence="0.999882263157895">
+Algorithm 1 summarizes our training process
+where ℓ(zt, yt, y) := max(0,1 − fo(zt, y) +
+fo(zt, y)) is the multi-class hinge loss (Crammer
+and Singer, 2001). I in Algorithm 1 is a set of
+parameter indexes that correspond to the non-zero
+features, so the update is sparse for sparse fea-
+tures. In addition, for the parameter update of the
+neural networks, we also use an accelerated prox-
+imal method (Parikh and Boyd, 2013), which is
+considered as a variant of the momentum meth-
+ods (Sutskever et al., 2013). Although u and 0 are
+the same when the acceleration is not used, u in
+Algorithm 1 is an extrapolation step in the accel-
+erated method. Although we do not focus on the
+learning algorithm in this work, the algorithm con-
+verges quite quickly and the speed is important be-
+cause the neural network extension described later
+requires a hyper-parameter search which is com-
+putationally demanding.
+</bodyText>
+<sectionHeader confidence="0.996606" genericHeader="method">
+3 Corpus-wide Information
+</sectionHeader>
+<bodyText confidence="0.9999528">
+Since typical discrete features indicate only the
+occurrence in a local context and do not convey
+corpus-wide statistics, we studied four kinds of
+continuous features for POS tagging to represent
+the corpus-wide information.
+</bodyText>
+<subsectionHeader confidence="0.999181">
+3.1 Word embeddings
+</subsectionHeader>
+<bodyText confidence="0.999921416666667">
+Word embeddings, or distributed word represen-
+tations, embed the words into a low-dimensional
+continuous space. Most of the neural network ap-
+plications for NLP use word embeddings (Col-
+lobert et al., 2011; Socher et al., 2011; Zhila et
+al., 2013; Socher et al., 2013), and even for linear
+models, Turian et al. (2010) highlights the benefit
+of word embeddings on sequential labeling tasks.
+In particular, in our experiments, we used two
+recently proposed algorithms, word2vec (Mikolov
+et al., 2013) and glove (Pennington et al.,
+2014), which are simple and scalable, although
+our method could use other word embeddings.
+Word2vec trains the word embeddings to pre-
+dict the words surrounding each word, and glove
+trains the word embeddings to predict the loga-
+rithmic count of the surrounding words of each
+word. Thus, these embeddings can be seen as
+the distributed versions of the distributional fea-
+tures since the word vectors compactly represent
+the distribution of the context in which a word ap-
+pears. We normalized the word embeddings to
+unit length and used the average vector of training
+vocabulary for the unknown tokens.
+</bodyText>
+<subsectionHeader confidence="0.998223">
+3.2 POS tag distribution
+</subsectionHeader>
+<bodyText confidence="0.9996535">
+In a way similar to Schmid (1994), we use POS tag
+distribution over a training corpus. Each word is
+represented by a vector of length |Y  |in which the
+y-th element is the conditional probabilities with
+which that word gets the y-th POS tag. We also
+use the POS tag distributions of the affixes and
+</bodyText>
+<equation confidence="0.801088">
+θki =
+</equation>
+<page confidence="0.9596">
+940
+</page>
+<bodyText confidence="0.96077">
+spelling binary features used in Choi and Palmer
+(2012). We cite the definitions of these features.
+</bodyText>
+<listItem confidence="0.982775555555556">
+1. Affix: c:1, c:2, c:3, cn:, cn−1:, cn−2:, cn−3:
+where c∗ is a character string in a word. For
+example c:2 is the prefix of length two of a
+word and cn−1: is the suffix of length two of
+a word.
+2. Spelling: initial uppercase, all upper-
+case, all lowercase, contains 1/2+ capi-
+tal(s) not at the beginning, contains a (pe-
+riod/number/hyphen).
+</listItem>
+<bodyText confidence="0.9951825">
+The probabilities for a feature b is estimated with
+additive smoothing as
+</bodyText>
+<equation confidence="0.999994333333333">
+C(b, y) + 1
+P(y|b) = (2)
+C(b) + |Y |
+</equation>
+<bodyText confidence="0.996129666666667">
+where C(b) and C(b, y) are the counts of b and
+co-occurrences of b and y, respectively. In addi-
+tion, an extra dimension for sentence boundaries
+is added to the vector for word-forms. In total, the
+POS tag distributions for each word are encoded
+by a vector of dimension |Y |+1+|Y |x14 (|Y  |for
+lowercase simplified word-forms, 1 for sentence
+boundaries, |Y  |x 7 for affixes, and |Y  |x 7 for
+spellings).
+</bodyText>
+<subsectionHeader confidence="0.999402">
+3.3 Supertag distribution
+</subsectionHeader>
+<bodyText confidence="0.999962033333333">
+We also use the distribution of supertags for de-
+pendency parsing. Supertags are lexical templates
+which are extracted from the syntactic dependency
+structures and suppertagging is often used for the
+pre-processing of a parsing task. Since the su-
+pertags encode rich syntactic information, we ex-
+pect the supertag distribution of a word to also
+provide clues for the POS tagging. We used two
+types of supertags: One is the dependency rela-
+tion label of the head of the word and the other
+is that of the dependents of the word. Following
+Ouchi et al. (2014), we added the relative posi-
+tion, left (L) or right (R), to the supertags. For
+example, a word has its dependents in the left di-
+rection with a label “nn” and in the right direc-
+tion with a label “amod”, so its supertag set for
+dependents is {“nn/L”, “amod/R”}. A special su-
+pertag “NO-CHILD” is used for a word that has
+no dependent. Note that, although the Model 2 su-
+pertag set of Ouchi et al. (2014) is defined as the
+combination of head and dependent tags, we used
+them separately. The feature values for each word
+are defined in the same way as Equation 2 in Sec-
+tion 3.2. Since a word can have more than one
+dependent, the dependent supertag features are no
+longer multinomial distributions but we used them
+in that way. Note that, since the feature values are
+calculated using the tree annotations from training
+set, our tagger does not require any dependency
+parser at runtime.
+</bodyText>
+<subsectionHeader confidence="0.989268">
+3.4 Context word distribution
+</subsectionHeader>
+<bodyText confidence="0.9999903125">
+This is the simplest distributional features in
+which each word is represented by the distribu-
+tions of its left and right neighbors. Although the
+context word distribution is similar to word em-
+beddings, we believe they complement each other,
+as reported by Levy and Goldberg (2014). Fol-
+lowing Schnabel and Sch¨utze (2014), we restricted
+the set of indicator words to the 500 most frequent
+words in the corpus, and used two special feature
+entries: One is the marginal probability of the non-
+indicator words and the other is the probabilities
+of neighboring sentence boundaries. The condi-
+tional probabilities for left and right neighbors are
+estimated in the same way as Equation 2 in Sec-
+tion 3.2, and there are a total of 1, 004 dimensions
+of this feature for a word.
+</bodyText>
+<sectionHeader confidence="0.995078" genericHeader="method">
+4 Neural Networks
+</sectionHeader>
+<bodyText confidence="0.999971529411765">
+The non-linearity of the discrete features has been
+exploited in many NLP tasks, since the simple
+conjunction of the discrete features is intuitive and
+the thresholding of these combinatorial features
+by their feature counts effectively suppresses the
+combinatorial increase of the parameters.
+In contrast, it is not easy to manually tune the
+non-linearity of the continuous features. For ex-
+ample, it is not intuitive to design the conjunc-
+tion features of two kinds of word embeddings,
+word2vec and glove. Although kernel methods
+have been used to incorporate non-linearity in
+prior research, they are rarely used now because
+their tagging speed is too slow (Gim´enez and
+M`arquez, 2003). Our solution is to introduce
+feed-forward neural networks to capture the non-
+linearity of the corpus-wide information.
+</bodyText>
+<subsectionHeader confidence="0.983891">
+4.1 Hybrid model
+</subsectionHeader>
+<bodyText confidence="0.99973525">
+We designed our tagger as a hybrid of a linear
+model and a non-linear model. Wang and Man-
+ning (2013) reported that a neural network us-
+ing both sparse discrete features and dense (low-
+</bodyText>
+<page confidence="0.996287">
+941
+</page>
+<figureCaption confidence="0.730048666666667">
+Figure 1: A hybrid architecture of a linear model
+and a neural network with a pooling activation
+function
+</figureCaption>
+<bodyText confidence="0.999620176470588">
+dimensional) continuous features was worse than
+a linear model using the same two features. At
+the same time, they also reported that a neural net-
+work using only the dense continuous features out-
+performed a linear model using the same features.
+Based on their results, we applied neural networks
+only for the continuous features and used a linear
+model for the discrete features.
+Formally, the scoring function (1) in Section 2
+is defined as the composite function of two terms:
+f(z, y) := flinear(z, y)+fnn(z, y). The first flinear
+is the linear model and the second fnn is a neu-
+ral network. Since this is a linear combination of
+two functions, the subgradient of the loss function
+required for Algorithm 1 is also the linear com-
+bination of subgradients of two functions, which
+means
+</bodyText>
+<equation confidence="0.7650822">
+∂ℓ(zt, yt, ˜y) = ∂flinear(zt, ˜y) + ∂fnn(zt, ˜y)
+− ∂flinear(zt, yt) − ∂fnn(zt, yt)
+if f(zt, yt) − f(zt, ˜y) &lt; 0.
+First, the linear model can be defined as
+flinear(z, y) := θd · ϕd(z, y),
+</equation>
+<bodyText confidence="0.993103461538462">
+where ϕd(z, y) is a feature mapping for the dis-
+crete part of z and a POS tag, and θd is the cor-
+responding parameter vector. Since this is a lin-
+ear model, the gradient of this function is simply
+∂flinear(z, y) = ϕd(z, y).
+Second, each hidden layer of our neural net-
+works non-linearly transforms an input vector h′
+into an output vector h and we can say h′ is the
+continuous part of z at the first layer. Let hL be
+a hidden activation of the top layer, which is the
+non-linear transformation of the continuous part
+of z. The output layer of the neural network is
+defined as
+</bodyText>
+<equation confidence="0.651068">
+fnn(z, y) := θo · ϕo(hL, y),
+</equation>
+<bodyText confidence="0.999496333333333">
+where ϕo(h, y) is a feature mapping for the hidden
+variables and a POS tag, and θo is the correspond-
+ing parameter vector.
+</bodyText>
+<subsectionHeader confidence="0.999095">
+4.2 Activation functions
+</subsectionHeader>
+<bodyText confidence="0.996444666666667">
+The hidden variables h are computed by the re-
+cursive application of a non-linear activation func-
+tion. Since new styles of the activation functions
+were recently proposed, we review several acti-
+vation functions here. Let v ∈ R|V  |be the in-
+put of an activation function and each element is
+vj = θnn,j · h′ + θbias,j, where θnn,j is the param-
+eter vector for vj and θbias,j is the bias parameter
+for vj. We also assume v is divided into groups
+of size G, and denote the j-th element of the i-th
+group as {vij|1 ≤ i ≤ |V |/G ∧ 1 ≤ j ≤ G}. We
+studied three activation functions:
+</bodyText>
+<listItem confidence="0.997984">
+1. Rectified linear units (ReLUs) (Nair and Hin-
+ton, 2010):
+</listItem>
+<bodyText confidence="0.671563">
+hj = max(0,vj) for all {j|1 ≤ j ≤ |V |}.
+Note that a subgradient of ReLUs is
+∂hj — ae if vj &gt; 0
+∂θ 0 otherwise.
+</bodyText>
+<listItem confidence="0.94985">
+2. Maxout networks (MAXOUT) (Goodfellow
+et al., 2013):
+</listItem>
+<equation confidence="0.7115125">
+vij for all {i|1 ≤ i ≤ |V |
+G }.
+</equation>
+<bodyText confidence="0.9934545">
+Note that a subgradient of MAXOUT is
+Note that a subgradient of Lp is
+</bodyText>
+<equation confidence="0.970804166666667">
+�vij|vij|p−2 �
+G
+hi = max
+1&lt;j&lt;G
+G
+j=1
+∂hi
+∂vij
+∂θ
+∂θ =
+∂hi ∂vid jˆ = argmax vij
+∂θ = ∂θ , where 1&lt;j&lt;G
+</equation>
+<figure confidence="0.562061">
+3. Normalized Lp-pooling (Lp) (Gulcehre et al.,
+2014):
+� 1 G �|vij|p � for all {i|1 ≤ i ≤ |V |
+hi = � G j=1 G }.
+�
+|vi,j|p �
+1
+G
+G
+j=1
+−1
+.
+</figure>
+<page confidence="0.984593">
+942
+</page>
+<bodyText confidence="0.999990333333334">
+The activation inputs for each predefined group,
+{v1j, ... , vGj}, are aggregated by a non-linear
+function in MAXOUT or Lp activation functions,
+while each input is transformed into a correspond-
+ing hidden variable in the ReLUs. When the
+number of parameters required for these activation
+functions is the same, the number of output vari-
+ables h for MAXOUT and Lp is one-G-th smaller
+than that for ReLUs. Boureau et al. (2010) show
+pooling operations theoretically reduce the vari-
+ance of hidden activations, and our experimental
+results also show MAXOUT and Lp perform bet-
+ter than the ReLUs with the same number of pa-
+rameters. Note that MAXOUT is a special case
+of unnormalized Lp pooling when p = ∞ and
+vj &gt; 0 for all j (Zhang et al., 2014). Figure 1
+summarizes the proposed architecture with a sin-
+gle hidden layer and a pooling activation function.
+</bodyText>
+<subsectionHeader confidence="0.950414">
+4.3 Hyper-parameter search
+</subsectionHeader>
+<bodyText confidence="0.99979825">
+Finally, the subgradients of the neural network,
+fnn(z, y), can be computed through standard
+back-propagation algorithms and we can apply
+them in Algorithm 1. However, many of the hyper-
+parameters have to be determined for the training
+of the neural networks, and two stages of random
+hyper-parameter searches (Bergstra and Bengio,
+2012) are used in our experiments. Note that the
+parameters are grouped into three sets, 0d, 0o, 0nn,
+and the same values for A1, A2, α, Q are used for
+each parameter set.
+In the first stage, we randomly select 32 combi-
+nations of A2 for fnn, A1, A2 for flinear, the epoch
+to start the L1/L2 regularizations, and the on and
+off the acceleration in Algorithm 1. Here are the
+candidates of three hyper-parameters:
+</bodyText>
+<listItem confidence="0.983775857142857">
+1. A1: 0 for the update of fnn and
+{0,10−8,10−6,10−4,10−2, 1} for the
+update of flinear;
+2. A2: {0.1, 0.5, 1, 5,10} for the update of
+fnn and {1, 5, 10, 50,100} for the update of
+flinear; and
+3. Epoch to start the regularizations: {0, 1, 2}.
+</listItem>
+<bodyText confidence="0.9994554">
+In the second stage with each hyper-parameter
+combination above, we select 8 random combina-
+tions of α, Q for both flinear and fnn and initial pa-
+rameter ranges R for fnn. Here are the candidates
+of the three hyper-parameters:
+</bodyText>
+<table confidence="0.8619228">
+1. α: {0.01,0.05,0.1,0.5,1,5};
+Data Set #Sent. #Tokens #Unknown
+Training 38,219 912,344 0
+Development 5,527 131,768 4,467
+Testing 5,462 129,654 3,649
+</table>
+<tableCaption confidence="0.998565">
+Table 1: Data set splits for PTB.
+</tableCaption>
+<listItem confidence="0.968210666666667">
+2. Q: {0.5,1,5};
+3. R: {[−0.1,0.1], [−0.05,0.05], [−0.01,0.01],
+[−0.005,0.005]}.
+</listItem>
+<bodyText confidence="0.999954692307693">
+The values of 0 for fnn are uniformly sampled in
+the range of the randomly selected R. Note that,
+according to Goodfellow et al. (2014), the biases
+0bias are initialized as 0 for MAXOUT and Lp, and
+uniformly sampled from a range R + max(R),
+i.e., always initialized with non-negative values.
+The best combination for the development set is
+chosen after training that uses random 20% of the
+training set at the second stage, and Algorithm 1
+is terminated when the all token accuracy of the
+development data has been declining for 5 epochs
+at the first stage. In other words, 32 × 8 random
+combinations of α, Q, and 0 for fnn were tested.
+</bodyText>
+<sectionHeader confidence="0.999287" genericHeader="evaluation">
+5 Experiments
+</sectionHeader>
+<subsectionHeader confidence="0.903013">
+5.1 Setup
+</subsectionHeader>
+<bodyText confidence="0.999937130434783">
+Our experiments were mainly performed using
+the Wall Street Journal from Penn Treebank
+(PTB) (Marcus et al., 1993). We used tagged sen-
+tences from the parse trees (Toutanova et al., 2003)
+and followed the standard approach of splitting the
+PTB, using sections 0–18 for training, section 19–
+21 for development, and section 22–24 for testing
+(Table 1). In addition, we used the CoNLL2009
+data sets with the training, development, and
+test splits used in the shared task (Hajiˇc et al.,
+2009) for better comparison with a joint model of
+POS tagging and dependency parsing (Bohnet and
+Nivre, 2012).
+Our baseline tagger was trained by Algorithm 1.
+As discrete features for our tagger, we used the
+same binary feature set as Choi and Palmer (2012)
+which is composed of (a) 1, 2,3-grams of the
+surface word-forms and their predicted/dominated
+POS tags, (b) the prefixes and suffixes of the
+words, and (c) the spelling types of the words. In
+the same way as Choi and Palmer (2012), we used
+lowercase simplified word-forms which appeared
+at least 3 times.
+</bodyText>
+<page confidence="0.993056">
+943
+</page>
+<figure confidence="0.99220985">
+Window size
+# w2v glv pos stg cw
+- - - - -
+3 - - - -
+- 3 - - -
+3 3 - - -
+3 3 3 - 1
+3 3 3 1 1
+3 3 3 3 1
+3 3 6 - 1
+3 3 6 3 1
+1
+2
+3
+4
+5
+6
+7
+8
+9
+</figure>
+<bodyText confidence="0.999786857142857">
+In addition to their binary features, we used con-
+tinuous features which are the concatenation of the
+corpus-wide features in a context window. The
+window of size w = 2s + 1 is the local context
+centered around xt: xt−s, · · · , xt, · · · , xt+s. The
+experimental settings of each feature described in
+Section 3 are as follows.
+</bodyText>
+<subsectionHeader confidence="0.748349">
+Word embeddings
+</subsectionHeader>
+<bodyText confidence="0.970286416666667">
+We used two word vectors: 300-dimensional
+vectors that were learned by word2vec using
+a part of the Google News dataset (around
+100 billion tokens) 1, and 300-dimensional
+vectors that were learned by glove using a
+part of the Common Crawl dataset (840 bil-
+lion tokens) 2. For sentence boundaries, we
+use the vector of the special entry “&lt;/s&gt;” for
+the word2vec embeddings and the zero vec-
+tor for the glove embeddings.
+POS tag distribution
+The counts are calculated using training data.
+</bodyText>
+<subsectionHeader confidence="0.705032">
+Supertag distribution
+</subsectionHeader>
+<bodyText confidence="0.990206826086957">
+In the experiments on PTB, we used the Stan-
+ford parser v2.0.43 to convert from phrase
+structures to dependency structures so that
+the dependency relation labels of the Stan-
+ford dependencies are used. The size of the
+supertag set is 85 for both heads and depen-
+dents in our experiments. In the experiments
+on CoNLL2009, the dependency structures
+and labels defined in CoNLL2009 are used
+and the size of supertag set is 99 for both
+heads and dependents.
+Context word distribution
+To count the neighboring words in our exper-
+iments, we used sections 0–18 of the Wall
+Street Journal and all of the Brown corpus
+from Penn Treebank (Marcus et al., 1993).
+Since the training of the neural networks is com-
+putationally demanding, first, we trained the lin-
+ear classifiers using Algorithm 1 to select the best
+window sizes for each corpus-wide information of
+Section 3. Then the best window size setting for
+the development set of PTB was used for train-
+ing the neural networks described in Section 4.
+</bodyText>
+<footnote confidence="0.822788294117647">
+1The pre-trained vectors are available at https://
+code.google.com/p/word2vec
+2The pre-trained vectors are available at http://nlp.
+stanford.edu/projects/glove/
+3http://nlp.stanford.edu/software/
+lex-parser.shtml
+Accuracy (%)
+All Unk.
+97.15 86.81
+97.36 88.96
+97.34 89.55
+97.40 90.44
+97.44 90.17
+97.44 90.53
+97.45 90.22
+97.41 90.51
+97.44 90.15
+</footnote>
+<tableCaption confidence="0.5120835">
+Table 2: Feature and window size selection: de-
+velopment accuracies of all tokens (All) and un-
+known tokens (Unk.) of linear models trained on
+PTB (w2v: word2vec; glv: glove; pos: POS tag
+distribution; stg: supertag distribution; cw: con-
+text word distribution).
+</tableCaption>
+<bodyText confidence="0.999967125">
+We fixed the group size at 8 for MAXOUT and
+Lp, and the number of hidden variables was cho-
+sen from 132,481 for MAXOUT and Lp and from
+132, 64,128, 256, 3841 for ReLUs according to all
+token accuracy on the development data of PTB.
+We report the POS tagging accuracy for both all
+of the tokens and only for the unknown tokens that
+do not appear in the training set.
+</bodyText>
+<subsectionHeader confidence="0.705694">
+5.2 Results
+</subsectionHeader>
+<bodyText confidence="0.999980636363636">
+Table 2 shows the accuracies of the linear models
+on PTB with different window sizes for the con-
+tinuous features. The window sizes of the word
+embeddings (word2vec and glove) in Section 3.1,
+POS tag distributions in Section 3.2, supertag dis-
+tributions in Section 3.3, and context word distri-
+butions in Section 3.4 are shown in the columns
+of w2v, glv, pos, stg, and cw, respectively. Note
+that “-” denotes the corresponding feature was not
+used at all and the first row with all “-” denotes the
+results only using the original binary features from
+Choi and Palmer (2012). The window sizes in Ta-
+ble 2 are chosen mainly to investigate the effect
+of the word2vec embeddings, glove embeddings,
+and supertag distributions, since they had not pre-
+viously been used for POS tagging.
+The additions of the word embeddings improve
+all token accuracy by about 0.2 points accord-
+ing to the results shown in Nos. 1, 2, 3. Al-
+though both word embeddings improved the ac-
+curacy of the unknown tokens, the gain of the
+glove embeddings (No. 3) is larger than that of the
+</bodyText>
+<page confidence="0.996722">
+944
+</page>
+<table confidence="0.983799875">
+# Neural Network Settings Group size (G) Development Set Test Set
+Activation functions #Hidden All Unk. All Unk.
+1 Linear model - - 97.45 90.22 97.46 91.39
+2 ReLUs 384 1 97.45 90.87 97.42 91.04
+3 Lp(p = 2) 48 8 97.52 90.91 97.51 91.64
+4 Lp(p = 3) 32 8 97.51 90.91 97.51 91.53
+5 MAXOUT 48 8 97.50 90.89 97.50 91.67
+6 Lp(p = 2) (w/o linear part) 48 8 97.39 91.18 97.40 91.23
+</table>
+<tableCaption confidence="0.993334">
+Table 3: Development and test accuracies of all tokens and unknown tokens (%) on PTB.
+</tableCaption>
+<figure confidence="0.996803130434783">
+Manning (2011)
+Tagger
+Søgaard (2011)
+Lp(p = 2)
+(a) Test accuracies on PTB
+All
+97.32
+97.50
+97.51
+90.79
+91.64
+Unk.
+N/A
+Bohnet and Nivre (2012)
+Tagger
+Lp(p = 2)
+(b) Test accuracies on CoNLL2009
+All
+97.84
+98.02
+92.01
+Unk.
+N/A
+</figure>
+<tableCaption confidence="0.8236245">
+Table 4: Test accuracies of all tokens and unknown tokens (%) comparing with the previously reported
+results
+</tableCaption>
+<bodyText confidence="0.999810076923077">
+word2vec (No. 2). The reason for this difference
+in the two embeddings may be because the train-
+ing data for the glove vectors is 8 times larger than
+that for the word2vec vectors. The usage of the
+two word embeddings shows further improvement
+in the tagging accuracy over single word embed-
+dings (No. 4).
+The addition of the POS tag distributions and
+the context word distributions improves all token
+accuracy (Nos. 5, 8). The comparison between the
+results with stag=“-” (Nos. 5, 8) and stag = 11, 31
+(Nos. 6, 7, 9) indicates the minor but consistent
+improvement by using the supertag distribution
+features in Section 3.3. Finally, the 7th window-
+size setting in Table 2 achieves the best all token
+accuracy among the linear models, so we chose
+this setting for the experiments with the neural net-
+works.
+In Table 3, we compare the different settings of
+the neural networks with a single hidden layer 4
+on the development set and test set from PTB.
+Neural networks with the MAXOUT and Lp
+(Nos. 3, 4, 5) significantly outperform the best lin-
+ear model (No. 1) 5, but the accuracy of the Re-
+LUs (No. 2) was similar to that of the best lin-
+ear model. According to these results, we argue
+</bodyText>
+<footnote confidence="0.963596">
+4We leave the investigation of deeper neural networks as
+future work.
+5For significance tests, we have used the Wilcoxon
+matched-pairs signed-rank test at the 95% confidence level
+dividing the data into 100 data pairs.
+</footnote>
+<bodyText confidence="0.998847935483871">
+that the activation function selection is important,
+although conventional research in NLP has used
+only a single activation function. It took roughly
+7 times as long to learn the hybrid models than
+the linear model (No. 1). “Lp(p = 2) (w/o linear
+part)” (No. 6) shows the result for a Lp(p = 2)
+model which does not include the linear model
+flinear for the binary features. Comparing the test
+results of No. 6 with that of No. 3, the proposed
+hybrid architecture of a linear model and a neural
+network enjoys the benefits of both models. Note
+that No. 6’s accuracies of the unknown tokens are
+relatively competitive, and this may be because the
+continuous features for the neural network do not
+include word surfaces.
+Since it shows the best accuracy for all tokens
+on the development set, we refer to Lp(p = 2)
+with 48 hidden variables and the group size of 8
+(No. 3 in Table 3) as our representative tagger and
+denote it as Lp(p = 2) in the rest of discussion.
+In Table 4a, we compare our result with the pre-
+viously reported results and we see that our tagger
+outperforms the current state-of-the-art systems on
+PTB for the accuracies of all tokens and unknown
+tokens.
+In addition, since our tagger was trained us-
+ing the dependency tree annotations as described
+in Section 3.3, we compare it with the results of
+Bohnet and Nivre (2012) which is also trained
+using both POS tag and dependency annotations.
+Although their focus is on the dependency pars-
+</bodyText>
+<page confidence="0.993415">
+945
+</page>
+<figure confidence="0.9998418">
+−0.8 −0.4 0.0
+PC4
+−0.8 −0.2 0.4 −1.5 −0.5
+(b) PCA of the hidden activations of LP(p = 2)
+PC2
+PC3
+PC1
+−0.8 −0.2
+−0.5 0.0 0.5
+−0.8 −0.2 0.4
+−1.5 −0.5
+−0.5 0.5
+VB
+VBD
+VBG
+VBN
+VBP
+VBZ
+−1.0 0.0 1.0 −1.5 0.0 1.0
+−4 −2 0 −2.5 −1.0 0.5
+PC1
+PC2
+PC3
+PC4
+−1.0 0.0 1.0
+−4 −2 0
+−2.5 −1.0 0.5
+−1.5 −0.5 0.5
+VB
+VBD
+VBG
+VBN
+VBP
+VBZ
+(a) PCA of the raw features
+</figure>
+<figureCaption confidence="0.9437255">
+Figure 2: Scatter plots of verbs for all combinations between the first four principal components of the
+raw features and the activation of hidden variables.
+</figureCaption>
+<bodyText confidence="0.99906">
+ing, they report state-of-the art POS accuracies
+for many languages. Note that Bohnet and Nivre
+(2012) also used external resources. Table 4b
+gives the results for CoNLL2009 data set6. Our
+tagger outperform Bohnet and Nivre (2012), so we
+believe this is the highest POS accuracy ever re-
+ported for a tagger trained on this data set.
+Finally, to visualize the learned representations,
+we applied principal components analysis (PCA)
+to the hidden activations hL of the first 10, 000 to-
+kens of the development set from PTB. We also
+performed PCA to the raw continuous inputs of
+the same data set. Figure 2 shows the data plots
+for all the combinations among the first four prin-
+cipal components. We plots only the verb tokens
+to make the plots easier to see. Figures 2a and
+2b show the PCA results of the raw features and
+the hidden activations of LP(p = 2), respectively.
+Compared to Figure 2a, the tokens with the same
+POS tag are more clearly clustered in Figure 2b.
+This suggests the neural network learned the good
+representations for POS tagging and these hidden
+activations can be used as the input of the succeed-
+ing processes, such as parsing.
+</bodyText>
+<footnote confidence="0.990443">
+6The accuracies of our tagger on the development set of
+CoNLL2009 data are 97.76% for all tokens and 93.42% for
+unknown tokens.
+</footnote>
+<sectionHeader confidence="0.998832" genericHeader="related work">
+6 Related Work
+</sectionHeader>
+<bodyText confidence="0.999963142857143">
+There is some old work on the POS tagging by
+neural networks. Nakamura et al. (1990) proposed
+a neural tagger that predicts the POS tag using a
+previous POS predictions. Schmid (1994) is most
+similar to our work. The inputs of his neural net-
+work are the POS tag distributions of a word and
+its suffix in a context window, and he reports a
+2% improvement over a regular hidden Markov
+model. However, his tagger did not use the other
+kinds of corpus-wide information as we used.
+Most of the recent studies on POS tagging use
+linear models (Suzuki and Isozaki, 2008; Spous-
+tov´a et al., 2009) or other non-linear models, such
+as k-nearest neighbor (kNN) (Søgaard, 2011).
+One trend in these studies is model combinations.
+Suzuki and Isozaki (2008) combined generative
+and discriminative models, Spoustov´a et al. (2009)
+used the combination of three taggers to gener-
+ate automatically annotated corpus, and Søgaard
+(2011) used the outputs of a supervised tagger and
+an unsupervised tagger as the feature space of the
+kNN. Our work also follows this trend since neural
+networks can be considered as non-linear integra-
+tion of several linear classifiers.
+Apart from POS tagging, some previous studies
+in parsing used the discretization method to handle
+the combination of continuous features. Bohnet
+and Nivre (2012) binned the difference of two con-
+</bodyText>
+<page confidence="0.997042">
+946
+</page>
+<bodyText confidence="0.999945863636363">
+tinuous features in discrete steps of a predefined
+small interval. Bansal et al. (2014) used the con-
+junction of discretized features and studied two
+discretization methods: One is the binning of real
+values into discrete steps and the other is a hard
+clustering of continuous feature vectors. It is not
+easy to determine the optimal intervals for the bin-
+ning method, and the clustering method is unsu-
+pervised so that the clusters are not guaranteed for
+good representations of the target tasks.
+To capture rich syntactic information for Chi-
+nese POS tagging, Sun and Uszkoreit (2012) used
+the ensemble model of both a POS tagger and a
+constituency parser. Sun et al. (2013) improved
+the efficiency of Sun and Uszkoreit (2012) in
+which a single tagging model is trained using au-
+tomatically annotated corpus generated by the en-
+semble tagger. Although the supertag distribution
+feature in Section 3.3 is a simple way to incor-
+porate syntactic information, automatically parsed
+large corpora may make the estimate of the su-
+pertag distributions more accurate.
+</bodyText>
+<sectionHeader confidence="0.951733" genericHeader="conclusions">
+7 Conclusion and Future Work
+</sectionHeader>
+<bodyText confidence="0.999995693548387">
+We are studying a neural network approach to han-
+dle the non-linear interaction among corpus-wide
+statistics. For POS tagging, we used word em-
+beddings, POS tag distributions, supertag distribu-
+tions, and context word distributions in a context
+window. These features are beneficial, even for
+linear classifiers, but the neural networks leverage
+these features for improving tagging accuracies.
+Our tagger with Maxout networks (Goodfellow et
+al., 2013) or LP-pooling (Zhang et al., 2014; Gul-
+cehre et al., 2014) show the state-of-the-art results
+on two English benchmark sets.
+Our empirical results suggest further opportu-
+nities to investigate continuous features not only
+for POS tagging but also for other NLP tasks.
+An obvious use case for continuous features is
+the N-best outputs with confidence values, which
+were predicted by the previous process in a NLP
+pipeline, such as the POS tags used for syntactic
+parsing. Another interesting extension is the use of
+on-the-fly features which reflect previous network
+states, although the neural networks in our current
+work do not refer to the prediction history. Recur-
+rent neural networks (RNNs) may be a solution to
+represent the prediction history in a compact way,
+and Mesnil et al. (2013) reported that RNNs out-
+perform conditional random fields (CRFs) on a se-
+quential labeling task. They also show the superi-
+ority of bi-directional RNNs on their task, so the
+bi-directional RNNs may also be effective on the
+POS tagging, since bi-directional inferences were
+also used in earlier work (Tsuruoka and Tsujii,
+2005).
+It has a clear benefit over kernel methods in
+that the test-time computational cost of neural net-
+works is independent from training data. How-
+ever, although the test-time speed of original ker-
+nel methods is proportional to the number of train-
+ing data, recent development of kernel approxima-
+tion techniques achieve significant speed improve-
+ments (Le et al., 2013; Pham and Pagh, 2013).
+Since this work shows the non-linearity of contin-
+uous features should be exploited, those approxi-
+mated kernel methods may also improve the tag-
+ging accuracies without sacrifice tagging speed.
+Independent from our work, Ma et al. (2014)
+and Santos and Zadrozny (2014) also recently pro-
+posed neural network approaches for POS tagging.
+Ma et al. (2014)’s approach is similar to our ap-
+proach, with a combination of a linear model and
+a neural network, although a direct comparison is
+not easy since their focus is the Web domain adap-
+tation of POS tagging. Remarkably, they report n-
+gram embeddings are better than single word em-
+beddings. Santos and Zadrozny (2014) proposed
+character-level embedding to capture the morpho-
+logical and shape information for POS tagging.
+Although the reported accuracy (97.32%) on PTB
+data is lower than state of the art results, their ap-
+proach is promising for morphologically rich lan-
+guages. We may study the integration of these em-
+beddings into our approach as future work.
+</bodyText>
+<sectionHeader confidence="0.997902" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.921367571428571">
+Mohit Bansal, Kevin Gimpel, and Karen Livescu.
+2014. Tailoring continuous word representations for
+dependency parsing. In Proceedings of the Annual
+Meeting of the Association for Computational Lin-
+guistics, Proceedings of the Conference (ACL). The
+Association for Computer Linguistics.
+James Bergstra and Yoshua Bengio. 2012. Random
+search for hyper-parameter optimization. Journal of
+Machine Learning Research, 13:281–305.
+Bernd Bohnet and Joakim Nivre. 2012. A transition-
+based system for joint part-of-speech tagging and
+labeled non-projective dependency parsing. In Pro-
+ceedings of the Joint Conference on Empirical Meth-
+ods in Natural Language Processing and Com-
+</reference>
+<page confidence="0.991696">
+947
+</page>
+<reference confidence="0.999138783783784">
+putational Natural Language Learning (EMNLP-
+CoNLL), pages 1455–1465.
+Y-Lan Boureau, Jean Ponce, and Yann LeCun. 2010.
+A theoretical analysis of feature pooling in visual
+recognition. In Proceedings of the International
+Conference on Machine Learning (ICML), pages
+111–118.
+Jinho D. Choi and Martha Palmer. 2012. Fast and
+robust part-of-speech tagging using dynamic model
+selection. In Proceedings of the Annual Meeting of
+the Association for Computational Linguistics, Pro-
+ceedings of the Conference (ACL), pages 363–367.
+Ronan Collobert, Jason Weston, L´eon Bottou, Michael
+Karlen, Koray Kavukcuoglu, and Pavel P. Kuksa.
+2011. Natural language processing (almost) from
+scratch. Journal of Machine Learning Research,
+12:2493–2537.
+Koby Crammer and Yoram Singer. 2001. On the algo-
+rithmic implementation of multiclass kernel-based
+vector machines. Journal of Machine Learning Re-
+search, 2:265–292.
+Hal Daum´e III, John Langford, and Daniel Marcu.
+2009. Search-based structured prediction. Machine
+Learning Journal, 75(3):297–325, June.
+John C. Duchi, Elad Hazan, and Yoram Singer. 2010.
+Adaptive subgradient methods for online learning
+and stochastic optimization. In Proceedings of
+the Conference on Learning Theory (COLT), pages
+257–269.
+Jes´us Gim´enez and Llufs M`arquez. 2003. Fast and ac-
+curate part-of-speech tagging: The svm approach re-
+visited. In Proceedings of RecentAdvances in Natu-
+ral Language Processing (RANLP), pages 153–163.
+Yoav Goldberg and Joakim Nivre. 2012. A dynamic
+oracle for arc-eager dependency parsing. In Pro-
+ceedings of International Conference on Computa-
+tional Linguistics (COLING), pages 959–976.
+Ian J. Goodfellow, David Warde-Farley, Mehdi Mirza,
+Aaron C. Courville, and Yoshua Bengio. 2013.
+Maxout networks. In Proceedings of the Interna-
+tional Conference on Machine Learning (ICML),
+pages 1319–1327.
+Ian J. Goodfellow, Mehdi Mirza, Xia Da, Aaron C.
+Courville, and Yoshua Bengio. 2014. An empirical
+investigation of catastrophic forgeting in gradient-
+based neural networks. In Proceedings of Inter-
+national Conference on Learning Representations
+(ICLR).
+Caglar Gulcehre, Kyunghyun Cho, Razvan Pascanu,
+and Yoshua Bengio. 2014. Learned-norm pool-
+ing for deep feedforward and recurrent neural net-
+works. In Proceedings of the European Con-
+ference on Machine Learning and Principles and
+Practice of Knowledge Discovery in Databases
+(ECML/PKDD).
+Jan Hajiˇc, Massimiliano Ciaramita, Richard Johans-
+son, Daisuke Kawahara, Maria Ant`onia Martf, Llufs
+M`arquez, Adam Meyers, Joakim Nivre, Sebastian
+Pad´o, Jan ˇStˇep´anek, Pavel Straˇn´ak, Mihai Surdeanu,
+Nianwen Xue, and Yi Zhang. 2009. The CoNLL-
+2009 shared task: Syntactic and semantic dependen-
+cies in multiple languages. In Proceedings of the
+Conference on Computational Natural Language
+Learning (CoNLL), pages 1–18.
+Fei Huang and Alexander Yates. 2009. Distributional
+representations for handling sparsity in supervised
+sequence-labeling. In Proceedings of the Annual
+Meeting of the Association for Computational Lin-
+guistics and the International Joint Conference on
+Natural Language Processing (ACL/IJCNLP), pages
+495–503.
+Quoc V. Le, Tam´as Sarl´os, and Alexander J. Smola.
+2013. Fastfood - computing Hilbert space expan-
+sions in loglinear time. In Proceedings of the Inter-
+national Conference on Machine Learning (ICML),
+pages 244–252.
+Omer Levy and Yoav Goldberg. 2014. Linguistic
+regularities in sparse and explicit word represen-
+tations. In Proceedings of the Thirteenth Confer-
+ence on Computational Natural Language Learning
+(CoNLL).
+Ji Ma, Yue Zhang, Tong Xiao, and Jingbo Zhu. 2014.
+Tagging the Web: Building a robust web tagger with
+neural network. In Proceedings of the Annual Meet-
+ing of the Association for Computational Linguis-
+tics, Proceedings of the Conference (ACL). The As-
+sociation for Computer Linguistics.
+Christopher D. Manning. 2011. Part-of-speech tag-
+ging from 97% to 100%: Is it time for some linguis-
+tics? In Proceedings of Conference on Intelligent
+Text Processing and Computational Linguistics (CI-
+CLing), pages 171–189.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated
+corpus of english: The Penn treebank. Computa-
+tional Linguistics, 19(2):313–330.
+H. Brendan McMahan, Gary Holt, David Sculley,
+Michael Young, Dietmar Ebner, Julian Grady,
+Lan Nie, Todd Phillips, Eugene Davydov, Daniel
+Golovin, Sharat Chikkerur, Dan Liu, Martin Wat-
+tenberg, Arnar Mar Hrafnkelsson, Tom Boulos, and
+Jeremy Kubica. 2013. Ad click prediction: a
+view from the trenches. In Proceedings of the ACM
+SIGKDD International Conference on Knowledge
+Discovery and Data Mining (KDD), pages 1222–
+1230.
+H. Brendan McMahan. 2011. Follow-the-regularized-
+leader and mirror descent: Equivalence theorems
+and L1 regularization. In Proceedings of the Four-
+teenth International Conference on Artificial Intelli-
+gence and Statistics (AISTATS), pages 525–533.
+</reference>
+<page confidence="0.979479">
+948
+</page>
+<reference confidence="0.999742544642857">
+Gr´egoire Mesnil, Xiaodong He, Li Deng, and Yoshua
+Bengio. 2013. Investigation of recurrent-neural-
+network architectures and learning methods for spo-
+ken language understanding. In Proceedings of An-
+nual Conference of the International Speech Com-
+munication Association (INTERSPEECH), pages
+3771–3775.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Gregory S.
+Corrado, and Jeffrey Dean. 2013. Distributed repre-
+sentations of words and phrases and their composi-
+tionality. In Proceedings of Advances in Neural In-
+formation Processing Systems (NIPS), pages 3111–
+3119.
+Vinod Nair and Geoffrey E. Hinton. 2010. Rectified
+linear units improve restricted Boltzmann machines.
+In Proceedings of the International Conference on
+Machine Learning (ICML), pages 807–814.
+Tetsuji Nakagawa and Yuji Matsumoto. 2006. Guess-
+ing parts-of-speech of unknown words using global
+information. In Proceedings of the Annual Meet-
+ing of the Association for Computational Linguis-
+tics, Proceedings of the Conference (ACL).
+Masami Nakamura, Katsuteru Maruyama, Takeshi
+Kawabata, and Kiyohiro Shikano. 1990. Neural
+network approach to word category prediction for
+English texts. In Proceedings of International Con-
+ference on Computational Linguistics (COLING),
+pages 213–218.
+Hiroki Ouchi, Kevin Duh, and Yuji Matsumoto. 2014.
+Improving dependency parsers with supertags. In
+Proceedings of Conference of the European Chap-
+ter of the Association for Computational Linguistics
+(EACL), pages 154–158.
+Neal Parikh and Stephen P. Boyd. 2013. Proximal al-
+gorithms. Foundations and Trends in Optimization,
+1(3):123–231.
+Jeffrey Pennington, Richard Socher, and Christo-
+pher D. Manning. 2014. GloVe: global vectors
+for word representation. In Proceedings of the Con-
+ference on Empirical Methods on Natural Language
+Processing (EMNLP).
+Ninh Pham and Rasmus Pagh. 2013. Fast and scal-
+able polynomial kernels via explicit feature maps.
+In Proceedings of the ACM SIGKDD International
+Conference on Knowledge Discovery and Data Min-
+ing (KDD), pages 239–247.
+St´ephane Ross, Geoffrey J. Gordon, and Drew Bagnell.
+2011. A reduction of imitation learning and struc-
+tured prediction to no-regret online learning. In Pro-
+ceedings of the Fourteenth International Conference
+on Artificial Intelligence and Statistics (AISTATS),
+pages 627–635.
+Cicero Dos Santos and Bianca Zadrozny. 2014.
+Learning character-level representations for part-of-
+speech tagging. In Proceedings of the International
+Conference on Machine Learning (ICML), pages
+1818–1826.
+Helmut Schmid. 1994. Part-of-speech tagging with
+neural networks. In Proceedings of International
+Conference on Computational Linguistics (COL-
+ING), pages 172–176.
+Tobias Schnabel and Hinrich Sch¨utze. 2014. FLORS:
+Fast and simple domain adaptation for part-of-
+speech tagging. Transactions of the Association for
+Computational Linguistics, 2:15–26, February.
+Richard Socher, Eric H. Huang, Jeffrey Pennington,
+Andrew Y. Ng, and Christopher D. Manning. 2011.
+Dynamic pooling and unfolding recursive autoen-
+coders for paraphrase detection. In Proceedings of
+Advances in Neural Information Processing Systems
+(NIPS), pages 801–809.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Chris Manning, Andrew Ng, and Chris
+Potts. 2013. Recursive deep models for semantic
+compositionality over a sentiment treebank. In Pro-
+ceedings of the Conference on Empirical Methods
+on Natural Language Processing (EMNLP), pages
+1631–1642.
+Anders Søgaard. 2011. Semi-supervised condensed
+nearest neighbor for part-of-speech tagging. In Pro-
+ceedings of the Annual Meeting of the Association
+for Computational Linguistics, Proceedings of the
+Conference (ACL), pages 48–52.
+Drahom´ıra johanka Spoustov´a, Jan Hajiˇc, Jan Raab,
+and Miroslav Spousta. 2009. Semi-supervised
+training for the averaged perceptron pos tagger. In
+Proceedings of Conference of the European Chap-
+ter of the Association for Computational Linguistics
+(EACL), pages 763–771.
+Weiwei Sun and Hans Uszkoreit. 2012. Capturing
+paradigmatic and syntagmatic lexical relations: To-
+wards accurate Chinese part-of-speech tagging. In
+Proceedings of the Annual Meeting of the Associa-
+tion for Computational Linguistics, Proceedings of
+the Conference (ACL), pages 242–252.
+Weiwei Sun, Xiaochang Peng, and Xiaojun Wan.
+2013. Capturing long-distance dependencies in se-
+quence models: A case study of Chinese part-of-
+speech tagging. In Proceedings of the International
+Joint Conference on Natural Language Processing
+(IJCNLP), pages 180–188.
+Ilya Sutskever, James Martens, George E. Dahl, and
+Geoffrey E. Hinton. 2013. On the importance of
+initialization and momentum in deep learning. In
+Proceedings of the International Conference on Ma-
+chine Learning (ICML), pages 1139–1147.
+Jun Suzuki and Hideki Isozaki. 2008. Semi-supervised
+sequential labeling and segmentation using giga-
+word scale unlabeled data. In Proceedings of the An-
+nual Meeting of the Association for Computational
+Linguistics, Proceedings of the Conference (ACL),
+pages 665–673.
+</reference>
+<page confidence="0.989395">
+949
+</page>
+<reference confidence="0.999715648648648">
+Kristina Toutanova, Dan Klein, Christopher D. Man-
+ning, and Yoram Singer. 2003. Feature-rich part-
+of-speech tagging with a cyclic dependency net-
+work. In Proceedings of the Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies
+(NAACL-HLT), pages 252–259.
+Yoshimasa Tsuruoka and Jun’ichi Tsujii. 2005. Bidi-
+rectional inference with the easiest-first strategy for
+tagging sequence data. In Proceedings of Human
+Language Technology Conference and Conference
+on Empirical Methods in Natural Language Pro-
+cessing (HLT-EMNLP), pages 467–474.
+Joseph P. Turian, Lev-Arie Ratinov, and Yoshua Ben-
+gio. 2010. Word representations: A simple and gen-
+eral method for semi-supervised learning. In Pro-
+ceedings of the Annual Meeting of the Association
+for Computational Linguistics, Proceedings of the
+Conference (ACL), pages 384–394.
+Mengqiu Wang and Christopher D. Manning. 2013.
+Effect of non-linear deep architecture in sequence
+labeling. In Proceedings of the International Joint
+Conference on Natural Language Processing (IJC-
+NLP).
+Xiaohui Zhang, Jan Trmal, Daniel Povey, and San-
+jeev Khudanpur. 2014. Improving deep neural
+network acoustic models using generalized maxout
+networks. In Proceedings of International Confer-
+ence on Acoustics, Speech and Signal Processing
+(ICASSP).
+Alisa Zhila, Wen tau Yih, Christopher Meek, Geoffrey
+Zweig, and Tomas Mikolov. 2013. Combining het-
+erogeneous models for measuring relational similar-
+ity. In Proceedings of the Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies
+(NAACL-HLT), pages 1000–1009.
+</reference>
+<page confidence="0.997696">
+950
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.923911">
+<title confidence="0.997882">Neural Networks Leverage Corpus-wide for Part-of-speech Tagging</title>
+<author confidence="0.999754">Yuta Tsuboi</author>
+<affiliation confidence="0.999601">IBM Research -</affiliation>
+<email confidence="0.999338">yutat@jp.ibm.com</email>
+<abstract confidence="0.9963868">We propose a neural network approach to benefit from the non-linearity of corpuswide statistics for part-of-speech (POS) tagging. We investigated several types of corpus-wide information for the words, such as word embeddings and POS tag distributions. Since these statistics are encoded as dense continuous features, it is not trivial to combine these features comparing with sparse discrete features. Our tagger is designed as a combination of a linear model for discrete features and a feed-forward neural network that captures the non-linear interactions among the continuous features. By using several recent advances in the activation functions for neural networks, the proposed method marks new state-of-the-art accuracies for English POS tagging tasks.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Mohit Bansal</author>
+<author>Kevin Gimpel</author>
+<author>Karen Livescu</author>
+</authors>
+<title>Tailoring continuous word representations for dependency parsing.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL). The Association</booktitle>
+<institution>for Computer Linguistics.</institution>
+<contexts>
+<context position="33775" citStr="Bansal et al. (2014)" startWordPosition="5925" endWordPosition="5928">09) used the combination of three taggers to generate automatically annotated corpus, and Søgaard (2011) used the outputs of a supervised tagger and an unsupervised tagger as the feature space of the kNN. Our work also follows this trend since neural networks can be considered as non-linear integration of several linear classifiers. Apart from POS tagging, some previous studies in parsing used the discretization method to handle the combination of continuous features. Bohnet and Nivre (2012) binned the difference of two con946 tinuous features in discrete steps of a predefined small interval. Bansal et al. (2014) used the conjunction of discretized features and studied two discretization methods: One is the binning of real values into discrete steps and the other is a hard clustering of continuous feature vectors. It is not easy to determine the optimal intervals for the binning method, and the clustering method is unsupervised so that the clusters are not guaranteed for good representations of the target tasks. To capture rich syntactic information for Chinese POS tagging, Sun and Uszkoreit (2012) used the ensemble model of both a POS tagger and a constituency parser. Sun et al. (2013) improved the e</context>
+</contexts>
+<marker>Bansal, Gimpel, Livescu, 2014</marker>
+<rawString>Mohit Bansal, Kevin Gimpel, and Karen Livescu. 2014. Tailoring continuous word representations for dependency parsing. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL). The Association for Computer Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Bergstra</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Random search for hyper-parameter optimization.</title>
+<date>2012</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>13--281</pages>
+<contexts>
+<context position="20043" citStr="Bergstra and Bengio, 2012" startWordPosition="3494" endWordPosition="3497">Us with the same number of parameters. Note that MAXOUT is a special case of unnormalized Lp pooling when p = ∞ and vj &gt; 0 for all j (Zhang et al., 2014). Figure 1 summarizes the proposed architecture with a single hidden layer and a pooling activation function. 4.3 Hyper-parameter search Finally, the subgradients of the neural network, fnn(z, y), can be computed through standard back-propagation algorithms and we can apply them in Algorithm 1. However, many of the hyperparameters have to be determined for the training of the neural networks, and two stages of random hyper-parameter searches (Bergstra and Bengio, 2012) are used in our experiments. Note that the parameters are grouped into three sets, 0d, 0o, 0nn, and the same values for A1, A2, α, Q are used for each parameter set. In the first stage, we randomly select 32 combinations of A2 for fnn, A1, A2 for flinear, the epoch to start the L1/L2 regularizations, and the on and off the acceleration in Algorithm 1. Here are the candidates of three hyper-parameters: 1. A1: 0 for the update of fnn and {0,10−8,10−6,10−4,10−2, 1} for the update of flinear; 2. A2: {0.1, 0.5, 1, 5,10} for the update of fnn and {1, 5, 10, 50,100} for the update of flinear; and 3.</context>
+</contexts>
+<marker>Bergstra, Bengio, 2012</marker>
+<rawString>James Bergstra and Yoshua Bengio. 2012. Random search for hyper-parameter optimization. Journal of Machine Learning Research, 13:281–305.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bernd Bohnet</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>A transitionbased system for joint part-of-speech tagging and labeled non-projective dependency parsing.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLPCoNLL),</booktitle>
+<pages>1455--1465</pages>
+<contexts>
+<context position="22435" citStr="Bohnet and Nivre, 2012" startWordPosition="3907" endWordPosition="3910">sted. 5 Experiments 5.1 Setup Our experiments were mainly performed using the Wall Street Journal from Penn Treebank (PTB) (Marcus et al., 1993). We used tagged sentences from the parse trees (Toutanova et al., 2003) and followed the standard approach of splitting the PTB, using sections 0–18 for training, section 19– 21 for development, and section 22–24 for testing (Table 1). In addition, we used the CoNLL2009 data sets with the training, development, and test splits used in the shared task (Hajiˇc et al., 2009) for better comparison with a joint model of POS tagging and dependency parsing (Bohnet and Nivre, 2012). Our baseline tagger was trained by Algorithm 1. As discrete features for our tagger, we used the same binary feature set as Choi and Palmer (2012) which is composed of (a) 1, 2,3-grams of the surface word-forms and their predicted/dominated POS tags, (b) the prefixes and suffixes of the words, and (c) the spelling types of the words. In the same way as Choi and Palmer (2012), we used lowercase simplified word-forms which appeared at least 3 times. 943 Window size # w2v glv pos stg cw - - - - - 3 - - - - - 3 - - - 3 3 - - - 3 3 3 - 1 3 3 3 1 1 3 3 3 3 1 3 3 6 - 1 3 3 6 3 1 1 2 3 4 5 6 7 8 9 I</context>
+<context position="27504" citStr="Bohnet and Nivre (2012)" startWordPosition="4822" endWordPosition="4825">er than that of the 944 # Neural Network Settings Group size (G) Development Set Test Set Activation functions #Hidden All Unk. All Unk. 1 Linear model - - 97.45 90.22 97.46 91.39 2 ReLUs 384 1 97.45 90.87 97.42 91.04 3 Lp(p = 2) 48 8 97.52 90.91 97.51 91.64 4 Lp(p = 3) 32 8 97.51 90.91 97.51 91.53 5 MAXOUT 48 8 97.50 90.89 97.50 91.67 6 Lp(p = 2) (w/o linear part) 48 8 97.39 91.18 97.40 91.23 Table 3: Development and test accuracies of all tokens and unknown tokens (%) on PTB. Manning (2011) Tagger Søgaard (2011) Lp(p = 2) (a) Test accuracies on PTB All 97.32 97.50 97.51 90.79 91.64 Unk. N/A Bohnet and Nivre (2012) Tagger Lp(p = 2) (b) Test accuracies on CoNLL2009 All 97.84 98.02 92.01 Unk. N/A Table 4: Test accuracies of all tokens and unknown tokens (%) comparing with the previously reported results word2vec (No. 2). The reason for this difference in the two embeddings may be because the training data for the glove vectors is 8 times larger than that for the word2vec vectors. The usage of the two word embeddings shows further improvement in the tagging accuracy over single word embeddings (No. 4). The addition of the POS tag distributions and the context word distributions improves all token accuracy </context>
+<context position="30432" citStr="Bohnet and Nivre (2012)" startWordPosition="5339" endWordPosition="5342">es. Since it shows the best accuracy for all tokens on the development set, we refer to Lp(p = 2) with 48 hidden variables and the group size of 8 (No. 3 in Table 3) as our representative tagger and denote it as Lp(p = 2) in the rest of discussion. In Table 4a, we compare our result with the previously reported results and we see that our tagger outperforms the current state-of-the-art systems on PTB for the accuracies of all tokens and unknown tokens. In addition, since our tagger was trained using the dependency tree annotations as described in Section 3.3, we compare it with the results of Bohnet and Nivre (2012) which is also trained using both POS tag and dependency annotations. Although their focus is on the dependency pars945 −0.8 −0.4 0.0 PC4 −0.8 −0.2 0.4 −1.5 −0.5 (b) PCA of the hidden activations of LP(p = 2) PC2 PC3 PC1 −0.8 −0.2 −0.5 0.0 0.5 −0.8 −0.2 0.4 −1.5 −0.5 −0.5 0.5 VB VBD VBG VBN VBP VBZ −1.0 0.0 1.0 −1.5 0.0 1.0 −4 −2 0 −2.5 −1.0 0.5 PC1 PC2 PC3 PC4 −1.0 0.0 1.0 −4 −2 0 −2.5 −1.0 0.5 −1.5 −0.5 0.5 VB VBD VBG VBN VBP VBZ (a) PCA of the raw features Figure 2: Scatter plots of verbs for all combinations between the first four principal components of the raw features and the activation</context>
+<context position="33651" citStr="Bohnet and Nivre (2012)" startWordPosition="5904" endWordPosition="5907">e studies is model combinations. Suzuki and Isozaki (2008) combined generative and discriminative models, Spoustov´a et al. (2009) used the combination of three taggers to generate automatically annotated corpus, and Søgaard (2011) used the outputs of a supervised tagger and an unsupervised tagger as the feature space of the kNN. Our work also follows this trend since neural networks can be considered as non-linear integration of several linear classifiers. Apart from POS tagging, some previous studies in parsing used the discretization method to handle the combination of continuous features. Bohnet and Nivre (2012) binned the difference of two con946 tinuous features in discrete steps of a predefined small interval. Bansal et al. (2014) used the conjunction of discretized features and studied two discretization methods: One is the binning of real values into discrete steps and the other is a hard clustering of continuous feature vectors. It is not easy to determine the optimal intervals for the binning method, and the clustering method is unsupervised so that the clusters are not guaranteed for good representations of the target tasks. To capture rich syntactic information for Chinese POS tagging, Sun a</context>
+</contexts>
+<marker>Bohnet, Nivre, 2012</marker>
+<rawString>Bernd Bohnet and Joakim Nivre. 2012. A transitionbased system for joint part-of-speech tagging and labeled non-projective dependency parsing. In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLPCoNLL), pages 1455–1465.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y-Lan Boureau</author>
+<author>Jean Ponce</author>
+<author>Yann LeCun</author>
+</authors>
+<title>A theoretical analysis of feature pooling in visual recognition.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>111--118</pages>
+<contexts>
+<context position="19255" citStr="Boureau et al. (2010)" startWordPosition="3363" endWordPosition="3366"> ∂θ = ∂hi ∂vid jˆ = argmax vij ∂θ = ∂θ , where 1&lt;j&lt;G 3. Normalized Lp-pooling (Lp) (Gulcehre et al., 2014): � 1 G �|vij|p � for all {i|1 ≤ i ≤ |V | hi = � G j=1 G }. � |vi,j|p � 1 G G j=1 −1 . 942 The activation inputs for each predefined group, {v1j, ... , vGj}, are aggregated by a non-linear function in MAXOUT or Lp activation functions, while each input is transformed into a corresponding hidden variable in the ReLUs. When the number of parameters required for these activation functions is the same, the number of output variables h for MAXOUT and Lp is one-G-th smaller than that for ReLUs. Boureau et al. (2010) show pooling operations theoretically reduce the variance of hidden activations, and our experimental results also show MAXOUT and Lp perform better than the ReLUs with the same number of parameters. Note that MAXOUT is a special case of unnormalized Lp pooling when p = ∞ and vj &gt; 0 for all j (Zhang et al., 2014). Figure 1 summarizes the proposed architecture with a single hidden layer and a pooling activation function. 4.3 Hyper-parameter search Finally, the subgradients of the neural network, fnn(z, y), can be computed through standard back-propagation algorithms and we can apply them in Al</context>
+</contexts>
+<marker>Boureau, Ponce, LeCun, 2010</marker>
+<rawString>Y-Lan Boureau, Jean Ponce, and Yann LeCun. 2010. A theoretical analysis of feature pooling in visual recognition. In Proceedings of the International Conference on Machine Learning (ICML), pages 111–118.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jinho D Choi</author>
+<author>Martha Palmer</author>
+</authors>
+<title>Fast and robust part-of-speech tagging using dynamic model selection.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL),</booktitle>
+<pages>363--367</pages>
+<contexts>
+<context position="5338" citStr="Choi and Palmer (2012)" startWordPosition="833" endWordPosition="836"> representations for POS tagging. The remainder of this paper is organized as follows. Section 2 introduces our deterministic tagger and its learning algorithm. Section 3 describes the continuous features that represent corpus-wide information and Section 4 is about the neural network we used. Section 5 presents our empirical study of the effects of corpus-wide information and neural networks on English POS tagging tasks. Section 6 describes related work, and Section 7 concludes and suggests items for future work. 2 Transition-based tagging Our tagging model is a deterministic tagger based on Choi and Palmer (2012), which is a one-pass, left-to-right tagging algorithm that uses well-tuned binary features. Let x = (x1, x2,. . . , xT) ∈ XT be an input token sequence of length T and y = (y1, y2,. .. , yT) ∈ YT be a corresponding POS tag sequence of x. We denote the predicted tags by a tagger as y� and the subsequence from r to t as ytr. The prediction of the t-th tag is deterministically done by the classifier: yt = argmax fe(zt, y), (1) y∈Y where fe is a scoring function with arbitrary parameters, 0 ∈ Rd, that are to be learned and zt is an arbitrary feature representation of the t-th position using x and</context>
+<context position="7560" citStr="Choi and Palmer (2012)" startWordPosition="1244" endWordPosition="1247">(Duchi et al., 2010), we use per-coordinate learning rates for {i|1 ≤ i &lt; d}: ηi = k αi j�Ek βi + l=1(gli)2 where α ≥ 0 and β ≥ 0. Although the naive implementation may require O(k) computation in the k-th iteration, FTRL-Proximal can be implemented efficiently by maintaining two length-d vectors, m = Ekl gl − 1 27�0l and n = Ekl (gli)2 (McMahan et al., 2013). Second, to overcome the error propagation problem, we train the classifier with a simple variant of the on-the-fly example generation algorithm from Goldberg and Nivre (2012). Since the scoring function refers to the prediction history, Choi and Palmer (2012) uses the gold POS tags, yt−1 1 , to generate training examples, which means they assume all of the past decisions are correct. However, this causes error propagation problems, since each state depends on the history of the past decisions. Therefore, at the k-th iteration and the t-th position of the input sequence, we simply use the predictions of the previously learned classifiers to generate training examples, i.e., Pt−r = argmax fek_,.(zt−r, y) y∈Y for all {r|1 ≤ r &lt; t − 1}. Although it is not theoretically justified, it empirically runs as a k 0k = argminy: e l=1 I, 939 stochastic version</context>
+<context position="11666" citStr="Choi and Palmer (2012)" startWordPosition="1988" endWordPosition="1991"> features since the word vectors compactly represent the distribution of the context in which a word appears. We normalized the word embeddings to unit length and used the average vector of training vocabulary for the unknown tokens. 3.2 POS tag distribution In a way similar to Schmid (1994), we use POS tag distribution over a training corpus. Each word is represented by a vector of length |Y |in which the y-th element is the conditional probabilities with which that word gets the y-th POS tag. We also use the POS tag distributions of the affixes and θki = 940 spelling binary features used in Choi and Palmer (2012). We cite the definitions of these features. 1. Affix: c:1, c:2, c:3, cn:, cn−1:, cn−2:, cn−3: where c∗ is a character string in a word. For example c:2 is the prefix of length two of a word and cn−1: is the suffix of length two of a word. 2. Spelling: initial uppercase, all uppercase, all lowercase, contains 1/2+ capital(s) not at the beginning, contains a (period/number/hyphen). The probabilities for a feature b is estimated with additive smoothing as C(b, y) + 1 P(y|b) = (2) C(b) + |Y | where C(b) and C(b, y) are the counts of b and co-occurrences of b and y, respectively. In addition, an e</context>
+<context position="22583" citStr="Choi and Palmer (2012)" startWordPosition="3933" endWordPosition="3936">used tagged sentences from the parse trees (Toutanova et al., 2003) and followed the standard approach of splitting the PTB, using sections 0–18 for training, section 19– 21 for development, and section 22–24 for testing (Table 1). In addition, we used the CoNLL2009 data sets with the training, development, and test splits used in the shared task (Hajiˇc et al., 2009) for better comparison with a joint model of POS tagging and dependency parsing (Bohnet and Nivre, 2012). Our baseline tagger was trained by Algorithm 1. As discrete features for our tagger, we used the same binary feature set as Choi and Palmer (2012) which is composed of (a) 1, 2,3-grams of the surface word-forms and their predicted/dominated POS tags, (b) the prefixes and suffixes of the words, and (c) the spelling types of the words. In the same way as Choi and Palmer (2012), we used lowercase simplified word-forms which appeared at least 3 times. 943 Window size # w2v glv pos stg cw - - - - - 3 - - - - - 3 - - - 3 3 - - - 3 3 3 - 1 3 3 3 1 1 3 3 3 3 1 3 3 6 - 1 3 3 6 3 1 1 2 3 4 5 6 7 8 9 In addition to their binary features, we used continuous features which are the concatenation of the corpus-wide features in a context window. The wi</context>
+<context position="26421" citStr="Choi and Palmer (2012)" startWordPosition="4619" endWordPosition="4622">that do not appear in the training set. 5.2 Results Table 2 shows the accuracies of the linear models on PTB with different window sizes for the continuous features. The window sizes of the word embeddings (word2vec and glove) in Section 3.1, POS tag distributions in Section 3.2, supertag distributions in Section 3.3, and context word distributions in Section 3.4 are shown in the columns of w2v, glv, pos, stg, and cw, respectively. Note that “-” denotes the corresponding feature was not used at all and the first row with all “-” denotes the results only using the original binary features from Choi and Palmer (2012). The window sizes in Table 2 are chosen mainly to investigate the effect of the word2vec embeddings, glove embeddings, and supertag distributions, since they had not previously been used for POS tagging. The additions of the word embeddings improve all token accuracy by about 0.2 points according to the results shown in Nos. 1, 2, 3. Although both word embeddings improved the accuracy of the unknown tokens, the gain of the glove embeddings (No. 3) is larger than that of the 944 # Neural Network Settings Group size (G) Development Set Test Set Activation functions #Hidden All Unk. All Unk. 1 L</context>
+</contexts>
+<marker>Choi, Palmer, 2012</marker>
+<rawString>Jinho D. Choi and Martha Palmer. 2012. Fast and robust part-of-speech tagging using dynamic model selection. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL), pages 363–367.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ronan Collobert</author>
+<author>Jason Weston</author>
+<author>L´eon Bottou</author>
+<author>Michael Karlen</author>
+<author>Koray Kavukcuoglu</author>
+<author>Pavel P Kuksa</author>
+</authors>
+<title>Natural language processing (almost) from scratch.</title>
+<date>2011</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>12--2493</pages>
+<contexts>
+<context position="3025" citStr="Collobert et al. (2011)" startWordPosition="471" endWordPosition="474">OS tagging in previous work (Nakamura et al., 1990; Schmid, 1994; Schnabel and Sch¨utze, 2014; Huang and Yates, 2009), we propose a neural network approach to capture the non-linear interactions of these features. By feeding these features into neural networks as an input vector, we can expect our tagger can handle not only the nonlinearity of the N-grams of the same kinds of features but also the non-linear interactions among the different kind of features. Our tagger combines a linear model using sparse high-dimensional features and a neural network using continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks without depending on the feature engineering of conventional NLP methods, our architecture is more practical because it integrates the neural networks into a well-tuned conventional method. Thus, our tagger enjoys both the manually explored combinations of discrete features and the automatically learned non-linearity of the continuous features. We also studied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks</context>
+<context position="10355" citStr="Collobert et al., 2011" startWordPosition="1766" endWordPosition="1770">nd the speed is important because the neural network extension described later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each w</context>
+</contexts>
+<marker>Collobert, Weston, Bottou, Karlen, Kavukcuoglu, Kuksa, 2011</marker>
+<rawString>Ronan Collobert, Jason Weston, L´eon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel P. Kuksa. 2011. Natural language processing (almost) from scratch. Journal of Machine Learning Research, 12:2493–2537.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Yoram Singer</author>
+</authors>
+<title>On the algorithmic implementation of multiclass kernel-based vector machines.</title>
+<date>2001</date>
+<journal>Journal of Machine Learning Research,</journal>
+<pages>2--265</pages>
+<contexts>
+<context position="9146" citStr="Crammer and Singer, 2001" startWordPosition="1568" endWordPosition="1571">en g =∂uℓ(zt, yt, y) ▷ Subgradient For all i ∈ I compute �� ) σi = ni + g2 i − √ni /αi mi ← mi + gi − σiui ni ← ni + g2i end if k ← k + 1 end for end while return 0k end function function UPDATE(α,β, A1, A2, m, n, 0k) for i ∈ I do { 0 if |mi |≤ λ1 −mi+ sgn(mi)λ1 otherwise (βiλ2+,/ni)/αi+λ2 ui ← θk i if acceleration then ui ← θki + kk r0ki − θk−1) end if l end for for i ∉ I do ui ← θk i ← θk−1 i ▷ Leaving all θ for inactive i unchanged end for return u end function Algorithm 1 summarizes our training process where ℓ(zt, yt, y) := max(0,1 − fo(zt, y) + fo(zt, y)) is the multi-class hinge loss (Crammer and Singer, 2001). I in Algorithm 1 is a set of parameter indexes that correspond to the non-zero features, so the update is sparse for sparse features. In addition, for the parameter update of the neural networks, we also use an accelerated proximal method (Parikh and Boyd, 2013), which is considered as a variant of the momentum methods (Sutskever et al., 2013). Although u and 0 are the same when the acceleration is not used, u in Algorithm 1 is an extrapolation step in the accelerated method. Although we do not focus on the learning algorithm in this work, the algorithm converges quite quickly and the speed </context>
+</contexts>
+<marker>Crammer, Singer, 2001</marker>
+<rawString>Koby Crammer and Yoram Singer. 2001. On the algorithmic implementation of multiclass kernel-based vector machines. Journal of Machine Learning Research, 2:265–292.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hal Daum´e John Langford</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Search-based structured prediction.</title>
+<date>2009</date>
+<journal>Machine Learning Journal,</journal>
+<volume>75</volume>
+<issue>3</issue>
+<marker>Langford, Marcu, 2009</marker>
+<rawString>Hal Daum´e III, John Langford, and Daniel Marcu. 2009. Search-based structured prediction. Machine Learning Journal, 75(3):297–325, June.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John C Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Conference on Learning Theory (COLT),</booktitle>
+<pages>257--269</pages>
+<contexts>
+<context position="6958" citStr="Duchi et al., 2010" startWordPosition="1137" endWordPosition="1140">per, they are explained in detail in Sections 3 and 4 and we describe only (1) here. First, our learning algorithm trains a multi-class SVM with L1 and L2 regularization based on Follow the Proximally Regularized Leader (FTRLProximal) (McMahan, 2011). In the k-th iteration, the parameter update is done by jgl · 0+ 21l ��0−0l 2 I +R(0), where gk ∈ Rd is a subgradient of the hinge loss function and R(0) = A1 ||0||1 + X2 2 ||0||2 2 is the composite function of the L1 and L2 regularization terms with hyper-parameters A1 ≥ 0 and A2 ≥ 0. To incorporate an adaptive learning rate scheduling, Adagrad (Duchi et al., 2010), we use per-coordinate learning rates for {i|1 ≤ i &lt; d}: ηi = k αi j�Ek βi + l=1(gli)2 where α ≥ 0 and β ≥ 0. Although the naive implementation may require O(k) computation in the k-th iteration, FTRL-Proximal can be implemented efficiently by maintaining two length-d vectors, m = Ekl gl − 1 27�0l and n = Ekl (gli)2 (McMahan et al., 2013). Second, to overcome the error propagation problem, we train the classifier with a simple variant of the on-the-fly example generation algorithm from Goldberg and Nivre (2012). Since the scoring function refers to the prediction history, Choi and Palmer (201</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2010</marker>
+<rawString>John C. Duchi, Elad Hazan, and Yoram Singer. 2010. Adaptive subgradient methods for online learning and stochastic optimization. In Proceedings of the Conference on Learning Theory (COLT), pages 257–269.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jes´us Gim´enez</author>
+<author>Llufs M`arquez</author>
+</authors>
+<title>Fast and accurate part-of-speech tagging: The svm approach revisited.</title>
+<date>2003</date>
+<booktitle>In Proceedings of RecentAdvances in Natural Language Processing (RANLP),</booktitle>
+<pages>153--163</pages>
+<marker>Gim´enez, M`arquez, 2003</marker>
+<rawString>Jes´us Gim´enez and Llufs M`arquez. 2003. Fast and accurate part-of-speech tagging: The svm approach revisited. In Proceedings of RecentAdvances in Natural Language Processing (RANLP), pages 153–163.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Goldberg</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>A dynamic oracle for arc-eager dependency parsing.</title>
+<date>2012</date>
+<booktitle>In Proceedings of International Conference on Computational Linguistics (COLING),</booktitle>
+<pages>959--976</pages>
+<contexts>
+<context position="7475" citStr="Goldberg and Nivre (2012)" startWordPosition="1230" endWordPosition="1233">ameters A1 ≥ 0 and A2 ≥ 0. To incorporate an adaptive learning rate scheduling, Adagrad (Duchi et al., 2010), we use per-coordinate learning rates for {i|1 ≤ i &lt; d}: ηi = k αi j�Ek βi + l=1(gli)2 where α ≥ 0 and β ≥ 0. Although the naive implementation may require O(k) computation in the k-th iteration, FTRL-Proximal can be implemented efficiently by maintaining two length-d vectors, m = Ekl gl − 1 27�0l and n = Ekl (gli)2 (McMahan et al., 2013). Second, to overcome the error propagation problem, we train the classifier with a simple variant of the on-the-fly example generation algorithm from Goldberg and Nivre (2012). Since the scoring function refers to the prediction history, Choi and Palmer (2012) uses the gold POS tags, yt−1 1 , to generate training examples, which means they assume all of the past decisions are correct. However, this causes error propagation problems, since each state depends on the history of the past decisions. Therefore, at the k-th iteration and the t-th position of the input sequence, we simply use the predictions of the previously learned classifiers to generate training examples, i.e., Pt−r = argmax fek_,.(zt−r, y) y∈Y for all {r|1 ≤ r &lt; t − 1}. Although it is not theoreticall</context>
+</contexts>
+<marker>Goldberg, Nivre, 2012</marker>
+<rawString>Yoav Goldberg and Joakim Nivre. 2012. A dynamic oracle for arc-eager dependency parsing. In Proceedings of International Conference on Computational Linguistics (COLING), pages 959–976.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ian J Goodfellow</author>
+<author>David Warde-Farley</author>
+<author>Mehdi Mirza</author>
+<author>Aaron C Courville</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Maxout networks.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>1319--1327</pages>
+<contexts>
+<context position="3543" citStr="Goodfellow et al., 2013" startWordPosition="547" endWordPosition="551">imensional features and a neural network using continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks without depending on the feature engineering of conventional NLP methods, our architecture is more practical because it integrates the neural networks into a well-tuned conventional method. Thus, our tagger enjoys both the manually explored combinations of discrete features and the automatically learned non-linearity of the continuous features. We also studied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-th</context>
+<context position="18480" citStr="Goodfellow et al., 2013" startWordPosition="3202" endWordPosition="3205"> review several activation functions here. Let v ∈ R|V |be the input of an activation function and each element is vj = θnn,j · h′ + θbias,j, where θnn,j is the parameter vector for vj and θbias,j is the bias parameter for vj. We also assume v is divided into groups of size G, and denote the j-th element of the i-th group as {vij|1 ≤ i ≤ |V |/G ∧ 1 ≤ j ≤ G}. We studied three activation functions: 1. Rectified linear units (ReLUs) (Nair and Hinton, 2010): hj = max(0,vj) for all {j|1 ≤ j ≤ |V |}. Note that a subgradient of ReLUs is ∂hj — ae if vj &gt; 0 ∂θ 0 otherwise. 2. Maxout networks (MAXOUT) (Goodfellow et al., 2013): vij for all {i|1 ≤ i ≤ |V | G }. Note that a subgradient of MAXOUT is Note that a subgradient of Lp is �vij|vij|p−2 � G hi = max 1&lt;j&lt;G G j=1 ∂hi ∂vij ∂θ ∂θ = ∂hi ∂vid jˆ = argmax vij ∂θ = ∂θ , where 1&lt;j&lt;G 3. Normalized Lp-pooling (Lp) (Gulcehre et al., 2014): � 1 G �|vij|p � for all {i|1 ≤ i ≤ |V | hi = � G j=1 G }. � |vi,j|p � 1 G G j=1 −1 . 942 The activation inputs for each predefined group, {v1j, ... , vGj}, are aggregated by a non-linear function in MAXOUT or Lp activation functions, while each input is transformed into a corresponding hidden variable in the ReLUs. When the number of pa</context>
+<context position="35219" citStr="Goodfellow et al., 2013" startWordPosition="6154" endWordPosition="6157">e way to incorporate syntactic information, automatically parsed large corpora may make the estimate of the supertag distributions more accurate. 7 Conclusion and Future Work We are studying a neural network approach to handle the non-linear interaction among corpus-wide statistics. For POS tagging, we used word embeddings, POS tag distributions, supertag distributions, and context word distributions in a context window. These features are beneficial, even for linear classifiers, but the neural networks leverage these features for improving tagging accuracies. Our tagger with Maxout networks (Goodfellow et al., 2013) or LP-pooling (Zhang et al., 2014; Gulcehre et al., 2014) show the state-of-the-art results on two English benchmark sets. Our empirical results suggest further opportunities to investigate continuous features not only for POS tagging but also for other NLP tasks. An obvious use case for continuous features is the N-best outputs with confidence values, which were predicted by the previous process in a NLP pipeline, such as the POS tags used for syntactic parsing. Another interesting extension is the use of on-the-fly features which reflect previous network states, although the neural networks</context>
+</contexts>
+<marker>Goodfellow, Warde-Farley, Mirza, Courville, Bengio, 2013</marker>
+<rawString>Ian J. Goodfellow, David Warde-Farley, Mehdi Mirza, Aaron C. Courville, and Yoshua Bengio. 2013. Maxout networks. In Proceedings of the International Conference on Machine Learning (ICML), pages 1319–1327.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ian J Goodfellow</author>
+<author>Mehdi Mirza</author>
+<author>Xia Da</author>
+<author>Aaron C Courville</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>An empirical investigation of catastrophic forgeting in gradientbased neural networks.</title>
+<date>2014</date>
+<booktitle>In Proceedings of International Conference on Learning Representations (ICLR).</booktitle>
+<contexts>
+<context position="21316" citStr="Goodfellow et al. (2014)" startWordPosition="3715" endWordPosition="3718">n the second stage with each hyper-parameter combination above, we select 8 random combinations of α, Q for both flinear and fnn and initial parameter ranges R for fnn. Here are the candidates of the three hyper-parameters: 1. α: {0.01,0.05,0.1,0.5,1,5}; Data Set #Sent. #Tokens #Unknown Training 38,219 912,344 0 Development 5,527 131,768 4,467 Testing 5,462 129,654 3,649 Table 1: Data set splits for PTB. 2. Q: {0.5,1,5}; 3. R: {[−0.1,0.1], [−0.05,0.05], [−0.01,0.01], [−0.005,0.005]}. The values of 0 for fnn are uniformly sampled in the range of the randomly selected R. Note that, according to Goodfellow et al. (2014), the biases 0bias are initialized as 0 for MAXOUT and Lp, and uniformly sampled from a range R + max(R), i.e., always initialized with non-negative values. The best combination for the development set is chosen after training that uses random 20% of the training set at the second stage, and Algorithm 1 is terminated when the all token accuracy of the development data has been declining for 5 epochs at the first stage. In other words, 32 × 8 random combinations of α, Q, and 0 for fnn were tested. 5 Experiments 5.1 Setup Our experiments were mainly performed using the Wall Street Journal from P</context>
+</contexts>
+<marker>Goodfellow, Mirza, Da, Courville, Bengio, 2014</marker>
+<rawString>Ian J. Goodfellow, Mehdi Mirza, Xia Da, Aaron C. Courville, and Yoshua Bengio. 2014. An empirical investigation of catastrophic forgeting in gradientbased neural networks. In Proceedings of International Conference on Learning Representations (ICLR).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Caglar Gulcehre</author>
+<author>Kyunghyun Cho</author>
+<author>Razvan Pascanu</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Learned-norm pooling for deep feedforward and recurrent neural networks.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the European Conference on Machine Learning and Principles and Practice of Knowledge Discovery in Databases (ECML/PKDD).</booktitle>
+<contexts>
+<context position="3582" citStr="Gulcehre et al., 2014" startWordPosition="554" endWordPosition="557">sing continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks without depending on the feature engineering of conventional NLP methods, our architecture is more practical because it integrates the neural networks into a well-tuned conventional method. Thus, our tagger enjoys both the manually explored combinations of discrete features and the automatically learned non-linearity of the continuous features. We also studied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic</context>
+<context position="18740" citStr="Gulcehre et al., 2014" startWordPosition="3261" endWordPosition="3264">oups of size G, and denote the j-th element of the i-th group as {vij|1 ≤ i ≤ |V |/G ∧ 1 ≤ j ≤ G}. We studied three activation functions: 1. Rectified linear units (ReLUs) (Nair and Hinton, 2010): hj = max(0,vj) for all {j|1 ≤ j ≤ |V |}. Note that a subgradient of ReLUs is ∂hj — ae if vj &gt; 0 ∂θ 0 otherwise. 2. Maxout networks (MAXOUT) (Goodfellow et al., 2013): vij for all {i|1 ≤ i ≤ |V | G }. Note that a subgradient of MAXOUT is Note that a subgradient of Lp is �vij|vij|p−2 � G hi = max 1&lt;j&lt;G G j=1 ∂hi ∂vij ∂θ ∂θ = ∂hi ∂vid jˆ = argmax vij ∂θ = ∂θ , where 1&lt;j&lt;G 3. Normalized Lp-pooling (Lp) (Gulcehre et al., 2014): � 1 G �|vij|p � for all {i|1 ≤ i ≤ |V | hi = � G j=1 G }. � |vi,j|p � 1 G G j=1 −1 . 942 The activation inputs for each predefined group, {v1j, ... , vGj}, are aggregated by a non-linear function in MAXOUT or Lp activation functions, while each input is transformed into a corresponding hidden variable in the ReLUs. When the number of parameters required for these activation functions is the same, the number of output variables h for MAXOUT and Lp is one-G-th smaller than that for ReLUs. Boureau et al. (2010) show pooling operations theoretically reduce the variance of hidden activations, and</context>
+<context position="35277" citStr="Gulcehre et al., 2014" startWordPosition="6164" endWordPosition="6168">rsed large corpora may make the estimate of the supertag distributions more accurate. 7 Conclusion and Future Work We are studying a neural network approach to handle the non-linear interaction among corpus-wide statistics. For POS tagging, we used word embeddings, POS tag distributions, supertag distributions, and context word distributions in a context window. These features are beneficial, even for linear classifiers, but the neural networks leverage these features for improving tagging accuracies. Our tagger with Maxout networks (Goodfellow et al., 2013) or LP-pooling (Zhang et al., 2014; Gulcehre et al., 2014) show the state-of-the-art results on two English benchmark sets. Our empirical results suggest further opportunities to investigate continuous features not only for POS tagging but also for other NLP tasks. An obvious use case for continuous features is the N-best outputs with confidence values, which were predicted by the previous process in a NLP pipeline, such as the POS tags used for syntactic parsing. Another interesting extension is the use of on-the-fly features which reflect previous network states, although the neural networks in our current work do not refer to the prediction histor</context>
+</contexts>
+<marker>Gulcehre, Cho, Pascanu, Bengio, 2014</marker>
+<rawString>Caglar Gulcehre, Kyunghyun Cho, Razvan Pascanu, and Yoshua Bengio. 2014. Learned-norm pooling for deep feedforward and recurrent neural networks. In Proceedings of the European Conference on Machine Learning and Principles and Practice of Knowledge Discovery in Databases (ECML/PKDD).</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Jan Hajiˇc</author>
+<author>Massimiliano Ciaramita</author>
+<author>Richard Johansson</author>
+<author>Daisuke Kawahara</author>
+<author>Maria Ant`onia Martf</author>
+<author>Llufs M`arquez</author>
+<author>Adam Meyers</author>
+<author>Joakim Nivre</author>
+<author>Sebastian Pad´o</author>
+<author>Jan ˇStˇep´anek</author>
+<author>Pavel Straˇn´ak</author>
+<author>Mihai Surdeanu</author>
+<author>Nianwen Xue</author>
+<author>Yi Zhang</author>
+</authors>
+<title>The CoNLL2009 shared task: Syntactic and semantic dependencies in multiple languages.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Conference on Computational Natural Language Learning (CoNLL),</booktitle>
+<pages>1--18</pages>
+<marker>Hajiˇc, Ciaramita, Johansson, Kawahara, Martf, M`arquez, Meyers, Nivre, Pad´o, ˇStˇep´anek, Straˇn´ak, Surdeanu, Xue, Zhang, 2009</marker>
+<rawString>Jan Hajiˇc, Massimiliano Ciaramita, Richard Johansson, Daisuke Kawahara, Maria Ant`onia Martf, Llufs M`arquez, Adam Meyers, Joakim Nivre, Sebastian Pad´o, Jan ˇStˇep´anek, Pavel Straˇn´ak, Mihai Surdeanu, Nianwen Xue, and Yi Zhang. 2009. The CoNLL2009 shared task: Syntactic and semantic dependencies in multiple languages. In Proceedings of the Conference on Computational Natural Language Learning (CoNLL), pages 1–18.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Fei Huang</author>
+<author>Alexander Yates</author>
+</authors>
+<title>Distributional representations for handling sparsity in supervised sequence-labeling.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics and the International Joint Conference on Natural Language Processing (ACL/IJCNLP),</booktitle>
+<pages>495--503</pages>
+<contexts>
+<context position="1617" citStr="Huang and Yates, 2009" startWordPosition="241" endWordPosition="244">c parsing mainly use sparse discrete features to represent local information such as word surfaces in a sizelimited window. The non-linearity of those discrete features is often used in many NLP tasks since the simple conjunction (AND) of discrete features represents the co-occurrence of the features and is intuitively understandable. In addition, the thresholding of these combinatorial features by simple counts effectively suppresses the combinatorial increase of the parameters. At the same time, although global information had also been used in several reports (Nakagawa and Matsumoto, 2006; Huang and Yates, 2009; Turian et al., 2010; Schnabel and Sch¨utze, 2014), the nonlinear interactions of these features were not well investigated since these features are often dense continuous features and the explicit non-linear expansions are counterintuitive and drastically increase the number of the model parameters. In our work, we investigate neural networks used to represent the non-linearity of global information for POS tagging in a compact way. We focus on four kinds of corpus-wide information: (1) word embeddings, (2) POS tag distributions, (3) supertag distributions, and (4) context word distributions</context>
+</contexts>
+<marker>Huang, Yates, 2009</marker>
+<rawString>Fei Huang and Alexander Yates. 2009. Distributional representations for handling sparsity in supervised sequence-labeling. In Proceedings of the Annual Meeting of the Association for Computational Linguistics and the International Joint Conference on Natural Language Processing (ACL/IJCNLP), pages 495–503.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Quoc V Le</author>
+<author>Tam´as Sarl´os</author>
+<author>Alexander J Smola</author>
+</authors>
+<title>Fastfood - computing Hilbert space expansions in loglinear time.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>244--252</pages>
+<marker>Le, Sarl´os, Smola, 2013</marker>
+<rawString>Quoc V. Le, Tam´as Sarl´os, and Alexander J. Smola. 2013. Fastfood - computing Hilbert space expansions in loglinear time. In Proceedings of the International Conference on Machine Learning (ICML), pages 244–252.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Omer Levy</author>
+<author>Yoav Goldberg</author>
+</authors>
+<title>Linguistic regularities in sparse and explicit word representations.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Thirteenth Conference on Computational Natural Language Learning (CoNLL).</booktitle>
+<contexts>
+<context position="14335" citStr="Levy and Goldberg (2014)" startWordPosition="2460" endWordPosition="2463">3.2. Since a word can have more than one dependent, the dependent supertag features are no longer multinomial distributions but we used them in that way. Note that, since the feature values are calculated using the tree annotations from training set, our tagger does not require any dependency parser at runtime. 3.4 Context word distribution This is the simplest distributional features in which each word is represented by the distributions of its left and right neighbors. Although the context word distribution is similar to word embeddings, we believe they complement each other, as reported by Levy and Goldberg (2014). Following Schnabel and Sch¨utze (2014), we restricted the set of indicator words to the 500 most frequent words in the corpus, and used two special feature entries: One is the marginal probability of the nonindicator words and the other is the probabilities of neighboring sentence boundaries. The conditional probabilities for left and right neighbors are estimated in the same way as Equation 2 in Section 3.2, and there are a total of 1, 004 dimensions of this feature for a word. 4 Neural Networks The non-linearity of the discrete features has been exploited in many NLP tasks, since the simpl</context>
+</contexts>
+<marker>Levy, Goldberg, 2014</marker>
+<rawString>Omer Levy and Yoav Goldberg. 2014. Linguistic regularities in sparse and explicit word representations. In Proceedings of the Thirteenth Conference on Computational Natural Language Learning (CoNLL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ji Ma</author>
+<author>Yue Zhang</author>
+<author>Tong Xiao</author>
+<author>Jingbo Zhu</author>
+</authors>
+<title>Tagging the Web: Building a robust web tagger with neural network.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL). The Association</booktitle>
+<institution>for Computer Linguistics.</institution>
+<contexts>
+<context position="36952" citStr="Ma et al. (2014)" startWordPosition="6434" endWordPosition="6437"> has a clear benefit over kernel methods in that the test-time computational cost of neural networks is independent from training data. However, although the test-time speed of original kernel methods is proportional to the number of training data, recent development of kernel approximation techniques achieve significant speed improvements (Le et al., 2013; Pham and Pagh, 2013). Since this work shows the non-linearity of continuous features should be exploited, those approximated kernel methods may also improve the tagging accuracies without sacrifice tagging speed. Independent from our work, Ma et al. (2014) and Santos and Zadrozny (2014) also recently proposed neural network approaches for POS tagging. Ma et al. (2014)’s approach is similar to our approach, with a combination of a linear model and a neural network, although a direct comparison is not easy since their focus is the Web domain adaptation of POS tagging. Remarkably, they report ngram embeddings are better than single word embeddings. Santos and Zadrozny (2014) proposed character-level embedding to capture the morphological and shape information for POS tagging. Although the reported accuracy (97.32%) on PTB data is lower than state </context>
+</contexts>
+<marker>Ma, Zhang, Xiao, Zhu, 2014</marker>
+<rawString>Ji Ma, Yue Zhang, Tong Xiao, and Jingbo Zhu. 2014. Tagging the Web: Building a robust web tagger with neural network. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL). The Association for Computer Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christopher D Manning</author>
+</authors>
+<title>Part-of-speech tagging from 97% to 100%: Is it time for some linguistics?</title>
+<date>2011</date>
+<booktitle>In Proceedings of Conference on Intelligent Text Processing and Computational Linguistics (CICLing),</booktitle>
+<pages>171--189</pages>
+<contexts>
+<context position="27378" citStr="Manning (2011)" startWordPosition="4801" endWordPosition="4802">gh both word embeddings improved the accuracy of the unknown tokens, the gain of the glove embeddings (No. 3) is larger than that of the 944 # Neural Network Settings Group size (G) Development Set Test Set Activation functions #Hidden All Unk. All Unk. 1 Linear model - - 97.45 90.22 97.46 91.39 2 ReLUs 384 1 97.45 90.87 97.42 91.04 3 Lp(p = 2) 48 8 97.52 90.91 97.51 91.64 4 Lp(p = 3) 32 8 97.51 90.91 97.51 91.53 5 MAXOUT 48 8 97.50 90.89 97.50 91.67 6 Lp(p = 2) (w/o linear part) 48 8 97.39 91.18 97.40 91.23 Table 3: Development and test accuracies of all tokens and unknown tokens (%) on PTB. Manning (2011) Tagger Søgaard (2011) Lp(p = 2) (a) Test accuracies on PTB All 97.32 97.50 97.51 90.79 91.64 Unk. N/A Bohnet and Nivre (2012) Tagger Lp(p = 2) (b) Test accuracies on CoNLL2009 All 97.84 98.02 92.01 Unk. N/A Table 4: Test accuracies of all tokens and unknown tokens (%) comparing with the previously reported results word2vec (No. 2). The reason for this difference in the two embeddings may be because the training data for the glove vectors is 8 times larger than that for the word2vec vectors. The usage of the two word embeddings shows further improvement in the tagging accuracy over single word</context>
+</contexts>
+<marker>Manning, 2011</marker>
+<rawString>Christopher D. Manning. 2011. Part-of-speech tagging from 97% to 100%: Is it time for some linguistics? In Proceedings of Conference on Intelligent Text Processing and Computational Linguistics (CICLing), pages 171–189.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mitchell P Marcus</author>
+<author>Beatrice Santorini</author>
+<author>Mary Ann Marcinkiewicz</author>
+</authors>
+<title>Building a large annotated corpus of english: The Penn treebank.</title>
+<date>1993</date>
+<journal>Computational Linguistics,</journal>
+<volume>19</volume>
+<issue>2</issue>
+<contexts>
+<context position="4323" citStr="Marcus et al., 1993" startWordPosition="666" endWordPosition="669">dings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic tasks. Our neural tagger shows state-ofthe-art results: 97.51% accuracy in the standard benchmark on the Penn Treebank (Marcus et al., 1993) and 98.02% accuracy in POS tagging on CoNLL2009 (Hajiˇc et al., 2009). In our experiments, we found that the selection of the activation functions led to large differences in the tagging accuracies. We also observed that the POS tags of the words are effectively clustered by the hidden activations of the intermediate layer. This observation is evidence that the neural network can find good representations for POS tagging. The remainder of this paper is organized as follows. Section 2 introduces our deterministic tagger and its learning algorithm. Section 3 describes the continuous features th</context>
+<context position="21956" citStr="Marcus et al., 1993" startWordPosition="3827" endWordPosition="3830">re initialized as 0 for MAXOUT and Lp, and uniformly sampled from a range R + max(R), i.e., always initialized with non-negative values. The best combination for the development set is chosen after training that uses random 20% of the training set at the second stage, and Algorithm 1 is terminated when the all token accuracy of the development data has been declining for 5 epochs at the first stage. In other words, 32 × 8 random combinations of α, Q, and 0 for fnn were tested. 5 Experiments 5.1 Setup Our experiments were mainly performed using the Wall Street Journal from Penn Treebank (PTB) (Marcus et al., 1993). We used tagged sentences from the parse trees (Toutanova et al., 2003) and followed the standard approach of splitting the PTB, using sections 0–18 for training, section 19– 21 for development, and section 22–24 for testing (Table 1). In addition, we used the CoNLL2009 data sets with the training, development, and test splits used in the shared task (Hajiˇc et al., 2009) for better comparison with a joint model of POS tagging and dependency parsing (Bohnet and Nivre, 2012). Our baseline tagger was trained by Algorithm 1. As discrete features for our tagger, we used the same binary feature se</context>
+<context position="24528" citStr="Marcus et al., 1993" startWordPosition="4308" endWordPosition="4311">, we used the Stanford parser v2.0.43 to convert from phrase structures to dependency structures so that the dependency relation labels of the Stanford dependencies are used. The size of the supertag set is 85 for both heads and dependents in our experiments. In the experiments on CoNLL2009, the dependency structures and labels defined in CoNLL2009 are used and the size of supertag set is 99 for both heads and dependents. Context word distribution To count the neighboring words in our experiments, we used sections 0–18 of the Wall Street Journal and all of the Brown corpus from Penn Treebank (Marcus et al., 1993). Since the training of the neural networks is computationally demanding, first, we trained the linear classifiers using Algorithm 1 to select the best window sizes for each corpus-wide information of Section 3. Then the best window size setting for the development set of PTB was used for training the neural networks described in Section 4. 1The pre-trained vectors are available at https:// code.google.com/p/word2vec 2The pre-trained vectors are available at http://nlp. stanford.edu/projects/glove/ 3http://nlp.stanford.edu/software/ lex-parser.shtml Accuracy (%) All Unk. 97.15 86.81 97.36 88.9</context>
+</contexts>
+<marker>Marcus, Santorini, Marcinkiewicz, 1993</marker>
+<rawString>Mitchell P. Marcus, Beatrice Santorini, and Mary Ann Marcinkiewicz. 1993. Building a large annotated corpus of english: The Penn treebank. Computational Linguistics, 19(2):313–330.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>H Brendan McMahan</author>
+<author>Gary Holt</author>
+<author>David Sculley</author>
+<author>Michael Young</author>
+<author>Dietmar Ebner</author>
+<author>Julian Grady</author>
+<author>Lan Nie</author>
+<author>Todd Phillips</author>
+<author>Eugene Davydov</author>
+<author>Daniel Golovin</author>
+</authors>
+<title>Sharat Chikkerur,</title>
+<date></date>
+<booktitle>In Proceedings of the ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD),</booktitle>
+<pages>1222--1230</pages>
+<location>Dan Liu, Martin Wattenberg, Arnar</location>
+<marker>McMahan, Holt, Sculley, Young, Ebner, Grady, Nie, Phillips, Davydov, Golovin, </marker>
+<rawString>H. Brendan McMahan, Gary Holt, David Sculley, Michael Young, Dietmar Ebner, Julian Grady, Lan Nie, Todd Phillips, Eugene Davydov, Daniel Golovin, Sharat Chikkerur, Dan Liu, Martin Wattenberg, Arnar Mar Hrafnkelsson, Tom Boulos, and Jeremy Kubica. 2013. Ad click prediction: a view from the trenches. In Proceedings of the ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD), pages 1222– 1230.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Brendan McMahan</author>
+</authors>
+<title>Follow-the-regularizedleader and mirror descent: Equivalence theorems and L1 regularization.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Fourteenth International Conference on Artificial Intelligence and Statistics (AISTATS),</booktitle>
+<pages>525--533</pages>
+<contexts>
+<context position="6589" citStr="McMahan, 2011" startWordPosition="1066" endWordPosition="1067">ory of the previous tokens. We extend Choi and Palmer (2012) in three ways: (1) an online SVM learning algorithm with L1 and L2 regularization, (2) continuous features for corpus-wide information, and (3) the composite function of a linear model for discrete features and a non-linear model for continuous features. Since (2) and (3) are the main topics of this paper, they are explained in detail in Sections 3 and 4 and we describe only (1) here. First, our learning algorithm trains a multi-class SVM with L1 and L2 regularization based on Follow the Proximally Regularized Leader (FTRLProximal) (McMahan, 2011). In the k-th iteration, the parameter update is done by jgl · 0+ 21l ��0−0l 2 I +R(0), where gk ∈ Rd is a subgradient of the hinge loss function and R(0) = A1 ||0||1 + X2 2 ||0||2 2 is the composite function of the L1 and L2 regularization terms with hyper-parameters A1 ≥ 0 and A2 ≥ 0. To incorporate an adaptive learning rate scheduling, Adagrad (Duchi et al., 2010), we use per-coordinate learning rates for {i|1 ≤ i &lt; d}: ηi = k αi j�Ek βi + l=1(gli)2 where α ≥ 0 and β ≥ 0. Although the naive implementation may require O(k) computation in the k-th iteration, FTRL-Proximal can be implemented e</context>
+</contexts>
+<marker>McMahan, 2011</marker>
+<rawString>H. Brendan McMahan. 2011. Follow-the-regularizedleader and mirror descent: Equivalence theorems and L1 regularization. In Proceedings of the Fourteenth International Conference on Artificial Intelligence and Statistics (AISTATS), pages 525–533.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gr´egoire Mesnil</author>
+<author>Xiaodong He</author>
+<author>Li Deng</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Investigation of recurrent-neuralnetwork architectures and learning methods for spoken language understanding.</title>
+<date>2013</date>
+<booktitle>In Proceedings of Annual Conference of the International Speech Communication Association (INTERSPEECH),</booktitle>
+<pages>3771--3775</pages>
+<contexts>
+<context position="36009" citStr="Mesnil et al. (2013)" startWordPosition="6282" endWordPosition="6285">ities to investigate continuous features not only for POS tagging but also for other NLP tasks. An obvious use case for continuous features is the N-best outputs with confidence values, which were predicted by the previous process in a NLP pipeline, such as the POS tags used for syntactic parsing. Another interesting extension is the use of on-the-fly features which reflect previous network states, although the neural networks in our current work do not refer to the prediction history. Recurrent neural networks (RNNs) may be a solution to represent the prediction history in a compact way, and Mesnil et al. (2013) reported that RNNs outperform conditional random fields (CRFs) on a sequential labeling task. They also show the superiority of bi-directional RNNs on their task, so the bi-directional RNNs may also be effective on the POS tagging, since bi-directional inferences were also used in earlier work (Tsuruoka and Tsujii, 2005). It has a clear benefit over kernel methods in that the test-time computational cost of neural networks is independent from training data. However, although the test-time speed of original kernel methods is proportional to the number of training data, recent development of ke</context>
+</contexts>
+<marker>Mesnil, He, Deng, Bengio, 2013</marker>
+<rawString>Gr´egoire Mesnil, Xiaodong He, Li Deng, and Yoshua Bengio. 2013. Investigation of recurrent-neuralnetwork architectures and learning methods for spoken language understanding. In Proceedings of Annual Conference of the International Speech Communication Association (INTERSPEECH), pages 3771–3775.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomas Mikolov</author>
+<author>Ilya Sutskever</author>
+<author>Kai Chen</author>
+<author>Gregory S Corrado</author>
+<author>Jeffrey Dean</author>
+</authors>
+<title>Distributed representations of words and phrases and their compositionality.</title>
+<date>2013</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<pages>3111--3119</pages>
+<contexts>
+<context position="10649" citStr="Mikolov et al., 2013" startWordPosition="1814" endWordPosition="1817">, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen as the distributed versions of the distributional features since the word vectors compactly represent the distribution of the context in which a word appears. We normalized the word embeddings to unit length and used the average vector of training vocabu</context>
+</contexts>
+<marker>Mikolov, Sutskever, Chen, Corrado, Dean, 2013</marker>
+<rawString>Tomas Mikolov, Ilya Sutskever, Kai Chen, Gregory S. Corrado, and Jeffrey Dean. 2013. Distributed representations of words and phrases and their compositionality. In Proceedings of Advances in Neural Information Processing Systems (NIPS), pages 3111– 3119.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Vinod Nair</author>
+<author>Geoffrey E Hinton</author>
+</authors>
+<title>Rectified linear units improve restricted Boltzmann machines.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>807--814</pages>
+<contexts>
+<context position="3500" citStr="Nair and Hinton, 2010" startWordPosition="541" endWordPosition="544">mbines a linear model using sparse high-dimensional features and a neural network using continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks without depending on the feature engineering of conventional NLP methods, our architecture is more practical because it integrates the neural networks into a well-tuned conventional method. Thus, our tagger enjoys both the manually explored combinations of discrete features and the automatically learned non-linearity of the continuous features. We also studied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches hav</context>
+<context position="18313" citStr="Nair and Hinton, 2010" startWordPosition="3165" endWordPosition="3169">en variables h are computed by the recursive application of a non-linear activation function. Since new styles of the activation functions were recently proposed, we review several activation functions here. Let v ∈ R|V |be the input of an activation function and each element is vj = θnn,j · h′ + θbias,j, where θnn,j is the parameter vector for vj and θbias,j is the bias parameter for vj. We also assume v is divided into groups of size G, and denote the j-th element of the i-th group as {vij|1 ≤ i ≤ |V |/G ∧ 1 ≤ j ≤ G}. We studied three activation functions: 1. Rectified linear units (ReLUs) (Nair and Hinton, 2010): hj = max(0,vj) for all {j|1 ≤ j ≤ |V |}. Note that a subgradient of ReLUs is ∂hj — ae if vj &gt; 0 ∂θ 0 otherwise. 2. Maxout networks (MAXOUT) (Goodfellow et al., 2013): vij for all {i|1 ≤ i ≤ |V | G }. Note that a subgradient of MAXOUT is Note that a subgradient of Lp is �vij|vij|p−2 � G hi = max 1&lt;j&lt;G G j=1 ∂hi ∂vij ∂θ ∂θ = ∂hi ∂vid jˆ = argmax vij ∂θ = ∂θ , where 1&lt;j&lt;G 3. Normalized Lp-pooling (Lp) (Gulcehre et al., 2014): � 1 G �|vij|p � for all {i|1 ≤ i ≤ |V | hi = � G j=1 G }. � |vi,j|p � 1 G G j=1 −1 . 942 The activation inputs for each predefined group, {v1j, ... , vGj}, are aggregated </context>
+</contexts>
+<marker>Nair, Hinton, 2010</marker>
+<rawString>Vinod Nair and Geoffrey E. Hinton. 2010. Rectified linear units improve restricted Boltzmann machines. In Proceedings of the International Conference on Machine Learning (ICML), pages 807–814.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tetsuji Nakagawa</author>
+<author>Yuji Matsumoto</author>
+</authors>
+<title>Guessing parts-of-speech of unknown words using global information.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL).</booktitle>
+<contexts>
+<context position="1594" citStr="Nakagawa and Matsumoto, 2006" startWordPosition="236" endWordPosition="240">of-speech tagging and syntactic parsing mainly use sparse discrete features to represent local information such as word surfaces in a sizelimited window. The non-linearity of those discrete features is often used in many NLP tasks since the simple conjunction (AND) of discrete features represents the co-occurrence of the features and is intuitively understandable. In addition, the thresholding of these combinatorial features by simple counts effectively suppresses the combinatorial increase of the parameters. At the same time, although global information had also been used in several reports (Nakagawa and Matsumoto, 2006; Huang and Yates, 2009; Turian et al., 2010; Schnabel and Sch¨utze, 2014), the nonlinear interactions of these features were not well investigated since these features are often dense continuous features and the explicit non-linear expansions are counterintuitive and drastically increase the number of the model parameters. In our work, we investigate neural networks used to represent the non-linearity of global information for POS tagging in a compact way. We focus on four kinds of corpus-wide information: (1) word embeddings, (2) POS tag distributions, (3) supertag distributions, and (4) con</context>
+</contexts>
+<marker>Nakagawa, Matsumoto, 2006</marker>
+<rawString>Tetsuji Nakagawa and Yuji Matsumoto. 2006. Guessing parts-of-speech of unknown words using global information. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Masami Nakamura</author>
+<author>Katsuteru Maruyama</author>
+<author>Takeshi Kawabata</author>
+<author>Kiyohiro Shikano</author>
+</authors>
+<title>Neural network approach to word category prediction for English texts.</title>
+<date>1990</date>
+<booktitle>In Proceedings of International Conference on Computational Linguistics (COLING),</booktitle>
+<pages>213--218</pages>
+<contexts>
+<context position="2452" citStr="Nakamura et al., 1990" startWordPosition="376" endWordPosition="379">nsions are counterintuitive and drastically increase the number of the model parameters. In our work, we investigate neural networks used to represent the non-linearity of global information for POS tagging in a compact way. We focus on four kinds of corpus-wide information: (1) word embeddings, (2) POS tag distributions, (3) supertag distributions, and (4) context word distributions. All of them are continuous dense features and we use a feed-forward neural network to exploit the non-linearity of these features. Although all of them except (3) have been used for POS tagging in previous work (Nakamura et al., 1990; Schmid, 1994; Schnabel and Sch¨utze, 2014; Huang and Yates, 2009), we propose a neural network approach to capture the non-linear interactions of these features. By feeding these features into neural networks as an input vector, we can expect our tagger can handle not only the nonlinearity of the N-grams of the same kinds of features but also the non-linear interactions among the different kind of features. Our tagger combines a linear model using sparse high-dimensional features and a neural network using continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks w</context>
+<context position="32428" citStr="Nakamura et al. (1990)" startWordPosition="5704" endWordPosition="5707">. Figures 2a and 2b show the PCA results of the raw features and the hidden activations of LP(p = 2), respectively. Compared to Figure 2a, the tokens with the same POS tag are more clearly clustered in Figure 2b. This suggests the neural network learned the good representations for POS tagging and these hidden activations can be used as the input of the succeeding processes, such as parsing. 6The accuracies of our tagger on the development set of CoNLL2009 data are 97.76% for all tokens and 93.42% for unknown tokens. 6 Related Work There is some old work on the POS tagging by neural networks. Nakamura et al. (1990) proposed a neural tagger that predicts the POS tag using a previous POS predictions. Schmid (1994) is most similar to our work. The inputs of his neural network are the POS tag distributions of a word and its suffix in a context window, and he reports a 2% improvement over a regular hidden Markov model. However, his tagger did not use the other kinds of corpus-wide information as we used. Most of the recent studies on POS tagging use linear models (Suzuki and Isozaki, 2008; Spoustov´a et al., 2009) or other non-linear models, such as k-nearest neighbor (kNN) (Søgaard, 2011). One trend in thes</context>
+</contexts>
+<marker>Nakamura, Maruyama, Kawabata, Shikano, 1990</marker>
+<rawString>Masami Nakamura, Katsuteru Maruyama, Takeshi Kawabata, and Kiyohiro Shikano. 1990. Neural network approach to word category prediction for English texts. In Proceedings of International Conference on Computational Linguistics (COLING), pages 213–218.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hiroki Ouchi</author>
+<author>Kevin Duh</author>
+<author>Yuji Matsumoto</author>
+</authors>
+<title>Improving dependency parsers with supertags.</title>
+<date>2014</date>
+<booktitle>In Proceedings of Conference of the European Chapter of the Association for Computational Linguistics (EACL),</booktitle>
+<pages>154--158</pages>
+<contexts>
+<context position="13142" citStr="Ouchi et al. (2014)" startWordPosition="2250" endWordPosition="2253">for affixes, and |Y |x 7 for spellings). 3.3 Supertag distribution We also use the distribution of supertags for dependency parsing. Supertags are lexical templates which are extracted from the syntactic dependency structures and suppertagging is often used for the pre-processing of a parsing task. Since the supertags encode rich syntactic information, we expect the supertag distribution of a word to also provide clues for the POS tagging. We used two types of supertags: One is the dependency relation label of the head of the word and the other is that of the dependents of the word. Following Ouchi et al. (2014), we added the relative position, left (L) or right (R), to the supertags. For example, a word has its dependents in the left direction with a label “nn” and in the right direction with a label “amod”, so its supertag set for dependents is {“nn/L”, “amod/R”}. A special supertag “NO-CHILD” is used for a word that has no dependent. Note that, although the Model 2 supertag set of Ouchi et al. (2014) is defined as the combination of head and dependent tags, we used them separately. The feature values for each word are defined in the same way as Equation 2 in Section 3.2. Since a word can have more</context>
+</contexts>
+<marker>Ouchi, Duh, Matsumoto, 2014</marker>
+<rawString>Hiroki Ouchi, Kevin Duh, and Yuji Matsumoto. 2014. Improving dependency parsers with supertags. In Proceedings of Conference of the European Chapter of the Association for Computational Linguistics (EACL), pages 154–158.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Neal Parikh</author>
+<author>Stephen P Boyd</author>
+</authors>
+<date>2013</date>
+<booktitle>Proximal algorithms. Foundations and Trends in Optimization,</booktitle>
+<volume>1</volume>
+<issue>3</issue>
+<contexts>
+<context position="9410" citStr="Parikh and Boyd, 2013" startWordPosition="1615" endWordPosition="1618">rwise (βiλ2+,/ni)/αi+λ2 ui ← θk i if acceleration then ui ← θki + kk r0ki − θk−1) end if l end for for i ∉ I do ui ← θk i ← θk−1 i ▷ Leaving all θ for inactive i unchanged end for return u end function Algorithm 1 summarizes our training process where ℓ(zt, yt, y) := max(0,1 − fo(zt, y) + fo(zt, y)) is the multi-class hinge loss (Crammer and Singer, 2001). I in Algorithm 1 is a set of parameter indexes that correspond to the non-zero features, so the update is sparse for sparse features. In addition, for the parameter update of the neural networks, we also use an accelerated proximal method (Parikh and Boyd, 2013), which is considered as a variant of the momentum methods (Sutskever et al., 2013). Although u and 0 are the same when the acceleration is not used, u in Algorithm 1 is an extrapolation step in the accelerated method. Although we do not focus on the learning algorithm in this work, the algorithm converges quite quickly and the speed is important because the neural network extension described later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corp</context>
+</contexts>
+<marker>Parikh, Boyd, 2013</marker>
+<rawString>Neal Parikh and Stephen P. Boyd. 2013. Proximal algorithms. Foundations and Trends in Optimization, 1(3):123–231.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Pennington</author>
+<author>Richard Socher</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>GloVe: global vectors for word representation.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods on Natural Language Processing (EMNLP).</booktitle>
+<contexts>
+<context position="10685" citStr="Pennington et al., 2014" startWordPosition="1820" endWordPosition="1823">uous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen as the distributed versions of the distributional features since the word vectors compactly represent the distribution of the context in which a word appears. We normalized the word embeddings to unit length and used the average vector of training vocabulary for the unknown tokens. 3.2 POS</context>
+</contexts>
+<marker>Pennington, Socher, Manning, 2014</marker>
+<rawString>Jeffrey Pennington, Richard Socher, and Christopher D. Manning. 2014. GloVe: global vectors for word representation. In Proceedings of the Conference on Empirical Methods on Natural Language Processing (EMNLP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ninh Pham</author>
+<author>Rasmus Pagh</author>
+</authors>
+<title>Fast and scalable polynomial kernels via explicit feature maps.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD),</booktitle>
+<pages>239--247</pages>
+<contexts>
+<context position="36716" citStr="Pham and Pagh, 2013" startWordPosition="6397" endWordPosition="6400">g task. They also show the superiority of bi-directional RNNs on their task, so the bi-directional RNNs may also be effective on the POS tagging, since bi-directional inferences were also used in earlier work (Tsuruoka and Tsujii, 2005). It has a clear benefit over kernel methods in that the test-time computational cost of neural networks is independent from training data. However, although the test-time speed of original kernel methods is proportional to the number of training data, recent development of kernel approximation techniques achieve significant speed improvements (Le et al., 2013; Pham and Pagh, 2013). Since this work shows the non-linearity of continuous features should be exploited, those approximated kernel methods may also improve the tagging accuracies without sacrifice tagging speed. Independent from our work, Ma et al. (2014) and Santos and Zadrozny (2014) also recently proposed neural network approaches for POS tagging. Ma et al. (2014)’s approach is similar to our approach, with a combination of a linear model and a neural network, although a direct comparison is not easy since their focus is the Web domain adaptation of POS tagging. Remarkably, they report ngram embeddings are be</context>
+</contexts>
+<marker>Pham, Pagh, 2013</marker>
+<rawString>Ninh Pham and Rasmus Pagh. 2013. Fast and scalable polynomial kernels via explicit feature maps. In Proceedings of the ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD), pages 239–247.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>St´ephane Ross</author>
+<author>Geoffrey J Gordon</author>
+<author>Drew Bagnell</author>
+</authors>
+<title>A reduction of imitation learning and structured prediction to no-regret online learning.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Fourteenth International Conference on Artificial Intelligence and Statistics (AISTATS),</booktitle>
+<pages>627--635</pages>
+<contexts>
+<context position="8190" citStr="Ross et al., 2011" startWordPosition="1356" endWordPosition="1359">ld POS tags, yt−1 1 , to generate training examples, which means they assume all of the past decisions are correct. However, this causes error propagation problems, since each state depends on the history of the past decisions. Therefore, at the k-th iteration and the t-th position of the input sequence, we simply use the predictions of the previously learned classifiers to generate training examples, i.e., Pt−r = argmax fek_,.(zt−r, y) y∈Y for all {r|1 ≤ r &lt; t − 1}. Although it is not theoretically justified, it empirically runs as a k 0k = argminy: e l=1 I, 939 stochastic version of DAGGER (Ross et al., 2011) or SEARN (Daum´e III et al., 2009) with the speed benefit of online learning. Algorithm 1 Learning algorithm function LEARN(α,β, A1, A2, m, n, 0k) while ¬ stop do Select a random sentence (x, y) fort = 1 to T do u=UPDATE(α,β, A1, A2, m, n, 0k) yt = argmaxyEY fu(zt, y) y� = argmaxy,�yt fu(zt, , y) if fu(zt, yt) − fu(zt, y) &lt; 1 then g =∂uℓ(zt, yt, y) ▷ Subgradient For all i ∈ I compute �� ) σi = ni + g2 i − √ni /αi mi ← mi + gi − σiui ni ← ni + g2i end if k ← k + 1 end for end while return 0k end function function UPDATE(α,β, A1, A2, m, n, 0k) for i ∈ I do { 0 if |mi |≤ λ1 −mi+ sgn(mi)λ1 otherw</context>
+</contexts>
+<marker>Ross, Gordon, Bagnell, 2011</marker>
+<rawString>St´ephane Ross, Geoffrey J. Gordon, and Drew Bagnell. 2011. A reduction of imitation learning and structured prediction to no-regret online learning. In Proceedings of the Fourteenth International Conference on Artificial Intelligence and Statistics (AISTATS), pages 627–635.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cicero Dos Santos</author>
+<author>Bianca Zadrozny</author>
+</authors>
+<title>Learning character-level representations for part-ofspeech tagging.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>1818--1826</pages>
+<contexts>
+<context position="36983" citStr="Santos and Zadrozny (2014)" startWordPosition="6439" endWordPosition="6442">over kernel methods in that the test-time computational cost of neural networks is independent from training data. However, although the test-time speed of original kernel methods is proportional to the number of training data, recent development of kernel approximation techniques achieve significant speed improvements (Le et al., 2013; Pham and Pagh, 2013). Since this work shows the non-linearity of continuous features should be exploited, those approximated kernel methods may also improve the tagging accuracies without sacrifice tagging speed. Independent from our work, Ma et al. (2014) and Santos and Zadrozny (2014) also recently proposed neural network approaches for POS tagging. Ma et al. (2014)’s approach is similar to our approach, with a combination of a linear model and a neural network, although a direct comparison is not easy since their focus is the Web domain adaptation of POS tagging. Remarkably, they report ngram embeddings are better than single word embeddings. Santos and Zadrozny (2014) proposed character-level embedding to capture the morphological and shape information for POS tagging. Although the reported accuracy (97.32%) on PTB data is lower than state of the art results, their appro</context>
+</contexts>
+<marker>Santos, Zadrozny, 2014</marker>
+<rawString>Cicero Dos Santos and Bianca Zadrozny. 2014. Learning character-level representations for part-ofspeech tagging. In Proceedings of the International Conference on Machine Learning (ICML), pages 1818–1826.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Helmut Schmid</author>
+</authors>
+<title>Part-of-speech tagging with neural networks.</title>
+<date>1994</date>
+<booktitle>In Proceedings of International Conference on Computational Linguistics (COLING),</booktitle>
+<pages>172--176</pages>
+<contexts>
+<context position="2466" citStr="Schmid, 1994" startWordPosition="380" endWordPosition="381">tive and drastically increase the number of the model parameters. In our work, we investigate neural networks used to represent the non-linearity of global information for POS tagging in a compact way. We focus on four kinds of corpus-wide information: (1) word embeddings, (2) POS tag distributions, (3) supertag distributions, and (4) context word distributions. All of them are continuous dense features and we use a feed-forward neural network to exploit the non-linearity of these features. Although all of them except (3) have been used for POS tagging in previous work (Nakamura et al., 1990; Schmid, 1994; Schnabel and Sch¨utze, 2014; Huang and Yates, 2009), we propose a neural network approach to capture the non-linear interactions of these features. By feeding these features into neural networks as an input vector, we can expect our tagger can handle not only the nonlinearity of the N-grams of the same kinds of features but also the non-linear interactions among the different kind of features. Our tagger combines a linear model using sparse high-dimensional features and a neural network using continuous dense features. Although Collobert et al. (2011) seeks to solve NLP tasks without dependi</context>
+<context position="11336" citStr="Schmid (1994)" startWordPosition="1930" endWordPosition="1931">ugh our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen as the distributed versions of the distributional features since the word vectors compactly represent the distribution of the context in which a word appears. We normalized the word embeddings to unit length and used the average vector of training vocabulary for the unknown tokens. 3.2 POS tag distribution In a way similar to Schmid (1994), we use POS tag distribution over a training corpus. Each word is represented by a vector of length |Y |in which the y-th element is the conditional probabilities with which that word gets the y-th POS tag. We also use the POS tag distributions of the affixes and θki = 940 spelling binary features used in Choi and Palmer (2012). We cite the definitions of these features. 1. Affix: c:1, c:2, c:3, cn:, cn−1:, cn−2:, cn−3: where c∗ is a character string in a word. For example c:2 is the prefix of length two of a word and cn−1: is the suffix of length two of a word. 2. Spelling: initial uppercase</context>
+<context position="32527" citStr="Schmid (1994)" startWordPosition="5722" endWordPosition="5723">tively. Compared to Figure 2a, the tokens with the same POS tag are more clearly clustered in Figure 2b. This suggests the neural network learned the good representations for POS tagging and these hidden activations can be used as the input of the succeeding processes, such as parsing. 6The accuracies of our tagger on the development set of CoNLL2009 data are 97.76% for all tokens and 93.42% for unknown tokens. 6 Related Work There is some old work on the POS tagging by neural networks. Nakamura et al. (1990) proposed a neural tagger that predicts the POS tag using a previous POS predictions. Schmid (1994) is most similar to our work. The inputs of his neural network are the POS tag distributions of a word and its suffix in a context window, and he reports a 2% improvement over a regular hidden Markov model. However, his tagger did not use the other kinds of corpus-wide information as we used. Most of the recent studies on POS tagging use linear models (Suzuki and Isozaki, 2008; Spoustov´a et al., 2009) or other non-linear models, such as k-nearest neighbor (kNN) (Søgaard, 2011). One trend in these studies is model combinations. Suzuki and Isozaki (2008) combined generative and discriminative m</context>
+</contexts>
+<marker>Schmid, 1994</marker>
+<rawString>Helmut Schmid. 1994. Part-of-speech tagging with neural networks. In Proceedings of International Conference on Computational Linguistics (COLING), pages 172–176.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tobias Schnabel</author>
+<author>Hinrich Sch¨utze</author>
+</authors>
+<title>FLORS: Fast and simple domain adaptation for part-ofspeech tagging.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>2--15</pages>
+<marker>Schnabel, Sch¨utze, 2014</marker>
+<rawString>Tobias Schnabel and Hinrich Sch¨utze. 2014. FLORS: Fast and simple domain adaptation for part-ofspeech tagging. Transactions of the Association for Computational Linguistics, 2:15–26, February.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Eric H Huang</author>
+<author>Jeffrey Pennington</author>
+<author>Andrew Y Ng</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Dynamic pooling and unfolding recursive autoencoders for paraphrase detection.</title>
+<date>2011</date>
+<booktitle>In Proceedings of Advances in Neural Information Processing Systems (NIPS),</booktitle>
+<pages>801--809</pages>
+<contexts>
+<context position="4069" citStr="Socher et al., 2011" startWordPosition="628" endWordPosition="631">ons: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic tasks. Our neural tagger shows state-ofthe-art results: 97.51% accuracy in the standard benchmark on the Penn Treebank (Marcus et al., 1993) and 98.02% accuracy in POS tagging on CoNLL2009 (Hajiˇc et al., 2009). In our experiments, we found that the selection of the activation functions led to large differences in the tagging accuracies. We also observed that the POS tags of the words are effectively clustered by the hidden activations of the intermediate layer. This observation is</context>
+<context position="10376" citStr="Socher et al., 2011" startWordPosition="1771" endWordPosition="1774">t because the neural network extension described later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embe</context>
+</contexts>
+<marker>Socher, Huang, Pennington, Ng, Manning, 2011</marker>
+<rawString>Richard Socher, Eric H. Huang, Jeffrey Pennington, Andrew Y. Ng, and Christopher D. Manning. 2011. Dynamic pooling and unfolding recursive autoencoders for paraphrase detection. In Proceedings of Advances in Neural Information Processing Systems (NIPS), pages 801–809.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Socher</author>
+<author>Alex Perelygin</author>
+<author>Jean Wu</author>
+<author>Jason Chuang</author>
+<author>Chris Manning</author>
+<author>Andrew Ng</author>
+<author>Chris Potts</author>
+</authors>
+<title>Recursive deep models for semantic compositionality over a sentiment treebank.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods on Natural Language Processing (EMNLP),</booktitle>
+<pages>1631--1642</pages>
+<contexts>
+<context position="4047" citStr="Socher et al., 2013" startWordPosition="624" endWordPosition="627">wer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic tasks. Our neural tagger shows state-ofthe-art results: 97.51% accuracy in the standard benchmark on the Penn Treebank (Marcus et al., 1993) and 98.02% accuracy in POS tagging on CoNLL2009 (Hajiˇc et al., 2009). In our experiments, we found that the selection of the activation functions led to large differences in the tagging accuracies. We also observed that the POS tags of the words are effectively clustered by the hidden activations of the intermediate laye</context>
+<context position="10418" citStr="Socher et al., 2013" startWordPosition="1779" endWordPosition="1782">scribed later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen as the distributed vers</context>
+</contexts>
+<marker>Socher, Perelygin, Wu, Chuang, Manning, Ng, Potts, 2013</marker>
+<rawString>Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Chris Manning, Andrew Ng, and Chris Potts. 2013. Recursive deep models for semantic compositionality over a sentiment treebank. In Proceedings of the Conference on Empirical Methods on Natural Language Processing (EMNLP), pages 1631–1642.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Anders Søgaard</author>
+</authors>
+<title>Semi-supervised condensed nearest neighbor for part-of-speech tagging.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL),</booktitle>
+<pages>48--52</pages>
+<contexts>
+<context position="27400" citStr="Søgaard (2011)" startWordPosition="4804" endWordPosition="4805">s improved the accuracy of the unknown tokens, the gain of the glove embeddings (No. 3) is larger than that of the 944 # Neural Network Settings Group size (G) Development Set Test Set Activation functions #Hidden All Unk. All Unk. 1 Linear model - - 97.45 90.22 97.46 91.39 2 ReLUs 384 1 97.45 90.87 97.42 91.04 3 Lp(p = 2) 48 8 97.52 90.91 97.51 91.64 4 Lp(p = 3) 32 8 97.51 90.91 97.51 91.53 5 MAXOUT 48 8 97.50 90.89 97.50 91.67 6 Lp(p = 2) (w/o linear part) 48 8 97.39 91.18 97.40 91.23 Table 3: Development and test accuracies of all tokens and unknown tokens (%) on PTB. Manning (2011) Tagger Søgaard (2011) Lp(p = 2) (a) Test accuracies on PTB All 97.32 97.50 97.51 90.79 91.64 Unk. N/A Bohnet and Nivre (2012) Tagger Lp(p = 2) (b) Test accuracies on CoNLL2009 All 97.84 98.02 92.01 Unk. N/A Table 4: Test accuracies of all tokens and unknown tokens (%) comparing with the previously reported results word2vec (No. 2). The reason for this difference in the two embeddings may be because the training data for the glove vectors is 8 times larger than that for the word2vec vectors. The usage of the two word embeddings shows further improvement in the tagging accuracy over single word embeddings (No. 4). T</context>
+<context position="33009" citStr="Søgaard, 2011" startWordPosition="5808" endWordPosition="5809"> networks. Nakamura et al. (1990) proposed a neural tagger that predicts the POS tag using a previous POS predictions. Schmid (1994) is most similar to our work. The inputs of his neural network are the POS tag distributions of a word and its suffix in a context window, and he reports a 2% improvement over a regular hidden Markov model. However, his tagger did not use the other kinds of corpus-wide information as we used. Most of the recent studies on POS tagging use linear models (Suzuki and Isozaki, 2008; Spoustov´a et al., 2009) or other non-linear models, such as k-nearest neighbor (kNN) (Søgaard, 2011). One trend in these studies is model combinations. Suzuki and Isozaki (2008) combined generative and discriminative models, Spoustov´a et al. (2009) used the combination of three taggers to generate automatically annotated corpus, and Søgaard (2011) used the outputs of a supervised tagger and an unsupervised tagger as the feature space of the kNN. Our work also follows this trend since neural networks can be considered as non-linear integration of several linear classifiers. Apart from POS tagging, some previous studies in parsing used the discretization method to handle the combination of co</context>
+</contexts>
+<marker>Søgaard, 2011</marker>
+<rawString>Anders Søgaard. 2011. Semi-supervised condensed nearest neighbor for part-of-speech tagging. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL), pages 48–52.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Drahom´ıra johanka Spoustov´a</author>
+<author>Jan Hajiˇc</author>
+<author>Jan Raab</author>
+<author>Miroslav Spousta</author>
+</authors>
+<title>Semi-supervised training for the averaged perceptron pos tagger.</title>
+<date>2009</date>
+<booktitle>In Proceedings of Conference of the European Chapter of the Association for Computational Linguistics (EACL),</booktitle>
+<pages>763--771</pages>
+<marker>Spoustov´a, Hajiˇc, Raab, Spousta, 2009</marker>
+<rawString>Drahom´ıra johanka Spoustov´a, Jan Hajiˇc, Jan Raab, and Miroslav Spousta. 2009. Semi-supervised training for the averaged perceptron pos tagger. In Proceedings of Conference of the European Chapter of the Association for Computational Linguistics (EACL), pages 763–771.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Weiwei Sun</author>
+<author>Hans Uszkoreit</author>
+</authors>
+<title>Capturing paradigmatic and syntagmatic lexical relations: Towards accurate Chinese part-of-speech tagging.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL),</booktitle>
+<pages>242--252</pages>
+<contexts>
+<context position="34270" citStr="Sun and Uszkoreit (2012)" startWordPosition="6007" endWordPosition="6010">2012) binned the difference of two con946 tinuous features in discrete steps of a predefined small interval. Bansal et al. (2014) used the conjunction of discretized features and studied two discretization methods: One is the binning of real values into discrete steps and the other is a hard clustering of continuous feature vectors. It is not easy to determine the optimal intervals for the binning method, and the clustering method is unsupervised so that the clusters are not guaranteed for good representations of the target tasks. To capture rich syntactic information for Chinese POS tagging, Sun and Uszkoreit (2012) used the ensemble model of both a POS tagger and a constituency parser. Sun et al. (2013) improved the efficiency of Sun and Uszkoreit (2012) in which a single tagging model is trained using automatically annotated corpus generated by the ensemble tagger. Although the supertag distribution feature in Section 3.3 is a simple way to incorporate syntactic information, automatically parsed large corpora may make the estimate of the supertag distributions more accurate. 7 Conclusion and Future Work We are studying a neural network approach to handle the non-linear interaction among corpus-wide sta</context>
+</contexts>
+<marker>Sun, Uszkoreit, 2012</marker>
+<rawString>Weiwei Sun and Hans Uszkoreit. 2012. Capturing paradigmatic and syntagmatic lexical relations: Towards accurate Chinese part-of-speech tagging. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL), pages 242–252.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Weiwei Sun</author>
+<author>Xiaochang Peng</author>
+<author>Xiaojun Wan</author>
+</authors>
+<title>Capturing long-distance dependencies in sequence models: A case study of Chinese part-ofspeech tagging.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Joint Conference on Natural Language Processing (IJCNLP),</booktitle>
+<pages>180--188</pages>
+<contexts>
+<context position="34360" citStr="Sun et al. (2013)" startWordPosition="6024" endWordPosition="6027">l interval. Bansal et al. (2014) used the conjunction of discretized features and studied two discretization methods: One is the binning of real values into discrete steps and the other is a hard clustering of continuous feature vectors. It is not easy to determine the optimal intervals for the binning method, and the clustering method is unsupervised so that the clusters are not guaranteed for good representations of the target tasks. To capture rich syntactic information for Chinese POS tagging, Sun and Uszkoreit (2012) used the ensemble model of both a POS tagger and a constituency parser. Sun et al. (2013) improved the efficiency of Sun and Uszkoreit (2012) in which a single tagging model is trained using automatically annotated corpus generated by the ensemble tagger. Although the supertag distribution feature in Section 3.3 is a simple way to incorporate syntactic information, automatically parsed large corpora may make the estimate of the supertag distributions more accurate. 7 Conclusion and Future Work We are studying a neural network approach to handle the non-linear interaction among corpus-wide statistics. For POS tagging, we used word embeddings, POS tag distributions, supertag distrib</context>
+</contexts>
+<marker>Sun, Peng, Wan, 2013</marker>
+<rawString>Weiwei Sun, Xiaochang Peng, and Xiaojun Wan. 2013. Capturing long-distance dependencies in sequence models: A case study of Chinese part-ofspeech tagging. In Proceedings of the International Joint Conference on Natural Language Processing (IJCNLP), pages 180–188.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ilya Sutskever</author>
+<author>James Martens</author>
+<author>George E Dahl</author>
+<author>Geoffrey E Hinton</author>
+</authors>
+<title>On the importance of initialization and momentum in deep learning.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning (ICML),</booktitle>
+<pages>1139--1147</pages>
+<contexts>
+<context position="9493" citStr="Sutskever et al., 2013" startWordPosition="1630" endWordPosition="1633">end if l end for for i ∉ I do ui ← θk i ← θk−1 i ▷ Leaving all θ for inactive i unchanged end for return u end function Algorithm 1 summarizes our training process where ℓ(zt, yt, y) := max(0,1 − fo(zt, y) + fo(zt, y)) is the multi-class hinge loss (Crammer and Singer, 2001). I in Algorithm 1 is a set of parameter indexes that correspond to the non-zero features, so the update is sparse for sparse features. In addition, for the parameter update of the neural networks, we also use an accelerated proximal method (Parikh and Boyd, 2013), which is considered as a variant of the momentum methods (Sutskever et al., 2013). Although u and 0 are the same when the acceleration is not used, u in Algorithm 1 is an extrapolation step in the accelerated method. Although we do not focus on the learning algorithm in this work, the algorithm converges quite quickly and the speed is important because the neural network extension described later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to</context>
+</contexts>
+<marker>Sutskever, Martens, Dahl, Hinton, 2013</marker>
+<rawString>Ilya Sutskever, James Martens, George E. Dahl, and Geoffrey E. Hinton. 2013. On the importance of initialization and momentum in deep learning. In Proceedings of the International Conference on Machine Learning (ICML), pages 1139–1147.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jun Suzuki</author>
+<author>Hideki Isozaki</author>
+</authors>
+<title>Semi-supervised sequential labeling and segmentation using gigaword scale unlabeled data.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL),</booktitle>
+<pages>665--673</pages>
+<contexts>
+<context position="32906" citStr="Suzuki and Isozaki, 2008" startWordPosition="5790" endWordPosition="5793"> for all tokens and 93.42% for unknown tokens. 6 Related Work There is some old work on the POS tagging by neural networks. Nakamura et al. (1990) proposed a neural tagger that predicts the POS tag using a previous POS predictions. Schmid (1994) is most similar to our work. The inputs of his neural network are the POS tag distributions of a word and its suffix in a context window, and he reports a 2% improvement over a regular hidden Markov model. However, his tagger did not use the other kinds of corpus-wide information as we used. Most of the recent studies on POS tagging use linear models (Suzuki and Isozaki, 2008; Spoustov´a et al., 2009) or other non-linear models, such as k-nearest neighbor (kNN) (Søgaard, 2011). One trend in these studies is model combinations. Suzuki and Isozaki (2008) combined generative and discriminative models, Spoustov´a et al. (2009) used the combination of three taggers to generate automatically annotated corpus, and Søgaard (2011) used the outputs of a supervised tagger and an unsupervised tagger as the feature space of the kNN. Our work also follows this trend since neural networks can be considered as non-linear integration of several linear classifiers. Apart from POS t</context>
+</contexts>
+<marker>Suzuki, Isozaki, 2008</marker>
+<rawString>Jun Suzuki and Hideki Isozaki. 2008. Semi-supervised sequential labeling and segmentation using gigaword scale unlabeled data. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL), pages 665–673.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Feature-rich partof-speech tagging with a cyclic dependency network.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT),</booktitle>
+<pages>252--259</pages>
+<contexts>
+<context position="22028" citStr="Toutanova et al., 2003" startWordPosition="3840" endWordPosition="3843">ange R + max(R), i.e., always initialized with non-negative values. The best combination for the development set is chosen after training that uses random 20% of the training set at the second stage, and Algorithm 1 is terminated when the all token accuracy of the development data has been declining for 5 epochs at the first stage. In other words, 32 × 8 random combinations of α, Q, and 0 for fnn were tested. 5 Experiments 5.1 Setup Our experiments were mainly performed using the Wall Street Journal from Penn Treebank (PTB) (Marcus et al., 1993). We used tagged sentences from the parse trees (Toutanova et al., 2003) and followed the standard approach of splitting the PTB, using sections 0–18 for training, section 19– 21 for development, and section 22–24 for testing (Table 1). In addition, we used the CoNLL2009 data sets with the training, development, and test splits used in the shared task (Hajiˇc et al., 2009) for better comparison with a joint model of POS tagging and dependency parsing (Bohnet and Nivre, 2012). Our baseline tagger was trained by Algorithm 1. As discrete features for our tagger, we used the same binary feature set as Choi and Palmer (2012) which is composed of (a) 1, 2,3-grams of the</context>
+</contexts>
+<marker>Toutanova, Klein, Manning, Singer, 2003</marker>
+<rawString>Kristina Toutanova, Dan Klein, Christopher D. Manning, and Yoram Singer. 2003. Feature-rich partof-speech tagging with a cyclic dependency network. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT), pages 252–259.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoshimasa Tsuruoka</author>
+<author>Jun’ichi Tsujii</author>
+</authors>
+<title>Bidirectional inference with the easiest-first strategy for tagging sequence data.</title>
+<date>2005</date>
+<booktitle>In Proceedings of Human Language Technology Conference and Conference on Empirical Methods in Natural Language Processing (HLT-EMNLP),</booktitle>
+<pages>467--474</pages>
+<contexts>
+<context position="36332" citStr="Tsuruoka and Tsujii, 2005" startWordPosition="6334" endWordPosition="6337">g extension is the use of on-the-fly features which reflect previous network states, although the neural networks in our current work do not refer to the prediction history. Recurrent neural networks (RNNs) may be a solution to represent the prediction history in a compact way, and Mesnil et al. (2013) reported that RNNs outperform conditional random fields (CRFs) on a sequential labeling task. They also show the superiority of bi-directional RNNs on their task, so the bi-directional RNNs may also be effective on the POS tagging, since bi-directional inferences were also used in earlier work (Tsuruoka and Tsujii, 2005). It has a clear benefit over kernel methods in that the test-time computational cost of neural networks is independent from training data. However, although the test-time speed of original kernel methods is proportional to the number of training data, recent development of kernel approximation techniques achieve significant speed improvements (Le et al., 2013; Pham and Pagh, 2013). Since this work shows the non-linearity of continuous features should be exploited, those approximated kernel methods may also improve the tagging accuracies without sacrifice tagging speed. Independent from our wo</context>
+</contexts>
+<marker>Tsuruoka, Tsujii, 2005</marker>
+<rawString>Yoshimasa Tsuruoka and Jun’ichi Tsujii. 2005. Bidirectional inference with the easiest-first strategy for tagging sequence data. In Proceedings of Human Language Technology Conference and Conference on Empirical Methods in Natural Language Processing (HLT-EMNLP), pages 467–474.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joseph P Turian</author>
+<author>Lev-Arie Ratinov</author>
+<author>Yoshua Bengio</author>
+</authors>
+<title>Word representations: A simple and general method for semi-supervised learning.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL),</booktitle>
+<pages>384--394</pages>
+<contexts>
+<context position="1638" citStr="Turian et al., 2010" startWordPosition="245" endWordPosition="248">arse discrete features to represent local information such as word surfaces in a sizelimited window. The non-linearity of those discrete features is often used in many NLP tasks since the simple conjunction (AND) of discrete features represents the co-occurrence of the features and is intuitively understandable. In addition, the thresholding of these combinatorial features by simple counts effectively suppresses the combinatorial increase of the parameters. At the same time, although global information had also been used in several reports (Nakagawa and Matsumoto, 2006; Huang and Yates, 2009; Turian et al., 2010; Schnabel and Sch¨utze, 2014), the nonlinear interactions of these features were not well investigated since these features are often dense continuous features and the explicit non-linear expansions are counterintuitive and drastically increase the number of the model parameters. In our work, we investigate neural networks used to represent the non-linearity of global information for POS tagging in a compact way. We focus on four kinds of corpus-wide information: (1) word embeddings, (2) POS tag distributions, (3) supertag distributions, and (4) context word distributions. All of them are con</context>
+<context position="10468" citStr="Turian et al. (2010)" startWordPosition="1788" endWordPosition="1791">ich is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen as the distributed versions of the distributional features since the word</context>
+</contexts>
+<marker>Turian, Ratinov, Bengio, 2010</marker>
+<rawString>Joseph P. Turian, Lev-Arie Ratinov, and Yoshua Bengio. 2010. Word representations: A simple and general method for semi-supervised learning. In Proceedings of the Annual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (ACL), pages 384–394.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mengqiu Wang</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Effect of non-linear deep architecture in sequence labeling.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Joint Conference on Natural Language Processing (IJCNLP).</booktitle>
+<contexts>
+<context position="15763" citStr="Wang and Manning (2013)" startWordPosition="2694" endWordPosition="2698">rast, it is not easy to manually tune the non-linearity of the continuous features. For example, it is not intuitive to design the conjunction features of two kinds of word embeddings, word2vec and glove. Although kernel methods have been used to incorporate non-linearity in prior research, they are rarely used now because their tagging speed is too slow (Gim´enez and M`arquez, 2003). Our solution is to introduce feed-forward neural networks to capture the nonlinearity of the corpus-wide information. 4.1 Hybrid model We designed our tagger as a hybrid of a linear model and a non-linear model. Wang and Manning (2013) reported that a neural network using both sparse discrete features and dense (low941 Figure 1: A hybrid architecture of a linear model and a neural network with a pooling activation function dimensional) continuous features was worse than a linear model using the same two features. At the same time, they also reported that a neural network using only the dense continuous features outperformed a linear model using the same features. Based on their results, we applied neural networks only for the continuous features and used a linear model for the discrete features. Formally, the scoring functi</context>
+</contexts>
+<marker>Wang, Manning, 2013</marker>
+<rawString>Mengqiu Wang and Christopher D. Manning. 2013. Effect of non-linear deep architecture in sequence labeling. In Proceedings of the International Joint Conference on Natural Language Processing (IJCNLP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xiaohui Zhang</author>
+<author>Jan Trmal</author>
+<author>Daniel Povey</author>
+<author>Sanjeev Khudanpur</author>
+</authors>
+<title>Improving deep neural network acoustic models using generalized maxout networks.</title>
+<date>2014</date>
+<booktitle>In Proceedings of International Conference on Acoustics, Speech and Signal Processing (ICASSP).</booktitle>
+<contexts>
+<context position="3603" citStr="Zhang et al., 2014" startWordPosition="558" endWordPosition="561">eatures. Although Collobert et al. (2011) seeks to solve NLP tasks without depending on the feature engineering of conventional NLP methods, our architecture is more practical because it integrates the neural networks into a well-tuned conventional method. Thus, our tagger enjoys both the manually explored combinations of discrete features and the automatically learned non-linearity of the continuous features. We also studied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic tasks. Our neural ta</context>
+<context position="19570" citStr="Zhang et al., 2014" startWordPosition="3422" endWordPosition="3425">Lp activation functions, while each input is transformed into a corresponding hidden variable in the ReLUs. When the number of parameters required for these activation functions is the same, the number of output variables h for MAXOUT and Lp is one-G-th smaller than that for ReLUs. Boureau et al. (2010) show pooling operations theoretically reduce the variance of hidden activations, and our experimental results also show MAXOUT and Lp perform better than the ReLUs with the same number of parameters. Note that MAXOUT is a special case of unnormalized Lp pooling when p = ∞ and vj &gt; 0 for all j (Zhang et al., 2014). Figure 1 summarizes the proposed architecture with a single hidden layer and a pooling activation function. 4.3 Hyper-parameter search Finally, the subgradients of the neural network, fnn(z, y), can be computed through standard back-propagation algorithms and we can apply them in Algorithm 1. However, many of the hyperparameters have to be determined for the training of the neural networks, and two stages of random hyper-parameter searches (Bergstra and Bengio, 2012) are used in our experiments. Note that the parameters are grouped into three sets, 0d, 0o, 0nn, and the same values for A1, A2</context>
+<context position="35253" citStr="Zhang et al., 2014" startWordPosition="6160" endWordPosition="6163">on, automatically parsed large corpora may make the estimate of the supertag distributions more accurate. 7 Conclusion and Future Work We are studying a neural network approach to handle the non-linear interaction among corpus-wide statistics. For POS tagging, we used word embeddings, POS tag distributions, supertag distributions, and context word distributions in a context window. These features are beneficial, even for linear classifiers, but the neural networks leverage these features for improving tagging accuracies. Our tagger with Maxout networks (Goodfellow et al., 2013) or LP-pooling (Zhang et al., 2014; Gulcehre et al., 2014) show the state-of-the-art results on two English benchmark sets. Our empirical results suggest further opportunities to investigate continuous features not only for POS tagging but also for other NLP tasks. An obvious use case for continuous features is the N-best outputs with confidence values, which were predicted by the previous process in a NLP pipeline, such as the POS tags used for syntactic parsing. Another interesting extension is the use of on-the-fly features which reflect previous network states, although the neural networks in our current work do not refer </context>
+</contexts>
+<marker>Zhang, Trmal, Povey, Khudanpur, 2014</marker>
+<rawString>Xiaohui Zhang, Jan Trmal, Daniel Povey, and Sanjeev Khudanpur. 2014. Improving deep neural network acoustic models using generalized maxout networks. In Proceedings of International Conference on Acoustics, Speech and Signal Processing (ICASSP).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alisa Zhila</author>
+<author>Wen tau Yih</author>
+<author>Christopher Meek</author>
+<author>Geoffrey Zweig</author>
+<author>Tomas Mikolov</author>
+</authors>
+<title>Combining heterogeneous models for measuring relational similarity.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT),</booktitle>
+<pages>1000--1009</pages>
+<contexts>
+<context position="4026" citStr="Zhila et al., 2013" startWordPosition="620" endWordPosition="623">udied some of the newer activation functions: Rectified Linear Units (Nair and Hinton, 2010), Maxout networks (Goodfellow et al., 2013), and LP-pooling (Gulcehre et al., 2014; Zhang et al., 2014). Deep neural networks have been a hot topic in many application areas such as computer vi938 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 938–950, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics sion and voice recognition. However, although neural networks show state-of-the-art results on a few semantic tasks (Zhila et al., 2013; Socher et al., 2013; Socher et al., 2011), neural network approaches have not performed better than the state-of-the-art systems for traditional syntactic tasks. Our neural tagger shows state-ofthe-art results: 97.51% accuracy in the standard benchmark on the Penn Treebank (Marcus et al., 1993) and 98.02% accuracy in POS tagging on CoNLL2009 (Hajiˇc et al., 2009). In our experiments, we found that the selection of the activation functions led to large differences in the tagging accuracies. We also observed that the POS tags of the words are effectively clustered by the hidden activations of </context>
+<context position="10396" citStr="Zhila et al., 2013" startWordPosition="1775" endWordPosition="1778">network extension described later requires a hyper-parameter search which is computationally demanding. 3 Corpus-wide Information Since typical discrete features indicate only the occurrence in a local context and do not convey corpus-wide statistics, we studied four kinds of continuous features for POS tagging to represent the corpus-wide information. 3.1 Word embeddings Word embeddings, or distributed word representations, embed the words into a low-dimensional continuous space. Most of the neural network applications for NLP use word embeddings (Collobert et al., 2011; Socher et al., 2011; Zhila et al., 2013; Socher et al., 2013), and even for linear models, Turian et al. (2010) highlights the benefit of word embeddings on sequential labeling tasks. In particular, in our experiments, we used two recently proposed algorithms, word2vec (Mikolov et al., 2013) and glove (Pennington et al., 2014), which are simple and scalable, although our method could use other word embeddings. Word2vec trains the word embeddings to predict the words surrounding each word, and glove trains the word embeddings to predict the logarithmic count of the surrounding words of each word. Thus, these embeddings can be seen a</context>
+</contexts>
+<marker>Zhila, Yih, Meek, Zweig, Mikolov, 2013</marker>
+<rawString>Alisa Zhila, Wen tau Yih, Christopher Meek, Geoffrey Zweig, and Tomas Mikolov. 2013. Combining heterogeneous models for measuring relational similarity. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT), pages 1000–1009.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

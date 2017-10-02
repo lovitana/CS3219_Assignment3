@@ -1,0 +1,1897 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000001">
+<title confidence="0.96897">
+Learning Distributions over Logical Forms
+for Referring Expression Generation
+</title>
+<author confidence="0.9452">
+Nicholas FitzGerald Yoav Artzi Luke Zettlemoyer
+</author>
+<affiliation confidence="0.981005">
+Computer Science &amp; Engineering
+University of Washington
+</affiliation>
+<address confidence="0.956914">
+Seattle, WA 98195
+</address>
+<email confidence="0.999823">
+{nfitz,yoav,lsz}@cs.washington.edu
+</email>
+<sectionHeader confidence="0.998606" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.99991545">
+We present a new approach to referring ex-
+pression generation, casting it as a density es-
+timation problem where the goal is to learn
+distributions over logical expressions identi-
+fying sets of objects in the world. Despite
+an extremely large space of possible expres-
+sions, we demonstrate effective learning of
+a globally normalized log-linear distribution.
+This learning is enabled by a new, multi-stage
+approximate inference technique that uses a
+pruning model to construct only the most
+likely logical forms. We train and evaluate
+the approach on a new corpus of references
+to sets of visual objects. Experiments show
+the approach is able to learn accurate models,
+which generate over 87% of the expressions
+people used. Additionally, on the previously
+studied special case of single object reference,
+we show a 35% relative error reduction over
+previous state of the art.
+</bodyText>
+<sectionHeader confidence="0.999471" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999981260869566">
+Understanding and generating natural language re-
+quires reasoning over a large space of possible
+meanings; while many statements might achieve the
+same goal in a certain situation, some are more
+likely to be used than others. In this paper, we model
+these preferences by learning distributions over sit-
+uated meaning use.
+We focus on the task of referring expression gen-
+eration (REG), where the goal is to produce an ex-
+pression which uniquely identifies a pre-defined ob-
+ject or set of objects in an environment. In prac-
+tice, many such expressions can be produced. Fig-
+ure 1 shows referring expressions provided by hu-
+man subjects for a set of objects (Figure 1a), demon-
+strating variation in utterances (Figure 1b) and their
+corresponding meaning representations (Figure 1c).
+Although nearly a third of the people simply listed
+the colors of the desired objects, many other strate-
+gies were also used and no single option dominated.
+Learning to model such variation would enable sys-
+tems to better anticipate what people are likely to
+say and avoid repetition during generation, by pro-
+ducing appropriately varied utterances themselves.
+With these goals in mind, we cast REG as a den-
+sity estimation problem, where the goal is to learn a
+distribution over logical forms.
+Learning such distributions is challenging. For a
+target set of objects, the number of logical forms
+that can be used to describe it grows combinatori-
+ally with the number of observable properties, such
+as color and shape. However, only a tiny fraction
+of these possibilities are ever actually used by peo-
+ple. We must learn to efficiently find these few, and
+accurately estimate their associated likelihoods.
+We demonstrate effective learning of a globally
+normalized log-linear distribution with features to
+account for context dependence and communicative
+goals. We use a stochastic gradient descent algo-
+rithm, where the key challenge is the need to com-
+pute feature expectations over all possible logical
+forms. For that purpose, we present a multi-stage
+inference algorithm, which progressively constructs
+meaning representations with increasing complex-
+ity, and learns a pruning model to retain only those
+that are likely to lead to high probability expres-
+sions. This approach allows us to consider a large
+</bodyText>
+<page confidence="0.960692">
+1914
+</page>
+<note confidence="0.938535625">
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1914–1925,
+Seattle, Washington, USA, 18-21 October 2013. c�2013 Association for Computational Linguistics
+The green, red, orange and yellow toys. (1)
+The green, red, yellow, and orange objects. (1)
+The red, green, yellow and orange toys. (1)
+The red, yellow, orange and green objects. (1)
+All the green, red, yellow and orange toys. (1)
+All the yellow, orange, red and green objects. (1)
+</note>
+<figure confidence="0.962204928571429">
+All the pieces that are not blue or brown. (2)
+All items that are not brown or blue. (2)
+All items that are not brown or blue. (2)
+Everything that is not brown or blue. (3)
+Everything that is not purple or blue. (3)
+All but the black and blue ones. (4)
+Any toy but the blue and brown toys. (4)
+Everything that is green, red, orange or yellow. (5)
+All objects that are not triangular or blue. (6)
+Everything that is not blue or a wedge. (7)
+Everything that is not a brown or blue toy. (8)
+All but the blue piece and brown wedge. (9)
+Everything except the brown wedge and the blue object. (10)
+All pieces but the blue piece and brown triangle shape. (11)
+(a) (b)
+P(z|S, G) z
+0.30 c(Ax.(yellow(x) V orange(x) V red(x) V green(x)) n object(x) n plu(x)) (1)
+0.15 c(Ax.—(brown(x) V blue(x)) n object(x) n plu(x)) (2)
+0.10 Every(Ax.—(brown(x) V blue(x)) n object(x) n sg(x)) (3)
+0.10 Every(Ax.object(x) n sg(x)) \ [c(Ax.(blue(x) V brown(x)) n object(x) n plu(x)] (4)
+0.05 Every(Ax.(yellow(x) V orange(x) V red(x) V green(x)) n object(x) n sg(x)) (5)
+0.05 c(Ax.(triangle(x) V blue(x)) n object(x) n plu(x)) (6)
+0.05 Every(Ax.object(x) n sg(x)—(blue(x) V equal(x, A(Ay.triangle(y) n sg(y))))) (7)
+0.05 Every(Ax.object(x) n sg(x) n —equal(x, A(Ay.(brown(y) V blue(y)) n object(y) n sg(y)))) (8)
+0.05 Every(Ax.object(x) n sg(x)) \ [c(Ax.(blue(x) n object(x) n sg(x)) V (brown(x) n triangle(x) n sg(x))] (9)
+0.05 Every(Ax.object(x) n sg(x)) \ [c(Ax.brown(x) n triangle(x) n sg(x)) U c(Ay.blue(y) n object(y) n sg(x))] (10)
+0.05 c(Ax.object(x) n plu(x)) \ [c(Ax.(blue(x) n object(x) n sg(x)) V (brown(x) n triangle(x) n object(x) n sg(x))] (11)
+(c)
+</figure>
+<figureCaption confidence="0.999534">
+Figure 1: An example scene from our object selection dataset. Figure 1a shows the image shown to subjects
+</figureCaption>
+<bodyText confidence="0.9930266875">
+on Amazon Mechanical Turk. The target set G is the circled objects. Figure 1b shows the 20 sentences
+provided as responses. Figure 1c shows the empirical distribution P(zlG, S) for this scene, estimated by
+labeling the sentences in Figure 1b. The correspondence between a sentence in 1b and its labeled logical
+expression in 1c is indicated by the number in parentheses. Section 5.1 presents a discussion of the space of
+possible logical forms.
+set of possible meanings, while maintaining compu-
+tational tractability.
+To represent meaning we build on previous ap-
+proaches that use lambda calculus (Carpenter, 1997;
+Zettlemoyer and Collins, 2005; Artzi and Zettle-
+moyer, 2013b). We extend these techniques by mod-
+eling the types of plurality and coordination that are
+prominent in expressions which refer to sets.
+We also present a new corpus for the task of re-
+ferring expression generation.1 While most previ-
+ous REG data focused on naming single objects,
+</bodyText>
+<footnote confidence="0.983733">
+1The corpus was collected using Amazon Mechanical Turk
+and is available on the authors’ websites.
+</footnote>
+<bodyText confidence="0.999147">
+to the best of our knowledge, this is the first cor-
+pus with sufficient coverage for learning to name
+sets of objects. Experiments demonstrate highly ac-
+curate learned models, able to generate over 87%
+of the expressions people used. On the previously
+studied special case of single object reference, we
+achieve state-of-the-art performance, with over 35%
+relative error reduction over previous state of the
+art (Mitchell et al., 2013).
+</bodyText>
+<sectionHeader confidence="0.999912" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.998167">
+Referring expression generation has been exten-
+sively studied in the natural language generation
+</bodyText>
+<page confidence="0.989343">
+1915
+</page>
+<bodyText confidence="0.999955536231885">
+community, dating as far back as SHRDLU (Wino-
+grad, 1972). Most work has built on variations of
+the Incremental Algorithm (Dale and Reiter, 1995),
+a deterministic algorithm for naming single ob-
+jects that constructs conjunctive logical expressions.
+REG systems are used in generation pipelines (Dale
+and Reiter, 2000) and are also commonly designed
+to be cognitively plausible, for example by following
+Gricean maxims (Grice, 1975). Krahmer and van
+Deemter (2012) and van Deemter et al. (2012a) sur-
+vey recent literature on REG.
+Different approaches have been proposed for gen-
+erating referring expressions for sets of objects.
+Van Deemter (2002) extended the Incremental Al-
+gorithm to allow disjunction and negation, enabling
+reference to sets. Further work attempted to re-
+solve the unnaturally long expressions which could
+be generated by this approach (Gardent, 2002; Ho-
+racek, 2004; Gatt and van Deemter, 2007). Later, de-
+scription logic was used to name sets (Areces et al.,
+2008; Ren et al., 2010). All of these algorithms are
+manually engineered and deterministic.
+In practice, human utterances are surprisingly
+varied, loosely following the Gricean ideals (van
+Deemter et al., 2012b). Much recent work in REG
+has identified the importance of modeling the vari-
+ation observed in human-generated referring ex-
+pressions (Viethen and Dale, 2010; Viethen et al.,
+2013; van Deemter et al., 2012b; Mitchell et al.,
+2013), and some approaches have applied machine-
+learning techniques to single-object references (Vi-
+ethen and Dale, 2010; Mitchell et al., 2011a,b). Re-
+cently, Mitchell et al. (2013) introduced a proba-
+bilistic approach for conjunctive descriptions of sin-
+gle objects, which will provide a comparison base-
+line for experiments in Section 8. To the best of
+our knowledge, this paper presents the first learned
+probabilistic model for referring expressions defin-
+ing sets, and is the first effort to treat REG as a den-
+sity estimation problem.
+REG is related to content selection, which
+has been studied for generating text from
+databases (Konstas and Lapata, 2012), event
+streams (Chen et al., 2010), images (Berg et al.,
+2012; Zitnick and Parikh, 2013), and text (Barzilay
+and Lapata, 2005; Carenini et al., 2006). However,
+most approaches to this problem output bags of con-
+cepts, while we construct full logical expressions,
+allowing our approach to capture complex relations
+between attributes.
+Finally, our approach to modeling meaning us-
+ing lambda calculus is related to a number of ap-
+proaches that used similar logical representation
+in various domains, including database query in-
+terfaces (Zelle and Mooney, 1996; Zettlemoyer
+and Collins, 2005, 2007), natural language instruc-
+tions (Chen and Mooney, 2011; Matuszek et al.,
+2012b; Kim and Mooney, 2012; Artzi and Zettle-
+moyer, 2013b), event streams (Liang et al., 2009;
+Chen et al., 2010), and visual descriptions (Ma-
+tuszek et al., 2012a; Krishnamurthy and Kollar,
+2013). Our use of logical forms follows this line of
+work, while extending it to handle plurality and co-
+ordination, as described in Section 4.1. In addition,
+lambda calculus was shown to enable effective nat-
+ural language generation from logical forms (White
+and Rajkumar, 2009; Lu and Ng, 2011). If com-
+bined with these approaches, our approach would
+allow the creation of a complete REG pipeline.
+</bodyText>
+<sectionHeader confidence="0.98458" genericHeader="method">
+3 Technical Overview
+</sectionHeader>
+<bodyText confidence="0.998221166666667">
+Task Let i be a set of logical expressions that se-
+lect a target set of objects G in a world state 5, as
+formally defined in Section 5.1. We aim to learn a
+probability distribution P(z  |5, G), with z E i.
+For example, in the referring expressions domain
+we work with, the state 5 = {oi, ... , o,,,} is a set
+of n objects oz. Each oz has three properties: color,
+shape and type. The target set G C_ 5 is the subset of
+objects to be described. Figure 1a shows an example
+scene. The world state 5 includes the 11 objects in
+the image, where each object is assigned color (yel-
+low, green ... ), shape (cube, cylinder ... ) and type
+(broccoli, apple ... ). The target set G contains the
+circled objects. Our task is to predict a distribution
+which closely matches the empirical distribution in
+Figure 1c.
+Model and Inference We model P(z|5, G) as a
+globally normalized log-linear model, using features
+of the logical form z, and its execution with respect
+to 5 and G. Since enumerating all z E i is in-
+tractable, we develop an approximate inference al-
+gorithm which constructs a high quality candidate
+set, using a learned pruning model. Section 5.2 de-
+scribes the globally scored log-linear model. Sec-
+</bodyText>
+<page confidence="0.989522">
+1916
+</page>
+<bodyText confidence="0.999877777777778">
+tion 5.3 presents a detailed description of the infer-
+ence procedure.
+Learning We use stochastic gradient descent to
+learn both the global scoring model and the explicit
+pruning model, as described in section 6. Our data
+consists of human-generated referring expressions,
+gathered from Amazon Mechanical Turk. These
+sentences are automatically labelled with logical
+forms with a learned semantic parser, providing a
+stand-in for manually labeled data (see Section 7).
+Evaluation Our goal is to output a distribution
+that closely matches the distribution that would be
+produced by humans. We therefore evaluate our
+model with gold standard labeling of crowd-sourced
+referring expressions, which are treated as samples
+from the implicit distribution we are trying to model.
+The data and evaluation procedure are described in
+Section 7. The results are presented in Section 8.
+</bodyText>
+<sectionHeader confidence="0.90474" genericHeader="method">
+4 Modeling Referring Expressions
+</sectionHeader>
+<subsectionHeader confidence="0.994025">
+4.1 Semantic Modeling
+</subsectionHeader>
+<bodyText confidence="0.953519838235294">
+Our semantic modeling approach uses simply-typed
+lambda-calculus following previous work (Carpen-
+ter, 1997; Zettlemoyer and Collins, 2005; Artzi and
+Zettlemoyer, 2013b), extending it in one important
+way: we treat sets of objects as a primitive type,
+rather than individuals. This allows us to model plu-
+rality, cardinality, and coordination for the language
+observed in our data, and is further motivated by re-
+cent cognitive science evidence that sets and their
+properties are represented as single units in human
+cognition (Scontras et al., 2012).
+Plurals Traditionally, noun phrases are identified
+with the entity-type e and pick out individual ob-
+jects (Carpenter, 1997). This makes it difficult to
+interpret plural noun-phrases which pick out a set of
+objects, like “The red cubes”. Previous approaches
+would map this sentence to the same logical expres-
+sion as the singular “The red cube”, ignoring the se-
+mantic distinction encoded by the plural.
+Instead, we define the primitive entity e to range
+over sets of objects. (e, t)-type expressions are
+therefore functions from sets to a truth-value. These
+are used in two ways, modeling both distributive and
+collective predicates (cf. Stone, 2000):
+1. Distributive predicates are (e, t)-type expres-
+sions which will return true if every individual
+in the set has a given property. For example, the
+expression Ax.red(x) will be true for all sets
+which contain only objects for which the value
+red is true.
+2. Collective predicates are (e, t)-type expres-
+sions which indicate a property of the set it-
+self. For example, in the phrase “the two
+cubes”, “two” corresponds to the expression
+Ax.cardinality2(x) which will return true
+only for sets which have exactly two members.
+We define semantic plurality in terms of two spe-
+cial collective predicates: sg for singular and plu
+for plural. For examples, “cube” is interpreted as
+Ax.cube(x) n sg(x), whereas “cubes” is interpreted
+as Ax.cube(x) n plu(x). The sg predicate returns
+true only for singleton sets. The plu predicate re-
+turns true for sets that contain two or more objects.
+We also model three kinds of determiners,
+functional-type ((e, t), e)-type expressions which
+select a single set from the power-set represented
+by their (e, t)-type argument. The definite deter-
+miner “the” is modeled with the predicate t, which
+resolves to the maximal set amongst those licensed
+by its argument. The determiner Every only accepts
+(e, t)- type arguments that define singleton sets (i.e.
+the argument includes the sg predicate) and returns
+a set containing the union of these singletons. For
+example, although “red cube” is a singular expres-
+sion, “Every red cube” refers to a set. Finally, the
+indefinite determiner “a” is modeled with the logical
+constant A, which picks a singleton set by implic-
+itly introducing an existential quantifier (Artzi and
+Zettlemoyer, 2013b).2
+Coordination Two types of coordination are
+prominent in set descriptions. The first is attribute
+coordination, which is typically modeled with the
+boolean operators: n for conjunction and V for dis-
+junction. For example, the phrase “the red cubes
+and green rectangle” involves a disjunction that joins
+two conjunctive expressions, both within the scope
+of the definite determiner: t(Ax.(red(x)ncube(x)n
+plu(x)) V (green(x) n rectangle(x) n sg(x))).
+</bodyText>
+<footnote confidence="0.9749505">
+2This treatment of the indefinite determiner is related to gen-
+eralized skolem terms as described by Steedman (2011).
+</footnote>
+<page confidence="0.994617">
+1917
+</page>
+<bodyText confidence="0.965881">
+The second kind of coordination, a new addition
+of this work, occurs when two sets are coordinated.
+This can either be set union (U) as in the phrase “The
+cubes and the rectangle” (t(Ax.cube(x) A plu(x)) U
+</bodyText>
+<listItem confidence="0.996139">
+t(Ax.rectangle(x) A sg(x)))), or set difference
+(\) as in the phrase “All blocks except the green
+cube”: (t(Ax.object(x)Aplu(x))\t(Ax.green(x)A
+cube(x) A sg(x))).
+</listItem>
+<subsectionHeader confidence="0.992125">
+4.2 Visual Domain
+</subsectionHeader>
+<bodyText confidence="0.999977222222222">
+Objects in our scenes are labeled with attribute val-
+ues for four attribute types: color (7 values, such
+as red, green), shape (9 values, such as cube,
+sphere), type (16 values, such as broccoli, apple)
+and a special object property, which is true for
+all objects. The special object property captures
+the role of descriptions that are true for all objects,
+such as “toy” or “item”. Each of these 33 attribute
+values corresponds to an (e, t)-type predicate.
+</bodyText>
+<sectionHeader confidence="0.926072" genericHeader="method">
+5 Model and Inference
+</sectionHeader>
+<bodyText confidence="0.999963571428571">
+In this section, we describe our approach to mod-
+eling the probability P(z  |S, G) of a logical form
+z E i that names a set of objects G in a world S, as
+defined in Section 3. We first define i (Section 5.1),
+and then present the distribution (Section 5.2) and an
+approximate inference approach that makes use of a
+learned pruning model (Section 5.3).
+</bodyText>
+<subsectionHeader confidence="0.999492">
+5.1 Space of Possible Meanings
+</subsectionHeader>
+<bodyText confidence="0.999983857142857">
+The set i defines logical expressions that we will
+consider for picking the target set G in state S. In
+general, we can construct infinitely many such ex-
+pressions. For example, every z E i can be triv-
+ially extended to form a new candidate z&apos; for i
+by adding a true clause to any conjunct it contains.
+However, the vast majority of such expressions are
+overly complex and redundant, and would never be
+used in practice as a referring expression.
+To avoid this explosion, we limit the type and
+complexity of the logical expressions that are in-
+cluded in i. We consider only e-type expressions,
+since they name sets, and furthermore only include
+expressions that name the desired target set G.3 We
+</bodyText>
+<footnote confidence="0.474536666666667">
+3We do not attempt to model underspecified or otherwise
+incorrect expressions, although our model could handle this by
+considering all e-type expressions.
+</footnote>
+<listItem confidence="0.919332">
+• p : hhe, ti, ei, e1 : he, ti → p(e1) : e
+</listItem>
+<equation confidence="0.957768217391304">
+p = c : hhe, ti, ei
+e.g. e1 = Ax.cube(x) ∧ sg(x) : he, ti
+t(Ax.cube(x) ∧ sg(x)) : e
+• p : ht, ti, e1 : he, ti → Ax.p(e1(x)) : he, ti
+p = ¬ : ht, ti
+e.g. e1 = Ax.red(x) : he, ti
+Ax.¬(red(x)) : he, ti
+• p : he, he, tii, e1 : e → Ax.(p(x))(e1)
+p = equal : he, he, tii
+e.g. e1 = A(Ay.cube(y) ∧ sg(y)) : e
+Ax.equal(x, A(Ay.cube(y) ∧ sg(y)))
+• p : he, he, eii, e1 : e, e2 : e → (p(e1))(e2) : e
+p = \ : he, he, eii
+e1 = t(Ax.cube(x) ∧ plu(x)) : e
+e.g. e2 = Every(Ax.object(x) ∧ sg(x)) : e
+Every(Ax.object(x) ∧ sg(x)) \
+t(Ax.cube(x) ∧ plu(x)) : e
+• p : ht, ht, tii, e1 : he, ti, e2he, ti →
+Ax.(p(e1(x)))(e2(x)) : he, ti
+p = ∧ : ht, ht, tii
+e.g. e1 = Ax.red(x) : he, ti
+e2 = Ax.cube(x) : he, ti
+Ax.red(x) ∧ cube(x) : e
+</equation>
+<figureCaption confidence="0.834391">
+Figure 2: The five rules used during generation.
+</figureCaption>
+<bodyText confidence="0.997361428571429">
+Each rule is a template which takes a predicate p : t
+of type t and one or two arguments ei : ti, with type
+ti. The output is the logical expression after the ar-
+row —*, constructed using the inputs as shown.
+also limit the overall complexity of each z E i, to
+contain not more than M logical constants.
+To achieve these constraints, we define an induc-
+tive procedure for enumerating i, in order of com-
+plexity. We first define Aj to be the set of all e- and
+(e, t)-type expressions that contain exactly j logi-
+cal constants. Figure 2 presents five rules that can be
+used to construct Aj by induction, for j = 1, ... , oo,
+by repeatedly adding new constants to expressions
+in Aj� for j&apos; &lt; j. Intuitively, Aj is the set of all
+complexity j expressions that can be used as sub-
+expressions for higher complexity entires in our final
+set i. Next, we define ij to be the e-type expres-
+sions in Aj that name the correct set G. And, finally,
+i = Uj=1...Mij of all correct expressions up to a
+maximum complexity of M.
+This construction allows for a finite i with good
+</bodyText>
+<page confidence="0.975655">
+1918
+</page>
+<bodyText confidence="0.999882">
+empirical coverage, as we will see in the experi-
+ments in Section 8. However, i is still prohibitively
+large for the maximum complexities used in practise
+(for example M = 20). Section 5.3 presents an ap-
+proach for learning models to prune i, while still
+achieving good empirical coverage.
+</bodyText>
+<subsectionHeader confidence="0.937504">
+5.2 Global Model
+</subsectionHeader>
+<bodyText confidence="0.999965666666667">
+Given a finite i, we can now define our desired
+globally normalized log-linear model, conditioned
+on the state S and set of target objects G:
+</bodyText>
+<equation confidence="0.9825525">
+PG(z  |S, G; 9) = 1 eθ·φ(z,S,G) (1)
+C
+</equation>
+<bodyText confidence="0.999625666666667">
+where 0 E Rn is a parameter vector, O(z, S, G) E
+Rn is a feature function and C is the normalization
+constant. Section 5.4 defines the features we use.
+</bodyText>
+<subsectionHeader confidence="0.975162">
+5.3 Pruning i
+</subsectionHeader>
+<bodyText confidence="0.999914818181818">
+As motivated in Section 5.1, the key challenge for
+our global model in Equation 1 is that the set i is
+too large to be explicitly enumerated. Instead, we
+designed an approach for learning to approximate i
+with a subset of the highly likely entries, and use this
+subset as a proxy for i during inference.
+More specifically, we define a binary distribution
+that is used to classify whether each a E Aj is likely
+to be used as a sub-expression in i, and prune each
+Aj to keep only the top k most likely entries. This
+distribution is a logistic regression model:
+</bodyText>
+<equation confidence="0.980734">
+eπj·φ(a,S,G)
+Pj(a  |S, G; 7rj) = 1 + eπj·φ(a,S,G) (2)
+</equation>
+<bodyText confidence="0.9999628">
+with features 0(a, S, G) E Rn and parameters 7rj E
+Rn. This distribution uses the same features as the
+global model presented in Equation 1, which we de-
+scribe in Section 5.4.
+Together, the pruning model and global model de-
+fine the distribution P�(z  |G, S; 0, II) over z E i,
+conditioned on the world state S and target set G,
+and parameterized by both the parameters 0 of the
+global model and the parameters II = 17r1, ... , 7rMl
+of the pruning models.
+</bodyText>
+<subsectionHeader confidence="0.571638">
+5.4 Features
+</subsectionHeader>
+<bodyText confidence="0.996706222222222">
+We use three kinds of features: logical expression
+structure features, situated features and a complexity
+feature. All features but the complexity feature are
+shared between the global model in Equation 1 and
+the pruning model in Equation 2. In order to avoid
+overly specific features, the attribute value predi-
+cates in the logical expressions are replaced with
+their attribute type (ie. red —* color). In addition,
+the special constants sg and plu are ignored when
+computing features.
+In the following description of our features, all
+examples are computed for the logical expression
+t(Ax.red(x) n object(x) n plu(x)), with respect to
+the scene and target set in Figure 1a.
+Structure Features We use binary features that
+account for the presence of certain structures in the
+logical form, allowing the model to learn common
+usage patterns.
+</bodyText>
+<listItem confidence="0.98658547826087">
+• Head Predicate - indicator for use of a logi-
+cal constant as a head predicate in every sub-
+expression of the expression. A head predicate
+is the top-level operator of an expression. For
+example, the head predicate of the expression
+“Ax.red(x) n object(x)” is “n” and the head
+of Ax.red(x) is red. For our running example,
+the head features are t, n, color, object.
+• Head-Predicate Bigrams and Trigrams -
+head-predicate bigrams are defined to be the
+head predicate of a logical form, and the head
+predicate of one of its children. Trigrams
+are similarly defined. E.g. bigrams: [t, n],
+[n, color], [n, object], and trigrams: [t, n, red],
+[t, n, object].
+• Conjunction Duplicate - this feature fires if a
+conjunctive expression contains duplicate sub-
+expressions amongst its children.
+• Coordination Children - this feature set indi-
+cates the presence of a coordination subexpres-
+sion (n, V, U or \) and the head expressions
+of all pairs and triples of its child expressions.
+E.g. [n; red, object].
+</listItem>
+<bodyText confidence="0.99348">
+Situated Features These features take into ac-
+count the evaluation of the logical form z with re-
+spect to the state S and target set G. They capture
+common patterns between the target set G and the
+object groups named by subexpressions of z.
+</bodyText>
+<page confidence="0.983394">
+1919
+</page>
+<bodyText confidence="0.765862727272727">
+• Head Predicate and Coverage - this fea-
+ture set indicates the head predicate of ev-
+ery sub-expression of the logical form, com-
+bined with a comparison between the execu-
+tion of the sub-expression and the target set
+G. The possible values for this comparison
+(which we call the “coverage” of the expres-
+sion with respect to G) are: EQUAL, SUBSET
+(SUB), SUPERSET (SPR), DISJOINT, ALL,
+EMPTY and OTHER. E.g. [t, SUB], [∧, SUB],
+[color, SUB], [object, ALL]
+</bodyText>
+<listItem confidence="0.9995415">
+• Coordination Child Coverage - this feature
+set indicates the head-predicate of a coordina-
+tion subexpression, combined with the cover-
+age of all pairs and triples of its child expres-
+sions. E.g. [∧; SUB, ALL].
+• Coordination Child Relative Coverage - this
+</listItem>
+<bodyText confidence="0.901624928571429">
+feature set indicates, for every pair of child sub-
+expressions of coordination expressions in the
+logical form, the coverage of the child sub-
+expressions relative to each other. The pos-
+sible relative coverage values are: SUB-SPR,
+DISJOINT, OTHER. E.g. [∧; SUB-SPR].
+Complexity Features We use a single real-
+numbered feature to account for the complexity of
+the logical form. We define the complexity of a log-
+ical form to be the number of logical constants used.
+Our running example has a complexity of 4. This
+feature is only used in the global model, since the
+pruning model always considers logical expressions
+of fixed complexity.
+</bodyText>
+<sectionHeader confidence="0.993488" genericHeader="method">
+6 Learning
+</sectionHeader>
+<bodyText confidence="0.967274730769231">
+Figure 3 presents the complete learning algorithm.
+The algorithm is online, using stochastic gradi-
+ent descent updates for both the globally scored
+density estimation model and the learned pruning
+model. The algorithm assumes a dataset of the form
+{(Zi, Si, Gi) : i = 1... n} where each example
+scene includes a list of logical expressions Zi, a
+world state Si, and a target set of objects, Gi, which
+will be identified by the resulting logical expres-
+sions. The output is learned parameters for both the
+globally scored density estimation model 0, and for
+the learned pruning models H.
+Inputs: Training set {(Zi, Si, Gi) : i = 1 ... n}, where Zi is
+a list of logical forms, Si is a world state, and Gi is a target
+set of objects. Number of iterations T. Learning rate α0.
+Decay parameter c. Complexity threshold M, as described
+in Section 5.3.
+Definitions: Let Pˆ(z  |Gi, Si; θ, Π) be the predicted global
+probability from Equation 1. Let ˆPj(z  |Gi, Si; πj) be the
+predicted pruning probability from Equation 2. Let ˆ�j be
+the set of all complexity-M logical expressions, after prun-
+ing (see Section 5.1). Let SUB(j,z) be all complexity-j
+sub-expressions of logical expression z. Let Qi(z  |Si, Gi)
+be the empirical probability over z E Z, estimated from
+Zi. Finally, let φi(z) be a shorthand for the feature function
+φ(z, Si, Gi) as defined in Section 5.4.
+</bodyText>
+<figure confidence="0.987248409090909">
+Algorithm:
+Initialize θ � ~0, πj +- 0~ for j = 1 ... M
+Fort = 1 ... T, i = 1 ... n:
+Step 1: (Update Global Model)
+a. Compute the stochastic /gradient:
+Δθ , EQi (z|Si,Gi) [φi W1 — EP�(z|Gi,Si;θ,II)[φi(z)]
+b. Update the parameters:
+γ � α�
+1+c×τ where τ = i + t x n
+θ θ + γΔθ
+Step 2: (Update Pruning Model)
+For j = 1 ... M
+a. Construct a set of positive and negative examples:
+D+ Uz∈Zi SUB(j, z).
+D− �ˆ�j \ D+
+b. Compute mini-batch stochastic gradient, normalizing
+for data skew:[
+Δπj|D+ |Ezz�∈D+(1 — Pj (z  |Si, Gi; πj)/)φi(z)
+D−  |Ez∈D− Pj (z  |Si, G; πj)φi(z)
+c. Update complexity-j pruning parameters:
+πj — πj + γΔπj
+Output: θ and Π = [π1, ... , πM]
+</figure>
+<figureCaption confidence="0.999964">
+Figure 3: The learning algorithm.
+</figureCaption>
+<subsectionHeader confidence="0.860314">
+6.1 Global Model Updates
+</subsectionHeader>
+<bodyText confidence="0.999798">
+The parameters 0 of the globally scored density es-
+timation model are trained to maximize the log-
+likelihood of the data:
+</bodyText>
+<equation confidence="0.968391">
+�Oi = log PG(z  |Si, Gi) (3)
+zEZi
+</equation>
+<bodyText confidence="0.998118166666667">
+Taking the derivative of this objective with re-
+spect to 0 yields the gradient in Step 1a of Fig-
+ure 3. The marginals, Ep(zJGi�Si;9�11)(0i(z)), are
+computed over the approximate finite subset of Z
+constructed with the inference procedure described
+in Section 5.3.
+</bodyText>
+<page confidence="0.982556">
+1920
+</page>
+<subsectionHeader confidence="0.990853">
+6.2 Pruning Model Updates
+</subsectionHeader>
+<bodyText confidence="0.9998125">
+To update each of the M pruning models, we first
+construct a set of positive and negative examples
+(Step 2a). The positive examples, D+, include those
+sub-expressions which should be in the beam - these
+are all complexity j sub-expressions of logical ex-
+pressions in ZZ. The negative examples, D−, in-
+clude all complexity-j expressions constructed dur-
+ing beam search, minus those which are in D+. The
+gradient (Set 2b) is a binary mini-batch gradient,
+normalized to correct for data skew.
+</bodyText>
+<sectionHeader confidence="0.997417" genericHeader="method">
+7 Experimental Setup
+</sectionHeader>
+<bodyText confidence="0.9989410625">
+Data Collection Our dataset consists of 118 im-
+ages, taken with a Microsoft Kinect camera. These
+are the same images used by Matuszek et al.
+(2012a), but we create multiple prompts for each im-
+age by circling different objects, giving 269 scenes
+in total. These scenes were shown to workers on
+Amazon Mechanical Turk4 who were asked to imag-
+ine giving instructions to a robot and complete the
+sentence “Please pick up ” in reference to the
+circled objects. Twenty referring expressions were
+collected for each scene, a total of 5380 expressions.
+From this data, 43 scenes (860 expressions) were
+held-out for use in a test set. Of the remaining
+scenes, the sentences of 30 were labeled with log-
+ical forms. 10 of these scenes (200 expressions) are
+used as a labeled initialization set, and 20 are used
+as a development test set (400 expressions). A small
+number of expressions (-5%) from the labeled ini-
+tial set were discarded, either because they did not
+correctly name the target set, or because they used
+very rare attributes (such as texture, or location) to
+name the target objects.
+Surrogate Labeling To avoid hand labeling the
+large majority of the scenes, we label the data
+with a learned semantic parser (Zettlemoyer and
+Collins, 2005). We created a hand-made lexicon
+for the entire training set, which greatly simplifies
+the learning problem, and learned the parameters
+of the parsing moder on the 10-scene initialization
+set. The weights were then further tuned using
+semi-supervised techniques (Artzi and Zettlemoyer,
+2011, 2013b) on the data to be labeled. Testing on
+</bodyText>
+<footnote confidence="0.933001">
+4http://www.mturk.com
+</footnote>
+<bodyText confidence="0.999842111111111">
+the development set shows that this parser achieves
+roughly 95% precision and 70% recall.
+Using this parser, we label the sentences in our
+training set. We only use scenes where at least 15
+sentences were successfully parsed. This gives a
+training set of 141 scenes (2587 expressions). Com-
+bining the automatically labeled training set with the
+hand-labelled initialization, development and held-
+out data, our labelled corpus totals 3938 labeled ex-
+pressions. By contrast, the popular TUNA furniture
+sub corpus (Gatt et al., 2007) contains 856 descrip-
+tions of 20 scenes, and although some of these refer
+to sets, these sets contain two objects at most.
+Framework Our experiments were implemented
+using the University of Washington Semantic Pars-
+ing Framework (Artzi and Zettlemoyer, 2013a).
+Hyperparameters Our inference procedure re-
+quires two hyperparameters: M, the maximum com-
+plexity threshold, and k, the beam size. In practice,
+we set these to the highest possible values which
+still allow for training to complete in a reasonable
+amount of time (under 12 hours). M is set to 20,
+which is sufficient to cover 99.5% of the observed
+expressions. The beam-size k is 100 for the first
+three complexity levels, and 50 thereafter.
+For learning, we use the following hyperparam-
+eters, which were tuned on the development set:
+learning rate α0 = .25, decay rate c = .02, num-
+ber of epochs T = 10.
+Evaluation Metrics Evaluation metrics used in
+REG research have assumed a system that produces
+a single output. Our goal is to achieve a distribution
+over logical forms that closely matches the distribu-
+tion observed from human subjects. Therefore, we
+compare our learned model to the labeled test data
+with mean absolute error:
+</bodyText>
+<equation confidence="0.474094">
+|P(z  |Si, Gi) − Q(z  |Si, Gi)|
+</equation>
+<bodyText confidence="0.999938428571429">
+where Q is the empirical distribution observed in the
+training data. MAE measures the total probability
+mass which is assigned differently in the predicted
+distribution than in the empirical distribution. We
+use MAE as opposed to KL divergence or data like-
+lihood as both of these measures are uninformative
+when the support of the two distributions differ.
+</bodyText>
+<equation confidence="0.754071833333333">
+1
+MAE = ��
+��
+i=1
+�
+���
+</equation>
+<page confidence="0.895359">
+1921
+</page>
+<table confidence="0.9990365">
+– MAE %dnp %nniq Top1
+VOA 39.7 98.2 92.5 72.7
+GenX 25.8 100 100 72.7
+(5.0) (0) (0) (0)
+</table>
+<tableCaption confidence="0.9988">
+Table 1: Single object referring expression gener-
+</tableCaption>
+<bodyText confidence="0.74454175">
+ation results. Our approach (GenX) is compared
+to the approach from Mitchell et al. (2013) (VOA).
+Standard deviation over five shuffles of training set
+is reported in parentheses.
+</bodyText>
+<figure confidence="0.968169882352941">
+MAE %dnp %nniq Top1
+54.3 87.4 72.9 52.6
+(4.5) (0.6) (1.1) (8.3)
+71.8 42.2 16.1 40.0
+(2.5) (2.7) (1.7) (5.0)
+87.0 26.0 11.2 14.9
+(6.7) (3.7) (2.1) (9.7)
+60.2 79.6 61.9 44.6
+(1.7) (0.3) (0.5) (4.5)
+88.8 21.9 9.3 14.0
+(6.4) (8.6) (3.5) (7.9)
+–
+Full GenX
+NoPrune
+NoCOV
+NoSTRUC
+HeadExpOnly
+</figure>
+<bodyText confidence="0.986799581395349">
+This metric is quite strict; small differences in the
+estimated probabilities over a large number of logi-
+cal expressions can result in a large error, even if the
+relative ordering is quite similar. Therefore, we re-
+port the percentage of observed logical expressions
+which the model produces, either giving credit mul-
+tiple times for duplicates (%dnp) or counting each
+unique logical expression in a scene once (%nniq).
+Put another way, %dnp counts logical expression to-
+kens, whereas %nniq counts types. We also report
+the proportion of scenes where the most likely log-
+ical expression according to the model matched the
+most common one in the data (Top1).
+Single Object Baseline In order to compare our
+method against the state of the art for generating
+referring expressions for single objects, we use the
+subset of our corpus where the target set is a sin-
+gle object. This sub-corpus consists of 44 scenes for
+training and 11 held out for testing.
+For comparison we re-implemented the proba-
+bilistic Visual Objects Algorithm (VOA) of Mitchell
+et al. (2013). We refer the readers to the original
+paper for details of the approach. The parameters
+of the model were tuned on the training data: the
+prior likelihood estimates for each of the four at-
+tribute types (aatt) were estimated as the relative
+frequency of each attribute in the data. We pick the
+ordering of attributes and the length penalty, A, from
+the cross-product of all possible 4! orderings and all
+integers on the range of [1,10], choosing the setting
+which results in the lowest average absolute error
+(AAE) on the training set. This process resulted
+in the following parameter settings: acolor = .916,
+ashape = .586, atype = .094, aobject = .506, AP
+ordering = [type, shape, object, color], A = 4. In-
+ference was done using 10,000 samples per scene.
+Table 2: Results on the complete corpus for the
+complete system (Full GenX), ablating the pruning
+model (NoPrune) and the different features: without
+coverage features (NoCOV), without structure fea-
+tures (NoSTRUC) and using only the logical expres-
+sion HeadExp features (HeadExpOnly). Standard
+deviation over five runs is shown in parentheses.
+</bodyText>
+<sectionHeader confidence="0.999845" genericHeader="evaluation">
+8 Results
+</sectionHeader>
+<bodyText confidence="0.99996862962963">
+We report results on both the single-object subset of
+our data and the full dataset. Since our approach is
+online, and therefore sensitive to data ordering, we
+average results over 5 different runs with randomly
+ordered data, and report variance.
+Single Objects Table 1 shows the different metrics
+for generating referring expression for single objects
+only. Our approach outperforms VOA (Mitchell
+et al., 2013) on all metrics, including an average of
+approximately 35% relative reduction in MAE. In
+addition, unlike VOA, our system (GenX) produces
+every logical expression used to refer to single ob-
+jects in our dataset, including a small number which
+use negation and equality.
+Object Sets Table 2 lists results on the full dataset.
+Our learned pruning approach produces an average
+72.9% of the unique logical expressions used present
+in our dataset – over 87% when these counts are
+weighted by their frequency. The globally scored
+model achieves a mean absolute error of 54.3, and
+correctly assigns the highest probability to the most
+likely expression over 52% of the time.
+Also shown in Table 2 are results obtained when
+elements of our approach are ablated. Using the
+global model for pruning instead of an explicitly
+trained model causes a large drop in performance,
+demonstrating that our global model is inappropri-
+</bodyText>
+<page confidence="0.974118">
+1922
+</page>
+<table confidence="0.926115428571428">
+Q P z
+.750 .320 t(Ax.object(x) n (yellow(x) V red(x)))
+.114 t(Ax.lego(x)) U t(Ax.red(x) n apple(x))
+.114 t(Ax.yellow(x) n lego(x))) U t(Ax.apple(x))
+.044 t(Ax.lego(x) V (red(x) n apple(x)))
+.044 t(Ax.(yellow(x) n lego(x)) V apple(x))
+.036 t(Ax.lego(x)) U t(Ax.red(x) n sphere(x))
+.026 t(Ax.red(x) n lego(x)) U t(Ax.red(x) n sphere(x))
+.050 .021 t(Ax.(lego(x) n yellow(x)) V (red(x) n apple(x)))
+.017 t(Ax.(lego(x) n yellow(x)) V (red(x) n sphere(x)))
+.014 t(Ax.yellow(x) n lego(x)) U t(Ax.red(x) n sphere(x))
+.100 .010 t(Ax.yellow(x) n object(x)) U t(Ax.apple(x))
+.050 .007 t(Ax.yellow(x) n object(x)) U t(Ax.red(x) n sphere(x))
+.050 .005 t(Ax.yellow(x) n object(x)) U t(Ax.red(x) n object(x))
+</table>
+<figure confidence="0.989183">
+(a) (b)
+</figure>
+<figureCaption confidence="0.998556">
+Figure 4: Example output of our system for the scene on the right. We show the top 10 expressions (z) from
+</figureCaption>
+<bodyText confidence="0.951356">
+the predicted distribution (P) compared to the empirical distribution estimated from our labeled data (Q).
+The bottom section shows the predicted probability of the three expressions which were not in the top 10 of
+the predicted distribution. Although the mean absolute error (MAE) of P and Q is 63.8, P covers all of the
+entries in Q in the correct relative order and also fills in many other plausible candidates.
+ate for pruning. We also ablate subsets of our fea-
+tures, demonstrating that the coverage and structural
+features are both crucial for performance.
+Qualitatively, we found the learned distributions
+were often higher quality than the seemingly high
+mean absolute error would imply. Figure 4 shows
+an example output where the absolute error of the
+predicted distribution was 63.8. Much of the error
+can be attributed to probability mass assigned to log-
+ical expressions which, although not observed in our
+test data, are reasonable referring expressions. This
+might be due to the fact that our estimate of the em-
+pirical distribution comes from a fairly small sample
+(20), or other factors which we do not model that
+make these expressions less likely.
+</bodyText>
+<sectionHeader confidence="0.99681" genericHeader="conclusions">
+9 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999840793103448">
+In this paper, we modeled REG as a density-
+estimation problem. We demonstrated that we can
+learn to produce distributions over logical referring
+expressions using a globally normalized model. Key
+to the approach was the use of a learned pruning
+model to define the space of logical expression that
+are explicitly enumerated during inference. Exper-
+iments demonstrate state-of-the-art performance on
+single object reference and the first results for learn-
+ing to name sets of objects, correctly recovering over
+87% of the observed logical forms.
+This approach suggests several directions for fu-
+ture work. Lambda-calculus meaning represen-
+tations can be designed for many semantic phe-
+nomena, such as spatial relations, superlatives, and
+graded properties, that are not common in our data.
+Collecting new datasets would allow us to study the
+extent to which the approach would scale to domains
+with such phenomena.
+Although the focus of this paper is on REG, the
+approach is also applicable to learning distributions
+over logical meaning representations for many other
+tasks. Such learned models could provide a range
+of possible inputs for systems that map logical ex-
+pressions to sentences (White and Rajkumar, 2009;
+Lu and Ng, 2011), and could also provide a valuable
+prior on the logical forms constructed by semantic
+parsers in grounded settings (Artzi and Zettlemoyer,
+2013b; Matuszek et al., 2012a).
+</bodyText>
+<sectionHeader confidence="0.996497" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.9994323">
+This research was supported in part by the In-
+tel Science and Technology Center for Pervasive
+Computing, by DARPA under the DEFT program
+through the AFRL (FA8750-13-2-0019) and the
+CSSG (N11AP20020), the ARO (W911NF-12-1-
+0197), and the NSF (IIS-1115966). The authors
+wish to thank Margaret Mitchell, Mark Yatskar,
+Anthony Fader, Kenton Lee, Eunsol Choi, Gabriel
+Schubiner, Leila Zilles, Adrienne Wang, and the
+anonymous reviewers for their helpful comments.
+</bodyText>
+<page confidence="0.981957">
+1923
+</page>
+<sectionHeader confidence="0.996042" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.941815034090909">
+Areces, C., Koller, A., and Striegnitz, K. (2008).
+Referring expressions as formulas of description
+logic. In Proceedings of the International Natu-
+ral Language Generation Conference.
+Artzi, Y. and Zettlemoyer, L. (2011). Bootstrapping
+semantic parsers from conversations. In Proceed-
+ings of the Conference on Empirical Methods in
+Natural Language Processing.
+Artzi, Y. and Zettlemoyer, L. (2013a). UW SPF:
+The University of Washington Semantic Parsing
+Framework.
+Artzi, Y. and Zettlemoyer, L. (2013b). Weakly su-
+pervised learning of semantic parsers for mapping
+instructions to actions. Transactions of the As-
+sociation for Computational Linguistics, 1(1):49–
+62.
+Barzilay, R. and Lapata, M. (2005). Collective
+content selection for concept-to-text generation.
+In Proceedings of the Conference on Empirical
+Methods in Natural Language Processing.
+Berg, A. C., Berg, T. L., Daume, H., Dodge, J.,
+Goyal, A., Han, X., Mensch, A., Mitchell, M.,
+Sood, A., Stratos, K., et al. (2012). Under-
+standing and predicting importance in images. In
+IEEE Conference on Computer Vision and Pattern
+Recognition.
+Carenini, G., Ng, R. T., and Pauls, A. (2006). Multi-
+document summarization of evaluative text. In
+Proceedings of the Conference of the European
+Chapter of the Association for Computational
+Linguistics.
+Carpenter, B. (1997). Type-Logical Semantics. The
+MIT Press.
+Chen, D., Kim, J., and Mooney, R. (2010). Train-
+ing a multilingual sportscaster: using perceptual
+context to learn language. Journal ofArtificial In-
+telligence Research, 37(1):397–436.
+Chen, D. and Mooney, R. (2011). Learning to inter-
+pret natural language navigation instructions from
+observations. In Proceedings of the National Con-
+ference on Artificial Intelligence.
+Dale, R. and Reiter, E. (1995). Computational in-
+terpretations of the gricean maxims in the gener-
+ation of referring expressions. Cognitive Science,
+19:233–264.
+Dale, R. and Reiter, E. (2000). Building natural lan-
+guage generation systems. Cambridge University
+Press.
+Gardent, C. (2002). Generating minimal definite de-
+scriptions. In Proceedings of the Annual Meeting
+of the Association for Computational Linguistics.
+Gatt, A. and van Deemter, K. (2007). Incremental
+generation of plural descriptions: Similarity and
+partitioning. In Proceedings of the Conference on
+Empirical Methods in Natural Language Process-
+ing.
+Gatt, A., Van Der Sluis, I., and Van Deemter, K.
+(2007). Evaluating algorithms for the generation
+of referring expressions using a balanced corpus.
+In Proceedings of the European Workshop on Nat-
+ural Language Generation.
+Grice, H. P. (1975). Logic and conversation. 1975,
+pages 41–58.
+Horacek, H. (2004). On referring to sets of objects
+naturally. In Natural Language Generation, pages
+70–79. Springer.
+Kim, J. and Mooney, R. J. (2012). Unsupervised
+PCFG induction for grounded language learning
+with highly ambiguous supervision. In Proceed-
+ings of the Conference on Empirical Methods in
+Natural Language Processing.
+Konstas, I. and Lapata, M. (2012). Unsupervised
+concept-to-text generation with hypergraphs. In
+Proceedings of the Conference of the North Amer-
+ican Chapter of the Association for Computa-
+tional Linguistics.
+Krahmer, E. and van Deemter, K. (2012). Computa-
+tional generation of referring expressions: A sur-
+vey. Computational Linguistics, 38(1):173–218.
+Krishnamurthy, J. and Kollar, T. (2013). Jointly
+learning to parse and perceive: Connecting nat-
+ural language to the physical world. Transactions
+of the Association for Computational Linguistics,
+1(2):193–206.
+Liang, P., Jordan, M., and Klein, D. (2009). Learn-
+ing semantic correspondences with less supervi-
+sion. In Proceedings of the Annual Meeting of the
+Association for Computational Linguistics.
+</reference>
+<page confidence="0.956207">
+1924
+</page>
+<reference confidence="0.977688329411764">
+Lu, W. and Ng, H. T. (2011). A probabilis-
+tic forest-to-string model for language generation
+from typed lambda calculus expressions. In Pro-
+ceedings of the Conference on Empirical Methods
+in Natural Language Processing.
+Matuszek, C., FitzGerald, N., Zettlemoyer, L., Bo,
+L., and Fox, D. (2012a). A joint model of lan-
+guage and perception for grounded attribute learn-
+ing. Proceedings of the International Conference
+on Machine Learning.
+Matuszek, C., Herbst, E., Zettlemoyer, L. S., and
+Fox, D. (2012b). Learning to parse natural lan-
+guage commands to a robot control system. In
+Proceedings of the International Symposium on
+Experimental Robotics.
+Mitchell, M., van Deemter, K., and Reiter, E.
+(2011a). Applying machine learning to the choice
+of size modifiers. In Proceedings of the PRE-
+CogSci Workshop.
+Mitchell, M., Van Deemter, K., and Reiter, E.
+(2011b). Two approaches for generating size
+modifiers. In Proceedings of the European Work-
+shop on Natural Language Generation.
+Mitchell, M., van Deemter, K., and Reiter, E. (2013).
+Generating expressions that refer to visible ob-
+jects. In Proceedings of Conference of the North
+American Chapter of the Association for Compu-
+tational Linguistics.
+Ren, Y., Van Deemter, K., and Pan, J. Z. (2010).
+Charting the potential of description logic for the
+generation of referring expressions. In Proceed-
+ings of the International Natural Language Gen-
+eration Conference.
+Scontras, G., Graff, P., and Goodman, N. D. (2012).
+Comparing pluralities. Cognition, 123(1):190–
+197.
+Steedman, M. (2011). Taking Scope. The MIT Press.
+Stone, M. (2000). On identifying sets. In Proceed-
+ings of the International Conference on Natural
+Language Generation.
+van Deemter, K. (2002). Generating referring ex-
+pressions: Boolean extensions of the incremental
+algorithm. Computational Linguistics, 28:37–52.
+van Deemter, K., Gatt, A., Sluis, I. v. d., and Power,
+R. (2012a). Generation of referring expressions:
+Assessing the incremental algorithm. Cognitive
+Science, 36(5):799–836.
+van Deemter, K., Gatt, A., van Gompel, R. P., and
+Krahmer, E. (2012b). Toward a computational
+psycholinguistics of reference production. Topics
+in Cognitive Science, 4(2):166–183.
+Viethen, J. and Dale, R. (2010). Speaker-dependent
+variation in content selection for referring ex-
+pression generation. In Proceedings of the Aus-
+tralasian Language Technology Workshop.
+Viethen, J., Mitchell, M., and Krahmer, E. (2013).
+Graphs and spatial relations in the generation of
+referring expressions. In Proceedings of the Eu-
+ropean Workshop on Natural Language Genera-
+tion.
+White, M. and Rajkumar, R. (2009). Perceptron
+reranking for ccg realization. In Proceedings of
+the Conference on Empirical Methods in Natural
+Language Processing.
+Winograd, T. (1972). Understanding natural lan-
+guage. Cognitive Psychology, 3(1):1–191.
+Zelle, J. and Mooney, R. (1996). Learning to parse
+database queries using inductive logic program-
+ming. In Proceedings of the National Conference
+on Artificial Intelligence.
+Zettlemoyer, L. and Collins, M. (2005). Learning
+to map sentences to logical form: Structured clas-
+sification with probabilistic categorial grammars.
+In Proceedings of the Conference on Uncertainty
+in Artificial Intelligence.
+Zettlemoyer, L. and Collins, M. (2007). Online
+learning of relaxed CCG grammars for parsing to
+logical form. In Proceedings of the Joint Confer-
+ence on Empirical Methods in Natural Language
+Processing and Computational Natural Language
+Learning.
+Zitnick, C. L. and Parikh, D. (2013). Bringing se-
+mantics into focus using visual abstraction. In
+IEEE Conference on Computer Vision and Pattern
+Recognition.
+</reference>
+<page confidence="0.994194">
+1925
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.968613">
+<title confidence="0.999907">Learning Distributions over Logical for Referring Expression Generation</title>
+<author confidence="0.99935">Nicholas FitzGerald Yoav Artzi Luke</author>
+<affiliation confidence="0.9998155">Computer Science &amp; University of</affiliation>
+<address confidence="0.99634">Seattle, WA</address>
+<abstract confidence="0.998673">We present a new approach to referring expression generation, casting it as a density estimation problem where the goal is to learn distributions over logical expressions identifying sets of objects in the world. Despite an extremely large space of possible expressions, we demonstrate effective learning of a globally normalized log-linear distribution. This learning is enabled by a new, multi-stage approximate inference technique that uses a pruning model to construct only the most likely logical forms. We train and evaluate the approach on a new corpus of references to sets of visual objects. Experiments show the approach is able to learn accurate models, which generate over 87% of the expressions people used. Additionally, on the previously studied special case of single object reference, we show a 35% relative error reduction over previous state of the art.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>C Areces</author>
+<author>A Koller</author>
+<author>K Striegnitz</author>
+</authors>
+<title>Referring expressions as formulas of description logic.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the International Natural Language Generation Conference.</booktitle>
+<contexts>
+<context position="8209" citStr="Areces et al., 2008" startWordPosition="1306" endWordPosition="1309">tively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are manually engineered and deterministic. In practice, human utterances are surprisingly varied, loosely following the Gricean ideals (van Deemter et al., 2012b). Much recent work in REG has identified the importance of modeling the variation observed in human-generated referring expressions (Viethen and Dale, 2010; Viethen et al., 2013; van Deemter et al., 2012b; Mitchell et al., 2013), and some approaches have applied machinelearning techniques to single-object references (Viethen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et a</context>
+</contexts>
+<marker>Areces, Koller, Striegnitz, 2008</marker>
+<rawString>Areces, C., Koller, A., and Striegnitz, K. (2008). Referring expressions as formulas of description logic. In Proceedings of the International Natural Language Generation Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Bootstrapping semantic parsers from conversations.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="29780" citStr="Artzi and Zettlemoyer, 2011" startWordPosition="5023" endWordPosition="5026"> set were discarded, either because they did not correctly name the target set, or because they used very rare attributes (such as texture, or location) to name the target objects. Surrogate Labeling To avoid hand labeling the large majority of the scenes, we label the data with a learned semantic parser (Zettlemoyer and Collins, 2005). We created a hand-made lexicon for the entire training set, which greatly simplifies the learning problem, and learned the parameters of the parsing moder on the 10-scene initialization set. The weights were then further tuned using semi-supervised techniques (Artzi and Zettlemoyer, 2011, 2013b) on the data to be labeled. Testing on 4http://www.mturk.com the development set shows that this parser achieves roughly 95% precision and 70% recall. Using this parser, we label the sentences in our training set. We only use scenes where at least 15 sentences were successfully parsed. This gives a training set of 141 scenes (2587 expressions). Combining the automatically labeled training set with the hand-labelled initialization, development and heldout data, our labelled corpus totals 3938 labeled expressions. By contrast, the popular TUNA furniture sub corpus (Gatt et al., 2007) con</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2011</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2011). Bootstrapping semantic parsers from conversations. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<date>2013</date>
+<institution>UW SPF: The University of Washington Semantic Parsing Framework.</institution>
+<contexts>
+<context position="6303" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1004" endWordPosition="1008">is the circled objects. Figure 1b shows the 20 sentences provided as responses. Figure 1c shows the empirical distribution P(zlG, S) for this scene, estimated by labeling the sentences in Figure 1b. The correspondence between a sentence in 1b and its labeled logical expression in 1c is indicated by the number in parentheses. Section 5.1 presents a discussion of the space of possible logical forms. set of possible meanings, while maintaining computational tractability. To represent meaning we build on previous approaches that use lambda calculus (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b). We extend these techniques by modeling the types of plurality and coordination that are prominent in expressions which refer to sets. We also present a new corpus for the task of referring expression generation.1 While most previous REG data focused on naming single objects, 1The corpus was collected using Amazon Mechanical Turk and is available on the authors’ websites. to the best of our knowledge, this is the first corpus with sufficient coverage for learning to name sets of objects. Experiments demonstrate highly accurate learned models, able to generate over 87% of the expressions peo</context>
+<context position="10016" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1587" endWordPosition="1591">text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that </context>
+<context position="12858" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="2060" endWordPosition="2063"> Evaluation Our goal is to output a distribution that closely matches the distribution that would be produced by humans. We therefore evaluate our model with gold standard labeling of crowd-sourced referring expressions, which are treated as samples from the implicit distribution we are trying to model. The data and evaluation procedure are described in Section 7. The results are presented in Section 8. 4 Modeling Referring Expressions 4.1 Semantic Modeling Our semantic modeling approach uses simply-typed lambda-calculus following previous work (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b), extending it in one important way: we treat sets of objects as a primitive type, rather than individuals. This allows us to model plurality, cardinality, and coordination for the language observed in our data, and is further motivated by recent cognitive science evidence that sets and their properties are represented as single units in human cognition (Scontras et al., 2012). Plurals Traditionally, noun phrases are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to interpret plural noun-phrases which pick out a set of objects, li</context>
+<context position="15549" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="2495" endWordPosition="2498">, t)-type argument. The definite determiner “the” is modeled with the predicate t, which resolves to the maximal set amongst those licensed by its argument. The determiner Every only accepts (e, t)- type arguments that define singleton sets (i.e. the argument includes the sg predicate) and returns a set containing the union of these singletons. For example, although “red cube” is a singular expression, “Every red cube” refers to a set. Finally, the indefinite determiner “a” is modeled with the logical constant A, which picks a singleton set by implicitly introducing an existential quantifier (Artzi and Zettlemoyer, 2013b).2 Coordination Two types of coordination are prominent in set descriptions. The first is attribute coordination, which is typically modeled with the boolean operators: n for conjunction and V for disjunction. For example, the phrase “the red cubes and green rectangle” involves a disjunction that joins two conjunctive expressions, both within the scope of the definite determiner: t(Ax.(red(x)ncube(x)n plu(x)) V (green(x) n rectangle(x) n sg(x))). 2This treatment of the indefinite determiner is related to generalized skolem terms as described by Steedman (2011). 1917 The second kind of coordi</context>
+<context position="30632" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="5156" endWordPosition="5159">only use scenes where at least 15 sentences were successfully parsed. This gives a training set of 141 scenes (2587 expressions). Combining the automatically labeled training set with the hand-labelled initialization, development and heldout data, our labelled corpus totals 3938 labeled expressions. By contrast, the popular TUNA furniture sub corpus (Gatt et al., 2007) contains 856 descriptions of 20 scenes, and although some of these refer to sets, these sets contain two objects at most. Framework Our experiments were implemented using the University of Washington Semantic Parsing Framework (Artzi and Zettlemoyer, 2013a). Hyperparameters Our inference procedure requires two hyperparameters: M, the maximum complexity threshold, and k, the beam size. In practice, we set these to the highest possible values which still allow for training to complete in a reasonable amount of time (under 12 hours). M is set to 20, which is sufficient to cover 99.5% of the observed expressions. The beam-size k is 100 for the first three complexity levels, and 50 thereafter. For learning, we use the following hyperparameters, which were tuned on the development set: learning rate α0 = .25, decay rate c = .02, number of epochs T =</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2013a). UW SPF: The University of Washington Semantic Parsing Framework.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Weakly supervised learning of semantic parsers for mapping instructions to actions.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<pages>62</pages>
+<contexts>
+<context position="6303" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1004" endWordPosition="1008">is the circled objects. Figure 1b shows the 20 sentences provided as responses. Figure 1c shows the empirical distribution P(zlG, S) for this scene, estimated by labeling the sentences in Figure 1b. The correspondence between a sentence in 1b and its labeled logical expression in 1c is indicated by the number in parentheses. Section 5.1 presents a discussion of the space of possible logical forms. set of possible meanings, while maintaining computational tractability. To represent meaning we build on previous approaches that use lambda calculus (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b). We extend these techniques by modeling the types of plurality and coordination that are prominent in expressions which refer to sets. We also present a new corpus for the task of referring expression generation.1 While most previous REG data focused on naming single objects, 1The corpus was collected using Amazon Mechanical Turk and is available on the authors’ websites. to the best of our knowledge, this is the first corpus with sufficient coverage for learning to name sets of objects. Experiments demonstrate highly accurate learned models, able to generate over 87% of the expressions peo</context>
+<context position="10016" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1587" endWordPosition="1591">text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that </context>
+<context position="12858" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="2060" endWordPosition="2063"> Evaluation Our goal is to output a distribution that closely matches the distribution that would be produced by humans. We therefore evaluate our model with gold standard labeling of crowd-sourced referring expressions, which are treated as samples from the implicit distribution we are trying to model. The data and evaluation procedure are described in Section 7. The results are presented in Section 8. 4 Modeling Referring Expressions 4.1 Semantic Modeling Our semantic modeling approach uses simply-typed lambda-calculus following previous work (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b), extending it in one important way: we treat sets of objects as a primitive type, rather than individuals. This allows us to model plurality, cardinality, and coordination for the language observed in our data, and is further motivated by recent cognitive science evidence that sets and their properties are represented as single units in human cognition (Scontras et al., 2012). Plurals Traditionally, noun phrases are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to interpret plural noun-phrases which pick out a set of objects, li</context>
+<context position="15549" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="2495" endWordPosition="2498">, t)-type argument. The definite determiner “the” is modeled with the predicate t, which resolves to the maximal set amongst those licensed by its argument. The determiner Every only accepts (e, t)- type arguments that define singleton sets (i.e. the argument includes the sg predicate) and returns a set containing the union of these singletons. For example, although “red cube” is a singular expression, “Every red cube” refers to a set. Finally, the indefinite determiner “a” is modeled with the logical constant A, which picks a singleton set by implicitly introducing an existential quantifier (Artzi and Zettlemoyer, 2013b).2 Coordination Two types of coordination are prominent in set descriptions. The first is attribute coordination, which is typically modeled with the boolean operators: n for conjunction and V for disjunction. For example, the phrase “the red cubes and green rectangle” involves a disjunction that joins two conjunctive expressions, both within the scope of the definite determiner: t(Ax.(red(x)ncube(x)n plu(x)) V (green(x) n rectangle(x) n sg(x))). 2This treatment of the indefinite determiner is related to generalized skolem terms as described by Steedman (2011). 1917 The second kind of coordi</context>
+<context position="30632" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="5156" endWordPosition="5159">only use scenes where at least 15 sentences were successfully parsed. This gives a training set of 141 scenes (2587 expressions). Combining the automatically labeled training set with the hand-labelled initialization, development and heldout data, our labelled corpus totals 3938 labeled expressions. By contrast, the popular TUNA furniture sub corpus (Gatt et al., 2007) contains 856 descriptions of 20 scenes, and although some of these refer to sets, these sets contain two objects at most. Framework Our experiments were implemented using the University of Washington Semantic Parsing Framework (Artzi and Zettlemoyer, 2013a). Hyperparameters Our inference procedure requires two hyperparameters: M, the maximum complexity threshold, and k, the beam size. In practice, we set these to the highest possible values which still allow for training to complete in a reasonable amount of time (under 12 hours). M is set to 20, which is sufficient to cover 99.5% of the observed expressions. The beam-size k is 100 for the first three complexity levels, and 50 thereafter. For learning, we use the following hyperparameters, which were tuned on the development set: learning rate α0 = .25, decay rate c = .02, number of epochs T =</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2013b). Weakly supervised learning of semantic parsers for mapping instructions to actions. Transactions of the Association for Computational Linguistics, 1(1):49– 62.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Barzilay</author>
+<author>M Lapata</author>
+</authors>
+<title>Collective content selection for concept-to-text generation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="9420" citStr="Barzilay and Lapata, 2005" startWordPosition="1497" endWordPosition="1500"> Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), </context>
+</contexts>
+<marker>Barzilay, Lapata, 2005</marker>
+<rawString>Barzilay, R. and Lapata, M. (2005). Collective content selection for concept-to-text generation. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A C Berg</author>
+<author>T L Berg</author>
+<author>H Daume</author>
+<author>J Dodge</author>
+<author>A Goyal</author>
+<author>X Han</author>
+<author>A Mensch</author>
+<author>M Mitchell</author>
+<author>A Sood</author>
+<author>K Stratos</author>
+</authors>
+<title>Understanding and predicting importance in images.</title>
+<date>2012</date>
+<booktitle>In IEEE Conference on Computer Vision and Pattern Recognition.</booktitle>
+<contexts>
+<context position="9356" citStr="Berg et al., 2012" startWordPosition="1487" endWordPosition="1490">hen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et a</context>
+</contexts>
+<marker>Berg, Berg, Daume, Dodge, Goyal, Han, Mensch, Mitchell, Sood, Stratos, 2012</marker>
+<rawString>Berg, A. C., Berg, T. L., Daume, H., Dodge, J., Goyal, A., Han, X., Mensch, A., Mitchell, M., Sood, A., Stratos, K., et al. (2012). Understanding and predicting importance in images. In IEEE Conference on Computer Vision and Pattern Recognition.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Carenini</author>
+<author>R T Ng</author>
+<author>A Pauls</author>
+</authors>
+<title>Multidocument summarization of evaluative text.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Conference of the European Chapter of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="9444" citStr="Carenini et al., 2006" startWordPosition="1501" endWordPosition="1504">roduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et </context>
+</contexts>
+<marker>Carenini, Ng, Pauls, 2006</marker>
+<rawString>Carenini, G., Ng, R. T., and Pauls, A. (2006). Multidocument summarization of evaluative text. In Proceedings of the Conference of the European Chapter of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Carpenter</author>
+</authors>
+<title>Type-Logical Semantics.</title>
+<date>1997</date>
+<publisher>The MIT Press.</publisher>
+<contexts>
+<context position="6243" citStr="Carpenter, 1997" startWordPosition="998" endWordPosition="999">cts on Amazon Mechanical Turk. The target set G is the circled objects. Figure 1b shows the 20 sentences provided as responses. Figure 1c shows the empirical distribution P(zlG, S) for this scene, estimated by labeling the sentences in Figure 1b. The correspondence between a sentence in 1b and its labeled logical expression in 1c is indicated by the number in parentheses. Section 5.1 presents a discussion of the space of possible logical forms. set of possible meanings, while maintaining computational tractability. To represent meaning we build on previous approaches that use lambda calculus (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b). We extend these techniques by modeling the types of plurality and coordination that are prominent in expressions which refer to sets. We also present a new corpus for the task of referring expression generation.1 While most previous REG data focused on naming single objects, 1The corpus was collected using Amazon Mechanical Turk and is available on the authors’ websites. to the best of our knowledge, this is the first corpus with sufficient coverage for learning to name sets of objects. Experiments demonstrate highly accurate lear</context>
+<context position="12798" citStr="Carpenter, 1997" startWordPosition="2053" endWordPosition="2055">nd-in for manually labeled data (see Section 7). Evaluation Our goal is to output a distribution that closely matches the distribution that would be produced by humans. We therefore evaluate our model with gold standard labeling of crowd-sourced referring expressions, which are treated as samples from the implicit distribution we are trying to model. The data and evaluation procedure are described in Section 7. The results are presented in Section 8. 4 Modeling Referring Expressions 4.1 Semantic Modeling Our semantic modeling approach uses simply-typed lambda-calculus following previous work (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b), extending it in one important way: we treat sets of objects as a primitive type, rather than individuals. This allows us to model plurality, cardinality, and coordination for the language observed in our data, and is further motivated by recent cognitive science evidence that sets and their properties are represented as single units in human cognition (Scontras et al., 2012). Plurals Traditionally, noun phrases are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to inter</context>
+</contexts>
+<marker>Carpenter, 1997</marker>
+<rawString>Carpenter, B. (1997). Type-Logical Semantics. The MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Chen</author>
+<author>J Kim</author>
+<author>R Mooney</author>
+</authors>
+<title>Training a multilingual sportscaster: using perceptual context to learn language.</title>
+<date>2010</date>
+<journal>Journal ofArtificial Intelligence Research,</journal>
+<volume>37</volume>
+<issue>1</issue>
+<contexts>
+<context position="9329" citStr="Chen et al., 2010" startWordPosition="1482" endWordPosition="1485">ngle-object references (Viethen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and </context>
+</contexts>
+<marker>Chen, Kim, Mooney, 2010</marker>
+<rawString>Chen, D., Kim, J., and Mooney, R. (2010). Training a multilingual sportscaster: using perceptual context to learn language. Journal ofArtificial Intelligence Research, 37(1):397–436.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Chen</author>
+<author>R Mooney</author>
+</authors>
+<title>Learning to interpret natural language navigation instructions from observations.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the National Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="9941" citStr="Chen and Mooney, 2011" startWordPosition="1575" endWordPosition="1578">l., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipe</context>
+</contexts>
+<marker>Chen, Mooney, 2011</marker>
+<rawString>Chen, D. and Mooney, R. (2011). Learning to interpret natural language navigation instructions from observations. In Proceedings of the National Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Dale</author>
+<author>E Reiter</author>
+</authors>
+<title>Computational interpretations of the gricean maxims in the generation of referring expressions.</title>
+<date>1995</date>
+<journal>Cognitive Science,</journal>
+<pages>19--233</pages>
+<contexts>
+<context position="7376" citStr="Dale and Reiter, 1995" startWordPosition="1177" endWordPosition="1180">verage for learning to name sets of objects. Experiments demonstrate highly accurate learned models, able to generate over 87% of the expressions people used. On the previously studied special case of single object reference, we achieve state-of-the-art performance, with over 35% relative error reduction over previous state of the art (Mitchell et al., 2013). 2 Related Work Referring expression generation has been extensively studied in the natural language generation 1915 community, dating as far back as SHRDLU (Winograd, 1972). Most work has built on variations of the Incremental Algorithm (Dale and Reiter, 1995), a deterministic algorithm for naming single objects that constructs conjunctive logical expressions. REG systems are used in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Fur</context>
+</contexts>
+<marker>Dale, Reiter, 1995</marker>
+<rawString>Dale, R. and Reiter, E. (1995). Computational interpretations of the gricean maxims in the generation of referring expressions. Cognitive Science, 19:233–264.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Dale</author>
+<author>E Reiter</author>
+</authors>
+<title>Building natural language generation systems.</title>
+<date>2000</date>
+<publisher>Cambridge University Press.</publisher>
+<contexts>
+<context position="7547" citStr="Dale and Reiter, 2000" startWordPosition="1201" endWordPosition="1204">ously studied special case of single object reference, we achieve state-of-the-art performance, with over 35% relative error reduction over previous state of the art (Mitchell et al., 2013). 2 Related Work Referring expression generation has been extensively studied in the natural language generation 1915 community, dating as far back as SHRDLU (Winograd, 1972). Most work has built on variations of the Incremental Algorithm (Dale and Reiter, 1995), a deterministic algorithm for naming single objects that constructs conjunctive logical expressions. REG systems are used in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later</context>
+</contexts>
+<marker>Dale, Reiter, 2000</marker>
+<rawString>Dale, R. and Reiter, E. (2000). Building natural language generation systems. Cambridge University Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Gardent</author>
+</authors>
+<title>Generating minimal definite descriptions.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="8096" citStr="Gardent, 2002" startWordPosition="1287" endWordPosition="1288">systems are used in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are manually engineered and deterministic. In practice, human utterances are surprisingly varied, loosely following the Gricean ideals (van Deemter et al., 2012b). Much recent work in REG has identified the importance of modeling the variation observed in human-generated referring expressions (Viethen and Dale, 2010; Viethen et al., 2013; van Deemter et al., 2012b; Mitchell et al., 2013), and some approaches have applied machinelearning t</context>
+</contexts>
+<marker>Gardent, 2002</marker>
+<rawString>Gardent, C. (2002). Generating minimal definite descriptions. In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Gatt</author>
+<author>K van Deemter</author>
+</authors>
+<title>Incremental generation of plural descriptions: Similarity and partitioning.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<marker>Gatt, van Deemter, 2007</marker>
+<rawString>Gatt, A. and van Deemter, K. (2007). Incremental generation of plural descriptions: Similarity and partitioning. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Gatt</author>
+<author>I Van Der Sluis</author>
+<author>K Van Deemter</author>
+</authors>
+<title>Evaluating algorithms for the generation of referring expressions using a balanced corpus.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the European Workshop on Natural Language Generation.</booktitle>
+<marker>Gatt, Van Der Sluis, Van Deemter, 2007</marker>
+<rawString>Gatt, A., Van Der Sluis, I., and Van Deemter, K. (2007). Evaluating algorithms for the generation of referring expressions using a balanced corpus. In Proceedings of the European Workshop on Natural Language Generation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H P Grice</author>
+</authors>
+<title>Logic and conversation.</title>
+<date>1975</date>
+<pages>41--58</pages>
+<contexts>
+<context position="7661" citStr="Grice, 1975" startWordPosition="1220" endWordPosition="1221"> reduction over previous state of the art (Mitchell et al., 2013). 2 Related Work Referring expression generation has been extensively studied in the natural language generation 1915 community, dating as far back as SHRDLU (Winograd, 1972). Most work has built on variations of the Incremental Algorithm (Dale and Reiter, 1995), a deterministic algorithm for naming single objects that constructs conjunctive logical expressions. REG systems are used in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are man</context>
+</contexts>
+<marker>Grice, 1975</marker>
+<rawString>Grice, H. P. (1975). Logic and conversation. 1975, pages 41–58.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Horacek</author>
+</authors>
+<title>On referring to sets of objects naturally.</title>
+<date>2004</date>
+<booktitle>In Natural Language Generation,</booktitle>
+<pages>70--79</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="8111" citStr="Horacek, 2004" startWordPosition="1289" endWordPosition="1291">d in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the Incremental Algorithm to allow disjunction and negation, enabling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are manually engineered and deterministic. In practice, human utterances are surprisingly varied, loosely following the Gricean ideals (van Deemter et al., 2012b). Much recent work in REG has identified the importance of modeling the variation observed in human-generated referring expressions (Viethen and Dale, 2010; Viethen et al., 2013; van Deemter et al., 2012b; Mitchell et al., 2013), and some approaches have applied machinelearning techniques to si</context>
+</contexts>
+<marker>Horacek, 2004</marker>
+<rawString>Horacek, H. (2004). On referring to sets of objects naturally. In Natural Language Generation, pages 70–79. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Kim</author>
+<author>R J Mooney</author>
+</authors>
+<title>Unsupervised PCFG induction for grounded language learning with highly ambiguous supervision.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="9987" citStr="Kim and Mooney, 2012" startWordPosition="1583" endWordPosition="1586">nd Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set</context>
+</contexts>
+<marker>Kim, Mooney, 2012</marker>
+<rawString>Kim, J. and Mooney, R. J. (2012). Unsupervised PCFG induction for grounded language learning with highly ambiguous supervision. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>I Konstas</author>
+<author>M Lapata</author>
+</authors>
+<title>Unsupervised concept-to-text generation with hypergraphs.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="9294" citStr="Konstas and Lapata, 2012" startWordPosition="1476" endWordPosition="1479">e applied machinelearning techniques to single-object references (Viethen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natur</context>
+</contexts>
+<marker>Konstas, Lapata, 2012</marker>
+<rawString>Konstas, I. and Lapata, M. (2012). Unsupervised concept-to-text generation with hypergraphs. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>E Krahmer</author>
+<author>K van Deemter</author>
+</authors>
+<title>Computational generation of referring expressions: A survey.</title>
+<date>2012</date>
+<journal>Computational Linguistics,</journal>
+<volume>38</volume>
+<issue>1</issue>
+<marker>Krahmer, van Deemter, 2012</marker>
+<rawString>Krahmer, E. and van Deemter, K. (2012). Computational generation of referring expressions: A survey. Computational Linguistics, 38(1):173–218.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Krishnamurthy</author>
+<author>T Kollar</author>
+</authors>
+<title>Jointly learning to parse and perceive: Connecting natural language to the physical world.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>2</issue>
+<contexts>
+<context position="10155" citStr="Krishnamurthy and Kollar, 2013" startWordPosition="1610" endWordPosition="1613">struct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that select a target set of objects G in a world state 5, as formally defined in Section 5.1. We aim to learn a probability distribution P(z |5,</context>
+</contexts>
+<marker>Krishnamurthy, Kollar, 2013</marker>
+<rawString>Krishnamurthy, J. and Kollar, T. (2013). Jointly learning to parse and perceive: Connecting natural language to the physical world. Transactions of the Association for Computational Linguistics, 1(2):193–206.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Liang</author>
+<author>M Jordan</author>
+<author>D Klein</author>
+</authors>
+<title>Learning semantic correspondences with less supervision.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="10053" citStr="Liang et al., 2009" startWordPosition="1594" endWordPosition="1597">l., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that select a target set of objects G in a</context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2009</marker>
+<rawString>Liang, P., Jordan, M., and Klein, D. (2009). Learning semantic correspondences with less supervision. In Proceedings of the Annual Meeting of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>W Lu</author>
+<author>H T Ng</author>
+</authors>
+<title>A probabilistic forest-to-string model for language generation from typed lambda calculus expressions.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="10444" citStr="Lu and Ng, 2011" startWordPosition="1658" endWordPosition="1661">elle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that select a target set of objects G in a world state 5, as formally defined in Section 5.1. We aim to learn a probability distribution P(z |5, G), with z E i. For example, in the referring expressions domain we work with, the state 5 = {oi, ... , o,,,} is a set of n objects oz. Each oz has three properties: color, shape and type. The target set G C_ 5 is the subset of objects to be described. Figure 1a shows an example scene. T</context>
+<context position="39287" citStr="Lu and Ng, 2011" startWordPosition="6571" endWordPosition="6574">culus meaning representations can be designed for many semantic phenomena, such as spatial relations, superlatives, and graded properties, that are not common in our data. Collecting new datasets would allow us to study the extent to which the approach would scale to domains with such phenomena. Although the focus of this paper is on REG, the approach is also applicable to learning distributions over logical meaning representations for many other tasks. Such learned models could provide a range of possible inputs for systems that map logical expressions to sentences (White and Rajkumar, 2009; Lu and Ng, 2011), and could also provide a valuable prior on the logical forms constructed by semantic parsers in grounded settings (Artzi and Zettlemoyer, 2013b; Matuszek et al., 2012a). Acknowledgements This research was supported in part by the Intel Science and Technology Center for Pervasive Computing, by DARPA under the DEFT program through the AFRL (FA8750-13-2-0019) and the CSSG (N11AP20020), the ARO (W911NF-12-1- 0197), and the NSF (IIS-1115966). The authors wish to thank Margaret Mitchell, Mark Yatskar, Anthony Fader, Kenton Lee, Eunsol Choi, Gabriel Schubiner, Leila Zilles, Adrienne Wang, and the a</context>
+</contexts>
+<marker>Lu, Ng, 2011</marker>
+<rawString>Lu, W. and Ng, H. T. (2011). A probabilistic forest-to-string model for language generation from typed lambda calculus expressions. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Matuszek</author>
+<author>N FitzGerald</author>
+<author>L Zettlemoyer</author>
+<author>L Bo</author>
+<author>D Fox</author>
+</authors>
+<title>A joint model of language and perception for grounded attribute learning.</title>
+<date>2012</date>
+<booktitle>Proceedings of the International Conference on Machine Learning.</booktitle>
+<contexts>
+<context position="9964" citStr="Matuszek et al., 2012" startWordPosition="1579" endWordPosition="1582"> et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overv</context>
+<context position="28396" citStr="Matuszek et al. (2012" startWordPosition="4796" endWordPosition="4799">models, we first construct a set of positive and negative examples (Step 2a). The positive examples, D+, include those sub-expressions which should be in the beam - these are all complexity j sub-expressions of logical expressions in ZZ. The negative examples, D−, include all complexity-j expressions constructed during beam search, minus those which are in D+. The gradient (Set 2b) is a binary mini-batch gradient, normalized to correct for data skew. 7 Experimental Setup Data Collection Our dataset consists of 118 images, taken with a Microsoft Kinect camera. These are the same images used by Matuszek et al. (2012a), but we create multiple prompts for each image by circling different objects, giving 269 scenes in total. These scenes were shown to workers on Amazon Mechanical Turk4 who were asked to imagine giving instructions to a robot and complete the sentence “Please pick up ” in reference to the circled objects. Twenty referring expressions were collected for each scene, a total of 5380 expressions. From this data, 43 scenes (860 expressions) were held-out for use in a test set. Of the remaining scenes, the sentences of 30 were labeled with logical forms. 10 of these scenes (200 expressions) are us</context>
+</contexts>
+<marker>Matuszek, FitzGerald, Zettlemoyer, Bo, Fox, 2012</marker>
+<rawString>Matuszek, C., FitzGerald, N., Zettlemoyer, L., Bo, L., and Fox, D. (2012a). A joint model of language and perception for grounded attribute learning. Proceedings of the International Conference on Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Matuszek</author>
+<author>E Herbst</author>
+<author>L S Zettlemoyer</author>
+<author>D Fox</author>
+</authors>
+<title>Learning to parse natural language commands to a robot control system.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the International Symposium on Experimental Robotics.</booktitle>
+<contexts>
+<context position="9964" citStr="Matuszek et al., 2012" startWordPosition="1579" endWordPosition="1582"> et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overv</context>
+<context position="28396" citStr="Matuszek et al. (2012" startWordPosition="4796" endWordPosition="4799">models, we first construct a set of positive and negative examples (Step 2a). The positive examples, D+, include those sub-expressions which should be in the beam - these are all complexity j sub-expressions of logical expressions in ZZ. The negative examples, D−, include all complexity-j expressions constructed during beam search, minus those which are in D+. The gradient (Set 2b) is a binary mini-batch gradient, normalized to correct for data skew. 7 Experimental Setup Data Collection Our dataset consists of 118 images, taken with a Microsoft Kinect camera. These are the same images used by Matuszek et al. (2012a), but we create multiple prompts for each image by circling different objects, giving 269 scenes in total. These scenes were shown to workers on Amazon Mechanical Turk4 who were asked to imagine giving instructions to a robot and complete the sentence “Please pick up ” in reference to the circled objects. Twenty referring expressions were collected for each scene, a total of 5380 expressions. From this data, 43 scenes (860 expressions) were held-out for use in a test set. Of the remaining scenes, the sentences of 30 were labeled with logical forms. 10 of these scenes (200 expressions) are us</context>
+</contexts>
+<marker>Matuszek, Herbst, Zettlemoyer, Fox, 2012</marker>
+<rawString>Matuszek, C., Herbst, E., Zettlemoyer, L. S., and Fox, D. (2012b). Learning to parse natural language commands to a robot control system. In Proceedings of the International Symposium on Experimental Robotics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Mitchell</author>
+<author>K van Deemter</author>
+<author>E Reiter</author>
+</authors>
+<title>Applying machine learning to the choice of size modifiers.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the PRECogSci Workshop.</booktitle>
+<marker>Mitchell, van Deemter, Reiter, 2011</marker>
+<rawString>Mitchell, M., van Deemter, K., and Reiter, E. (2011a). Applying machine learning to the choice of size modifiers. In Proceedings of the PRECogSci Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Mitchell</author>
+<author>K Van Deemter</author>
+<author>E Reiter</author>
+</authors>
+<title>Two approaches for generating size modifiers.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the European Workshop on Natural Language Generation.</booktitle>
+<marker>Mitchell, Van Deemter, Reiter, 2011</marker>
+<rawString>Mitchell, M., Van Deemter, K., and Reiter, E. (2011b). Two approaches for generating size modifiers. In Proceedings of the European Workshop on Natural Language Generation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Mitchell</author>
+<author>K van Deemter</author>
+<author>E Reiter</author>
+</authors>
+<title>Generating expressions that refer to visible objects.</title>
+<date>2013</date>
+<booktitle>In Proceedings of Conference of the North American Chapter of the Association for Computational Linguistics.</booktitle>
+<marker>Mitchell, van Deemter, Reiter, 2013</marker>
+<rawString>Mitchell, M., van Deemter, K., and Reiter, E. (2013). Generating expressions that refer to visible objects. In Proceedings of Conference of the North American Chapter of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Ren</author>
+<author>K Van Deemter</author>
+<author>J Z Pan</author>
+</authors>
+<title>Charting the potential of description logic for the generation of referring expressions.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the International Natural Language Generation Conference.</booktitle>
+<marker>Ren, Van Deemter, Pan, 2010</marker>
+<rawString>Ren, Y., Van Deemter, K., and Pan, J. Z. (2010). Charting the potential of description logic for the generation of referring expressions. In Proceedings of the International Natural Language Generation Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Scontras</author>
+<author>P Graff</author>
+<author>N D Goodman</author>
+</authors>
+<title>Comparing pluralities.</title>
+<date>2012</date>
+<journal>Cognition,</journal>
+<volume>123</volume>
+<issue>1</issue>
+<pages>197</pages>
+<contexts>
+<context position="13239" citStr="Scontras et al., 2012" startWordPosition="2122" endWordPosition="2125">sented in Section 8. 4 Modeling Referring Expressions 4.1 Semantic Modeling Our semantic modeling approach uses simply-typed lambda-calculus following previous work (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b), extending it in one important way: we treat sets of objects as a primitive type, rather than individuals. This allows us to model plurality, cardinality, and coordination for the language observed in our data, and is further motivated by recent cognitive science evidence that sets and their properties are represented as single units in human cognition (Scontras et al., 2012). Plurals Traditionally, noun phrases are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to interpret plural noun-phrases which pick out a set of objects, like “The red cubes”. Previous approaches would map this sentence to the same logical expression as the singular “The red cube”, ignoring the semantic distinction encoded by the plural. Instead, we define the primitive entity e to range over sets of objects. (e, t)-type expressions are therefore functions from sets to a truth-value. These are used in two ways, modeling both distri</context>
+</contexts>
+<marker>Scontras, Graff, Goodman, 2012</marker>
+<rawString>Scontras, G., Graff, P., and Goodman, N. D. (2012). Comparing pluralities. Cognition, 123(1):190– 197.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Steedman</author>
+</authors>
+<title>Taking Scope.</title>
+<date>2011</date>
+<publisher>The MIT Press.</publisher>
+<contexts>
+<context position="16117" citStr="Steedman (2011)" startWordPosition="2580" endWordPosition="2581">tential quantifier (Artzi and Zettlemoyer, 2013b).2 Coordination Two types of coordination are prominent in set descriptions. The first is attribute coordination, which is typically modeled with the boolean operators: n for conjunction and V for disjunction. For example, the phrase “the red cubes and green rectangle” involves a disjunction that joins two conjunctive expressions, both within the scope of the definite determiner: t(Ax.(red(x)ncube(x)n plu(x)) V (green(x) n rectangle(x) n sg(x))). 2This treatment of the indefinite determiner is related to generalized skolem terms as described by Steedman (2011). 1917 The second kind of coordination, a new addition of this work, occurs when two sets are coordinated. This can either be set union (U) as in the phrase “The cubes and the rectangle” (t(Ax.cube(x) A plu(x)) U t(Ax.rectangle(x) A sg(x)))), or set difference (\) as in the phrase “All blocks except the green cube”: (t(Ax.object(x)Aplu(x))\t(Ax.green(x)A cube(x) A sg(x))). 4.2 Visual Domain Objects in our scenes are labeled with attribute values for four attribute types: color (7 values, such as red, green), shape (9 values, such as cube, sphere), type (16 values, such as broccoli, apple) and </context>
+</contexts>
+<marker>Steedman, 2011</marker>
+<rawString>Steedman, M. (2011). Taking Scope. The MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Stone</author>
+</authors>
+<title>On identifying sets.</title>
+<date>2000</date>
+<booktitle>In Proceedings of the International Conference on Natural Language Generation.</booktitle>
+<contexts>
+<context position="13889" citStr="Stone, 2000" startWordPosition="2227" endWordPosition="2228">are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to interpret plural noun-phrases which pick out a set of objects, like “The red cubes”. Previous approaches would map this sentence to the same logical expression as the singular “The red cube”, ignoring the semantic distinction encoded by the plural. Instead, we define the primitive entity e to range over sets of objects. (e, t)-type expressions are therefore functions from sets to a truth-value. These are used in two ways, modeling both distributive and collective predicates (cf. Stone, 2000): 1. Distributive predicates are (e, t)-type expressions which will return true if every individual in the set has a given property. For example, the expression Ax.red(x) will be true for all sets which contain only objects for which the value red is true. 2. Collective predicates are (e, t)-type expressions which indicate a property of the set itself. For example, in the phrase “the two cubes”, “two” corresponds to the expression Ax.cardinality2(x) which will return true only for sets which have exactly two members. We define semantic plurality in terms of two special collective predicates: s</context>
+</contexts>
+<marker>Stone, 2000</marker>
+<rawString>Stone, M. (2000). On identifying sets. In Proceedings of the International Conference on Natural Language Generation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K van Deemter</author>
+</authors>
+<title>Generating referring expressions: Boolean extensions of the incremental algorithm.</title>
+<date>2002</date>
+<journal>Computational Linguistics,</journal>
+<pages>28--37</pages>
+<marker>van Deemter, 2002</marker>
+<rawString>van Deemter, K. (2002). Generating referring expressions: Boolean extensions of the incremental algorithm. Computational Linguistics, 28:37–52.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K van Deemter</author>
+<author>A Gatt</author>
+<author>I v d Sluis</author>
+<author>R Power</author>
+</authors>
+<title>Generation of referring expressions: Assessing the incremental algorithm.</title>
+<date>2012</date>
+<journal>Cognitive Science,</journal>
+<volume>36</volume>
+<issue>5</issue>
+<marker>van Deemter, Gatt, Sluis, Power, 2012</marker>
+<rawString>van Deemter, K., Gatt, A., Sluis, I. v. d., and Power, R. (2012a). Generation of referring expressions: Assessing the incremental algorithm. Cognitive Science, 36(5):799–836.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K van Deemter</author>
+<author>A Gatt</author>
+<author>R P van Gompel</author>
+<author>E Krahmer</author>
+</authors>
+<title>Toward a computational psycholinguistics of reference production.</title>
+<date>2012</date>
+<journal>Topics in Cognitive Science,</journal>
+<volume>4</volume>
+<issue>2</issue>
+<marker>van Deemter, Gatt, van Gompel, Krahmer, 2012</marker>
+<rawString>van Deemter, K., Gatt, A., van Gompel, R. P., and Krahmer, E. (2012b). Toward a computational psycholinguistics of reference production. Topics in Cognitive Science, 4(2):166–183.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Viethen</author>
+<author>R Dale</author>
+</authors>
+<title>Speaker-dependent variation in content selection for referring expression generation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Australasian Language Technology Workshop.</booktitle>
+<contexts>
+<context position="8571" citStr="Viethen and Dale, 2010" startWordPosition="1360" endWordPosition="1363">ling reference to sets. Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are manually engineered and deterministic. In practice, human utterances are surprisingly varied, loosely following the Gricean ideals (van Deemter et al., 2012b). Much recent work in REG has identified the importance of modeling the variation observed in human-generated referring expressions (Viethen and Dale, 2010; Viethen et al., 2013; van Deemter et al., 2012b; Mitchell et al., 2013), and some approaches have applied machinelearning techniques to single-object references (Viethen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem</context>
+</contexts>
+<marker>Viethen, Dale, 2010</marker>
+<rawString>Viethen, J. and Dale, R. (2010). Speaker-dependent variation in content selection for referring expression generation. In Proceedings of the Australasian Language Technology Workshop.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Viethen</author>
+<author>M Mitchell</author>
+<author>E Krahmer</author>
+</authors>
+<title>Graphs and spatial relations in the generation of referring expressions.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the European Workshop on Natural Language Generation.</booktitle>
+<contexts>
+<context position="8593" citStr="Viethen et al., 2013" startWordPosition="1364" endWordPosition="1367">Further work attempted to resolve the unnaturally long expressions which could be generated by this approach (Gardent, 2002; Horacek, 2004; Gatt and van Deemter, 2007). Later, description logic was used to name sets (Areces et al., 2008; Ren et al., 2010). All of these algorithms are manually engineered and deterministic. In practice, human utterances are surprisingly varied, loosely following the Gricean ideals (van Deemter et al., 2012b). Much recent work in REG has identified the importance of modeling the variation observed in human-generated referring expressions (Viethen and Dale, 2010; Viethen et al., 2013; van Deemter et al., 2012b; Mitchell et al., 2013), and some approaches have applied machinelearning techniques to single-object references (Viethen and Dale, 2010; Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to co</context>
+</contexts>
+<marker>Viethen, Mitchell, Krahmer, 2013</marker>
+<rawString>Viethen, J., Mitchell, M., and Krahmer, E. (2013). Graphs and spatial relations in the generation of referring expressions. In Proceedings of the European Workshop on Natural Language Generation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M White</author>
+<author>R Rajkumar</author>
+</authors>
+<title>Perceptron reranking for ccg realization.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="10426" citStr="White and Rajkumar, 2009" startWordPosition="1654" endWordPosition="1657">tabase query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches, our approach would allow the creation of a complete REG pipeline. 3 Technical Overview Task Let i be a set of logical expressions that select a target set of objects G in a world state 5, as formally defined in Section 5.1. We aim to learn a probability distribution P(z |5, G), with z E i. For example, in the referring expressions domain we work with, the state 5 = {oi, ... , o,,,} is a set of n objects oz. Each oz has three properties: color, shape and type. The target set G C_ 5 is the subset of objects to be described. Figure 1a shows a</context>
+<context position="39269" citStr="White and Rajkumar, 2009" startWordPosition="6567" endWordPosition="6570">or future work. Lambda-calculus meaning representations can be designed for many semantic phenomena, such as spatial relations, superlatives, and graded properties, that are not common in our data. Collecting new datasets would allow us to study the extent to which the approach would scale to domains with such phenomena. Although the focus of this paper is on REG, the approach is also applicable to learning distributions over logical meaning representations for many other tasks. Such learned models could provide a range of possible inputs for systems that map logical expressions to sentences (White and Rajkumar, 2009; Lu and Ng, 2011), and could also provide a valuable prior on the logical forms constructed by semantic parsers in grounded settings (Artzi and Zettlemoyer, 2013b; Matuszek et al., 2012a). Acknowledgements This research was supported in part by the Intel Science and Technology Center for Pervasive Computing, by DARPA under the DEFT program through the AFRL (FA8750-13-2-0019) and the CSSG (N11AP20020), the ARO (W911NF-12-1- 0197), and the NSF (IIS-1115966). The authors wish to thank Margaret Mitchell, Mark Yatskar, Anthony Fader, Kenton Lee, Eunsol Choi, Gabriel Schubiner, Leila Zilles, Adrien</context>
+</contexts>
+<marker>White, Rajkumar, 2009</marker>
+<rawString>White, M. and Rajkumar, R. (2009). Perceptron reranking for ccg realization. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Winograd</author>
+</authors>
+<title>Understanding natural language.</title>
+<date>1972</date>
+<journal>Cognitive Psychology,</journal>
+<volume>3</volume>
+<issue>1</issue>
+<contexts>
+<context position="7288" citStr="Winograd, 1972" startWordPosition="1164" endWordPosition="1166">bsites. to the best of our knowledge, this is the first corpus with sufficient coverage for learning to name sets of objects. Experiments demonstrate highly accurate learned models, able to generate over 87% of the expressions people used. On the previously studied special case of single object reference, we achieve state-of-the-art performance, with over 35% relative error reduction over previous state of the art (Mitchell et al., 2013). 2 Related Work Referring expression generation has been extensively studied in the natural language generation 1915 community, dating as far back as SHRDLU (Winograd, 1972). Most work has built on variations of the Incremental Algorithm (Dale and Reiter, 1995), a deterministic algorithm for naming single objects that constructs conjunctive logical expressions. REG systems are used in generation pipelines (Dale and Reiter, 2000) and are also commonly designed to be cognitively plausible, for example by following Gricean maxims (Grice, 1975). Krahmer and van Deemter (2012) and van Deemter et al. (2012a) survey recent literature on REG. Different approaches have been proposed for generating referring expressions for sets of objects. Van Deemter (2002) extended the </context>
+</contexts>
+<marker>Winograd, 1972</marker>
+<rawString>Winograd, T. (1972). Understanding natural language. Cognitive Psychology, 3(1):1–191.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Zelle</author>
+<author>R Mooney</author>
+</authors>
+<title>Learning to parse database queries using inductive logic programming.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the National Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="9849" citStr="Zelle and Mooney, 1996" startWordPosition="1562" endWordPosition="1565">udied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If </context>
+</contexts>
+<marker>Zelle, Mooney, 1996</marker>
+<rawString>Zelle, J. and Mooney, R. (1996). Learning to parse database queries using inductive logic programming. In Proceedings of the National Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+<author>M Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Conference on Uncertainty in Artificial Intelligence.</booktitle>
+<contexts>
+<context position="6274" citStr="Zettlemoyer and Collins, 2005" startWordPosition="1000" endWordPosition="1003">hanical Turk. The target set G is the circled objects. Figure 1b shows the 20 sentences provided as responses. Figure 1c shows the empirical distribution P(zlG, S) for this scene, estimated by labeling the sentences in Figure 1b. The correspondence between a sentence in 1b and its labeled logical expression in 1c is indicated by the number in parentheses. Section 5.1 presents a discussion of the space of possible logical forms. set of possible meanings, while maintaining computational tractability. To represent meaning we build on previous approaches that use lambda calculus (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b). We extend these techniques by modeling the types of plurality and coordination that are prominent in expressions which refer to sets. We also present a new corpus for the task of referring expression generation.1 While most previous REG data focused on naming single objects, 1The corpus was collected using Amazon Mechanical Turk and is available on the authors’ websites. to the best of our knowledge, this is the first corpus with sufficient coverage for learning to name sets of objects. Experiments demonstrate highly accurate learned models, able to generate ov</context>
+<context position="9880" citStr="Zettlemoyer and Collins, 2005" startWordPosition="1566" endWordPosition="1569">t from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, 2012; Artzi and Zettlemoyer, 2013b), event streams (Liang et al., 2009; Chen et al., 2010), and visual descriptions (Matuszek et al., 2012a; Krishnamurthy and Kollar, 2013). Our use of logical forms follows this line of work, while extending it to handle plurality and coordination, as described in Section 4.1. In addition, lambda calculus was shown to enable effective natural language generation from logical forms (White and Rajkumar, 2009; Lu and Ng, 2011). If combined with these approaches,</context>
+<context position="12829" citStr="Zettlemoyer and Collins, 2005" startWordPosition="2056" endWordPosition="2059">y labeled data (see Section 7). Evaluation Our goal is to output a distribution that closely matches the distribution that would be produced by humans. We therefore evaluate our model with gold standard labeling of crowd-sourced referring expressions, which are treated as samples from the implicit distribution we are trying to model. The data and evaluation procedure are described in Section 7. The results are presented in Section 8. 4 Modeling Referring Expressions 4.1 Semantic Modeling Our semantic modeling approach uses simply-typed lambda-calculus following previous work (Carpenter, 1997; Zettlemoyer and Collins, 2005; Artzi and Zettlemoyer, 2013b), extending it in one important way: we treat sets of objects as a primitive type, rather than individuals. This allows us to model plurality, cardinality, and coordination for the language observed in our data, and is further motivated by recent cognitive science evidence that sets and their properties are represented as single units in human cognition (Scontras et al., 2012). Plurals Traditionally, noun phrases are identified with the entity-type e and pick out individual objects (Carpenter, 1997). This makes it difficult to interpret plural noun-phrases which </context>
+<context position="29490" citStr="Zettlemoyer and Collins, 2005" startWordPosition="4981" endWordPosition="4984">in a test set. Of the remaining scenes, the sentences of 30 were labeled with logical forms. 10 of these scenes (200 expressions) are used as a labeled initialization set, and 20 are used as a development test set (400 expressions). A small number of expressions (-5%) from the labeled initial set were discarded, either because they did not correctly name the target set, or because they used very rare attributes (such as texture, or location) to name the target objects. Surrogate Labeling To avoid hand labeling the large majority of the scenes, we label the data with a learned semantic parser (Zettlemoyer and Collins, 2005). We created a hand-made lexicon for the entire training set, which greatly simplifies the learning problem, and learned the parameters of the parsing moder on the 10-scene initialization set. The weights were then further tuned using semi-supervised techniques (Artzi and Zettlemoyer, 2011, 2013b) on the data to be labeled. Testing on 4http://www.mturk.com the development set shows that this parser achieves roughly 95% precision and 70% recall. Using this parser, we label the sentences in our training set. We only use scenes where at least 15 sentences were successfully parsed. This gives a tr</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Zettlemoyer, L. and Collins, M. (2005). Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In Proceedings of the Conference on Uncertainty in Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+<author>M Collins</author>
+</authors>
+<title>Online learning of relaxed CCG grammars for parsing to logical form.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</booktitle>
+<marker>Zettlemoyer, Collins, 2007</marker>
+<rawString>Zettlemoyer, L. and Collins, M. (2007). Online learning of relaxed CCG grammars for parsing to logical form. In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C L Zitnick</author>
+<author>D Parikh</author>
+</authors>
+<title>Bringing semantics into focus using visual abstraction.</title>
+<date>2013</date>
+<booktitle>In IEEE Conference on Computer Vision and Pattern Recognition.</booktitle>
+<contexts>
+<context position="9383" citStr="Zitnick and Parikh, 2013" startWordPosition="1491" endWordPosition="1494"> Mitchell et al., 2011a,b). Recently, Mitchell et al. (2013) introduced a probabilistic approach for conjunctive descriptions of single objects, which will provide a comparison baseline for experiments in Section 8. To the best of our knowledge, this paper presents the first learned probabilistic model for referring expressions defining sets, and is the first effort to treat REG as a density estimation problem. REG is related to content selection, which has been studied for generating text from databases (Konstas and Lapata, 2012), event streams (Chen et al., 2010), images (Berg et al., 2012; Zitnick and Parikh, 2013), and text (Barzilay and Lapata, 2005; Carenini et al., 2006). However, most approaches to this problem output bags of concepts, while we construct full logical expressions, allowing our approach to capture complex relations between attributes. Finally, our approach to modeling meaning using lambda calculus is related to a number of approaches that used similar logical representation in various domains, including database query interfaces (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005, 2007), natural language instructions (Chen and Mooney, 2011; Matuszek et al., 2012b; Kim and Mooney, </context>
+</contexts>
+<marker>Zitnick, Parikh, 2013</marker>
+<rawString>Zitnick, C. L. and Parikh, D. (2013). Bringing semantics into focus using visual abstraction. In IEEE Conference on Computer Vision and Pattern Recognition.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

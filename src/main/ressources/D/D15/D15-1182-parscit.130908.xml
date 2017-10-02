@@ -1,0 +1,2233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.9974385">
+Posterior calibration and exploratory analysis for natural language
+processing models
+</title>
+<author confidence="0.995012">
+Khanh Nguyen
+</author>
+<affiliation confidence="0.999368">
+Department of Computer Science
+University of Maryland, College Park
+</affiliation>
+<address confidence="0.972035">
+College Park, MD 20742
+</address>
+<email confidence="0.999423">
+kxnguyen@cs.umd.edu
+</email>
+<author confidence="0.938436">
+Brendan O’Connor
+</author>
+<affiliation confidence="0.996247">
+College of Information and Computer Sciences
+University of Massachusetts, Amherst
+</affiliation>
+<address confidence="0.913974">
+Amherst, MA, 01003
+</address>
+<email confidence="0.999458">
+brenocon@cs.umass.edu
+</email>
+<sectionHeader confidence="0.997397" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999833176470588">
+Many models in natural language process-
+ing define probabilistic distributions over
+linguistic structures. We argue that (1)
+the quality of a model’s posterior distribu-
+tion can and should be directly evaluated,
+as to whether probabilities correspond to
+empirical frequencies; and (2) NLP uncer-
+tainty can be projected not only to pipeline
+components, but also to exploratory data
+analysis, telling a user when to trust and
+not trust the NLP analysis. We present a
+method to analyze calibration, and apply
+it to compare the miscalibration of sev-
+eral commonly used models. We also con-
+tribute a coreference sampling algorithm
+that can create confidence intervals for a
+political event extraction task.1
+</bodyText>
+<sectionHeader confidence="0.999516" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999697052631579">
+Natural language processing systems are imper-
+fect. Decades of research have yielded analyzers
+that mis-identify named entities, mis-attach syn-
+tactic relations, and mis-recognize noun phrase
+coreference anywhere from 10-40% of the time.
+But these systems are accurate enough so that their
+outputs can be used as soft, if noisy, indicators of
+language meaning for use in downstream analysis,
+such as systems that perform question answering,
+machine translation, event extraction, and narra-
+tive analysis (McCord et al., 2012; Gimpel and
+Smith, 2008; Miwa et al., 2010; Bamman et al.,
+2013).
+To understand the performance of an ana-
+lyzer, researchers and practitioners typically mea-
+sure the accuracy of individual labels or edges
+among a single predicted output structure y, such
+as a most-probable tagging or entity clustering
+argmaxy P(y|x) (conditional on text data x).
+</bodyText>
+<footnote confidence="0.9972555">
+1See the extended version of this paper for software, ap-
+pendix, and acknowledgments sections:
+http://brenocon.com/nlpcalib/
+http://arxiv.org/abs/1508.05154
+</footnote>
+<bodyText confidence="0.999933604651163">
+But a probabilistic model gives a probability
+distribution over many other output structures that
+have smaller predicted probabilities; a line of work
+has sought to control cascading pipeline errors by
+passing on multiple structures from earlier stages
+of analysis, by propagating prediction uncertainty
+through multiple samples (Finkel et al., 2006),
+K-best lists (Venugopal et al., 2008; Toutanova
+et al., 2008), or explicitly diverse lists (Gimpel
+et al., 2013); often the goal is to marginalize over
+structures to calculate and minimize an expected
+loss function, as in minimum Bayes risk decod-
+ing (Goodman, 1996; Kumar and Byrne, 2004), or
+to perform joint inference between early and later
+stages of NLP analysis (e.g. Singh et al., 2013;
+Durrett and Klein, 2014).
+These approaches should work better when the
+posterior probabilities of the predicted linguistic
+structures reflect actual probabilities of the struc-
+tures or aspects of the structures. For example, say
+a model is overconfident: it places too much prob-
+ability mass in the top prediction, and not enough
+in the rest. Then there will be little benefit to us-
+ing the lower probability structures, since in the
+training or inference objectives they will be incor-
+rectly outweighed by the top prediction (or in a
+sampling approach, they will be systematically un-
+dersampled and thus have too-low frequencies). If
+we only evaluate models based on their top pre-
+dictions or on downstream tasks, it is difficult to
+diagnose this issue.
+Instead, we propose to directly evaluate the cal-
+ibration of a model’s posterior prediction distri-
+bution. A perfectly calibrated model knows how
+often it’s right or wrong; when it predicts an event
+with 80% confidence, the event empirically turns
+out to be true 80% of the time. While perfect
+accuracy for NLP models remains an unsolved
+challenge, perfect calibration is a more achievable
+goal, since a model that has imperfect accuracy
+could, in principle, be perfectly calibrated. In this
+paper, we develop a method to empirically analyze
+calibration that is appropriate for NLP models (§3)
+</bodyText>
+<page confidence="0.946578">
+1587
+</page>
+<note confidence="0.984828">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1587–1598,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.998791304347826">
+and use it to analyze common generative and dis-
+criminative models for tagging and classification
+(§4).
+Furthermore, if a model’s probabilities are
+meaningful, that would justify using its proba-
+bility distributions for any downstream purpose,
+including exploratory analysis on unlabeled data.
+In §6 we introduce a representative corpus explo-
+ration problem, identifying temporal event trends
+in international politics, with a method that is de-
+pendent on coreference resolution. We develop
+a coreference sampling algorithm (§5.2) which
+projects uncertainty into the event extraction, in-
+ducing a posterior distribution over event frequen-
+cies. Sometimes the event trends have very high
+posterior variance (large confidence intervals),2
+reflecting when the NLP system genuinely does
+not know the correct semantic extraction. This
+highlights an important use of a calibrated model:
+being able to tell a user when the model’s predic-
+tions are likely to be incorrect, or at least, not giv-
+ing a user a false sense of certainty from an erro-
+neous NLP analysis.
+</bodyText>
+<sectionHeader confidence="0.85242" genericHeader="introduction">
+2 Definition of calibration
+</sectionHeader>
+<bodyText confidence="0.99914175">
+Consider a binary probabilistic prediction prob-
+lem, which consists of binary labels and proba-
+bilistic predictions for them. Each instance has a
+ground-truth label y ∈ {0, 1}, which is used for
+evaluation. The prediction problem is to gener-
+ate a predicted probability or prediction strength
+q ∈ [0, 1]. Typically, we use some form of a prob-
+abilistic model to accomplish this task, where q
+represents the model’s posterior probability3 of the
+instance having a positive label (y = 1).
+Let S = {(q1, y1), (q2, y2), · · · (qN, yN)} be
+the set of prediction-label pairs produced by the
+model. Many metrics assess the overall quality
+of how well the predicted probabilities match the
+data, such as the familiar cross entropy (negative
+average log-likelihood),
+</bodyText>
+<equation confidence="0.882453333333333">
+1 1
+yi log + (1 − yi) log
+qi 1 − qi
+</equation>
+<bodyText confidence="0.988483">
+or mean squared error, also known as the Brier
+score when y is binary (Brier, 1950),
+</bodyText>
+<equation confidence="0.9678845">
+X
+L2 (y, �q) = 1
+N
+i
+</equation>
+<footnote confidence="0.957151666666667">
+2We use the terms confidence interval and credible inter-
+val interchangeably in this work; the latter term is debatably
+more correct, though less widely familiar.
+3Whether q comes from a Bayesian posterior or not is ir-
+relevant to the analysis in this section. All that matters is that
+predictions are numbers q ∈ [0, 1].
+</footnote>
+<bodyText confidence="0.9980612">
+Both tend to attain better (lower) values when q is
+near 1 when y = 1, and near 0 when y = 0; and
+they achieve a perfect value of 0 when all qi = yi.4
+Let P(y, q) be the joint empirical distribution
+over labels and predictions. Under this notation,
+</bodyText>
+<equation confidence="0.886708">
+L2 = Eq,y[y − q]2. Consider the factorization
+P(y, q) = P(y  |q) P(q)
+</equation>
+<bodyText confidence="0.999878571428571">
+where P(y  |q) denotes the label empirical fre-
+quency, conditional on a prediction strength (Mur-
+phy and Winkler, 1987).5 Applying this factor-
+ization to the Brier score leads to the calibration-
+refinement decomposition (DeGroot and Fienberg,
+1983), in terms of expectations with respect to the
+prediction strength distribution P(q):
+</bodyText>
+<equation confidence="0.922050333333333">
+L2 = Eq[q − pq]2
+ |{z }
+Calibration MSE
+</equation>
+<bodyText confidence="0.999916777777778">
+where we denote pq ≡ P(y = 1  |q) for brevity.
+Here, calibration measures to what extent a
+model’s probabilistic predictions match their cor-
+responding empirical frequencies. Perfect calibra-
+tion is achieved when P(y = 1  |q) = q for all
+q; intuitively, if you aggregate all instances where
+a model predicted q, they should have y = 1 at q
+percent of the time. We define the magnitude of
+miscalibration using root mean squared error:
+</bodyText>
+<equation confidence="0.9638885">
+Definition 1 (RMS calibration error).
+qCalibErr = Eq[q − P(y = 1  |q)]2
+</equation>
+<bodyText confidence="0.999869">
+The second term of Eq 1 refers to refinement,
+which reflects to what extent the model is able
+to separate different labels (in terms of the con-
+ditional Gini entropy pq(1 − pq)). If the predic-
+tion strengths tend to cluster around 0 or 1, the re-
+finement score tends to be lower. The calibration-
+refinement breakdown offers a useful perspective
+on the accuracy of a model posterior. This paper
+focuses on calibration.
+There are several other ways to break down
+squared error, log-likelihood, and other probabilis-
+tic scoring rules.6 We use the Brier-based calibra-
+tion error in this work, since unlike cross-entropy
+</bodyText>
+<footnote confidence="0.907206166666667">
+4These two loss functions are instances of proper scoring
+rules (Gneiting and Raftery, 2007; Br¨ocker, 2009).
+5 We alternatively refer to this as labelfrequency or empir-
+ical frequency. The P probabilities can be thought of as fre-
+quencies from the hypothetical population the data and pre-
+dictions are drawn from. P probabilities are, definitionally
+speaking, completely separate from a probabilistic model that
+might be used to generate q predictions.
+6They all include a notion of calibration corresponding to
+a Bregman divergence (Br¨ocker, 2009); for example, cross-
+entropy can be broken down such that KL divergence is the
+measure of miscalibration.
+</footnote>
+<equation confidence="0.999252222222222">
+X
+Lt (y, �q) = 1
+N
+i
+(yi − qi)2
++ Eq[pq(1 − pq)]
+ |{z }
+Refinement
+(1)
+</equation>
+<page confidence="0.967688">
+1588
+</page>
+<table confidence="0.395344166666667">
+Algorithm 1 Estimate calibration error using
+adaptive binning.
+Input: A set of N prediction-label pairs
+{(q1, y1), (q2, y2), ··· , (qN, yN)}.
+Output: Calibration error.
+Parameter: Target bin size β.
+</table>
+<tableCaption confidence="0.9911028">
+Step 1: Sort pairs by prediction values qk in ascending order.
+Step 2: For each, assign bin label bk = k a 1 J + 1.
+Step 3: Define each bin Bi as the set of indices of pairs that
+have the same bin label. If the last bin has size less than
+β, merge it with the second-to-last bin (if one exists). Let
+</tableCaption>
+<equation confidence="0.826310818181818">
+{B1, B2, · · · , BT} be the set of bins.
+Step 4: Calculate empirical and predicted probabilities per
+bin:
+1.
+AI r yk and qi = |Bi |r qk
+k∈Bi k∈Bi
+Step 5: Calculate the calibration error as the root mean
+squared error per bin, weighted by bin size in case they are
+not uniformly sized:
+CalibErr = J 1 rT |Bi|(ˆqi − ˆpi)2
+N i=1
+</equation>
+<bodyText confidence="0.989374">
+it does not tend toward infinity when near prob-
+ability 0; we hypothesize this could be an issue
+since both p and q are subject to estimation error.
+</bodyText>
+<sectionHeader confidence="0.990011" genericHeader="method">
+3 Empirical calibration analysis
+</sectionHeader>
+<bodyText confidence="0.9995505">
+From a test set of labeled data, we can analyze
+model calibration both in terms of the calibration
+error, as well as visualizing the calibration curve
+of label frequency versus predicted strength. How-
+ever, computing the label frequencies P(y = 1|q)
+requires an infinite amount of data. Thus approx-
+imation methods are required to perform calibra-
+tion analysis.
+</bodyText>
+<subsectionHeader confidence="0.999181">
+3.1 Adaptive binning procedure
+</subsectionHeader>
+<bodyText confidence="0.929670210526316">
+Previous studies that assess calibration in super-
+vised machine learning models (Niculescu-Mizil
+and Caruana, 2005; Bennett, 2000) calculate la-
+bel frequencies by dividing the prediction space
+into deciles or other evenly spaced bins—e.g. q E
+[0, 0.1), q E [0.1, 0.2), etc.—and then calculat-
+ing the empirical label frequency in each bin. This
+procedure may be thought of as using a form of
+nonparametric regression (specifically, a regres-
+sogram; Tukey 1961) to estimate the function
+f(q) = P(y = 1  |q) from observed data points.
+But models in natural language processing give
+very skewed distributions of confidence scores q
+(many are near 0 or 1), so this procedure performs
+poorly, having much more variable estimates near
+Algorithm 2 Estimate calibration error’s confi-
+dence interval by sampling.
+Input: A set of N prediction-label pairs
+{(q1, y1), (q2, y2), ··· , (qN, yN)}.
+</bodyText>
+<tableCaption confidence="0.9168165">
+Output: Calibration error with a 95% confidence interval.
+Parameter: Number of samples, S.
+Step 1: Calculate {ˆp1, ˆp2, · · · , ˆpT} from step 4 of Algo-
+rithm 1.
+</tableCaption>
+<table confidence="0.14624">
+Step 2: Draw S samples. For each s = 1..S,
+</table>
+<listItem confidence="0.83478">
+• For each bin i = 1..T, draw ˆp(3)
+</listItem>
+<equation confidence="0.9989345">
+i � N (ˆpi, ˆσ2 ), where
+i
+ˆσ2i = ˆpi(1 − ˆpi)/|Bi|. If necessary clip to [0, 1]:
+ˆp(3)
+i :=min(1, max(0, ˆp(3)
+i ))
+</equation>
+<listItem confidence="0.95988">
+• Calculate the sample’s CalibErr from using the pairs
+</listItem>
+<equation confidence="0.949022">
+(ˆqi, ˆp(3)
+i ) as per Step 5 of Algorithm 1.
+Step 3: Calculate the 95% confidence interval for the calibra-
+tion error as:
+CalibErra,,g ± 1.96 ˆserror
+</equation>
+<bodyText confidence="0.998991238095238">
+where CalibErra,,g and ˆserror are the mean and the stan-
+dard deviation, respectively, of the CalibErrs calculated
+from the samples.
+the middle of the q distribution (Figure 1).
+We propose adaptive binning as an alterna-
+tive. Instead of dividing the interval [0, 1] into
+fixed-width bins, adaptive binning defines the bins
+such that there are an equal number of points
+in each, after which the same averaging proce-
+dure is used. This method naturally gives wider
+bins to area with fewer data points (areas that re-
+quire more smoothing), and ensures that these ar-
+eas have roughly similar standard errors as those
+near the boundaries, since for a bin with Q num-
+ber of points and empirical frequency p, the stan-
+dard error is estimated by V/p(1 − p)/Q, which is
+bounded above by 0.5/,\/Q. Algorithm 1 describes
+the procedure for estimating calibration error us-
+ing adaptive binning, which can be applied to any
+probabilistic model that predicts posterior proba-
+bilities.
+</bodyText>
+<subsectionHeader confidence="0.999021">
+3.2 Confidence interval estimation
+</subsectionHeader>
+<bodyText confidence="0.999961">
+Especially when the test set is small, estimating
+calibration error may be subject to error, due to
+uncertainty in the label frequency estimates. Since
+how to estimate confidence bands for nonparamet-
+ric regression is an unsolved problem (Wasserman,
+2006), we resort to a simple method based on the
+binning. We construct a binomial normal approx-
+imation for the label frequency estimate in each
+bin, and simulate from it; every simulation across
+all bins is used to construct a calibration error;
+these simulated calibration errors are collected to
+construct a normal approximation for the calibra-
+</bodyText>
+<equation confidence="0.642685">
+ˆpi =
+</equation>
+<page confidence="0.819934">
+1589
+</page>
+<figure confidence="0.999857057142857">
+0.00 0.25 0.50 0.75 1.00
+Prediction strength
+(b)
+0.00 0.25 0.50 0.75 1.00
+Prediction strength
+(c)
+0.00 0.25 0.50 0.75 1.00
+Prediction strength
+(d)
+30000
+20000
+10000
+0
+0.00 0.25 0.50 0.75 1.00
+Prediction Strength
+(a)
+Count
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+</figure>
+<figureCaption confidence="0.949815">
+Figure 1: (a) A skewed distribution of predictions on whether a word has the NN tag (§4.2.2). Calibration curves produced
+by equally-spaced binning with bin width equal to 0.02 (b) and 0.1 (c) can have wide confidence intervals. Adaptive binning
+(with 1000 points in each bin) (d) gives small confidence intervals and also captures the prediction distribution. The confidence
+intervals are estimated as described in §3.1.
+</figureCaption>
+<bodyText confidence="0.9998986">
+tion error estimate. Since we use bin sizes of at
+least Q ≥ 200 in our experiments, the central limit
+theorem justifies these approximations. We report
+all calibration errors along with their 95% confi-
+dence intervals calculated by Algorithm 2.7
+</bodyText>
+<subsectionHeader confidence="0.999383">
+3.3 Visualizing calibration
+</subsectionHeader>
+<bodyText confidence="0.99998015">
+In order to better understand a model’s
+calibration properties, we plot the pairs
+(ˆp1, ˆq1), (ˆp2, ˆq2), ·· · , (ˆpT, ˆqT) obtained from
+the adaptive binning procedure to visualize the
+calibration curve of the model—this visualization
+is known as a calibration or reliability plot. It
+provides finer grained insight into the calibra-
+tion behavior in different prediction ranges. A
+perfectly calibrated curve would coincide with
+the y = x diagonal line. When the curve lies
+above the diagonal, the model is underconfident
+(q &lt; pq); and when it is below the diagonal, the
+model is overconfident (q &gt; pq).
+An advantage of plotting a curve estimated from
+fixed-size bins, instead of fixed-width bins, is that
+the distribution of the points hints at the refinement
+aspect of the model’s performance. If the points’
+positions tend to cluster in the bottom-left and top-
+right corners, that implies the model is making
+more refined predictions.
+</bodyText>
+<sectionHeader confidence="0.994632" genericHeader="method">
+4 Calibration for classification and
+</sectionHeader>
+<subsectionHeader confidence="0.514061">
+tagging models
+</subsectionHeader>
+<bodyText confidence="0.997701333333333">
+Using the method described in §3, we assess the
+quality of posterior predictions of several classi-
+fication and tagging models. In all of our exper-
+7A major unsolved issue is how to fairly select the bin
+size. If it is too large, the curve is oversmoothed and calibra-
+tion looks better than it should be; if it is too small, calibra-
+tion looks worse than it should be. Bandwidth selection and
+cross-validation techniques may better address this problem
+in future work. In the meantime, visualizations of calibration
+curves help inform the reader of the resolution of a particular
+analysis—if the bins are far apart, the data is sparse, and the
+specific details of the curve are not known in those regions.
+iments, we set the target bin size in Algorithm 1
+to be 5,000 and the number of samples in Algo-
+rithm 2 to be 10,000.
+</bodyText>
+<subsectionHeader confidence="0.905961">
+4.1 Naive Bayes and logistic regression
+4.1.1 Introduction
+</subsectionHeader>
+<bodyText confidence="0.99995434375">
+Previous work on Naive Bayes has found its prob-
+abilities to have calibration issues, in part due
+to its incorrect conditional independence assump-
+tions (Niculescu-Mizil and Caruana, 2005; Ben-
+nett, 2000; Domingos and Pazzani, 1997). Since
+logistic regression has the same log-linear repre-
+sentational capacity (Ng and Jordan, 2002) but
+does not suffer from the independence assump-
+tions, we select it for comparison, hypothesizing
+it may have better calibration.
+We analyze a binary classification task of Twit-
+ter sentiment analysis from emoticons. We col-
+lect a dataset consisting of tweets identified by the
+Twitter API as English, collected from 2014 to
+2015, with the “emoticon trick” (Read, 2005; Lin
+and Kolcz, 2012) to label tweets that contain at
+least one occurrence of the smiley emoticon “:)”
+as “happy” (y = 1) and others as y = 0. The
+smiley emoticons are deleted in positive examples.
+We sampled three sets of tweets (subsampled from
+the Decahose/Gardenhose stream of public tweets)
+with Jan-Apr 2014 for training, May-Dec 2014 for
+development, and Jan-Apr 2015 for testing. Each
+set contains 105 tweets, split between an equal
+number of positive and negative instances. We
+use binary features based on unigrams extracted
+from the twokenize.py8 tokenization. We use the
+scikit-learn (Pedregosa et al., 2011) implementa-
+tions of Bernoulli Naive Bayes and L2-regularized
+logistic regression. The models’ hyperparameters
+(Naive Bayes’ smoothing paramter and logistic re-
+gression’s regularization strength) are chosen to
+</bodyText>
+<footnote confidence="0.9354495">
+8https://github.com/myleott/
+ark-twokenize-py
+</footnote>
+<page confidence="0.981858">
+1590
+</page>
+<figureCaption confidence="0.996505">
+Figure 2: Calibration curve of (a) Naive Bayes and (b) lo-
+gistic regression on predicting whether a tweet is a “happy”
+tweet.
+</figureCaption>
+<bodyText confidence="0.960699">
+maximize the F-1 score on the development set.
+</bodyText>
+<sectionHeader confidence="0.827835" genericHeader="method">
+4.1.2 Results
+</sectionHeader>
+<bodyText confidence="0.999764875">
+Naive Bayes attains a slightly higher F-1 score
+(NB 73.8% vs. LR 72.9%), but logistic regression
+has much lower calibration error: less than half
+as much RMSE (NB 0.105 vs. LR 0.041; Figure
+2). Both models have a tendency to be undercon-
+fident in the lower prediction range and overconfi-
+dent in the higher range, but the tendency is more
+pronounced for Naive Bayes.
+</bodyText>
+<subsectionHeader confidence="0.9144965">
+4.2 Hidden Markov models and conditional
+random fields
+</subsectionHeader>
+<subsubsectionHeader confidence="0.420316">
+4.2.1 Introduction
+</subsubsectionHeader>
+<bodyText confidence="0.996946269230769">
+Hidden Markov models (HMM) and linear chain
+conditional random fields (CRF) are another com-
+monly used pair of analogous generative and dis-
+criminative models. They both define a posterior
+over tag sequences P(y|x), which we apply to
+part-of-speech tagging.
+We can analyze these models in the binary cal-
+ibration framework (§2-3) by looking at marginal
+distribution of binary-valued outcomes of parts of
+the predicted structures. Specifically, we examine
+calibration of predicted probabilities of individual
+tokens’ tags (§4.2.2), and of pairs of consecutive
+tags (§4.2.3). These quantities are calculated with
+the forward-backward algorithm.
+To prepare a POS tagging dataset, we ex-
+tract Wall Street Journal articles from the En-
+glish CoNLL-2011 coreference shared task dataset
+from Ontonotes (Pradhan et al., 2011), using the
+CoNLL-2011 splits for training, development and
+testing. This results in 11,772 sentences for train-
+ing, 1,632 for development, and 1,382 for testing,
+over a set of 47 possible tags.
+We train an HMM with Dirichlet MAP us-
+ing one pseudocount for every transition and
+word emission. For the CRF, we use the L2-
+regularized L-BFGS algorithm implemented in
+</bodyText>
+<figureCaption confidence="0.9997505">
+Figure 3: Calibration curves of (a) HMM, and (b) CRF, on
+predictions over all POS tags.
+</figureCaption>
+<bodyText confidence="0.9995975">
+CRFsuite (Okazaki, 2007). We compare an HMM
+to a CRF that only uses basic transition (tag-tag)
+and emission (tag-word) features, so that it does
+not have an advantage due to more features. In
+order to compare models with similar task perfor-
+mance, we train the CRF with only 3000 sentences
+from the training set, which yields the same accu-
+racy as the HMM (about 88.7% on the test set).
+In each case, the model’s hyperparameters (the
+CRF’s L2 regularizer, the HMM’s pseudocount)
+are selected by maximizing accuracy on the devel-
+opment set.
+</bodyText>
+<subsectionHeader confidence="0.642146">
+4.2.2 Predicting single-word tags
+</subsectionHeader>
+<bodyText confidence="0.999994705882353">
+In this experiment, we measure miscalibration of
+the two models on predicting tags of single words.
+First, for each tag type, we produce a set of 33,306
+prediction-label pairs (for every token); we then
+concatenate them across the tags for calibration
+analysis. Figure 3 shows that the two models
+exhibit distinct calibration patterns. The HMM
+tends to be very underconfident whereas the CRF
+is overconfident, and the CRF has a lower (better)
+overall calibration error.
+We also examine the calibration errors of the
+individual POS tags (Figure 4(a)). We find that
+CRF is significantly better calibrated than HMM
+in most but not all categories (39 out of 47). For
+example, they are about equally calibrated on pre-
+dicting the NN tag. The calibration gap between
+the two models also differs among the tags.
+</bodyText>
+<subsectionHeader confidence="0.831812">
+4.2.3 Predicting two-consecutive-word tags
+</subsectionHeader>
+<bodyText confidence="0.999839875">
+There is no reason to restrict ourselves to model
+predictions of single words; these models define
+marginal distributions over larger textual units.
+Next we examine the calibration of posterior pre-
+dictions of tag pairs on two consecutive words in
+the test set. The same analysis may be impor-
+tant for, say, phrase extraction or other chunk-
+ing/parsing tasks.
+</bodyText>
+<figure confidence="0.995617444444445">
+0.00 0.25 0.50 0.75 1.00 0.00 0.25 0.50 0.75 1.00
+Prediction strength Prediction strength
+(a) (b)
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+CalibErr=0.1048 ± 6.9E−03
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+CalibErr=0.0409 ± 6.2E−03
+0.00 0.25 0.50 0.75 1.00 0.00 0.25 0.50 0.75 1.00
+Prediction strength Prediction strength
+(a) (b)
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+CalibErr=0.0153 ± 5.1E−04
+Empirical frequency
+0.75
+0.50
+0.25
+0.00
+1.00
+CalibErr=0.0081 ± 3.5E−03
+1591
+ae
+</figure>
+<figureCaption confidence="0.9936688">
+Figure 4: Calibration errors of HMM and CRF on predict-
+ing (a) single-word tags and (b) two-consecutive-word tags.
+Lower errors are better. The last two columns in each graph
+are the average calibration errors over the most common la-
+bels.
+</figureCaption>
+<bodyText confidence="0.999993444444444">
+We report results for the top 5 and 100 most fre-
+quent tag pairs (Figure 4(b)). We observe a simi-
+lar pattern as seen from the experiment on single
+tags: the CRF is generally better calibrated than
+the HMM, but the HMM does achieve better cali-
+bration errors in 29 out of 100 categories.
+These tagging experiments illustrate that, de-
+pending on the application, different models can
+exhibit different levels of calibration.
+</bodyText>
+<sectionHeader confidence="0.991555" genericHeader="method">
+5 Coreference resolution
+</sectionHeader>
+<bodyText confidence="0.999992166666667">
+We examine a third model, a probabilistic model
+for within-document noun phrase coreference,
+which has an efficient sampling-based inference
+procedure. In this section we introduce it and ana-
+lyze its calibration, in preparation for the next sec-
+tion where we use it for exploratory data analysis.
+</bodyText>
+<subsectionHeader confidence="0.988905">
+5.1 Antecedent selection model
+</subsectionHeader>
+<bodyText confidence="0.999072">
+We use the Berkeley coreference resolution sys-
+tem (Durrett and Klein, 2013), which was origi-
+nally presented as a CRF; we give it an equivalent
+a series of independent logistic regressions (see
+appendix for details). The primary component of
+this model is a locally-normalized log-linear dis-
+tribution over clusterings of noun phrases, each
+cluster denoting an entity. The model takes a fixed
+input of N mentions (noun phrases), indexed by i
+in their positional order in the document. It posits
+that every mention i has a latent antecedent selec-
+tion decision, ai ∈ {1, ... , i − 1, NEW}, denoting
+which previous mention it attaches to, or NEW if it
+is starting a new entity that has not yet been seen
+at a previous position in the text. Such a mention-
+mention attachment indicates coreference, while
+the final entity clustering includes more links im-
+plied through transitivity. The model’s generative
+process is:
+Definition 2 (Antencedent coreference model and
+sampling algorithm).
+</bodyText>
+<listItem confidence="0.733075571428571">
+• For i = 1..N, sample
+ai ∼ 1exp(wTf(i, ai, x))
+Zi
+• Calculate the entity clusters as e := CC(a),
+the connected components of the antecedent
+graph having edges (i, ai) for i where ai =6
+NEW.
+</listItem>
+<bodyText confidence="0.999804266666667">
+Here x denotes all information in the document
+that is conditioned on for log-linear features f.
+e = {e1, ...em} denotes the entity clusters, where
+each element is a set of mentions. There are M en-
+tity clusters corresponding to the number of con-
+nected components in a. The model defines a joint
+distribution over antecedent decisions P(a|x) =
+Hi P(ai|x); it also defines a joint distribution over
+entity clusterings P(e|x), where the probability of
+an e is the sum of the probabilities of all a vectors
+that could give rise to it. In a manner similar to
+a distance-dependent Chinese restaurant process
+(Blei and Frazier, 2011), it is non-parametric in the
+sense that the number of clusters M is not fixed in
+advance.
+</bodyText>
+<subsectionHeader confidence="0.987103">
+5.2 Sampling-based inference
+</subsectionHeader>
+<bodyText confidence="0.9999048">
+For both calibration analysis and exploratory ap-
+plications, we need to analyze the posterior distri-
+bution over entity clusterings. This distribution is
+a complex mathematical object; an attractive ap-
+proach to analyze it is to draw samples from this
+distribution, then analyze the samples.
+This antecedent-based model admits a very
+straightforward procedure to draw independent e
+samples, by stepping through Def. 2: indepen-
+dently sample each ai then calculate the connected
+components of the resulting antecedent graph.
+By construction, this procedure samples from the
+joint distribution of e (even though we never com-
+pute the probability of any single clustering e).
+Unlike approximate sampling approaches, such
+as Markov chain Monte Carlo methods used in
+other coreference work to sample e (Haghighi and
+Klein, 2007), here there are no questions about
+burn-in or autocorrelation (Kass et al., 1998).
+Every sample is independent and very fast to
+</bodyText>
+<figure confidence="0.984685111111111">
+CalibErr
+CalibErr
+0.075
+0.050
+0.025
+0.000
+0.06
+0.04
+0.02
+0.00
+ab
+HMM
+CRF
+HMM
+CRF
+1592
+0.00 0.25 0.50 0.75 1.00
+Prediction strength
+</figure>
+<figureCaption confidence="0.99629">
+Figure 5: Coreference calibration curve for predicting
+whether two mentions belong to the same entity cluster.
+</figureCaption>
+<bodyText confidence="0.999668">
+compute—only slightly slower than calculating
+the MAP assignment (due to the exp and normal-
+ization for each ai). We implement this algorithm
+by modifying the publicly available implementa-
+tion from Durrett and Klein.9
+</bodyText>
+<subsectionHeader confidence="0.999851">
+5.3 Calibration analysis
+</subsectionHeader>
+<bodyText confidence="0.999974538461539">
+We consider the following inference query: for a
+randomly chosen pair of mentions, are they coref-
+erent? Even if the model’s accuracy is compara-
+tively low, it may be the case that it is correctly
+calibrated—if it thinks there should be great vari-
+ability in entity clusterings, it may be uncertain
+whether a pair of mentions should belong together.
+Let fij be 1 if the mentions i and j are predicted
+to be coreferent, and 0 otherwise. Annotated data
+defines a gold-standard E(g) ijvalue for every pair
+i, j. Any probability distribution over e defines a
+marginal Bernoulli distribution for every proposi-
+tion fij, marginalizing out e:
+</bodyText>
+<equation confidence="0.9788275">
+P (�ij = 1  |x) = 1: 1{(i, j) E e}P(e  |x) (2)
+e
+</equation>
+<bodyText confidence="0.999808066666667">
+where (i, j) E e is true iff there is an entity in e
+that contains both i and j.
+In a traditional coreference evaluation of the
+best-prediction entity clustering, the model as-
+signs 1 or 0 to every fij and the pairwise precision
+and recall can be computed by comparing them to
+the corresponding E(g) ij. Here, we instead compare
+the qij ≡ P( ij = 1  |x, e) prediction strengths
+against (g) ijempirical frequencies to assess pair-
+wise calibration, with the same binary calibration
+analysis tools developed in §3 by aggregating pairs
+with similar qij values. Each qij is computed by
+averaging over 1,000 samples, simply taking the
+fraction of samples where the pair (i, j) is coref-
+erent.
+</bodyText>
+<footnote confidence="0.956244">
+9Berkeley Coreference Resolution System, version
+1.1: http://nlp.cs.berkeley.edu/projects/
+coref.shtml
+</footnote>
+<bodyText confidence="0.999949230769231">
+We perform this analysis on the develop-
+ment section of the English CoNLL-2011 data
+(404 documents). Using the sampling inference
+method discussed in §5.2, we compute 4.3 mil-
+lions prediction-label pairs and measure their cali-
+bration error. Our result shows that the model pro-
+duces very well-calibrated predictions with less
+than 1% CalibErr (Figure 5), though slightly
+overconfident on middle to high-valued predic-
+tions. The calibration error indicates that it is the
+most calibrated model we examine within this pa-
+per. This result suggests we might be able to trust
+its level of uncertainty.
+</bodyText>
+<sectionHeader confidence="0.98004" genericHeader="method">
+6 Uncertainty in Entity-based
+Exploratory Analysis
+</sectionHeader>
+<subsectionHeader confidence="0.999423">
+6.1 Entity-syntactic event aggregation
+</subsectionHeader>
+<bodyText confidence="0.999956166666667">
+We demonstrate one important use of calibration
+analysis: to ensure the usefulness of propagating
+uncertainty from coreference resolution into a sys-
+tem for exploring unannotated text. Accuracy can-
+not be calculated since there are no labels; but
+if the system is calibrated, we postulate that un-
+certainty information can help users understand
+the underlying reliability of aggregated extractions
+and isolate predictions that are more likely to con-
+tain errors.
+We illustrate with an event analysis application
+to count the number of “country attack events”:
+for a particular country of the world, how many
+news articles describe an entity affiliated with that
+country as the agent of an attack, and how does
+this number change over time? This is a simpli-
+fied version of a problem where such systems have
+been built and used for political science analysis
+(Schrodt et al., 1994; Schrodt, 2012; Leetaru and
+Schrodt, 2013; Boschee et al., 2013; O’Connor
+et al., 2013). A coreference component can im-
+prove extraction coverage in cases such as “Rus-
+sian troops were sighted ... and they attacked... ”
+We use the coreference system examined in §5
+for this analysis. To propagate coreference un-
+certainty, we re-run event extraction on multiple
+coreference samples generated from the algorithm
+described in §5.2, inducing a posterior distribution
+over the event counts. To isolate the effects of
+coreference, we use a very simple syntactic depen-
+dency system to identify affiliations and events.
+Assume the availability of dependency parses for
+a document d, a coreference resolution e, and a
+lexicon of country names, which contains a small
+set of words w(c) for each country c; for example,
+w(FRA) = {france, french}. The binary function
+</bodyText>
+<figure confidence="0.997462285714286">
+1.00
+0.75
+0.50
+0.25
+0.00
+CalibErr=0.0087 ± 3.3E−03
+Empirical frequency
+</figure>
+<page confidence="0.977763">
+1593
+</page>
+<bodyText confidence="0.99817875">
+f(c, e; xd) assesses whether an entity e is affiliated
+with country c and is described as the agent of an
+attack, based on document text and parses xd; f
+returns true iff both:10
+</bodyText>
+<listItem confidence="0.907754818181818">
+• There exists a mention i E e described
+as country c: either its head word is in
+w(c) (e.g. “Americans”), or its head word
+has an nmod or amod modifier in w(c)
+(e.g. “American forces”, “president of the
+U.S.”); and there is only one unique country
+c among the mentions in the entity.
+• There exists a mention j E e which is the
+nsubj or agent argument to the verb “attack”
+(e.g. “they attacked”, “the forces attacked”,
+“attacked by them”).
+</listItem>
+<bodyText confidence="0.999590333333333">
+For a given c, we first calculate a binary variable
+for whether there is at least one entity fulfilling f
+in a particular document,
+</bodyText>
+<equation confidence="0.9779075">
+�a(d, c, ed) = f(c, e; xd) (3)
+e∈ed
+</equation>
+<bodyText confidence="0.999513666666667">
+and second, the number of such documents in d(t),
+the set of New York Times articles published in a
+given time period t,
+</bodyText>
+<equation confidence="0.9976795">
+�n(t, c, ed(t)) = a(d, c, ed) (4)
+d∈d(t)
+</equation>
+<bodyText confidence="0.999938333333333">
+These quantities are both random variables, since
+they depend on e; thus we are interested in the
+posterior distribution of n, marginalizing out e,
+</bodyText>
+<equation confidence="0.974154">
+P(n(t, c, ed(t))  |xd(t)) (5)
+</equation>
+<bodyText confidence="0.9999855">
+If our coreference model was highly certain (only
+one structure, or a small number of similar struc-
+tures, had most of the probability mass in the space
+of all possible structures), each document would
+have an a posterior near either 0 or 1, and their
+sum in Eq. 5 would have a narrow distribution. But
+if the model is uncertain, the distribution will be
+wider. Because of the transitive closure, the prob-
+ability of a is potentially more complex than the
+single antecedent linking probability between two
+mentions—the affiliation and attack information
+can propagate through a long coreference chain.
+</bodyText>
+<subsectionHeader confidence="0.962635">
+6.2 Results
+</subsectionHeader>
+<bodyText confidence="0.970632233333334">
+We tag and parse a 193,403 article subset of the
+Annotated New York Times LDC corpus (Sand-
+haus, 2008), which includes articles about world
+10Syntactic relations are Universal Dependencies
+(de Marneffe et al., 2014); more details for the extrac-
+tion rules are in the appendix.
+news from the years 1987 to 2007 (details in ap-
+pendix). For each article, we run the coreference
+system to predict 100 samples, and evaluate f on
+every entity in every sample.11 The quantity of
+interest is the number of articles mentioning at-
+tacks in a 3-month period (quarter), for a given
+country. Figure 6 illustrates the mean and 95%
+posterior credible intervals for each quarter. The
+posterior mean m is calculated as the mean of the
+samples, and the interval is the normal approxima-
+tion m f 1.96 s, where s is the standard deviation
+among samples for that country and time period.
+Uncertainty information helps us understand
+whether a difference between data points is real.
+In the plots of Figure 6, if we had used a 1-best
+coreference resolution, only a single line would be
+shown, with no assessment of uncertainty. This
+is problematic in cases when the model genuinely
+does not know the correct answer. For example,
+the 1993-1996 period of the USA plot (Figure 6,
+top) shows the posterior mean fluctuating from 1
+to 5 documents; but when credible intervals are
+taken into consideration, we see that model does
+not know whether the differences are real, or were
+caused by coreference noise.
+A similar case is highlighted at the bottom plot
+of Figure 6. Here we compare the event counts
+for Yugoslavia and NATO, which were engaged in
+a conflict in 1999. Did the New York Times de-
+vote more attention to the attacks by one particu-
+lar side? To a 1-best system, the answer would be
+yes. But the posterior intervals for the two coun-
+tries’ event counts in mid-1999 heavily overlap,
+indicating that the coreference system introduces
+too much uncertainty to obtain a conclusive an-
+swer for this question. Note that calibration of the
+coreference model is important for the credible in-
+tervals to be useful; for example, if the model was
+badly calibrated by being overconfident (too much
+probability over a small set of similar structures),
+these intervals would be too narrow, leading to in-
+correct interpretations of the event dynamics.
+Visualizing this uncertainty gives richer infor-
+mation for a potential user of an NLP-based sys-
+tem, compared to simply drawing a line based on
+a single 1-best prediction. It preserves the gen-
+uine uncertainty due to ambiguities the system was
+unable to resolve. This highlights an alternative
+use of Finkel et al. (2006)’s approach of sampling
+multiple NLP pipeline components, which in that
+work was used to perform joint inference. Instead
+11We obtained similar results using only 10 samples. We
+also obtained similar results with a different query function,
+the total number of entities, across documents, that fulfill f.
+</bodyText>
+<page confidence="0.990341">
+1594
+</page>
+<bodyText confidence="0.999986027777778">
+of focusing on improving an NLP pipeline, we can
+pass uncertainty on to exploratory purposes, and
+try to highlight to a user where the NLP system
+may be wrong, or where it can only imprecisely
+specify a quantity of interest.
+Finally, calibration can help error analysis. For
+a calibrated model, the more uncertain a predic-
+tion is, the more likely it is to be erroneous. While
+coreference errors comprise only one part of event
+extraction errors (alongside issues in parse qual-
+ity, factivity, semantic roles, etc.), we can look at
+highly uncertain event predictions to understand
+the nature of coreference errors relative to our
+task. We manually analyzed documents with a
+50% probability to contain an “attack”ing country-
+affiliated entity, and found difficult coreference
+cases.
+In one article from late 1990, an “attack” event
+for IRQ is extracted from the sentence “But some
+political leaders said that they feared that Mr. Hus-
+sein might attack Saudi Arabia”. The mention
+“Mr. Hussein” is classified as IRQ only when it
+is coreferent with a previous mention “President
+Saddam Hussein of Iraq”; this occurs only 50%
+of the time, since in some posterior samples the
+coreference system split apart these two “Hussein”
+mentions. This particular document is addition-
+ally difficult, since it includes the names of more
+than 10 countries (e.g. United States, Saudi Ara-
+bia, Egypt), and some of the Hussein mentions are
+even clustered with presidents of other countries
+(such as “President Bush”), presumably because
+they share the “president” title. These types of er-
+rors are a major issue for a political analysis task;
+further analysis could assess their prevalence and
+how to address them in future work.
+</bodyText>
+<sectionHeader confidence="0.998918" genericHeader="conclusions">
+7 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999925733333333">
+In this work, we argue that the calibration of pos-
+terior predictions is a desirable property of prob-
+abilistic NLP models, and that it can be directly
+evaluated. We also demonstrate a use case of
+having calibrated uncertainty: its propagation into
+downstream exploratory analysis.
+Our posterior simulation approach for ex-
+ploratory and error analysis relates to posterior
+predictive checking (Gelman et al., 2013), which
+analyzes a posterior to test model assumptions;
+Mimno and Blei (2011) apply it to a topic model.
+One avenue of future work is to investigate
+more effective nonparametric regression methods
+to better estimate and visualize calibration error,
+such as Gaussian processes or bootstrapped kernel
+</bodyText>
+<figure confidence="0.8170305">
+USA
+1995 1996 1997 1998 1999 2000
+</figure>
+<figureCaption confidence="0.9977144">
+Figure 6: Number of documents with an “attack”ing country
+per 3-month period, and coreference posterior uncertainty for
+that quantity. The dark line is the posterior mean, and the
+shaded region is the 95% posterior credible interval. More
+examples in appendix.
+</figureCaption>
+<bodyText confidence="0.998520161290323">
+density estimation.
+Another important question is: what types of in-
+ferences are facilitated by correct calibration? In-
+tuitively, we think that overconfidence will lead
+to overly narrow confidence intervals; but in what
+sense are confidence intervals “good” when cal-
+ibration is perfect? Also, does calibration help
+joint inference in NLP pipelines? It may also assist
+calculations that rely on expectations, such as in-
+ference methods like minimum Bayes risk decod-
+ing, or learning methods like EM, since calibrated
+predictions imply that calculated expectations are
+statistically unbiased (though the implications of
+this fact may be subtle). Finally, it may be in-
+teresting to pursue recalibration methods, which
+readjust a non-calibrated model’s predictions to
+be calibrated; recalibration methods have been de-
+veloped for binary (Platt, 1999; Niculescu-Mizil
+and Caruana, 2005) and multiclass (Zadrozny and
+Elkan, 2002) classification settings, but we are
+unaware of methods appropriate for the highly
+structured outputs typical in linguistic analysis.
+Another approach might be to directly constrain
+CalibErr = 0 during training, or try to reduce it
+as a training-time risk minimization or cost objec-
+tive (Smith and Eisner, 2006; Gimpel and Smith,
+2010; Stoyanov et al., 2011; Br¨ummer and Dod-
+dington, 2013).
+Calibration is an interesting and important prop-
+erty of NLP models. Further work is necessary to
+address these and many other questions.
+</bodyText>
+<figure confidence="0.9968705">
+1990 1995 2000 2005
+0 10 20 30
+0 5 10 15
+Serbia/Yugo. NATO
+</figure>
+<page confidence="0.967736">
+1595
+</page>
+<sectionHeader confidence="0.99432" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.95453042">
+David Bamman, Brendan O’Connor, and Noah A.
+Smith. Learning latent personas of film charac-
+ters. In Proceedings of ACL, 2013.
+Paul N. Bennett. Assessing the calibration of naive
+Bayes’ posterior estimates. Technical report,
+Carnegie Mellon University, 2000.
+David M. Blei and Peter I. Frazier. Distance
+dependent Chinese restaurant processes. The
+Journal of Machine Learning Research, 12:
+2461–2488, 2011.
+Elizabeth Boschee, Premkumar Natarajan, and
+Ralph Weischedel. Automatic extraction of
+events from open source text for predictive
+forecasting. Handbook of Computational Ap-
+proaches to Counterterrorism, page 51, 2013.
+Glenn W. Brier. Verification of forecasts expressed
+in terms of probability. Monthly weather review,
+78(1):1–3, 1950.
+Jochen Br¨ocker. Reliability, sufficiency, and the
+decomposition of proper scores. Quarterly
+Journal of the Royal Meteorological Society,
+135(643):1512–1519, 2009.
+Niko Br¨ummer and George Doddington.
+Likelihood-ratio calibration using prior-
+weighted proper scoring rules. arXiv preprint
+arXiv:1307.7981, 2013. Interspeech 2013.
+Marie-Catherine de Marneffe, Timothy Dozat,
+Natalia Silveira, Katri Haverinen, Filip Gin-
+ter, Joakim Nivre, and Christopher D. Man-
+ning. Universal Stanford dependencies: A
+cross-linguistic typology. In Proceedings of
+LREC, 2014.
+Morris H. DeGroot and Stephen E. Fienberg. The
+comparison and evaluation of forecasters. The
+statistician, pages 12–22, 1983.
+Pedro Domingos and Michael Pazzani. On the op-
+timality of the simple Bayesian classifier under
+zero-one loss. Machine learning, 29(2-3):103–
+130, 1997.
+Greg Durrett and Dan Klein. Easy victories and
+uphill battles in coreference resolution. In
+EMNLP, pages 1971–1982, 2013.
+Greg Durrett and Dan Klein. A joint model for
+entity analysis: Coreference, typing, and link-
+ing. Transactions of the Association for Com-
+putational Linguistics, 2:477–490, 2014.
+Jenny Rose Finkel, Christopher D. Manning, and
+Andrew Y. Ng. Solving the problem of cascad-
+ing errors: Approximate Bayesian inference for
+linguistic annotation pipelines. In Proceedings
+of the 2006 Conference on Empirical Methods
+in Natural Language Processing, pages 618–
+626. Association for Computational Linguis-
+tics, 2006.
+Andrew Gelman, John B. Carlin, Hal S. Stern,
+David B. Dunson, Aki Vehtari, and Donald B.
+Rubin. Bayesian data analysis. Chapman and
+Hall/CRC, 3rd edition, 2013.
+Kevin Gimpel and Noah A. Smith. Rich source-
+side context for statistical machine translation.
+In Proceedings of the Third Workshop on Sta-
+tistical Machine Translation, pages 9–17, 2008.
+Kevin Gimpel and Noah A. Smith. Softmax-
+margin CRFs: Training log-linear models with
+cost functions. In Human Language Technolo-
+gies: The 2010 Annual Conference of the North
+American Chapter of the Association for Com-
+putational Linguistics, pages 733–736. Associ-
+ation for Computational Linguistics, 2010.
+Kevin Gimpel, Dhruv Batra, Chris Dyer, and Gre-
+gory Shakhnarovich. A systematic exploration
+of diversity in machine translation. In Pro-
+ceedings of the 2013 Conference on Empiri-
+cal Methods in Natural Language Processing,
+pages 1100–1111, Seattle, Washington, USA,
+October 2013. Association for Computational
+Linguistics. URL http://www.aclweb.
+org/anthology/D13-1111.
+Tilmann Gneiting and Adrian E. Raftery. Strictly
+proper scoring rules, prediction, and estimation.
+Journal of the American Statistical Association,
+102(477):359–378, 2007.
+Joshua Goodman. Parsing algorithms and met-
+rics. In Proceedings of the 34th Annual Meet-
+ing of the Association for Computational Lin-
+guistics, pages 177–183, Santa Cruz, Califor-
+nia, USA, June 1996. Association for Com-
+putational Linguistics. doi: 10.3115/981863.
+981887. URL http://www.aclweb.org/
+anthology/P96-1024.
+Aria Haghighi and Dan Klein. Unsuper-
+vised coreference resolution in a nonparametric
+Bayesian model. In Annual Meeting, Associa-
+tion for Computational Linguistics, volume 45,
+page 848, 2007.
+Robert E. Kass, Bradley P. Carlin, Andrew Gel-
+man, and Radford M. Neal. Markov chain
+Monte Carlo in practice: a roundtable discus-
+sion. The American Statistician, 52(2):93–100,
+1998.
+</reference>
+<page confidence="0.815369">
+1596
+</page>
+<reference confidence="0.999468653465347">
+Shankar Kumar and William Byrne. Minimum
+Bayes-risk decoding for statistical machine
+translation. In Daniel Marcu Susan Dumais
+and Salim Roukos, editors, HLT-NAACL 2004:
+Main Proceedings, pages 169–176, Boston,
+Massachusetts, USA, May 2 - May 7 2004. As-
+sociation for Computational Linguistics.
+Kalev Leetaru and Philip A. Schrodt. GDELT:
+Global data on events, location, and tone, 1979–
+2012. In ISA Annual Convention, volume 2,
+page 4, 2013.
+Jimmy Lin and Alek Kolcz. Large-scale ma-
+chine learning at Twitter. In Proceedings of the
+2012 ACM SIGMOD International Conference
+on Management of Data, pages 793–804. ACM,
+2012.
+Michael C. McCord, J. William Murdock, and
+Branimir K. Boguraev. Deep parsing in Watson.
+IBM Journal of Research and Development, 56
+(3.4):3–1, 2012.
+David Mimno and David Blei. Bayesian check-
+ing for topic models. In Proceedings of
+the 2011 Conference on Empirical Meth-
+ods in Natural Language Processing, pages
+227–237, Edinburgh, Scotland, UK., July
+2011. Association for Computational Linguis-
+tics. URL http://www.aclweb.org/
+anthology/D11-1021.
+Makoto Miwa, Sampo Pyysalo, Tadayoshi Hara,
+and Jun’ichi Tsujii. Evaluating dependency
+representations for event extraction. In Pro-
+ceedings of the 23rd International Confer-
+ence on Computational Linguistics (Coling
+2010), pages 779–787, Beijing, China, Au-
+gust 2010. Coling 2010 Organizing Commit-
+tee. URL http://www.aclweb.org/
+anthology/C10-1088.
+Allan H. Murphy and Robert L. Winkler. A
+general framework for forecast verification.
+Monthly Weather Review, 115(7):1330–1338,
+1987.
+Andrew Ng and Michael Jordan. On discrimina-
+tive vs. generative classifiers: A comparison of
+logistic regression and naive Bayes. Advances
+in neural information processing systems, 14:
+841, 2002.
+Alexandru Niculescu-Mizil and Rich Caruana.
+Predicting good probabilities with supervised
+learning. In Proceedings of the 22nd Interna-
+tional Conference on Machine Learning, pages
+625–632, 2005.
+Brendan O’Connor, Brandon Stewart, and
+Noah A. Smith. Learning to extract inter-
+national relations from political context. In
+Proceedings of ACL, 2013.
+Naoaki Okazaki. Crfsuite: a fast implemen-
+tation of conditional random fields (CRFs),
+2007. URL http://www.chokkan.org/
+software/crfsuite/.
+F. Pedregosa, G. Varoquaux, A. Gramfort,
+V. Michel, B. Thirion, O. Grisel, M. Blondel,
+P. Prettenhofer, R. Weiss, V. Dubourg, J. Van-
+derplas, A. Passos, D. Cournapeau, M. Brucher,
+M. Perrot, and E. Duchesnay. Scikit-learn: Ma-
+chine learning in Python. Journal of Machine
+Learning Research, 12:2825–2830, 2011.
+John Platt. Probabilistic outputs for support vector
+machines and comparisons to regularized like-
+lihood methods. In Advances in large margin
+classifiers. MIT Press (2000), 1999. URL
+http://research.microsoft.com/
+pubs/69187/svmprob.ps.gz.
+Sameer Pradhan, Lance Ramshaw, Mitchell Mar-
+cus, Martha Palmer, Ralph Weischedel, and Ni-
+anwen Xue. CoNLL-2011 shared task: Mod-
+eling unrestricted coreference in Ontonotes.
+In Proceedings of the Fifteenth Conference
+on Computational Natural Language Learning:
+Shared Task, pages 1–27. Association for Com-
+putational Linguistics, 2011.
+Jonathon Read. Using emoticons to reduce depen-
+dency in machine learning techniques for senti-
+ment classification. In Proceedings of the ACL
+Student Research Workshop, pages 43–48. As-
+sociation for Computational Linguistics, 2005.
+Evan Sandhaus. The New York Times Anno-
+tated Corpus. Linguistic Data Consortium,
+LDC2008T19, 2008.
+Philip A. Schrodt. Precedents, progress, and
+prospects in political event data. International
+Interactions, 38(4):546–569, 2012.
+Philip A. Schrodt, Shannon G. Davis, and Ju-
+dith L. Weddle. KEDS – a program for the
+machine coding of event data. Social Science
+Computer Review, 12(4):561 –587, December
+1994. doi: 10.1177/089443939401200408.
+URL http://ssc.sagepub.com/
+content/12/4/561.abstract.
+Sameer Singh, Sebastian Riedel, Brian Martin, Ji-
+aping Zheng, and Andrew McCallum. Joint in-
+ference of entities, relations, and coreference.
+</reference>
+<page confidence="0.829307">
+1597
+</page>
+<reference confidence="0.999283342105263">
+In Proceedings of the 2013 Workshop on Auto-
+mated Knowledge Base Construction, pages 1–
+6. ACM, 2013.
+David A. Smith and Jason Eisner. Minimum risk
+annealing for training log-linear models. In Pro-
+ceedings of the COLING/ACL 2006 Main Con-
+ference Poster Sessions, pages 787–794, Syd-
+ney, Australia, July 2006. Association for Com-
+putational Linguistics. URL http://www.
+aclweb.org/anthology/P06-2101.
+Veselin Stoyanov, Alexander Ropson, and Jason
+Eisner. Empirical risk minimization of graphi-
+cal model parameters given approximate infer-
+ence, decoding, and model structure. In Interna-
+tional Conference on Artificial Intelligence and
+Statistics, pages 725–733, 2011.
+Kristina Toutanova, Aria Haghighi, and Christo-
+pher D. Manning. A global joint model for se-
+mantic role labeling. Computational Linguis-
+tics, 34(2):161–191, 2008.
+John W. Tukey. Curves as parameters, and
+touch estimation. In Proceedings of the Fourth
+Berkeley Symposium on Mathematical Statis-
+tics and Probability, Volume 1: Contributions
+to the Theory of Statistics, pages 681–694,
+Berkeley, Calif., 1961. University of Califor-
+nia Press. URL http://projecteuclid.
+org/euclid.bsmsp/1200512189.
+Ashish Venugopal, Andreas Zollmann, Noah A.
+Smith, and Stephan Vogel. Wider pipelines: N-
+best alignments and parses in MT training. In
+Proceedings of AMTA, 2008.
+Larry Wasserman. All of nonparametric statistics.
+Springer Science &amp; Business Media, 2006.
+Bianca Zadrozny and Charles Elkan. Transform-
+ing classifier scores into accurate multiclass
+probability estimates. In Proceedings of KDD,
+pages 694–699. ACM, 2002.
+</reference>
+<page confidence="0.993712">
+1598
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.649445">
+<title confidence="0.988427">Posterior calibration and exploratory analysis for natural processing models</title>
+<author confidence="0.950091">Khanh</author>
+<affiliation confidence="0.999847">Department of Computer University of Maryland, College</affiliation>
+<address confidence="0.982963">College Park, MD</address>
+<email confidence="0.998747">kxnguyen@cs.umd.edu</email>
+<author confidence="0.962342">Brendan</author>
+<affiliation confidence="0.999115">College of Information and Computer University of Massachusetts,</affiliation>
+<address confidence="0.987306">Amherst, MA,</address>
+<email confidence="0.999795">brenocon@cs.umass.edu</email>
+<abstract confidence="0.999788352941176">Many models in natural language processing define probabilistic distributions over linguistic structures. We argue that (1) the quality of a model’s posterior distribution can and should be directly evaluated, as to whether probabilities correspond to empirical frequencies; and (2) NLP uncertainty can be projected not only to pipeline components, but also to exploratory data analysis, telling a user when to trust and not trust the NLP analysis. We present a method to analyze calibration, and apply it to compare the miscalibration of several commonly used models. We also contribute a coreference sampling algorithm that can create confidence intervals for a</abstract>
+<intro confidence="0.746084">event extraction</intro>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>David Bamman</author>
+<author>Brendan O’Connor</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Learning latent personas of film characters.</title>
+<date>2013</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<marker>Bamman, O’Connor, Smith, 2013</marker>
+<rawString>David Bamman, Brendan O’Connor, and Noah A. Smith. Learning latent personas of film characters. In Proceedings of ACL, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Paul N Bennett</author>
+</authors>
+<title>Assessing the calibration of naive Bayes’ posterior estimates.</title>
+<date>2000</date>
+<tech>Technical report,</tech>
+<institution>Carnegie Mellon University,</institution>
+<contexts>
+<context position="10723" citStr="Bennett, 2000" startWordPosition="1749" endWordPosition="1750"> an issue since both p and q are subject to estimation error. 3 Empirical calibration analysis From a test set of labeled data, we can analyze model calibration both in terms of the calibration error, as well as visualizing the calibration curve of label frequency versus predicted strength. However, computing the label frequencies P(y = 1|q) requires an infinite amount of data. Thus approximation methods are required to perform calibration analysis. 3.1 Adaptive binning procedure Previous studies that assess calibration in supervised machine learning models (Niculescu-Mizil and Caruana, 2005; Bennett, 2000) calculate label frequencies by dividing the prediction space into deciles or other evenly spaced bins—e.g. q E [0, 0.1), q E [0.1, 0.2), etc.—and then calculating the empirical label frequency in each bin. This procedure may be thought of as using a form of nonparametric regression (specifically, a regressogram; Tukey 1961) to estimate the function f(q) = P(y = 1 |q) from observed data points. But models in natural language processing give very skewed distributions of confidence scores q (many are near 0 or 1), so this procedure performs poorly, having much more variable estimates near Algori</context>
+<context position="16752" citStr="Bennett, 2000" startWordPosition="2758" endWordPosition="2760">In the meantime, visualizations of calibration curves help inform the reader of the resolution of a particular analysis—if the bins are far apart, the data is sparse, and the specific details of the curve are not known in those regions. iments, we set the target bin size in Algorithm 1 to be 5,000 and the number of samples in Algorithm 2 to be 10,000. 4.1 Naive Bayes and logistic regression 4.1.1 Introduction Previous work on Naive Bayes has found its probabilities to have calibration issues, in part due to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” a</context>
+</contexts>
+<marker>Bennett, 2000</marker>
+<rawString>Paul N. Bennett. Assessing the calibration of naive Bayes’ posterior estimates. Technical report, Carnegie Mellon University, 2000.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David M Blei</author>
+<author>Peter I Frazier</author>
+</authors>
+<title>Distance dependent Chinese restaurant processes.</title>
+<date>2011</date>
+<journal>The Journal of Machine Learning Research,</journal>
+<volume>12</volume>
+<pages>2461--2488</pages>
+<contexts>
+<context position="25083" citStr="Blei and Frazier, 2011" startWordPosition="4101" endWordPosition="4104">e x denotes all information in the document that is conditioned on for log-linear features f. e = {e1, ...em} denotes the entity clusters, where each element is a set of mentions. There are M entity clusters corresponding to the number of connected components in a. The model defines a joint distribution over antecedent decisions P(a|x) = Hi P(ai|x); it also defines a joint distribution over entity clusterings P(e|x), where the probability of an e is the sum of the probabilities of all a vectors that could give rise to it. In a manner similar to a distance-dependent Chinese restaurant process (Blei and Frazier, 2011), it is non-parametric in the sense that the number of clusters M is not fixed in advance. 5.2 Sampling-based inference For both calibration analysis and exploratory applications, we need to analyze the posterior distribution over entity clusterings. This distribution is a complex mathematical object; an attractive approach to analyze it is to draw samples from this distribution, then analyze the samples. This antecedent-based model admits a very straightforward procedure to draw independent e samples, by stepping through Def. 2: independently sample each ai then calculate the connected compon</context>
+</contexts>
+<marker>Blei, Frazier, 2011</marker>
+<rawString>David M. Blei and Peter I. Frazier. Distance dependent Chinese restaurant processes. The Journal of Machine Learning Research, 12: 2461–2488, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Elizabeth Boschee</author>
+<author>Premkumar Natarajan</author>
+<author>Ralph Weischedel</author>
+</authors>
+<title>Automatic extraction of events from open source text for predictive forecasting.</title>
+<date>2013</date>
+<booktitle>Handbook of Computational Approaches to Counterterrorism,</booktitle>
+<pages>51</pages>
+<contexts>
+<context position="29719" citStr="Boschee et al., 2013" startWordPosition="4846" endWordPosition="4849">n help users understand the underlying reliability of aggregated extractions and isolate predictions that are more likely to contain errors. We illustrate with an event analysis application to count the number of “country attack events”: for a particular country of the world, how many news articles describe an entity affiliated with that country as the agent of an attack, and how does this number change over time? This is a simplified version of a problem where such systems have been built and used for political science analysis (Schrodt et al., 1994; Schrodt, 2012; Leetaru and Schrodt, 2013; Boschee et al., 2013; O’Connor et al., 2013). A coreference component can improve extraction coverage in cases such as “Russian troops were sighted ... and they attacked... ” We use the coreference system examined in §5 for this analysis. To propagate coreference uncertainty, we re-run event extraction on multiple coreference samples generated from the algorithm described in §5.2, inducing a posterior distribution over the event counts. To isolate the effects of coreference, we use a very simple syntactic dependency system to identify affiliations and events. Assume the availability of dependency parses for a doc</context>
+</contexts>
+<marker>Boschee, Natarajan, Weischedel, 2013</marker>
+<rawString>Elizabeth Boschee, Premkumar Natarajan, and Ralph Weischedel. Automatic extraction of events from open source text for predictive forecasting. Handbook of Computational Approaches to Counterterrorism, page 51, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Glenn W Brier</author>
+</authors>
+<title>Verification of forecasts expressed in terms of probability.</title>
+<date>1950</date>
+<journal>Monthly weather review,</journal>
+<volume>78</volume>
+<issue>1</issue>
+<contexts>
+<context position="6331" citStr="Brier, 1950" startWordPosition="977" endWordPosition="978">ility or prediction strength q ∈ [0, 1]. Typically, we use some form of a probabilistic model to accomplish this task, where q represents the model’s posterior probability3 of the instance having a positive label (y = 1). Let S = {(q1, y1), (q2, y2), · · · (qN, yN)} be the set of prediction-label pairs produced by the model. Many metrics assess the overall quality of how well the predicted probabilities match the data, such as the familiar cross entropy (negative average log-likelihood), 1 1 yi log + (1 − yi) log qi 1 − qi or mean squared error, also known as the Brier score when y is binary (Brier, 1950), X L2 (y, �q) = 1 N i 2We use the terms confidence interval and credible interval interchangeably in this work; the latter term is debatably more correct, though less widely familiar. 3Whether q comes from a Bayesian posterior or not is irrelevant to the analysis in this section. All that matters is that predictions are numbers q ∈ [0, 1]. Both tend to attain better (lower) values when q is near 1 when y = 1, and near 0 when y = 0; and they achieve a perfect value of 0 when all qi = yi.4 Let P(y, q) be the joint empirical distribution over labels and predictions. Under this notation, L2 = Eq,</context>
+</contexts>
+<marker>Brier, 1950</marker>
+<rawString>Glenn W. Brier. Verification of forecasts expressed in terms of probability. Monthly weather review, 78(1):1–3, 1950.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jochen Br¨ocker</author>
+</authors>
+<title>Reliability, sufficiency, and the decomposition of proper scores.</title>
+<date>2009</date>
+<journal>Quarterly Journal of the Royal Meteorological Society,</journal>
+<volume>135</volume>
+<issue>643</issue>
+<marker>Br¨ocker, 2009</marker>
+<rawString>Jochen Br¨ocker. Reliability, sufficiency, and the decomposition of proper scores. Quarterly Journal of the Royal Meteorological Society, 135(643):1512–1519, 2009.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Niko Br¨ummer</author>
+<author>George Doddington</author>
+</authors>
+<title>Likelihood-ratio calibration using priorweighted proper scoring rules. arXiv preprint arXiv:1307.7981,</title>
+<date>2013</date>
+<marker>Br¨ummer, Doddington, 2013</marker>
+<rawString>Niko Br¨ummer and George Doddington. Likelihood-ratio calibration using priorweighted proper scoring rules. arXiv preprint arXiv:1307.7981, 2013. Interspeech 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marie-Catherine de Marneffe</author>
+<author>Timothy Dozat</author>
+<author>Natalia Silveira</author>
+<author>Katri Haverinen</author>
+<author>Filip Ginter</author>
+<author>Joakim Nivre</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Universal Stanford dependencies: A cross-linguistic typology.</title>
+<date>2014</date>
+<booktitle>In Proceedings of LREC,</booktitle>
+<marker>de Marneffe, Dozat, Silveira, Haverinen, Ginter, Nivre, Manning, 2014</marker>
+<rawString>Marie-Catherine de Marneffe, Timothy Dozat, Natalia Silveira, Katri Haverinen, Filip Ginter, Joakim Nivre, and Christopher D. Manning. Universal Stanford dependencies: A cross-linguistic typology. In Proceedings of LREC, 2014.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Morris H DeGroot</author>
+<author>Stephen E Fienberg</author>
+</authors>
+<title>The comparison and evaluation of forecasters. The statistician,</title>
+<date>1983</date>
+<pages>12--22</pages>
+<contexts>
+<context position="7235" citStr="DeGroot and Fienberg, 1983" startWordPosition="1140" endWordPosition="1143">ion. All that matters is that predictions are numbers q ∈ [0, 1]. Both tend to attain better (lower) values when q is near 1 when y = 1, and near 0 when y = 0; and they achieve a perfect value of 0 when all qi = yi.4 Let P(y, q) be the joint empirical distribution over labels and predictions. Under this notation, L2 = Eq,y[y − q]2. Consider the factorization P(y, q) = P(y |q) P(q) where P(y |q) denotes the label empirical frequency, conditional on a prediction strength (Murphy and Winkler, 1987).5 Applying this factorization to the Brier score leads to the calibrationrefinement decomposition (DeGroot and Fienberg, 1983), in terms of expectations with respect to the prediction strength distribution P(q): L2 = Eq[q − pq]2 |{z } Calibration MSE where we denote pq ≡ P(y = 1 |q) for brevity. Here, calibration measures to what extent a model’s probabilistic predictions match their corresponding empirical frequencies. Perfect calibration is achieved when P(y = 1 |q) = q for all q; intuitively, if you aggregate all instances where a model predicted q, they should have y = 1 at q percent of the time. We define the magnitude of miscalibration using root mean squared error: Definition 1 (RMS calibration error). qCalibE</context>
+</contexts>
+<marker>DeGroot, Fienberg, 1983</marker>
+<rawString>Morris H. DeGroot and Stephen E. Fienberg. The comparison and evaluation of forecasters. The statistician, pages 12–22, 1983.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pedro Domingos</author>
+<author>Michael Pazzani</author>
+</authors>
+<title>On the optimality of the simple Bayesian classifier under zero-one loss.</title>
+<date>1997</date>
+<booktitle>Machine learning,</booktitle>
+<pages>29--2</pages>
+<contexts>
+<context position="16781" citStr="Domingos and Pazzani, 1997" startWordPosition="2761" endWordPosition="2764">, visualizations of calibration curves help inform the reader of the resolution of a particular analysis—if the bins are far apart, the data is sparse, and the specific details of the curve are not known in those regions. iments, we set the target bin size in Algorithm 1 to be 5,000 and the number of samples in Algorithm 2 to be 10,000. 4.1 Naive Bayes and logistic regression 4.1.1 Introduction Previous work on Naive Bayes has found its probabilities to have calibration issues, in part due to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” as “happy” (y = 1) and others </context>
+</contexts>
+<marker>Domingos, Pazzani, 1997</marker>
+<rawString>Pedro Domingos and Michael Pazzani. On the optimality of the simple Bayesian classifier under zero-one loss. Machine learning, 29(2-3):103– 130, 1997.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>Easy victories and uphill battles in coreference resolution.</title>
+<date>2013</date>
+<booktitle>In EMNLP,</booktitle>
+<pages>1971--1982</pages>
+<contexts>
+<context position="23362" citStr="Durrett and Klein, 2013" startWordPosition="3807" endWordPosition="3810">chieve better calibration errors in 29 out of 100 categories. These tagging experiments illustrate that, depending on the application, different models can exhibit different levels of calibration. 5 Coreference resolution We examine a third model, a probabilistic model for within-document noun phrase coreference, which has an efficient sampling-based inference procedure. In this section we introduce it and analyze its calibration, in preparation for the next section where we use it for exploratory data analysis. 5.1 Antecedent selection model We use the Berkeley coreference resolution system (Durrett and Klein, 2013), which was originally presented as a CRF; we give it an equivalent a series of independent logistic regressions (see appendix for details). The primary component of this model is a locally-normalized log-linear distribution over clusterings of noun phrases, each cluster denoting an entity. The model takes a fixed input of N mentions (noun phrases), indexed by i in their positional order in the document. It posits that every mention i has a latent antecedent selection decision, ai ∈ {1, ... , i − 1, NEW}, denoting which previous mention it attaches to, or NEW if it is starting a new entity tha</context>
+</contexts>
+<marker>Durrett, Klein, 2013</marker>
+<rawString>Greg Durrett and Dan Klein. Easy victories and uphill battles in coreference resolution. In EMNLP, pages 1971–1982, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Greg Durrett</author>
+<author>Dan Klein</author>
+</authors>
+<title>A joint model for entity analysis: Coreference, typing, and linking.</title>
+<date>2014</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>2</volume>
+<contexts>
+<context position="2865" citStr="Durrett and Klein, 2014" startWordPosition="417" endWordPosition="420"> work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the structures. For example, say a model is overconfident: it places too much probability mass in the top prediction, and not enough in the rest. Then there will be little benefit to using the lower probability structures, since in the training or inference objectives they will be incorrectly outweighed by the top prediction (or in a sampling approach, they will be systematically undersampled and thus have too-low frequencies</context>
+</contexts>
+<marker>Durrett, Klein, 2014</marker>
+<rawString>Greg Durrett and Dan Klein. A joint model for entity analysis: Coreference, typing, and linking. Transactions of the Association for Computational Linguistics, 2:477–490, 2014.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jenny Rose Finkel</author>
+<author>Christopher D Manning</author>
+<author>Andrew Y Ng</author>
+</authors>
+<title>Solving the problem of cascading errors: Approximate Bayesian inference for linguistic annotation pipelines.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 2006 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>618--626</pages>
+<contexts>
+<context position="2446" citStr="Finkel et al., 2006" startWordPosition="348" endWordPosition="351">ut structure y, such as a most-probable tagging or entity clustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a line of work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the struct</context>
+<context position="34952" citStr="Finkel et al. (2006)" startWordPosition="5740" endWordPosition="5743">coreference model is important for the credible intervals to be useful; for example, if the model was badly calibrated by being overconfident (too much probability over a small set of similar structures), these intervals would be too narrow, leading to incorrect interpretations of the event dynamics. Visualizing this uncertainty gives richer information for a potential user of an NLP-based system, compared to simply drawing a line based on a single 1-best prediction. It preserves the genuine uncertainty due to ambiguities the system was unable to resolve. This highlights an alternative use of Finkel et al. (2006)’s approach of sampling multiple NLP pipeline components, which in that work was used to perform joint inference. Instead 11We obtained similar results using only 10 samples. We also obtained similar results with a different query function, the total number of entities, across documents, that fulfill f. 1594 of focusing on improving an NLP pipeline, we can pass uncertainty on to exploratory purposes, and try to highlight to a user where the NLP system may be wrong, or where it can only imprecisely specify a quantity of interest. Finally, calibration can help error analysis. For a calibrated mo</context>
+</contexts>
+<marker>Finkel, Manning, Ng, 2006</marker>
+<rawString>Jenny Rose Finkel, Christopher D. Manning, and Andrew Y. Ng. Solving the problem of cascading errors: Approximate Bayesian inference for linguistic annotation pipelines. In Proceedings of the 2006 Conference on Empirical Methods in Natural Language Processing, pages 618– 626. Association for Computational Linguistics, 2006.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew Gelman</author>
+<author>John B Carlin</author>
+<author>Hal S Stern</author>
+<author>David B Dunson</author>
+<author>Aki Vehtari</author>
+<author>Donald B Rubin</author>
+</authors>
+<title>Bayesian data analysis. Chapman and Hall/CRC, 3rd edition,</title>
+<date>2013</date>
+<contexts>
+<context position="37388" citStr="Gelman et al., 2013" startWordPosition="6129" endWordPosition="6132">use they share the “president” title. These types of errors are a major issue for a political analysis task; further analysis could assess their prevalence and how to address them in future work. 7 Conclusion In this work, we argue that the calibration of posterior predictions is a desirable property of probabilistic NLP models, and that it can be directly evaluated. We also demonstrate a use case of having calibrated uncertainty: its propagation into downstream exploratory analysis. Our posterior simulation approach for exploratory and error analysis relates to posterior predictive checking (Gelman et al., 2013), which analyzes a posterior to test model assumptions; Mimno and Blei (2011) apply it to a topic model. One avenue of future work is to investigate more effective nonparametric regression methods to better estimate and visualize calibration error, such as Gaussian processes or bootstrapped kernel USA 1995 1996 1997 1998 1999 2000 Figure 6: Number of documents with an “attack”ing country per 3-month period, and coreference posterior uncertainty for that quantity. The dark line is the posterior mean, and the shaded region is the 95% posterior credible interval. More examples in appendix. densit</context>
+</contexts>
+<marker>Gelman, Carlin, Stern, Dunson, Vehtari, Rubin, 2013</marker>
+<rawString>Andrew Gelman, John B. Carlin, Hal S. Stern, David B. Dunson, Aki Vehtari, and Donald B. Rubin. Bayesian data analysis. Chapman and Hall/CRC, 3rd edition, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Rich sourceside context for statistical machine translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Third Workshop on Statistical Machine Translation,</booktitle>
+<pages>9--17</pages>
+<contexts>
+<context position="1617" citStr="Gimpel and Smith, 2008" startWordPosition="231" endWordPosition="234"> confidence intervals for a political event extraction task.1 1 Introduction Natural language processing systems are imperfect. Decades of research have yielded analyzers that mis-identify named entities, mis-attach syntactic relations, and mis-recognize noun phrase coreference anywhere from 10-40% of the time. But these systems are accurate enough so that their outputs can be used as soft, if noisy, indicators of language meaning for use in downstream analysis, such as systems that perform question answering, machine translation, event extraction, and narrative analysis (McCord et al., 2012; Gimpel and Smith, 2008; Miwa et al., 2010; Bamman et al., 2013). To understand the performance of an analyzer, researchers and practitioners typically measure the accuracy of individual labels or edges among a single predicted output structure y, such as a most-probable tagging or entity clustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted </context>
+</contexts>
+<marker>Gimpel, Smith, 2008</marker>
+<rawString>Kevin Gimpel and Noah A. Smith. Rich sourceside context for statistical machine translation. In Proceedings of the Third Workshop on Statistical Machine Translation, pages 9–17, 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Softmaxmargin CRFs: Training log-linear models with cost functions.</title>
+<date>2010</date>
+<booktitle>In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>733--736</pages>
+<marker>Gimpel, Smith, 2010</marker>
+<rawString>Kevin Gimpel and Noah A. Smith. Softmaxmargin CRFs: Training log-linear models with cost functions. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 733–736. Association for Computational Linguistics, 2010.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Gimpel</author>
+<author>Dhruv Batra</author>
+<author>Chris Dyer</author>
+<author>Gregory Shakhnarovich</author>
+</authors>
+<title>A systematic exploration of diversity in machine translation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1100--1111</pages>
+<location>Seattle, Washington, USA,</location>
+<contexts>
+<context position="2560" citStr="Gimpel et al., 2013" startWordPosition="366" endWordPosition="369">1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a line of work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the structures. For example, say a model is overconfident: it places too much probability mass in the top prediction, and no</context>
+</contexts>
+<marker>Gimpel, Batra, Dyer, Shakhnarovich, 2013</marker>
+<rawString>Kevin Gimpel, Dhruv Batra, Chris Dyer, and Gregory Shakhnarovich. A systematic exploration of diversity in machine translation. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing, pages 1100–1111, Seattle, Washington, USA, October 2013. Association for Computational Linguistics. URL http://www.aclweb. org/anthology/D13-1111.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tilmann Gneiting</author>
+<author>Adrian E Raftery</author>
+</authors>
+<title>Strictly proper scoring rules, prediction, and estimation.</title>
+<date>2007</date>
+<journal>Journal of the American Statistical Association,</journal>
+<volume>102</volume>
+<issue>477</issue>
+<contexts>
+<context position="8562" citStr="Gneiting and Raftery, 2007" startWordPosition="1367" endWordPosition="1370"> the model is able to separate different labels (in terms of the conditional Gini entropy pq(1 − pq)). If the prediction strengths tend to cluster around 0 or 1, the refinement score tends to be lower. The calibrationrefinement breakdown offers a useful perspective on the accuracy of a model posterior. This paper focuses on calibration. There are several other ways to break down squared error, log-likelihood, and other probabilistic scoring rules.6 We use the Brier-based calibration error in this work, since unlike cross-entropy 4These two loss functions are instances of proper scoring rules (Gneiting and Raftery, 2007; Br¨ocker, 2009). 5 We alternatively refer to this as labelfrequency or empirical frequency. The P probabilities can be thought of as frequencies from the hypothetical population the data and predictions are drawn from. P probabilities are, definitionally speaking, completely separate from a probabilistic model that might be used to generate q predictions. 6They all include a notion of calibration corresponding to a Bregman divergence (Br¨ocker, 2009); for example, crossentropy can be broken down such that KL divergence is the measure of miscalibration. X Lt (y, �q) = 1 N i (yi − qi)2 + Eq[pq</context>
+</contexts>
+<marker>Gneiting, Raftery, 2007</marker>
+<rawString>Tilmann Gneiting and Adrian E. Raftery. Strictly proper scoring rules, prediction, and estimation. Journal of the American Statistical Association, 102(477):359–378, 2007.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joshua Goodman</author>
+</authors>
+<title>Parsing algorithms and metrics.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the 34th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>177--183</pages>
+<location>Santa Cruz, California, USA,</location>
+<contexts>
+<context position="2712" citStr="Goodman, 1996" startWordPosition="393" endWordPosition="394"> a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a line of work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the structures. For example, say a model is overconfident: it places too much probability mass in the top prediction, and not enough in the rest. Then there will be little benefit to using the lower probability structures, since in the training or inference objectives they wi</context>
+</contexts>
+<marker>Goodman, 1996</marker>
+<rawString>Joshua Goodman. Parsing algorithms and metrics. In Proceedings of the 34th Annual Meeting of the Association for Computational Linguistics, pages 177–183, Santa Cruz, California, USA, June 1996. Association for Computational Linguistics. doi: 10.3115/981863. 981887. URL http://www.aclweb.org/ anthology/P96-1024.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Aria Haghighi</author>
+<author>Dan Klein</author>
+</authors>
+<title>Unsupervised coreference resolution in a nonparametric Bayesian model.</title>
+<date>2007</date>
+<booktitle>In Annual Meeting, Association for Computational Linguistics,</booktitle>
+<volume>45</volume>
+<pages>848</pages>
+<contexts>
+<context position="26021" citStr="Haghighi and Klein, 2007" startWordPosition="4245" endWordPosition="4248">ive approach to analyze it is to draw samples from this distribution, then analyze the samples. This antecedent-based model admits a very straightforward procedure to draw independent e samples, by stepping through Def. 2: independently sample each ai then calculate the connected components of the resulting antecedent graph. By construction, this procedure samples from the joint distribution of e (even though we never compute the probability of any single clustering e). Unlike approximate sampling approaches, such as Markov chain Monte Carlo methods used in other coreference work to sample e (Haghighi and Klein, 2007), here there are no questions about burn-in or autocorrelation (Kass et al., 1998). Every sample is independent and very fast to CalibErr CalibErr 0.075 0.050 0.025 0.000 0.06 0.04 0.02 0.00 ab HMM CRF HMM CRF 1592 0.00 0.25 0.50 0.75 1.00 Prediction strength Figure 5: Coreference calibration curve for predicting whether two mentions belong to the same entity cluster. compute—only slightly slower than calculating the MAP assignment (due to the exp and normalization for each ai). We implement this algorithm by modifying the publicly available implementation from Durrett and Klein.9 5.3 Calibrat</context>
+</contexts>
+<marker>Haghighi, Klein, 2007</marker>
+<rawString>Aria Haghighi and Dan Klein. Unsupervised coreference resolution in a nonparametric Bayesian model. In Annual Meeting, Association for Computational Linguistics, volume 45, page 848, 2007.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert E Kass</author>
+<author>Bradley P Carlin</author>
+<author>Andrew Gelman</author>
+<author>Radford M Neal</author>
+</authors>
+<title>Markov chain Monte Carlo in practice: a roundtable discussion.</title>
+<date>1998</date>
+<journal>The American Statistician,</journal>
+<volume>52</volume>
+<issue>2</issue>
+<contexts>
+<context position="26103" citStr="Kass et al., 1998" startWordPosition="4258" endWordPosition="4261">mples. This antecedent-based model admits a very straightforward procedure to draw independent e samples, by stepping through Def. 2: independently sample each ai then calculate the connected components of the resulting antecedent graph. By construction, this procedure samples from the joint distribution of e (even though we never compute the probability of any single clustering e). Unlike approximate sampling approaches, such as Markov chain Monte Carlo methods used in other coreference work to sample e (Haghighi and Klein, 2007), here there are no questions about burn-in or autocorrelation (Kass et al., 1998). Every sample is independent and very fast to CalibErr CalibErr 0.075 0.050 0.025 0.000 0.06 0.04 0.02 0.00 ab HMM CRF HMM CRF 1592 0.00 0.25 0.50 0.75 1.00 Prediction strength Figure 5: Coreference calibration curve for predicting whether two mentions belong to the same entity cluster. compute—only slightly slower than calculating the MAP assignment (due to the exp and normalization for each ai). We implement this algorithm by modifying the publicly available implementation from Durrett and Klein.9 5.3 Calibration analysis We consider the following inference query: for a randomly chosen pair</context>
+</contexts>
+<marker>Kass, Carlin, Gelman, Neal, 1998</marker>
+<rawString>Robert E. Kass, Bradley P. Carlin, Andrew Gelman, and Radford M. Neal. Markov chain Monte Carlo in practice: a roundtable discussion. The American Statistician, 52(2):93–100, 1998.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shankar Kumar</author>
+<author>William Byrne</author>
+</authors>
+<title>Minimum Bayes-risk decoding for statistical machine translation.</title>
+<date></date>
+<booktitle>HLT-NAACL 2004: Main Proceedings,</booktitle>
+<volume>2</volume>
+<pages>169--176</pages>
+<editor>In Daniel Marcu Susan Dumais and Salim Roukos, editors,</editor>
+<location>Boston, Massachusetts, USA,</location>
+<marker>Kumar, Byrne, </marker>
+<rawString>Shankar Kumar and William Byrne. Minimum Bayes-risk decoding for statistical machine translation. In Daniel Marcu Susan Dumais and Salim Roukos, editors, HLT-NAACL 2004: Main Proceedings, pages 169–176, Boston, Massachusetts, USA, May 2 - May 7 2004. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kalev Leetaru</author>
+<author>Philip A Schrodt</author>
+</authors>
+<title>GDELT: Global data on events, location, and tone,</title>
+<date>1979</date>
+<booktitle>In ISA Annual Convention,</booktitle>
+<volume>2</volume>
+<pages>page</pages>
+<marker>Leetaru, Schrodt, 1979</marker>
+<rawString>Kalev Leetaru and Philip A. Schrodt. GDELT: Global data on events, location, and tone, 1979– 2012. In ISA Annual Convention, volume 2, page 4, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jimmy Lin</author>
+<author>Alek Kolcz</author>
+</authors>
+<title>Large-scale machine learning at Twitter.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data,</booktitle>
+<pages>793--804</pages>
+<publisher>ACM,</publisher>
+<contexts>
+<context position="17269" citStr="Lin and Kolcz, 2012" startWordPosition="2838" endWordPosition="2841">to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” as “happy” (y = 1) and others as y = 0. The smiley emoticons are deleted in positive examples. We sampled three sets of tweets (subsampled from the Decahose/Gardenhose stream of public tweets) with Jan-Apr 2014 for training, May-Dec 2014 for development, and Jan-Apr 2015 for testing. Each set contains 105 tweets, split between an equal number of positive and negative instances. We use binary features based on unigrams extracted from the twokenize.py8 tokenization. We use the scikit-learn (Pedregosa et al., 2011) </context>
+</contexts>
+<marker>Lin, Kolcz, 2012</marker>
+<rawString>Jimmy Lin and Alek Kolcz. Large-scale machine learning at Twitter. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data, pages 793–804. ACM, 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael C McCord</author>
+<author>J William Murdock</author>
+<author>Branimir K Boguraev</author>
+</authors>
+<title>Deep parsing in Watson.</title>
+<date>2012</date>
+<journal>IBM Journal of Research and Development,</journal>
+<volume>56</volume>
+<pages>3--4</pages>
+<contexts>
+<context position="1593" citStr="McCord et al., 2012" startWordPosition="227" endWordPosition="230">rithm that can create confidence intervals for a political event extraction task.1 1 Introduction Natural language processing systems are imperfect. Decades of research have yielded analyzers that mis-identify named entities, mis-attach syntactic relations, and mis-recognize noun phrase coreference anywhere from 10-40% of the time. But these systems are accurate enough so that their outputs can be used as soft, if noisy, indicators of language meaning for use in downstream analysis, such as systems that perform question answering, machine translation, event extraction, and narrative analysis (McCord et al., 2012; Gimpel and Smith, 2008; Miwa et al., 2010; Bamman et al., 2013). To understand the performance of an analyzer, researchers and practitioners typically measure the accuracy of individual labels or edges among a single predicted output structure y, such as a most-probable tagging or entity clustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that</context>
+</contexts>
+<marker>McCord, Murdock, Boguraev, 2012</marker>
+<rawString>Michael C. McCord, J. William Murdock, and Branimir K. Boguraev. Deep parsing in Watson. IBM Journal of Research and Development, 56 (3.4):3–1, 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Mimno</author>
+<author>David Blei</author>
+</authors>
+<title>Bayesian checking for topic models.</title>
+<date>2011</date>
+<journal>URL</journal>
+<booktitle>In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<volume>http://www.aclweb.org/</volume>
+<pages>227--237</pages>
+<location>Edinburgh, Scotland, UK.,</location>
+<contexts>
+<context position="37465" citStr="Mimno and Blei (2011)" startWordPosition="6141" endWordPosition="6144">e for a political analysis task; further analysis could assess their prevalence and how to address them in future work. 7 Conclusion In this work, we argue that the calibration of posterior predictions is a desirable property of probabilistic NLP models, and that it can be directly evaluated. We also demonstrate a use case of having calibrated uncertainty: its propagation into downstream exploratory analysis. Our posterior simulation approach for exploratory and error analysis relates to posterior predictive checking (Gelman et al., 2013), which analyzes a posterior to test model assumptions; Mimno and Blei (2011) apply it to a topic model. One avenue of future work is to investigate more effective nonparametric regression methods to better estimate and visualize calibration error, such as Gaussian processes or bootstrapped kernel USA 1995 1996 1997 1998 1999 2000 Figure 6: Number of documents with an “attack”ing country per 3-month period, and coreference posterior uncertainty for that quantity. The dark line is the posterior mean, and the shaded region is the 95% posterior credible interval. More examples in appendix. density estimation. Another important question is: what types of inferences are fac</context>
+</contexts>
+<marker>Mimno, Blei, 2011</marker>
+<rawString>David Mimno and David Blei. Bayesian checking for topic models. In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing, pages 227–237, Edinburgh, Scotland, UK., July 2011. Association for Computational Linguistics. URL http://www.aclweb.org/ anthology/D11-1021.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Makoto Miwa</author>
+<author>Sampo Pyysalo</author>
+<author>Tadayoshi Hara</author>
+<author>Jun’ichi Tsujii</author>
+</authors>
+<title>Evaluating dependency representations for event extraction.</title>
+<date>2010</date>
+<journal>URL</journal>
+<booktitle>In Proceedings of the 23rd International Conference on Computational Linguistics (Coling</booktitle>
+<volume>http://www.aclweb.org/</volume>
+<pages>779--787</pages>
+<location>Beijing, China,</location>
+<contexts>
+<context position="1636" citStr="Miwa et al., 2010" startWordPosition="235" endWordPosition="238">r a political event extraction task.1 1 Introduction Natural language processing systems are imperfect. Decades of research have yielded analyzers that mis-identify named entities, mis-attach syntactic relations, and mis-recognize noun phrase coreference anywhere from 10-40% of the time. But these systems are accurate enough so that their outputs can be used as soft, if noisy, indicators of language meaning for use in downstream analysis, such as systems that perform question answering, machine translation, event extraction, and narrative analysis (McCord et al., 2012; Gimpel and Smith, 2008; Miwa et al., 2010; Bamman et al., 2013). To understand the performance of an analyzer, researchers and practitioners typically measure the accuracy of individual labels or edges among a single predicted output structure y, such as a most-probable tagging or entity clustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a li</context>
+</contexts>
+<marker>Miwa, Pyysalo, Hara, Tsujii, 2010</marker>
+<rawString>Makoto Miwa, Sampo Pyysalo, Tadayoshi Hara, and Jun’ichi Tsujii. Evaluating dependency representations for event extraction. In Proceedings of the 23rd International Conference on Computational Linguistics (Coling 2010), pages 779–787, Beijing, China, August 2010. Coling 2010 Organizing Committee. URL http://www.aclweb.org/ anthology/C10-1088.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Allan H Murphy</author>
+<author>Robert L Winkler</author>
+</authors>
+<title>A general framework for forecast verification.</title>
+<date>1987</date>
+<journal>Monthly Weather Review,</journal>
+<volume>115</volume>
+<issue>7</issue>
+<contexts>
+<context position="7108" citStr="Murphy and Winkler, 1987" startWordPosition="1121" endWordPosition="1125">ct, though less widely familiar. 3Whether q comes from a Bayesian posterior or not is irrelevant to the analysis in this section. All that matters is that predictions are numbers q ∈ [0, 1]. Both tend to attain better (lower) values when q is near 1 when y = 1, and near 0 when y = 0; and they achieve a perfect value of 0 when all qi = yi.4 Let P(y, q) be the joint empirical distribution over labels and predictions. Under this notation, L2 = Eq,y[y − q]2. Consider the factorization P(y, q) = P(y |q) P(q) where P(y |q) denotes the label empirical frequency, conditional on a prediction strength (Murphy and Winkler, 1987).5 Applying this factorization to the Brier score leads to the calibrationrefinement decomposition (DeGroot and Fienberg, 1983), in terms of expectations with respect to the prediction strength distribution P(q): L2 = Eq[q − pq]2 |{z } Calibration MSE where we denote pq ≡ P(y = 1 |q) for brevity. Here, calibration measures to what extent a model’s probabilistic predictions match their corresponding empirical frequencies. Perfect calibration is achieved when P(y = 1 |q) = q for all q; intuitively, if you aggregate all instances where a model predicted q, they should have y = 1 at q percent of t</context>
+</contexts>
+<marker>Murphy, Winkler, 1987</marker>
+<rawString>Allan H. Murphy and Robert L. Winkler. A general framework for forecast verification. Monthly Weather Review, 115(7):1330–1338, 1987.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andrew Ng</author>
+<author>Michael Jordan</author>
+</authors>
+<title>On discriminative vs. generative classifiers: A comparison of logistic regression and naive Bayes. Advances in neural information processing systems, 14: 841,</title>
+<date>2002</date>
+<contexts>
+<context position="16880" citStr="Ng and Jordan, 2002" startWordPosition="2775" endWordPosition="2778">f the bins are far apart, the data is sparse, and the specific details of the curve are not known in those regions. iments, we set the target bin size in Algorithm 1 to be 5,000 and the number of samples in Algorithm 2 to be 10,000. 4.1 Naive Bayes and logistic regression 4.1.1 Introduction Previous work on Naive Bayes has found its probabilities to have calibration issues, in part due to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” as “happy” (y = 1) and others as y = 0. The smiley emoticons are deleted in positive examples. We sampled three sets of tweets (s</context>
+</contexts>
+<marker>Ng, Jordan, 2002</marker>
+<rawString>Andrew Ng and Michael Jordan. On discriminative vs. generative classifiers: A comparison of logistic regression and naive Bayes. Advances in neural information processing systems, 14: 841, 2002.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexandru Niculescu-Mizil</author>
+<author>Rich Caruana</author>
+</authors>
+<title>Predicting good probabilities with supervised learning.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the 22nd International Conference on Machine Learning,</booktitle>
+<pages>625--632</pages>
+<contexts>
+<context position="10707" citStr="Niculescu-Mizil and Caruana, 2005" startWordPosition="1745" endWordPosition="1748">ity 0; we hypothesize this could be an issue since both p and q are subject to estimation error. 3 Empirical calibration analysis From a test set of labeled data, we can analyze model calibration both in terms of the calibration error, as well as visualizing the calibration curve of label frequency versus predicted strength. However, computing the label frequencies P(y = 1|q) requires an infinite amount of data. Thus approximation methods are required to perform calibration analysis. 3.1 Adaptive binning procedure Previous studies that assess calibration in supervised machine learning models (Niculescu-Mizil and Caruana, 2005; Bennett, 2000) calculate label frequencies by dividing the prediction space into deciles or other evenly spaced bins—e.g. q E [0, 0.1), q E [0.1, 0.2), etc.—and then calculating the empirical label frequency in each bin. This procedure may be thought of as using a form of nonparametric regression (specifically, a regressogram; Tukey 1961) to estimate the function f(q) = P(y = 1 |q) from observed data points. But models in natural language processing give very skewed distributions of confidence scores q (many are near 0 or 1), so this procedure performs poorly, having much more variable estim</context>
+<context position="16737" citStr="Niculescu-Mizil and Caruana, 2005" startWordPosition="2754" endWordPosition="2757">dress this problem in future work. In the meantime, visualizations of calibration curves help inform the reader of the resolution of a particular analysis—if the bins are far apart, the data is sparse, and the specific details of the curve are not known in those regions. iments, we set the target bin size in Algorithm 1 to be 5,000 and the number of samples in Algorithm 2 to be 10,000. 4.1 Naive Bayes and logistic regression 4.1.1 Introduction Previous work on Naive Bayes has found its probabilities to have calibration issues, in part due to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley </context>
+<context position="38858" citStr="Niculescu-Mizil and Caruana, 2005" startWordPosition="6349" endWordPosition="6352">tervals “good” when calibration is perfect? Also, does calibration help joint inference in NLP pipelines? It may also assist calculations that rely on expectations, such as inference methods like minimum Bayes risk decoding, or learning methods like EM, since calibrated predictions imply that calculated expectations are statistically unbiased (though the implications of this fact may be subtle). Finally, it may be interesting to pursue recalibration methods, which readjust a non-calibrated model’s predictions to be calibrated; recalibration methods have been developed for binary (Platt, 1999; Niculescu-Mizil and Caruana, 2005) and multiclass (Zadrozny and Elkan, 2002) classification settings, but we are unaware of methods appropriate for the highly structured outputs typical in linguistic analysis. Another approach might be to directly constrain CalibErr = 0 during training, or try to reduce it as a training-time risk minimization or cost objective (Smith and Eisner, 2006; Gimpel and Smith, 2010; Stoyanov et al., 2011; Br¨ummer and Doddington, 2013). Calibration is an interesting and important property of NLP models. Further work is necessary to address these and many other questions. 1990 1995 2000 2005 0 10 20 30</context>
+</contexts>
+<marker>Niculescu-Mizil, Caruana, 2005</marker>
+<rawString>Alexandru Niculescu-Mizil and Rich Caruana. Predicting good probabilities with supervised learning. In Proceedings of the 22nd International Conference on Machine Learning, pages 625–632, 2005.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Brendan O’Connor</author>
+<author>Brandon Stewart</author>
+<author>Noah A Smith</author>
+</authors>
+<title>Learning to extract international relations from political context.</title>
+<date>2013</date>
+<booktitle>In Proceedings of ACL,</booktitle>
+<marker>O’Connor, Stewart, Smith, 2013</marker>
+<rawString>Brendan O’Connor, Brandon Stewart, and Noah A. Smith. Learning to extract international relations from political context. In Proceedings of ACL, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Naoaki Okazaki</author>
+</authors>
+<title>Crfsuite: a fast implementation of conditional random fields (CRFs),</title>
+<date>2007</date>
+<note>URL http://www.chokkan.org/ software/crfsuite/.</note>
+<contexts>
+<context position="20038" citStr="Okazaki, 2007" startWordPosition="3270" endWordPosition="3271">, we extract Wall Street Journal articles from the English CoNLL-2011 coreference shared task dataset from Ontonotes (Pradhan et al., 2011), using the CoNLL-2011 splits for training, development and testing. This results in 11,772 sentences for training, 1,632 for development, and 1,382 for testing, over a set of 47 possible tags. We train an HMM with Dirichlet MAP using one pseudocount for every transition and word emission. For the CRF, we use the L2- regularized L-BFGS algorithm implemented in Figure 3: Calibration curves of (a) HMM, and (b) CRF, on predictions over all POS tags. CRFsuite (Okazaki, 2007). We compare an HMM to a CRF that only uses basic transition (tag-tag) and emission (tag-word) features, so that it does not have an advantage due to more features. In order to compare models with similar task performance, we train the CRF with only 3000 sentences from the training set, which yields the same accuracy as the HMM (about 88.7% on the test set). In each case, the model’s hyperparameters (the CRF’s L2 regularizer, the HMM’s pseudocount) are selected by maximizing accuracy on the development set. 4.2.2 Predicting single-word tags In this experiment, we measure miscalibration of the </context>
+</contexts>
+<marker>Okazaki, 2007</marker>
+<rawString>Naoaki Okazaki. Crfsuite: a fast implementation of conditional random fields (CRFs), 2007. URL http://www.chokkan.org/ software/crfsuite/.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>F Pedregosa</author>
+<author>G Varoquaux</author>
+<author>A Gramfort</author>
+<author>V Michel</author>
+<author>B Thirion</author>
+<author>O Grisel</author>
+<author>M Blondel</author>
+<author>P Prettenhofer</author>
+<author>R Weiss</author>
+<author>V Dubourg</author>
+<author>J Vanderplas</author>
+<author>A Passos</author>
+<author>D Cournapeau</author>
+<author>M Brucher</author>
+<author>M Perrot</author>
+<author>E Duchesnay</author>
+</authors>
+<title>Scikit-learn: Machine learning in Python.</title>
+<date>2011</date>
+<journal>Journal of Machine Learning Research,</journal>
+<volume>12</volume>
+<contexts>
+<context position="17868" citStr="Pedregosa et al., 2011" startWordPosition="2934" endWordPosition="2937">05; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” as “happy” (y = 1) and others as y = 0. The smiley emoticons are deleted in positive examples. We sampled three sets of tweets (subsampled from the Decahose/Gardenhose stream of public tweets) with Jan-Apr 2014 for training, May-Dec 2014 for development, and Jan-Apr 2015 for testing. Each set contains 105 tweets, split between an equal number of positive and negative instances. We use binary features based on unigrams extracted from the twokenize.py8 tokenization. We use the scikit-learn (Pedregosa et al., 2011) implementations of Bernoulli Naive Bayes and L2-regularized logistic regression. The models’ hyperparameters (Naive Bayes’ smoothing paramter and logistic regression’s regularization strength) are chosen to 8https://github.com/myleott/ ark-twokenize-py 1590 Figure 2: Calibration curve of (a) Naive Bayes and (b) logistic regression on predicting whether a tweet is a “happy” tweet. maximize the F-1 score on the development set. 4.1.2 Results Naive Bayes attains a slightly higher F-1 score (NB 73.8% vs. LR 72.9%), but logistic regression has much lower calibration error: less than half as much R</context>
+</contexts>
+<marker>Pedregosa, Varoquaux, Gramfort, Michel, Thirion, Grisel, Blondel, Prettenhofer, Weiss, Dubourg, Vanderplas, Passos, Cournapeau, Brucher, Perrot, Duchesnay, 2011</marker>
+<rawString>F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos, D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay. Scikit-learn: Machine learning in Python. Journal of Machine Learning Research, 12:2825–2830, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Platt</author>
+</authors>
+<title>Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods.</title>
+<date>2000</date>
+<booktitle>In Advances in large margin classifiers.</booktitle>
+<publisher>MIT Press</publisher>
+<note>URL http://research.microsoft.com/ pubs/69187/svmprob.ps.gz.</note>
+<marker>Platt, 2000</marker>
+<rawString>John Platt. Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods. In Advances in large margin classifiers. MIT Press (2000), 1999. URL http://research.microsoft.com/ pubs/69187/svmprob.ps.gz.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sameer Pradhan</author>
+<author>Lance Ramshaw</author>
+<author>Mitchell Marcus</author>
+<author>Martha Palmer</author>
+<author>Ralph Weischedel</author>
+<author>Nianwen Xue</author>
+</authors>
+<title>CoNLL-2011 shared task: Modeling unrestricted coreference in Ontonotes.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Fifteenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>1--27</pages>
+<publisher>Association</publisher>
+<contexts>
+<context position="19563" citStr="Pradhan et al., 2011" startWordPosition="3189" endWordPosition="3192">r tag sequences P(y|x), which we apply to part-of-speech tagging. We can analyze these models in the binary calibration framework (§2-3) by looking at marginal distribution of binary-valued outcomes of parts of the predicted structures. Specifically, we examine calibration of predicted probabilities of individual tokens’ tags (§4.2.2), and of pairs of consecutive tags (§4.2.3). These quantities are calculated with the forward-backward algorithm. To prepare a POS tagging dataset, we extract Wall Street Journal articles from the English CoNLL-2011 coreference shared task dataset from Ontonotes (Pradhan et al., 2011), using the CoNLL-2011 splits for training, development and testing. This results in 11,772 sentences for training, 1,632 for development, and 1,382 for testing, over a set of 47 possible tags. We train an HMM with Dirichlet MAP using one pseudocount for every transition and word emission. For the CRF, we use the L2- regularized L-BFGS algorithm implemented in Figure 3: Calibration curves of (a) HMM, and (b) CRF, on predictions over all POS tags. CRFsuite (Okazaki, 2007). We compare an HMM to a CRF that only uses basic transition (tag-tag) and emission (tag-word) features, so that it does not </context>
+</contexts>
+<marker>Pradhan, Ramshaw, Marcus, Palmer, Weischedel, Xue, 2011</marker>
+<rawString>Sameer Pradhan, Lance Ramshaw, Mitchell Marcus, Martha Palmer, Ralph Weischedel, and Nianwen Xue. CoNLL-2011 shared task: Modeling unrestricted coreference in Ontonotes. In Proceedings of the Fifteenth Conference on Computational Natural Language Learning: Shared Task, pages 1–27. Association for Computational Linguistics, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathon Read</author>
+</authors>
+<title>Using emoticons to reduce dependency in machine learning techniques for sentiment classification.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the ACL Student Research Workshop,</booktitle>
+<pages>43--48</pages>
+<contexts>
+<context position="17247" citStr="Read, 2005" startWordPosition="2836" endWordPosition="2837">in part due to its incorrect conditional independence assumptions (Niculescu-Mizil and Caruana, 2005; Bennett, 2000; Domingos and Pazzani, 1997). Since logistic regression has the same log-linear representational capacity (Ng and Jordan, 2002) but does not suffer from the independence assumptions, we select it for comparison, hypothesizing it may have better calibration. We analyze a binary classification task of Twitter sentiment analysis from emoticons. We collect a dataset consisting of tweets identified by the Twitter API as English, collected from 2014 to 2015, with the “emoticon trick” (Read, 2005; Lin and Kolcz, 2012) to label tweets that contain at least one occurrence of the smiley emoticon “:)” as “happy” (y = 1) and others as y = 0. The smiley emoticons are deleted in positive examples. We sampled three sets of tweets (subsampled from the Decahose/Gardenhose stream of public tweets) with Jan-Apr 2014 for training, May-Dec 2014 for development, and Jan-Apr 2015 for testing. Each set contains 105 tweets, split between an equal number of positive and negative instances. We use binary features based on unigrams extracted from the twokenize.py8 tokenization. We use the scikit-learn (Pe</context>
+</contexts>
+<marker>Read, 2005</marker>
+<rawString>Jonathon Read. Using emoticons to reduce dependency in machine learning techniques for sentiment classification. In Proceedings of the ACL Student Research Workshop, pages 43–48. Association for Computational Linguistics, 2005.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Evan Sandhaus</author>
+</authors>
+<title>The New York Times Annotated Corpus. Linguistic Data Consortium,</title>
+<date>2008</date>
+<location>LDC2008T19,</location>
+<contexts>
+<context position="32425" citStr="Sandhaus, 2008" startWordPosition="5314" endWordPosition="5316">ctures, had most of the probability mass in the space of all possible structures), each document would have an a posterior near either 0 or 1, and their sum in Eq. 5 would have a narrow distribution. But if the model is uncertain, the distribution will be wider. Because of the transitive closure, the probability of a is potentially more complex than the single antecedent linking probability between two mentions—the affiliation and attack information can propagate through a long coreference chain. 6.2 Results We tag and parse a 193,403 article subset of the Annotated New York Times LDC corpus (Sandhaus, 2008), which includes articles about world 10Syntactic relations are Universal Dependencies (de Marneffe et al., 2014); more details for the extraction rules are in the appendix. news from the years 1987 to 2007 (details in appendix). For each article, we run the coreference system to predict 100 samples, and evaluate f on every entity in every sample.11 The quantity of interest is the number of articles mentioning attacks in a 3-month period (quarter), for a given country. Figure 6 illustrates the mean and 95% posterior credible intervals for each quarter. The posterior mean m is calculated as the</context>
+</contexts>
+<marker>Sandhaus, 2008</marker>
+<rawString>Evan Sandhaus. The New York Times Annotated Corpus. Linguistic Data Consortium, LDC2008T19, 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philip A Schrodt</author>
+</authors>
+<title>Precedents, progress, and prospects in political event data.</title>
+<date>2012</date>
+<journal>International Interactions,</journal>
+<volume>38</volume>
+<issue>4</issue>
+<contexts>
+<context position="29670" citStr="Schrodt, 2012" startWordPosition="4840" endWordPosition="4841"> postulate that uncertainty information can help users understand the underlying reliability of aggregated extractions and isolate predictions that are more likely to contain errors. We illustrate with an event analysis application to count the number of “country attack events”: for a particular country of the world, how many news articles describe an entity affiliated with that country as the agent of an attack, and how does this number change over time? This is a simplified version of a problem where such systems have been built and used for political science analysis (Schrodt et al., 1994; Schrodt, 2012; Leetaru and Schrodt, 2013; Boschee et al., 2013; O’Connor et al., 2013). A coreference component can improve extraction coverage in cases such as “Russian troops were sighted ... and they attacked... ” We use the coreference system examined in §5 for this analysis. To propagate coreference uncertainty, we re-run event extraction on multiple coreference samples generated from the algorithm described in §5.2, inducing a posterior distribution over the event counts. To isolate the effects of coreference, we use a very simple syntactic dependency system to identify affiliations and events. Assum</context>
+</contexts>
+<marker>Schrodt, 2012</marker>
+<rawString>Philip A. Schrodt. Precedents, progress, and prospects in political event data. International Interactions, 38(4):546–569, 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philip A Schrodt</author>
+<author>Shannon G Davis</author>
+<author>Judith L Weddle</author>
+</authors>
+<title>KEDS – a program for the machine coding of event data.</title>
+<date>1994</date>
+<journal>Social Science Computer Review,</journal>
+<volume>12</volume>
+<issue>4</issue>
+<pages>587</pages>
+<contexts>
+<context position="29655" citStr="Schrodt et al., 1994" startWordPosition="4836" endWordPosition="4839">stem is calibrated, we postulate that uncertainty information can help users understand the underlying reliability of aggregated extractions and isolate predictions that are more likely to contain errors. We illustrate with an event analysis application to count the number of “country attack events”: for a particular country of the world, how many news articles describe an entity affiliated with that country as the agent of an attack, and how does this number change over time? This is a simplified version of a problem where such systems have been built and used for political science analysis (Schrodt et al., 1994; Schrodt, 2012; Leetaru and Schrodt, 2013; Boschee et al., 2013; O’Connor et al., 2013). A coreference component can improve extraction coverage in cases such as “Russian troops were sighted ... and they attacked... ” We use the coreference system examined in §5 for this analysis. To propagate coreference uncertainty, we re-run event extraction on multiple coreference samples generated from the algorithm described in §5.2, inducing a posterior distribution over the event counts. To isolate the effects of coreference, we use a very simple syntactic dependency system to identify affiliations an</context>
+</contexts>
+<marker>Schrodt, Davis, Weddle, 1994</marker>
+<rawString>Philip A. Schrodt, Shannon G. Davis, and Judith L. Weddle. KEDS – a program for the machine coding of event data. Social Science Computer Review, 12(4):561 –587, December 1994. doi: 10.1177/089443939401200408.</rawString>
+</citation>
+<citation valid="false">
+<note>URL http://ssc.sagepub.com/ content/12/4/561.abstract.</note>
+<marker></marker>
+<rawString>URL http://ssc.sagepub.com/ content/12/4/561.abstract.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Sameer Singh</author>
+<author>Sebastian Riedel</author>
+<author>Brian Martin</author>
+<author>Jiaping Zheng</author>
+<author>Andrew McCallum</author>
+</authors>
+<title>Joint inference of entities, relations, and coreference.</title>
+<marker>Singh, Riedel, Martin, Zheng, McCallum, </marker>
+<rawString>Sameer Singh, Sebastian Riedel, Brian Martin, Jiaping Zheng, and Andrew McCallum. Joint inference of entities, relations, and coreference.</rawString>
+</citation>
+<citation valid="true">
+<date>2013</date>
+<booktitle>In Proceedings of the 2013 Workshop on Automated Knowledge Base Construction,</booktitle>
+<volume>1</volume>
+<pages>pages</pages>
+<publisher>ACM,</publisher>
+<marker>2013</marker>
+<rawString>In Proceedings of the 2013 Workshop on Automated Knowledge Base Construction, pages 1– 6. ACM, 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David A Smith</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Minimum risk annealing for training log-linear models.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the COLING/ACL 2006 Main Conference Poster Sessions,</booktitle>
+<pages>787--794</pages>
+<location>Sydney, Australia,</location>
+<marker>Smith, Eisner, 2006</marker>
+<rawString>David A. Smith and Jason Eisner. Minimum risk annealing for training log-linear models. In Proceedings of the COLING/ACL 2006 Main Conference Poster Sessions, pages 787–794, Sydney, Australia, July 2006. Association for Computational Linguistics. URL http://www. aclweb.org/anthology/P06-2101.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Veselin Stoyanov</author>
+<author>Alexander Ropson</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Empirical risk minimization of graphical model parameters given approximate inference, decoding, and model structure.</title>
+<date>2011</date>
+<booktitle>In International Conference on Artificial Intelligence and Statistics,</booktitle>
+<pages>725--733</pages>
+<marker>Stoyanov, Ropson, Eisner, 2011</marker>
+<rawString>Veselin Stoyanov, Alexander Ropson, and Jason Eisner. Empirical risk minimization of graphical model parameters given approximate inference, decoding, and model structure. In International Conference on Artificial Intelligence and Statistics, pages 725–733, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Aria Haghighi</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>A global joint model for semantic role labeling.</title>
+<date>2008</date>
+<journal>Computational Linguistics,</journal>
+<volume>34</volume>
+<issue>2</issue>
+<contexts>
+<context position="2509" citStr="Toutanova et al., 2008" startWordPosition="358" endWordPosition="361">ustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a line of work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the structures. For example, say a model is overconfident: it places too </context>
+</contexts>
+<marker>Toutanova, Haghighi, Manning, 2008</marker>
+<rawString>Kristina Toutanova, Aria Haghighi, and Christopher D. Manning. A global joint model for semantic role labeling. Computational Linguistics, 34(2):161–191, 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John W Tukey</author>
+</authors>
+<title>Curves as parameters, and touch estimation.</title>
+<date>1961</date>
+<booktitle>In Proceedings of the Fourth Berkeley Symposium on Mathematical Statistics and Probability, Volume 1: Contributions to the Theory of Statistics,</booktitle>
+<pages>681--694</pages>
+<institution>University of California Press.</institution>
+<location>Berkeley, Calif.,</location>
+<note>URL http://projecteuclid. org/euclid.bsmsp/1200512189.</note>
+<contexts>
+<context position="11049" citStr="Tukey 1961" startWordPosition="1803" endWordPosition="1804">ies P(y = 1|q) requires an infinite amount of data. Thus approximation methods are required to perform calibration analysis. 3.1 Adaptive binning procedure Previous studies that assess calibration in supervised machine learning models (Niculescu-Mizil and Caruana, 2005; Bennett, 2000) calculate label frequencies by dividing the prediction space into deciles or other evenly spaced bins—e.g. q E [0, 0.1), q E [0.1, 0.2), etc.—and then calculating the empirical label frequency in each bin. This procedure may be thought of as using a form of nonparametric regression (specifically, a regressogram; Tukey 1961) to estimate the function f(q) = P(y = 1 |q) from observed data points. But models in natural language processing give very skewed distributions of confidence scores q (many are near 0 or 1), so this procedure performs poorly, having much more variable estimates near Algorithm 2 Estimate calibration error’s confidence interval by sampling. Input: A set of N prediction-label pairs {(q1, y1), (q2, y2), ··· , (qN, yN)}. Output: Calibration error with a 95% confidence interval. Parameter: Number of samples, S. Step 1: Calculate {ˆp1, ˆp2, · · · , ˆpT} from step 4 of Algorithm 1. Step 2: Draw S sam</context>
+</contexts>
+<marker>Tukey, 1961</marker>
+<rawString>John W. Tukey. Curves as parameters, and touch estimation. In Proceedings of the Fourth Berkeley Symposium on Mathematical Statistics and Probability, Volume 1: Contributions to the Theory of Statistics, pages 681–694, Berkeley, Calif., 1961. University of California Press. URL http://projecteuclid. org/euclid.bsmsp/1200512189.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ashish Venugopal</author>
+<author>Andreas Zollmann</author>
+<author>Noah A Smith</author>
+<author>Stephan Vogel</author>
+</authors>
+<title>Wider pipelines: Nbest alignments and parses in MT training.</title>
+<date>2008</date>
+<booktitle>In Proceedings of AMTA,</booktitle>
+<contexts>
+<context position="2484" citStr="Venugopal et al., 2008" startWordPosition="354" endWordPosition="357">ble tagging or entity clustering argmaxy P(y|x) (conditional on text data x). 1See the extended version of this paper for software, appendix, and acknowledgments sections: http://brenocon.com/nlpcalib/ http://arxiv.org/abs/1508.05154 But a probabilistic model gives a probability distribution over many other output structures that have smaller predicted probabilities; a line of work has sought to control cascading pipeline errors by passing on multiple structures from earlier stages of analysis, by propagating prediction uncertainty through multiple samples (Finkel et al., 2006), K-best lists (Venugopal et al., 2008; Toutanova et al., 2008), or explicitly diverse lists (Gimpel et al., 2013); often the goal is to marginalize over structures to calculate and minimize an expected loss function, as in minimum Bayes risk decoding (Goodman, 1996; Kumar and Byrne, 2004), or to perform joint inference between early and later stages of NLP analysis (e.g. Singh et al., 2013; Durrett and Klein, 2014). These approaches should work better when the posterior probabilities of the predicted linguistic structures reflect actual probabilities of the structures or aspects of the structures. For example, say a model is over</context>
+</contexts>
+<marker>Venugopal, Zollmann, Smith, Vogel, 2008</marker>
+<rawString>Ashish Venugopal, Andreas Zollmann, Noah A. Smith, and Stephan Vogel. Wider pipelines: Nbest alignments and parses in MT training. In Proceedings of AMTA, 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Larry Wasserman</author>
+</authors>
+<title>All of nonparametric statistics.</title>
+<date>2006</date>
+<publisher>Springer Science &amp; Business Media,</publisher>
+<contexts>
+<context position="13282" citStr="Wasserman, 2006" startWordPosition="2189" endWordPosition="2190"> for a bin with Q number of points and empirical frequency p, the standard error is estimated by V/p(1 − p)/Q, which is bounded above by 0.5/,\/Q. Algorithm 1 describes the procedure for estimating calibration error using adaptive binning, which can be applied to any probabilistic model that predicts posterior probabilities. 3.2 Confidence interval estimation Especially when the test set is small, estimating calibration error may be subject to error, due to uncertainty in the label frequency estimates. Since how to estimate confidence bands for nonparametric regression is an unsolved problem (Wasserman, 2006), we resort to a simple method based on the binning. We construct a binomial normal approximation for the label frequency estimate in each bin, and simulate from it; every simulation across all bins is used to construct a calibration error; these simulated calibration errors are collected to construct a normal approximation for the calibraˆpi = 1589 0.00 0.25 0.50 0.75 1.00 Prediction strength (b) 0.00 0.25 0.50 0.75 1.00 Prediction strength (c) 0.00 0.25 0.50 0.75 1.00 Prediction strength (d) 30000 20000 10000 0 0.00 0.25 0.50 0.75 1.00 Prediction Strength (a) Count Empirical frequency 0.75 0</context>
+</contexts>
+<marker>Wasserman, 2006</marker>
+<rawString>Larry Wasserman. All of nonparametric statistics. Springer Science &amp; Business Media, 2006.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Bianca Zadrozny</author>
+<author>Charles Elkan</author>
+</authors>
+<title>Transforming classifier scores into accurate multiclass probability estimates.</title>
+<date>2002</date>
+<booktitle>In Proceedings of KDD,</booktitle>
+<pages>694--699</pages>
+<publisher>ACM,</publisher>
+<contexts>
+<context position="38900" citStr="Zadrozny and Elkan, 2002" startWordPosition="6355" endWordPosition="6358">oes calibration help joint inference in NLP pipelines? It may also assist calculations that rely on expectations, such as inference methods like minimum Bayes risk decoding, or learning methods like EM, since calibrated predictions imply that calculated expectations are statistically unbiased (though the implications of this fact may be subtle). Finally, it may be interesting to pursue recalibration methods, which readjust a non-calibrated model’s predictions to be calibrated; recalibration methods have been developed for binary (Platt, 1999; Niculescu-Mizil and Caruana, 2005) and multiclass (Zadrozny and Elkan, 2002) classification settings, but we are unaware of methods appropriate for the highly structured outputs typical in linguistic analysis. Another approach might be to directly constrain CalibErr = 0 during training, or try to reduce it as a training-time risk minimization or cost objective (Smith and Eisner, 2006; Gimpel and Smith, 2010; Stoyanov et al., 2011; Br¨ummer and Doddington, 2013). Calibration is an interesting and important property of NLP models. Further work is necessary to address these and many other questions. 1990 1995 2000 2005 0 10 20 30 0 5 10 15 Serbia/Yugo. NATO 1595 Referenc</context>
+</contexts>
+<marker>Zadrozny, Elkan, 2002</marker>
+<rawString>Bianca Zadrozny and Charles Elkan. Transforming classifier scores into accurate multiclass probability estimates. In Proceedings of KDD, pages 694–699. ACM, 2002.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

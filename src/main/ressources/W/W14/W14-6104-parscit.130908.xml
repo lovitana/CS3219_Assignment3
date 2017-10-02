@@ -1,0 +1,1755 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000197">
+<title confidence="0.996155">
+Experiments with Easy-first nonprojective constituent parsing
+</title>
+<author confidence="0.996081">
+Yannick Versley
+</author>
+<affiliation confidence="0.9971905">
+Department of Computational Linguistics
+University of Heidelberg
+</affiliation>
+<email confidence="0.988116">
+versley@cl.uni-heidelberg.de
+</email>
+<sectionHeader confidence="0.997239" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999778928571429">
+Less-configurational languages such as German often show not just morphological variation but
+also free word order and nonprojectivity. German is not exceptional in this regard, as other
+morphologically-rich languages such as Czech, Tamil or Greek, offer similar challenges that
+make context-free constituent parsing less attractive.
+Advocates of dependency parsing have long pointed out that the free(r) word order and non-
+projective phenomena are handled in a more straightforward way by dependency parsing. How-
+ever, certain other phenomena in language, such as gapping, ellipses or verbless sentences, are
+difficult to handle in a dependency formalism.
+In this paper, we show that parsing of discontinuous constituents can be achieved using easy-first
+parsing with online reordering, an approach that previously has only been used for dependencies,
+and that the approach yields very fast parsing with reasonably accurate results that are close to
+the state of the art, surpassing existing results that use treebank grammars. We also investigate
+the question whether phenomena where dependency representations may be problematic – in
+particular, verbless clauses – can be handled by this model.
+</bodyText>
+<sectionHeader confidence="0.999517" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.94826405">
+Automatic syntactic parsing has been fruitfully incorporated into sytems for information extraction
+(Miyao et al., 2008), question answering, machine translation (Huang and Chiang, 2007), among others,
+but we also see syntactic structures being used to communicate facts about language use in the digital
+humanities or in investigations of the language of language learners. In all of these applications, we see
+fruitful use both of constituent trees, and of dependency trees.
+Depending on the application, different criteria may become important: on one hand, the ability to
+produce structures that are (intuitively) compatible with semantic composition, or where arguments and
+adjuncts are related to their predicate in the tree, which commonly requires dealing with nonprojectivity.
+Such a formalism should also deal with a wide range of constructions including verbless clauses. Finally,
+parsing speed is somewhat important for many application cases, and a parser that changes the tokeniza-
+tion of the input or inserts additional “null” tokens runs afoul many of the fundamental assumptions in
+pipelines for semantic processing or information extraction.
+If we look at the current three largest treebanks for German, namely the Hamburg Dependency Tree-
+bank (Foth et al., 2014) with 101000 sentences, the T¨uBa-D/Z treebank (Telljohann et al., 2009) with
+85 000 sentences or the Tiger treebank (Brants et al., 2002) with about 50 000 sentences, we see find a
+continuum of the nonprojective single-parent dependencies of the HDT on one side and projective phrase
+structures of T¨uBa-D/Z, with Tiger straddling in the middle with a scheme that is neither projective nor
+limited to dependencies, and which represents, we’ll argue, both the best and the worst of both worlds.
+This work is licenced under a Creative Commons Attribution 4.0 International License. Page numbers and proceedings
+footer are added by the organizers. License details: http://creativecommons.org/licenses/by/4.0/
+</bodyText>
+<page confidence="0.990036">
+39
+</page>
+<note confidence="0.7636575">
+First Joint Workshop on Statistical Parsing of Morphologically Rich Languages
+and Syntactic Analysis of Non-Canonical Languages, pages 39–53 Dublin, Ireland, August 23-29 2014.
+</note>
+<bodyText confidence="0.99378408">
+Because of its expressivity, the Negra/Tiger scheme has also been used for other languages such as
+Swedish Volk and Samuelsson (2004) as well as Georgian/Russian/Ukrainian (Kapanadze, 2012), and as
+Early New High German (Pauly et al., 2012).
+The Tiger scheme is arguably more expressive than either of the alternatives since it can capture
+both elliptic clauses (which are difficult to represent in normal dependency schemes) and nonprojective
+constructions (which have to be added as a second annotation layer in purely projective treebanks such
+as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of
+effective parsing components or of annotation tools, since parsing of discontinuous constituents has only
+recently become practical.
+The straightforward approach of Kallmeyer and Maier (2013) to use a treebank-derived linear context-
+free rewriting system suffers from near-exponential observed time consumption in practice. Approaches
+that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or
+van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not
+clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be
+suitable for the subsequent steps with increased grammar complexity.
+In this paper, we present a novel application of the easy-first parsing principle of Goldberg and Elhalad
+(2010) to discontinuous constituent parsing, which performs fast enough for interactive use (about 40
+sentences per second) while giving an acceptable accuracy that is within the range normally seen with
+unmodified treebank grammars.
+In the remainder of the paper, we will include a short discussion of the interrelation between con-
+stituency and dependency relations of syntax, as well as relevant prior work in section 2, and discuss the
+construction of the parser in section 3. Section 4 and following contain a discussion of quantitative re-
+sults on the Tiger corpus, whereas the penultimate section contains a more detailed analysis of the parser
+behaviour on constructions that are problematic for either dependency parsers or projective constituent
+parsing.
+</bodyText>
+<sectionHeader confidence="0.924392" genericHeader="introduction">
+2 Constituency and Dependency: Good friends?
+</sectionHeader>
+<bodyText confidence="0.999615458333333">
+Constituency and dependency structures are two formalisms that are frequently used for theory-neutral
+description of syntactic structures. In constituent structures, usually influenced by some version of X-
+bar theory (see Kornai and Pullum, 1990 for a discussion; most notably, phrases are supposed to be
+projections of a head), whereas in dependency structures it is usually assumed that each word has exactly
+one governor (except one or more words that are attached to a virtual root node).
+The common subset of both can be described (in the words of Hockenmaier, 2007) as “Heads, argu-
+ments, modifiers, conjuncts”, which includes the grammatical function labels that are added in depen-
+dency structures, and to varying extent in phrase structure treebanks. Nivre (2011) goes further and asks
+whether we need constituents at all, since pure dependency parsing recovers arguments and adjuncts
+while being generally faster (and, at least for results published on Czech and French which Nivre cites,
+more accurate). Versley and Zinsmeister (2006) similarly argue that even “deep” dependency relations
+(including nonlocal ones) can be recovered from single-parent dependencies if subsequent disambigua-
+tion steps identify the scope of conjunctions, argument sharing in coordination, passive identification,
+and lexicalized control phenomena. However, verbless clauses as they may occur in coordination pose
+a problem to the idea that every phrase is headed by a preterminal, or the equivalent assumption in
+dependency grammar that every argument has a governing head word.
+In constituent treebanks, the solution to this problem is rather simple: deviate from the descriptive-
+Xbar schema outlined earlier on and introduce headless projections for these clauses. Dependency tree-
+banks lack this additional degree of freedom, and the choice is usually to either attach the respective
+nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the gover-
+nors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013).
+In dependency parsing, good solutions for nonprojective edges have been found, including pseudopro-
+jective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as
+well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding
+</bodyText>
+<page confidence="0.996922">
+40
+</page>
+<bodyText confidence="0.999897413793103">
+strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner opera-
+tion which allows non-projective insertion into a structure that has already been built. Despite these
+very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else
+approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields unin-
+formative structures for subsequent processing components or even makes it necessary to re-engineer
+subsequent processing stages for dealing with the newly introduced empty nodes, or (equally impracti-
+cal) require the refactoring of annotated corpus resources to accommodate a new tokenization whenever
+a null element is introduced or changed.
+In constituency parsing, the problem of discontinuous constituents in parsing has, at least in German,
+first been met with a proposals of raising degrees of complexity (among others, van Noord, 1991; Plaehn,
+2000) and then silently been ignored both in the building of parsers and in their evaluation: researchers
+from Dubey and Keller (2003) to the present day cite bracketing scores based on structures that would
+make the reconstruction of “Heads, arguments, modifiers, and conjuncts” – usually – rather difficult.
+Only relatively recently has the problem of discontinuous constituent parsing been tackled head-on.
+Kallmeyer and Maier (2013) propose an approach that extracts a treebank LCFRS grammar, which is
+then used for probabilistic parsing, albeit with near-exponential time consumption. Maier et al. (2012)
+present an approach to make parsing in this approach more efficient by flattening coherent structures in
+a sentence to one single sentence node and thus eliminating scrambling as a source of discontinuities,
+together with other transformations, which allows a time complexity of O(n6) and parsing times of about
+2 minutes for a 40-word sentence. van Cranenburgh and Bod (2013) use a more practical approach that
+first creates phrase candidates from the n-best list of a projective constituent parser, and uses these to
+construct LCFRS items that do not necessarily correspond to grammar rules seen in the training set, but
+which are then matched against a collection of tree fragments extracted from the training set.
+There exists some work on transforming dependency structures into constituents that may help in the
+recovery of discontinuous constituents: Hall and Nivre (2008) propose to encode information about node
+labels in the dependency labels, whereas Carreras et al. (2008) show that an ILP-based combination of
+finding dependencies and adding phrase projections and adjunctions to a dependency backbone works
+well for constructing structures matching those of the Penn Treebank. Seddah (2010) found that similar
+spinal structures can be used for the French Treebank.
+</bodyText>
+<sectionHeader confidence="0.994054" genericHeader="method">
+3 Incremental parsing
+</sectionHeader>
+<bodyText confidence="0.9998842">
+In general, statistical parsing follows one of several general approaches: one is the approach of item-
+based decoding, which is centered around the creation of a parse forest that implicitly stores a very large
+number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g.
+(Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem
+in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group
+of approaches is based on incremental structure building, including the approaches of Magerman (1995)
+or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case
+of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a
+middle ground.
+While the idea of head lexicalization has played a large role in projective constituent parsing, there are
+rather few approaches that attempt to bridge the gap between dependency and constituency representa-
+tions in a way that could be exploited for the efficient building of discontinuous constituent structures.
+Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be
+described in terms of a spinal transform: each terminal in the input string is assigned a set of governing
+nodes that form its spine; parsing then consists of assigning a dependency structure among the terminal
+nodes and of assigning spines and the relation to each other.
+In the remainder of this section, we describe two approaches that we used to perform nonprojective
+constituent parsing in expected linear time: one is relatively close to the approach of Hall and Nivre
+(2008), but instead of assigning nodes to the first terminal of their yield, uses a strategy more like the
+spinal tree adjoining grammr of Carreras et al. (2008). The other is an application of the principle
+</bodyText>
+<page confidence="0.997716">
+41
+</page>
+<figure confidence="0.999665125">
+add ↗
+add ↘
+ist er
+he is
+Zum einen
+on the one hand
+[i] AP
+ADJD
+popul¨ar
+popular
+[i:i+1] AP
+ADJD
+außergew¨ohnlich
+extraordinarily
+PP
+S
+</figure>
+<figureCaption confidence="0.999983">
+Figure 1: Example for an intermediate state in EaFi, with the preferred action candidates for each position
+</figureCaption>
+<bodyText confidence="0.998015833333333">
+of easy-first parsing, which has been used for unlabeled dependency parsing by Goldberg and Elhalad
+(2010), and for non-projective labeled dependency parsing by Tratz and Hovy (2011), towards discon-
+tinuous constituency parsing. Because computed feature vectors can be memorized and only have to be
+recomputed in a small window around the last parser action, this latter approach, just as a left-to-right
+transition-based parser, has an expected time consumption that is linear in the number of words to be
+parsed.
+</bodyText>
+<subsectionHeader confidence="0.998978">
+3.1 ADG: Constituency-to-Dependency Reduction
+</subsectionHeader>
+<bodyText confidence="0.99995755">
+Our baseline is an approach close in spirit to Hall and Nivre (2008): The tree with node labels is turned
+into a dependency graph that encodes, on the governor edge of each terminal, a combination of (i) the
+node labels on the spine of this node, and (ii) the level at which this node attaches to its parent’s spine.
+We change two parameters of Hall and Nivre’s approach: on one hand, we do not use the first terminal
+in the yield of a node as its representative but the head according to the head table that we also use to
+assign the head in the easy-first parser. The reason for this is a practical one: using the head, we get
+a distribution of 531 different spine/level combinations when we use the head, whereas we would get
+about 1525 categories when we use the first terminal.
+To ensure efficient parsing, this list is further pared down to 100 entries, with the remaining entries
+being replaced by an UNK placeholder. In decoding, terminals with these entries are assigned the most
+frequent combination of spine and parent category for the POS tags of the node and its governor, and the
+topmost spine node with a matching category (or simply the topmost one) would be chosen.
+The decoding algorithm and parameter settings for MaltParser were then determined using the Malt-
+Optimizer software (Ballesteros and Nivre, 2012). The settings selected use the stack-projective algo-
+rithm with head+path marking strategy for pseudoprojective parsing.1
+Hall and Nivre’s approach is more complex than the approach presented here, and involves interleaving
+of identifying dependency edges (using the nonprojective Covington parsing scheme) and the stepwise
+determination of the topmost edge label, then the path of edge labels, and finally the path of constituent
+labels and its attachment. However, we find that this approach of dependency reduction constitutes a
+very reasonable intelligent baseline, and is able to perform at a similar speed than our approach.
+</bodyText>
+<subsectionHeader confidence="0.995904">
+3.2 EaFi: Easy-first Constituency Parsing
+</subsectionHeader>
+<bodyText confidence="0.99922">
+The main approach that we will present here constitutes an adaptation of the Easy-First approach to
+nonprojective constituent parsing. The parser keeps track of a sequence of nodes, beginning with the
+terminals that are output by the preprocessing consisting of morphological analyzer and lemmatization,
+and at each point applies one of several actions:
+</bodyText>
+<listItem confidence="0.923198">
+• Reduce-Unary: one node is grouped under a unary node of a given category, with the restriction that
+</listItem>
+<bodyText confidence="0.642363333333333">
+the corresponding unary rule must have been observed in the treebank. (Additionally, we collapse
+any two nodes with the same category embedding each other, which sometimes occurs in the Tiger
+treebank when several empty-headed phrases are assumed to embed each other in coordination).
+</bodyText>
+<footnote confidence="0.9775235">
+1MaltParser is able to do direct nonprojective parsing using the reordering approaches of Nivre (2009) and Nivre et al.
+(2009), however the pseudoprojective approach was selected in MaltOptimizer’s parameter selection.
+</footnote>
+<page confidence="0.997428">
+42
+</page>
+<figure confidence="0.8145630625">
+Basic featureset
+Unigram: n E ni−2 ... ni+3 CnPn CnWn CnMn CnLn
+Left/Right Children: n E ni,Lni,Rni+1,Lni+1,R CnPn
+Bigram: m, n E ni−1ni ... ni+2ni+3 WmWn WmCn CmWn WmWn
+Trigram: r, m, n E ni−1nini+1 . . . ni+1ni+2ni+3
+Medium featureset
+Bigram+Child: m, n, r E {nini+1ni+1,L; nini+1ni,R;
+ni+1ni+2ni+1,R; nini−1ni,L} CmCnCr CmCnPr
+Distance: O E {dist(ni,ni+1), gap(ni,ni+1)} OCm OCn OPm OPn
+m, n = ni, ni+1 OFm OFn
+Large featureset
+Gap bigram: m, n E ni−1ni+2, nini+2 WmWn WmCn CmWn WmWn
+Bigram+2child: m, n E ni−1ni ... ni+2ni+3; C, D E L, R CmCnCmCCnD CmCnCmCPnD
+CmCnPmCCnD
+Bigram-Dist m, n E ni−1ni ... ni+2ni+3 O
+O = dist(m, n) OPmPn
+</figure>
+<tableCaption confidence="0.978139">
+Table 1: Features used: W=word, C=phrase label, M=head morph, P=head pos
+</tableCaption>
+<listItem confidence="0.9989194">
+• Reduce-Binary: two nodes are grouped under one node, with the head of the new node being
+determined by a head table.
+• Add-Left/Add-Right: one node is added as a child to a node on its left/to its right.
+• Swap: if two nodes are in surface order (i.e., the head of the first node being left of the head of the
+second node in the normal word ordering), they can be swapped.
+</listItem>
+<bodyText confidence="0.9999655625">
+In addition, we experimented with a retag action which allows the parser to change the tag of a word
+that has been mistagged. While this has a positive effect on the parser’s accuracy for verb phrases, it also
+results in a slight deterioration of other phrases, resulting in a very slight decline in performance.
+To decide among different parsing actions, the parser uses a linear classifier with a pre-defined feature
+set (POS, word form, morphological tag and lemma in a two-token window around the two nodes that
+are being considered, the category and part-of-speech tag of the leftmost and rightmost dependent of
+the nodes that are being considered; bigrams of words, categories, and one of each, in a window of
+one around the two nodes being considered, and trigrams consisting of two category and one category,
+part-of-speech tag, or word form within said window).
+Weights are learned by performing online learning with early stopping, similar to the strategy em-
+ployed by Collins and Roark (2004). We use the Adaptive Gradients method (Duchi et al., 2011) for
+weight updates and averaging of the weight vector (in a fashion identical to the averaged perceptron).
+We found that 5-10 epochs of training on Tiger were sufficient to get a mostly usable model, and used
+15 epochs of training for the results reported in the later section. Considering that Goldberg and Elhalad
+(2010) use a learning strategy that performs multiple perceptron updates until the constraint violation is
+fixed, we also tried this strategy but did not achieve convergence.
+</bodyText>
+<subsectionHeader confidence="0.999495">
+3.3 Reordering Oracles for Constituents
+</subsectionHeader>
+<bodyText confidence="0.999234">
+The basic idea for reordering oracles in deterministic dependency parsing has been presented by Nivre
+(2009). In the following, we present a straightforward adapation of the idea to constituent trees.
+Given a set of terminals T = {w1, ... , wn} that is totally ordered by a relation &lt;, an unordered tree
+graph is a directed graph (NT ∪T, &lt;) with nonterminal (NT) and terminal nodes (T), where the transitive
+hull &lt;∗ of the parent relation &lt; is acyclic, no node has a parent from T, and exactly one node, vroot, has
+no parent.
+An node ordering &lt; is consistent with &lt; whenever, for any node u and an descendant u′ &gt;∗ u, and a
+node v with an descendant v′ &gt;∗ v, u &lt; v entails u′ &lt; v′.
+</bodyText>
+<page confidence="0.998716">
+43
+</page>
+<bodyText confidence="0.999569288888889">
+A tree cut of a tree is a sequence vi, ... , vn that contains exactly one node from each path vroot, ... wi
+from the root to a terminal. Nivre’s insight, applied to constituent structures, is that sorting the terminals
+in a &lt;-compatible order &lt; will allow us to use normal projective parsing techniques to find a sequence of
+reductions that parses this tree, since any needed reduction would reduce one -&lt;-ordered cut to another
+-&lt;-ordered cut. In the following, two orderings &lt;, &lt;′ are considered equivalent iff they only differ on pairs
+of nodes u, v where one is the ancestor of the other.
+Two subtrees under nodes u and v with yields yield(u) = {u′ E Tlu′ &lt;* u} and yield(v) = {v′ E
+Tlv′ &lt;* v} are separated by a surface ordering &lt; whenever any two terminals u′ of u and v′ of v fulfill
+u′ &lt; v′. Note that two nodes without gaps (i.e. block-degree one) either embed each other (in which
+case u &lt;* v or v &lt;* u is the case) or they are separated by &lt;. In a slight abuse of notation, we extend
+&lt; from a total order of the terminals to a partial order of the nonterminals by writing u &lt; v whenever u
+and v are separated. For projective trees, this extension of &lt; specifies exactly one total relation (modulo
+equivalence), and which is also &lt;-compatible.
+For trees that are non-projective, we can have the situation where two nodes u and v are overlapping
+in that u has descendants u′, u″and v has a descendant v′ with u′ &lt; v′ &lt; u″. Then we cannot extend &lt;
+to an ordering of nodes that is &lt;-compatible. However, we can always find an ordering that respects &lt;
+locally such that, for two children u′ and u″of u, u′ &lt; u″entails u′ &lt; u″. Nivre proposes the sequence
+assigned by an in-order traversal of the dependency tree. In our case, any function h : NT → (NT ∪ T)
+that assigns a “head” child to each node will do the same, with an extension h*(w) = w for all terminals
+and h*(v) = h*(h(v)) otherwise, through u &lt; v :⇒ h*(u) &lt; h*(v).2
+A transition sequence for parsing a tree is then a sequence consisting of reductions (leading from
+a cut ... vi, u′, ... u″, vj, ... with a contiguous subsequence of the children of u to the sequence
+... vi, u, vj, ... that contains u instead) and swaps (leading from a cut ... vi, vj ... that has h*(vi) and
+h*(vj) ordered with respect to &lt; but not with respect to &lt; to a cut ... vj, vi ... that is orders h*(vi) and
+h*(vj) with respect to &lt; but not &lt;).
+Nivre (2009) defines an oracle for shift-reduce parsing that is swap-eager in that it always allows
+swapping. In Nivre’s case, the oracle is deterministic and always performs the swapping before any
+reduction.
+Nivre et al. (2009) note that the swap-eager oracle performs too many swaps because it swaps groups
+of words that are later reduced. They propose a swap-lazy algorithm that does not swap two nodes if
+one of them is adjacent to another node that is within the same maximal projective subtree.
+The perspective of parsing as a series of swap and reduce actions allows us to specify a strategy that
+performs less reductions in some cases: Consider that we need to reorder the &lt;-contiguous sequence of
+terminals to the -&lt;-contiguous sequence that is needed for reducing the tree to its final form. The number
+of swaps performed, if we assume that we always swap adjacent constituents, is exactly equal to the
+number of terminal pairs vi, vj that are &lt;-ordered but not -&lt;-ordered. Any reduction of the number of
+swaps relative to this baseline will come from a group of nodes with heads vi1,... vik that are reduced to
+their parent vi before being swapped with a node vj.
+We can take advantage of this fact by using any node with blockdegree one as a barrier: no node that
+is a descendant of this node can be swapped with a node that is not a descendant before the reduction
+that results in the barrier node has been carried out. Because any projective subtree has all nodes as
+barrier nodes, any pair of nodes whose swapping is delayed by the swap-lazy approach will be kept from
+swapping by a barrier. Conversely, nodes with a block-degree of one can also occur higher-up in the tree
+(e.g. as clause or sentence nodes), in which case they can act as a barrier even when their subtrees are
+not projective.
+</bodyText>
+<sectionHeader confidence="0.997449" genericHeader="method">
+4 Quantitative Evaluation
+</sectionHeader>
+<bodyText confidence="0.998966">
+In order to evaluate our approach, we used the Tiger treebank, with the split used in the SPMRL’2013
+shared task (about 40 000 training sentences and 5 000 development and test sentences each; see also
+</bodyText>
+<footnote confidence="0.853245">
+2Note that the concrete choice of h is quite arbitrary: we could take the actual head child, but also the first or last child of a
+node.
+</footnote>
+<page confidence="0.983855">
+44
+</page>
+<table confidence="0.99995825">
+` &lt;_ 30 ` &lt;_ 40 PP VP
+F1 F1 LA EX NP
+EaFi: Preprocessing (large, barrier, noretag)
+gold 77.95 76.64 92.17 41.71 75.0 82.8 56.6
+marmot 75.51 73.97 91.08 38.48 72.7 81.3 48.3
+pred 74.71 73.18 90.81 37.67 72.1 80.6 48.9
+ADG, marmot preprocessing 77.4 52.1
+marmot 73.42 72.24 90.95 33.77 68.0
+EaFi: Train projective, evaluate on real data
+gold 76.86 75.50 92.13 38.38 74.4 81.7 48.2
+marmot 74.43 72.98 91.20 36.52 72.1 79.8 42.6
+pred 73.75 72.32 90.72 35.55 71.8 79.2 42.4
+EaFi: Train projective, evaluate on projective
+gold 79.95 78.59 93.40 44.20 76.1 83.0 68.7
+marmot 77.00 75.64 92.38 40.79 73.8 81.1 59.1
+pred 76.25 74.94 91.87 39.60 73.5 80.5 58.4
+</table>
+<tableCaption confidence="0.9999945">
+Table 2: Results on SPMRL’13-dev (German, Tiger treebank) with varying preprocessing
+Table 3: Results on SPMRL’13-dev (German, Tiger treebank) with pred preprocessing
+</tableCaption>
+<table confidence="0.998923466666667">
+` &lt;_ 30
+F1
+` &lt;_ 40
+F1 LA EX NP PP VP
+EaFi: Feature set (barrier, noretag)
+basic 70.26 68.60 89.03 34.03 69.1 77.1 40.1
+medium 73.31 71.75 90.13 36.22 70.5 79.9 45.8
+large 74.71 73.18 90.81 37.67 72.1 80.6 48.9
+EaFi: Reordering (large, noretag)
+eager 73.33 71.66 90.33 37.43 71.7 80.6 47.8
+lazy 74.85 73.37 90.85 38.08 72.2 80.8 49.0
+barrier 74.71 73.18 90.81 37.67 72.1 80.6 48.9
+EaFi: Tag correction (large, barrier)
+noretag 74.71 73.18 90.81 37.67 72.1 80.6 48.9
+retag 74.62 73.16 90.83 37.51 71.5 80.3 49.4
+</table>
+<page confidence="0.995491">
+45
+</page>
+<bodyText confidence="0.999763703703704">
+Seddah et al., 2013 for a more extensive description), with the state-of-the-art preprocessing results
+for part-of-speech and morphological tags3 which were produced by Bj¨orkelund et al. (2013) using the
+MarMoT tagger (M¨uller et al., 2013), in addition to the gold-standard preprocessing (gold) and automatic
+predictions (pred) that are part of the official dataset of the SPMRL shared task.
+We applied two transformations to the data, which are automatically reversed in the parser output:
+one is adding NPs into PPs, which is also done by Seeker et al. (2012), and the other is that we make
+parenthetical material subordinate to its embedding clause, as Maier et al. (2012) also advocate.
+Evaluation was performed using the evaluator from the DISCODOP package of van Cranenburgh and
+Bod (2013), excluding punctuation and the ROOT label added by disco-dop from the evaluation. Train-
+ing was run for 15 epochs. Parsing the 5000 development sentences took about 90-120 seconds for
+EAFI, which corresponds to 40-55 sentences per second (on a Core i7 2GHz) and is slightly faster than
+MaltParser using the ADG-derived model and a LibLinear classifier.
+In the results in table 2, we see the results for the dependency-to-constiuents approach, as well as for
+the easy-first parsing with different reordering heuristics. As in Nivre et al. (2009), we notice that the
+lazy strategy that keeps projective constituents together yields better results than the eager strategy which
+allows moving right away. The overall results – around 76.6% f-score on gold tags and 73.1% f-score on
+predicted tags in sentences of 40 words and below – indicate the promise of this approach, even though
+they are significantly below the results of van Cranenburgh and Bod (2013) who achieve more than 78%
+f-measure using predicted tags on a different split of the Tiger treebank. Van Cranenburgh’s approach is
+about 15-20 times slower than ours, using 10 seconds for a 40-word sentence.
+For informative purposes, we also included results for projective parsing in table 2, using a conversion
+that first attaches punctuation and then projectivizes the tree by detaching non-head children.4 Compar-
+ing the nonprojective parser and a variant that was trained on the projectivized version of the dataset,
+we see that the projective parser is about 1-2 percent worse than the nonprojective one, corresponding
+to our intuition that the reordering part improves the parsing on average. We also see that the projective
+evaluation yields an estimate of parser performance that is substantially more optimistic than evaluating
+on the original treebank.
+</bodyText>
+<subsectionHeader confidence="0.998339">
+4.1 Comparison with Related work
+</subsectionHeader>
+<bodyText confidence="0.999944733333333">
+Tables 4 and 5 show previous results for discontinous constituent parsing on the Tiger and Negra tree-
+banks. The current best results on the Tiger treebank have been achieved by van Cranenburgh and Bod
+(2013), whose approach yields 78.8% Parseval F1 measure on the Tiger treebank in the split by Hall and
+Nivre (2008), and 76.8% on the Negra treebank, in both cases with above 40% of exact matches among
+the sentences of up to 40 words. Kallmeyer and Maier (2013) only report results on shorter sentences in
+Negra for their approach using a modified treebank LCFRS. They achieve 75.6% on sentences of up to
+30 words.
+A recent approach that attempts to speed up discontinuous constituent parsing is the one by Angelov
+and Ljungl¨of (2014), whose parser takes about 100 seconds for a length-40 sentence, which can be
+reduced to 10 seconds for a length-40 sentence with an approximate search strategy. For sentences
+between 5 and 60 tokens, their approach reaches an F1 score of 69.3%, which however deteriorates
+quickly when approximate search is used, to 61.9% F1 in the latter case.
+It is quite evident that pushing for more speed in these formalisms forcibly leads to a deterioration
+in the quality of the results. As such, we think that the speed/quality tradeoff achieved in our system is
+quite useful.
+</bodyText>
+<sectionHeader confidence="0.994392" genericHeader="method">
+5 Qualitative Analysis
+</sectionHeader>
+<bodyText confidence="0.977152">
+In the following, we will provide a categorization of the phenomena concerning verbless clauses on
+one hand, and discontinuous constituents on the other. Table 6 contains a breakdown on these types of
+</bodyText>
+<footnote confidence="0.99972875">
+3Data from http://www.cis.lmu.de/˜muellets/marmot/marmot_spmrl.tar.bz2, version with file dates
+of June 13th 2014. See http://code.google.com/p/cistern/wiki/marmotSPMRL
+4The SPMRL shared task dataset is idiosyncratic in that it deprojectivizes before attaching punctuation, which leads to a
+result that is rather dissimilar to the original treebank.
+</footnote>
+<page confidence="0.989111">
+46
+</page>
+<table confidence="0.958727272727273">
+`!&lt; 30 ` !&lt; 40
+F1 EX F1 EX
+Hall and Nivre (2008), gold&apos; — — 79.93 37.78
+Hall and Nivre (2008), pred&apos; — — 75.33 32.63
+van Cranenburgh and Bod (2013), pred&apos; — — 78.8 40.8
+This work, gold&apos; 76.47 40.61 74.23 37.32
+Maier (2010), LCFRS gold&apos; 73.43 29.87 — —
+Maier (2010), CFG gold&apos; 75.57 31.80 — —
+This work, goldb 77.95 43.81 76.64 41.71
+This work, gold, eval w/ ROOTb&apos; 81.13 43.81 79.80 41.71
+a) Hall&amp;Nivre split b) SPMRL split `) includes the ROOT node in the evaluation
+</table>
+<tableCaption confidence="0.991339">
+Table 4: Previous results on the Tiger treebank
+</tableCaption>
+<table confidence="0.986996222222222">
+` !&lt; 30 ` !&lt; 40
+F1 EX F1 EX
+Maier (2010), LCFRS gold&apos; 71.52 31.65 — —
+Maier (2010), CFG gold&apos; 74.04 33.43 — —
+van Craenburgh (2012), LCFRS, gold — — 67.26 27.90
+van Craenburgh (2012), Disco-DOP, gold — — 72.33 33.16
+Maier et al. (2012) 74.5 — — —
+Kallmaier and Maier (2013), LCFRS, gold 75.75 — — —
+van Cranenburgh and Bod (2013), gold — — 76.8 40.5
+</table>
+<tableCaption confidence="0.765454333333333">
+`) includes the ROOT node in the evaluation
+Table 5: Previous results on the NeGra treebank
+phenomena according to whether they are:
+</tableCaption>
+<listItem confidence="0.995263">
+• correctly parsed (+): when the incredients for the construction are present in the parse and they are
+combined in a suitable fashion.
+• missed (o): when the ingredients for the construction are present, but combined in another way –
+for example, an extraposition where the extraposed item is misattached
+• broken (-): when the ingredients for the construction are not present and the parse has a completely
+different structure.
+</listItem>
+<bodyText confidence="0.9982592">
+Many of the same categories are discussed by Seeker and Kuhn (2012), who only discuss examples,
+and by Maier et al. (2014), who published a list of sentence numbers for each phenomenon that is,
+however, disjoint with the development portion considered here. Although the distinctions between
+“missed” and “broken” analyses are somewhat subjective, we think that it is still informative in the sense
+that it helps to compare the relative difficulty of the problems involved.
+</bodyText>
+<subsectionHeader confidence="0.999022">
+5.1 Types of Verbless Clauses
+</subsectionHeader>
+<bodyText confidence="0.996298625">
+In their conversion Seeker and Kuhn (2012) found 3 035 sentences that contain at least one empty node
+in the Tiger treebank, or about one every 16 sentences. While this phenomenon may be more frequent in
+spontaneously-produced text such as it may occur in user-generated content, it is still quite frequent.
+Seeker et al. only distinguish among edge labels, followed by a guess on the clause type that they need
+in order to place the inserted null element.
+In this work, we will concentrate on verbless VP and S nodes, with rougly three categories:
+The first consists of verbless copula clauses that mostly occur at top level,5 and where the most
+obvious way to build a complete clause would be to add a be copula to the clause.
+</bodyText>
+<footnote confidence="0.847241">
+5sentences 40499, 41442, 41468, 41676, 41682, 41736, 41743, 42566, 42606, 42738
+</footnote>
+<page confidence="0.996223">
+47
+</page>
+<table confidence="0.9994">
+ADG/marm large/pred
++ o - + o -
+copula clauses 3 4 3 2 5 3
+gapping/ellipsis 0 4 6 0 4 6
+parentheticals 1 6 4 0 4 6
+extraposition 1 7 2 0 7 3
+scrambling 3 2 4 3 1 5
+topicalization 3 6 1 4 4 2
+</table>
+<tableCaption confidence="0.8132765">
++) construction parsed ok, o) construction missed, -) broken parse
+Table 6: Qualitative analysis: Counts for ok/missed/broken examples
+</tableCaption>
+<bodyText confidence="0.990612333333333">
+A second group consists of clauses with gapping/ellipsis which occur in a coordinated structure, but
+do not have a verb of their own.6 Such cases can occur with a final constituent in clause coordination as
+well as with a non-final constituent in verb-last clauses:
+</bodyText>
+<figure confidence="0.857583571428571">
+(1) a. Die Anstalt soll [Anfang 1998 noch 1200 Besch¨aftigte] und [ein Jahr sp¨ater 600
+the institution shall start 1998 still 1200 employees and one year later 600
+z¨ahlen].
+count.
+“The institution will count 1200 employees at the start of 1998 and one year later, 600”.
+b. [Die Zahl der Urlaubsreisen im Inland fiel laut Sch¨orcher um zwei Prozent]
+the number of holiday trips in interior fell according to Sch¨orcher by two percent
+</figure>
+<bodyText confidence="0.846061714285714">
+und [damit nicht mehr so stark wie im Vorjahreszeitraum] .
+and hence not anymore as strong as in the previous year period
+“The national number of holiday trips fell by two percent according to Schorcher, and hence
+not as strongly anymore as in the corresponding period from last year”.
+Finally, we have parentheticals, which are rather rather similar to the examples listed under verbless
+copula clauses, except that they occur as parenthetical material in a larger clause rather than by them-
+selves.7
+</bodyText>
+<subsectionHeader confidence="0.999098">
+5.2 Types of Non-projectivity Phenomena
+</subsectionHeader>
+<bodyText confidence="0.9999535">
+For the purpose of this paper, we will make a three-way distinction in the phenomena that create discon-
+tinuities, according to the following questions:
+</bodyText>
+<listItem confidence="0.8357129">
+• If we serialize the sorted (sub)tree, would the result yield a grammatical sequence? Or, to ask a
+related question, would anything be missing if we kept only the continuous block of the head?
+• If we flatten the tree by introducing a common ordering domain for multiple heads (which would
+be the result of tree flattening as proposed by Uszkoreit, 1987 or of a common argument list as
+advocated by Hinrichs and Nakazawa, 1989; flattening the sentence is also the solution used in the
+German LFG grammar of Forst, 2007), would we have gotten rid of the problem?
+Making these distinctions gives us three rather large categories that we can use to classify nonprojec-
+tivity phenomena:
+Extraposition8 is phenomenon where the sorted subtree would (usually) be grammatical, and where
+the continuous part only would (usually) be acceptable:
+</listItem>
+<footnote confidence="0.996149666666667">
+6sentences 40698, 40788, 40836, 41003, 41174, 41218, 41356, 41399, 41544, 41665
+7sentences 40698, 40749, 40861, 40894, 40899, 40924, 41219, 41267, 41437, 41443
+8Sentences 40506, 40507, 40517, 40528, 40567, 40583, 40589, 40594, 40622, 40672
+</footnote>
+<page confidence="0.99491">
+48
+</page>
+<figure confidence="0.999237352112676">
+hat
+has
+mir
+me
+[ein
+a
+[¨uber
+about
+die
+the
+Buch]
+book
+Savanne].
+savannah.
+geschenkt
+given
+(2) a. Ele
+Ele
+habe
+have
+[Ele]
+Ele
+ein
+a
+Buch
+book
+[und
+and
+Susi].
+Susi.
+b. Ich
+I
+geschenkt
+given
+ist
+is
+[der
+the
+hast].
+have.
+Du
+you
+[den
+which
+bestellt
+ordered
+c. Heute
+Today
+gekommen,
+come,
+Staubsauger]
+vacuum cleaner
+ist
+is
+(die
+the
+f¨ur
+for
+[den
+the
+Du
+you
+([den
+whichj
+bestellt
+ordered
+Rechnung
+invoice
+gekommen,
+come,
+Staubsauger])
+vacuum cleanerj
+(3) a. Heute
+Today
+habe
+have
+(die
+the
+f¨ur
+for
+[den
+the
+hast).
+have.
+Du
+you
+(die
+whichi
+vermißt
+missed
+b. Ich
+I
+gefunden,
+found,
+Rechnung
+invoicei
+Staubsauger])
+vacuum cleaner
+Buch
+book
+¨uber
+about
+die
+the
+hat
+has
+Ele
+Ele
+mir
+me
+Savanne
+savannah
+geschenkt.
+given.
+(5) a. Ein
+a
+die
+the
+hat
+has
+mir
+me
+Ele
+Ele
+ein
+a
+Buch
+book
+Savanne
+savannah
+geschenkt.
+given.
+“Ele gave me a book about the savannah”.
+“I gave a book to Ele and Susi”.
+“Today, the vacuum cleaner that you ordered came.”
+Note that extraposition can be arbitrarily deep, as NPs can embed each other recursively:
+hast]).
+have.
+“Today, the invoice for the vacuum cleaner you ordered came”
+“Ele gave me a book about the savannah.”
+b. ¨Uber
+about
+</figure>
+<subsectionHeader confidence="0.99779">
+5.3 Analysis of Parser behaviour
+</subsectionHeader>
+<bodyText confidence="0.9999882">
+Using the movement actions, the parser is able to correctly attach topicalized nodes in simple sentences,
+and to sort out in most cases which nodes belong to the VP and which ones to the S node. In the presence
+of complex sentence structure, the very local view on the sentence that the parser has quickly becomes
+a hindrance. Extraposed material is attached correctly in the case of relative clauses, whereas infinitival
+constructions (which can plausibly attach to the verb) are often missed, and clauses that are extraposed
+modifiers of adverbs or adjectives are mostly missed. As with early treebank-based parsers, the presence
+of multiple verbs (as in coherent constructions) can mislead the parser into assuming a more complex
+structure than is actually present.
+In general, verbless copula clauses, asyndetic coordination, and gapping/ellipsis, which are difficult
+for dependency parsing, are also especially prone to confuse the very local view of the easy-first parser,
+which is a rather anticlimactic, yet commonsensical conclusion.
+In summary, simple material is often handled surprisingly well, whereas sentences with a complex
+topological structure – i.e., coordination, clauses embedded in a nominal phrase, or correlations, are
+rather challenging for easy-first parsing. Parsing algorithms with more context such as Sartorio et al.
+(2013) or an application of beam search might help in some of these cases.
+</bodyText>
+<sectionHeader confidence="0.998338" genericHeader="conclusions">
+6 Summary and Future Work
+</sectionHeader>
+<bodyText confidence="0.999594363636364">
+In this article, we presented a deterministic parser that uses an easy-first strategy to perform non-
+projective constituent parsing in expected linear time, with results that perform in a similar range as
+results for discontinuous treebank grammars, and provides a means to provide rather fast parsing in
+cases where discontinuous structure is required. We introduced the barrier formulation as an alternative
+to the lazy reordering of Nivre et al. (2009), which shows similar performance but which may reveal a
+closer connection to formalisms with restricted discontinuities.
+While all experiments and the phenomen-oriented analysis have been performed on German data, the
+reordering oracle approach does not make any language-specific assumptions and constitutes a general
+technique for deterministic parsing of discontinuous constituent trees.
+Acknowledgements The author would like to thank the three anonymous reviewers for their valuable
+comments, and Thomas M¨uller for providing the Marmot-tagged version of the SPMRL dataset.
+</bodyText>
+<sectionHeader confidence="0.991013" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.644405333333333">
+Angelov, Krasimir and Peter Ljungl¨of. 2014. Fast statistical parsing with multiple context-free grammars.
+In Proceedings of EACL 2014.
+Ballesteros, Miguel and Joakim Nivre. 2012. MaltOptimizer: A system for MaltParser optimization.
+In Proceedings of the Eigth International Conference on Language Resources and Evaluation (LREC
+2012).
+Becker, Tilman, Owen Rambow, and Michael Niv. 1992. The derivational generative power, or, scram-
+bling is beyond LCFRS. Technical report, University of Pennsylvania. A version of this paper was
+presented at MOL3, Austin, Texas, November 1992.
+Bj¨orkelund, Anders, ¨Ozlem C¸etinoglu, Richard Farkas, Thomas M¨uller, and Wolfgang Seeker. 2013.
+(re)ranking meets morphosyntax: State-of-the-art results from the SPMRL 2013 shared task. In Proc.
+SPMRL 2013.
+Bodenstab, Nathan, Aaron Dunlop, Keith Hall, and Brian Roark. 2011. Adaptive beam-width prediction
+for efficient CYK parsing. In Proceedings of ACL/HLT 2011.
+B¨ohmova, A., Jan Hajiˇc, Eva Hajiˇcov´a, and B. Hladk´a. 2001. The Prague dependency treebank: Three-
+level annotaion scenario. In Treebanks: Building and using syntactically annotated corpora, Kluwer
+Academic Publishers, pages 103–127.
+Bosco, Cristina and Vincenzo Lombardo. 2006. Comparing linguistic information in treebank annota-
+tions. In LREC 2006.
+</reference>
+<page confidence="0.98365">
+50
+</page>
+<reference confidence="0.999322369565218">
+Brants, Sabine, Stefanie Dipper, Silvia Hansen, Wolfgang Lezius, and George Smith. 2002. The TIGER
+treebank. In Proc. TLT 2002.
+Cai, Shu, David Chiang, and Yoav Goldberg. 2011. Language-independent parsing with empty elements.
+In Proceedings of ACL 2011.
+Carreras, Xavier, Michael Collins, and Terry Koo. 2008. TAG, dynamic programming, and the perceptron
+for efficient, feature-rich parsing. In Proceedings of CoNLL.
+Collins, Michael. 2003. Head-Driven statistical models for Natural Language parsing. Computational
+Linguistics 29(4):589–637.
+Collins, Michael and Brian Roark. 2004. Incremental parsing with the perceptron algorithm. In ACL-04.
+Dipper, Stefanie, Anke L¨udeling, and Marc Resnicek. 2013. NoSta-D: A corpus of german non-standard
+varieties. In Marcos Zampieri and Sascha Diwersy, editors, Non-standard DataSources in Corpus-
+based Research, Shaker Verlag.
+Dubey, Amit and Frank Keller. 2003. Probabilistic parsing for German using sister-head dependencies.
+In ACL’2003.
+Duchi, John, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning
+and stochastic optimization. Journal of Machine Learning Research 12:2121–2159.
+Forst, Martin. 2007. Filling statistics with linguistics - property design for the disambiguation of German
+LFG parses. In ACL 2007 workshop on deep linguistic processing.
+Foth, Kilian. 2006. Eine umfassende Dependenzgrammatik des Deutschen. Technical report, Fachbe-
+reich Informatik, Universit¨at Hamburg.
+Foth, Kilian, Arne K¨ohn, Niels Beuck, and Wolfgang Menzel. 2014. Because size does matter: The
+Hamburg dependency treebank. In Proceedings of the Language Resources and Evaluation Confer-
+ence (LREC 2014).
+Goldberg, Yoav and Michael Elhalad. 2010. An efficient algorithm for easy-first non-directional depen-
+dency parsing. In Proceedings of NAACL-2010.
+Hall, Johann and Joakim Nivre. 2008. Parsing discontinuous phrase structure with grammatical func-
+tions. In Proceedings of the 6th International Conference on Natural Language Processing (GoTAL
+2008).
+Hinrichs, Erhard and Tsuneko Nakazawa. 1989. Flipped out: AUX in German. In Papers from the 25th
+Annual Regional Meeting of the Chicago Linguistic Society.
+Hockenmaier, Julia. 2007. CCG grammar extraction from treebanks: translation algorithms and applica-
+tions. Presentation from the Treebank Workshop, 2007, Rochester NY.
+Huang, Liang and David Chiang. 2007. Forest rescoring: Faster decoding with integrated language
+models. In Proceedings of ACL 2007.
+Huang, Liang and Kenji Sagae. 2010. Dynamic programming for linear-time incremental parsing. In
+Proceedings of ACL 2010.
+Kallmeyer, Laura and Wolfgang Maier. 2013. Data-driven parsing using probabilistic linear context-free
+rewriting systems. Computational Linguistics 39:87–119.
+Kapanadze, Oleg. 2012. Building parallel treebanks for the lesser-resourced languages. Technical report,
+Tbilisi State University.
+Koo, Terry, Alexander M. Rush, Michael Collins, Tommi Jaakkola, and David Sontag. 2010. Dual
+decomposition for parsing with non-projective head automata. In Proceedings of EMNLP 2010.
+Kornai, Andras and Geoff Pullum. 1990. The X-bar theory of phrase structure. Language 66:24–50.
+Magerman, David M. 1995. Statistical decision-tree models for parsing. In ACL’1995.
+Maier, Wolfgang. 2010. Direct parsing of discontinuous constituents in German. In Proceedings of the
+NAACL-HLT First Workshop on Statistical Parsing of Morphologically Rich Languages.
+</reference>
+<page confidence="0.979953">
+51
+</page>
+<reference confidence="0.999663355555556">
+Maier, Wolfgang, Miriam Kaeshammer, Peter Baumann, and Sandra K¨ubler. 2014. Discosuite – a parser
+test suite for German discontinuous structures. In Proceedings of LREC 2014.
+Maier, Wolfgang, Miriam Kaeshammer, and Laura Kallmeyer. 2012. PLCFRS parsing revisited: Re-
+stricting the fan-out to two. In Proceedings of the 11th International Workshop on Tree Adjoining
+Grammar and Related Formalisms (TAG+11).
+Miyao, Yusuke, Rune Sætre, Kenji Sagae, Takuya Matsuzaki, and Jun’ichi Tsujii. 2008. Task-oriented
+evaluation of syntactic parsers and their representations. In ACL 2008.
+M¨uller, Thomas, Helmut Schmid, and Hinrich Sch¨utze. 2013. Efficient higher-order CRFs for morpho-
+logical tagging. In Proceedings fo EMNLP 2013.
+Nivre, Joakim. 2003. An efficient algorithm for projective dependency parsing. In 8th International
+Workshop on Parsing Technologies.
+Nivre, Joakim. 2009. Non-projective dependency parsing in expected linear time. In Proc. Joint ACL-
+AFNLP 2009.
+Nivre, Joakim. 2011. Bare-bones dependency parsing - a case for occam’s razor? In Nodalida 2011.
+Nivre, Joakim, Marco Kuhlmann, and Johan Hall. 2009. An improved oracle for dependency parsing
+with online reordering. In Proceedings of the 11th International Conference on Parsing Technologies
+(IWPT).
+Nivre, Joakim and Jens Nilsson. 2005. Pseudo-projective dependency parsing. In Proceedings of ACL
+2005.
+Pauly, Dennis, Ulyana Senyuk, and Ulrike Demske. 2012. Strukturelle Mehrdeutigkeit in
+fr¨uhneuhochdeutschen Texten. Journal for Language Technology and Computational Linguistics
+27(2):65–82.
+Plaehn, Oliver. 2000. Computing the most probable parse for a discontinuous phrase structure grammar.
+In Proceedings of the 6th International Workshop on Parsing Technologies.
+Sagae, Kenji and Alon Lavie. 2006. A best-first probabilistic shift-reduce parser. In Proceedings of the
+Human Language Technology Conference of the NAACL (NAACL/HLT 2006).
+Sartorio, Francesco, Giorgio Satta, and Joakim Nivre. 2013. A transition-based dependency parser using
+a dynamic parsing strategy. In Proceedings of ACL 2013.
+Schmid, Helmut. 2006. Trace prediction and recovery with unlexicalized PCFGs and slash features. In
+Proceedings of COLING-ACL 2006.
+Seddah, Djam´e. 2010. Exploring the spinal-tig model for parsing French. In Proceedings of LREC 2010.
+Seddah, Djam´e, Reut Tsarfaty, Sandra K¨ubler, Marie Candito, Jinho D. Choi, Rich´ard Farkas, Jennifer
+Foster, Iakes Goenaga, Koldo Gojenola Galletebeitia, Yoav Goldberg, Spence Green, Nizar Habash,
+Marco Kuhlmann, Wolfgang Maier, Joakim Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang
+Seeker, Yannick Versley, Veronika Vincze, Marcin Woli´nski, Alina Wr´oblewska, and Eric Villemonte
+de la Clergerie. 2013. Overview of the SPMRL 2013 Shared Task: A Cross-Framework Evaluation
+of Parsing Morphologically Rich Languages. In Proceedings of the Fourth Workshop on Statistical
+Parsing of Morphologically-Rich Languages. Seattle, WA, pages 146–182.
+Seeker, Wolfgang, Rich´ard Farkas, Bernd Bohnet, Helmut Schmid, and Jonas Kuhn. 2012. Data-driven
+dependency parsing with empty heads. In Proceedings of Coling 2012.
+Seeker, Wolfgang and Jonas Kuhn. 2012. Making ellipses explicit in dependency conversion for a ger-
+man treebank. In Proceedings of the Eight International Conference on Language Resources and
+Evaluation (LREC’12).
+Stolcke, Andreas. 1995. An efficient probabilistic context-free parsing algorithm that computes prefix
+probabilities. Computational Linguistics 21(2):165–201.
+</reference>
+<page confidence="0.973687">
+52
+</page>
+<reference confidence="0.99720219047619">
+Telljohann, Heike, Erhard W. Hinrichs, Sandra K¨ubler, Heike Zinsmeister, and Kathrin Beck. 2009.
+Stylebook for the T¨ubingen Treebank of Written German (T¨uBa-D/Z). Technical report, Seminar f¨ur
+Sprachwissenschaft, Universit¨at T¨ubingen.
+Tratz, Stephen and Eduard Hovy. 2011. A fast, accurate, non-projective, semantically-enriched parser. In
+Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing (EMNLP
+2011).
+Uszkoreit, Hans. 1987. Word order and constituent structure in German. Number 8 in CSLI Lecture
+Notes. Center for the Study of Language and Information.
+van Cranenburgh, Andreas. 2012. Efficient parsing with linear context-free rewriting systems. In EACL
+2012.
+van Cranenburgh, Andreas and Rens Bod. 2013. Discontinuous parsing with an efficient and accurate
+DOP model. In Proceedings of the International Conference on Parsing Technologies (IWPT 2013).
+van Noord, Geertjan. 1991. Head corner parsing for discontinuous constituency. In Proceedings ofACL
+1991.
+Versley, Yannick and Heike Zinsmeister. 2006. From dependency parsing to deep(er) semantics. In
+Proceedings of the Fifth International Workshop on Treebanks and Linguistic Theories (TLT 2006).
+Vincze, Veronika, D´ora Szauter, Attila Alm´asi adn Gy¨orgy M´ora, Zolt´an Alexin, and J´anos Csirik. 2010.
+Hungarian dependency treebank. In Proceedings of the Seventh Conference on International Language
+Resources and Evaluation (LREC 2010).
+Volk, Martin and Yvonne Samuelsson. 2004. Bootstrapping parallel treebanks. In Proceedings of the
+5th International Workshop on Linguistically Interpreted Corpora (LINC) at Coling 2004.
+</reference>
+<page confidence="0.999309">
+53
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.903359">
+<title confidence="0.997832">Experiments with Easy-first nonprojective constituent parsing</title>
+<author confidence="0.980588">Yannick</author>
+<affiliation confidence="0.999259">Department of Computational University of</affiliation>
+<email confidence="0.941324">versley@cl.uni-heidelberg.de</email>
+<abstract confidence="0.998537666666667">Less-configurational languages such as German often show not just morphological variation but also free word order and nonprojectivity. German is not exceptional in this regard, as other morphologically-rich languages such as Czech, Tamil or Greek, offer similar challenges that make context-free constituent parsing less attractive. Advocates of dependency parsing have long pointed out that the free(r) word order and nonprojective phenomena are handled in a more straightforward way by dependency parsing. However, certain other phenomena in language, such as gapping, ellipses or verbless sentences, are difficult to handle in a dependency formalism. In this paper, we show that parsing of discontinuous constituents can be achieved using easy-first parsing with online reordering, an approach that previously has only been used for dependencies, and that the approach yields very fast parsing with reasonably accurate results that are close to the state of the art, surpassing existing results that use treebank grammars. We also investigate the question whether phenomena where dependency representations may be problematic – in particular, verbless clauses – can be handled by this model.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Krasimir Angelov</author>
+<author>Peter Ljungl¨of</author>
+</authors>
+<title>Fast statistical parsing with multiple context-free grammars.</title>
+<date>2014</date>
+<booktitle>In Proceedings of EACL</booktitle>
+<marker>Angelov, Ljungl¨of, 2014</marker>
+<rawString>Angelov, Krasimir and Peter Ljungl¨of. 2014. Fast statistical parsing with multiple context-free grammars. In Proceedings of EACL 2014.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Miguel Ballesteros</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>MaltOptimizer: A system for MaltParser optimization.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Eigth International Conference on Language Resources and Evaluation (LREC</booktitle>
+<contexts>
+<context position="15164" citStr="Ballesteros and Nivre, 2012" startWordPosition="2315" endWordPosition="2318">he head, whereas we would get about 1525 categories when we use the first terminal. To ensure efficient parsing, this list is further pared down to 100 entries, with the remaining entries being replaced by an UNK placeholder. In decoding, terminals with these entries are assigned the most frequent combination of spine and parent category for the POS tags of the node and its governor, and the topmost spine node with a matching category (or simply the topmost one) would be chosen. The decoding algorithm and parameter settings for MaltParser were then determined using the MaltOptimizer software (Ballesteros and Nivre, 2012). The settings selected use the stack-projective algorithm with head+path marking strategy for pseudoprojective parsing.1 Hall and Nivre’s approach is more complex than the approach presented here, and involves interleaving of identifying dependency edges (using the nonprojective Covington parsing scheme) and the stepwise determination of the topmost edge label, then the path of edge labels, and finally the path of constituent labels and its attachment. However, we find that this approach of dependency reduction constitutes a very reasonable intelligent baseline, and is able to perform at a si</context>
+</contexts>
+<marker>Ballesteros, Nivre, 2012</marker>
+<rawString>Ballesteros, Miguel and Joakim Nivre. 2012. MaltOptimizer: A system for MaltParser optimization. In Proceedings of the Eigth International Conference on Language Resources and Evaluation (LREC 2012).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tilman Becker</author>
+<author>Owen Rambow</author>
+<author>Michael Niv</author>
+</authors>
+<title>The derivational generative power, or, scrambling is beyond LCFRS.</title>
+<date>1992</date>
+<tech>Technical report,</tech>
+<institution>University of Pennsylvania.</institution>
+<location>Austin, Texas,</location>
+<marker>Becker, Rambow, Niv, 1992</marker>
+<rawString>Becker, Tilman, Owen Rambow, and Michael Niv. 1992. The derivational generative power, or, scrambling is beyond LCFRS. Technical report, University of Pennsylvania. A version of this paper was presented at MOL3, Austin, Texas, November 1992.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Anders Bj¨orkelund</author>
+<author>¨Ozlem C¸etinoglu</author>
+<author>Richard Farkas</author>
+<author>Thomas M¨uller</author>
+<author>Wolfgang Seeker</author>
+</authors>
+<title>(re)ranking meets morphosyntax: State-of-the-art results from the SPMRL 2013 shared task.</title>
+<date>2013</date>
+<booktitle>In Proc. SPMRL</booktitle>
+<marker>Bj¨orkelund, C¸etinoglu, Farkas, M¨uller, Seeker, 2013</marker>
+<rawString>Bj¨orkelund, Anders, ¨Ozlem C¸etinoglu, Richard Farkas, Thomas M¨uller, and Wolfgang Seeker. 2013. (re)ranking meets morphosyntax: State-of-the-art results from the SPMRL 2013 shared task. In Proc. SPMRL 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nathan Bodenstab</author>
+<author>Aaron Dunlop</author>
+<author>Keith Hall</author>
+<author>Brian Roark</author>
+</authors>
+<title>Adaptive beam-width prediction for efficient CYK parsing.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL/HLT</booktitle>
+<contexts>
+<context position="4843" citStr="Bodenstab et al. (2011)" startWordPosition="705" endWordPosition="708">rsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The straightforward approach of Kallmeyer and Maier (2013) to use a treebank-derived linear contextfree rewriting system suffers from near-exponential observed time consumption in practice. Approaches that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be suitable for the subsequent steps with increased grammar complexity. In this paper, we present a novel application of the easy-first parsing principle of Goldberg and Elhalad (2010) to discontinuous constituent parsing, which performs fast enough for interactive use (about 40 sentences per second) while giving an acceptable accuracy that is within the range normally seen with unmodified treebank grammars. In the remainder of the paper, we will include a short discussion of the interrelation between constituency and dependency relations of syntax, as well as relevant prior work in sec</context>
+</contexts>
+<marker>Bodenstab, Dunlop, Hall, Roark, 2011</marker>
+<rawString>Bodenstab, Nathan, Aaron Dunlop, Keith Hall, and Brian Roark. 2011. Adaptive beam-width prediction for efficient CYK parsing. In Proceedings of ACL/HLT 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A B¨ohmova</author>
+<author>Jan Hajiˇc</author>
+<author>Eva Hajiˇcov´a</author>
+<author>B Hladk´a</author>
+</authors>
+<title>The Prague dependency treebank: Threelevel annotaion scenario. In Treebanks: Building and using syntactically annotated corpora,</title>
+<date>2001</date>
+<pages>103--127</pages>
+<publisher>Kluwer Academic Publishers,</publisher>
+<marker>B¨ohmova, Hajiˇc, Hajiˇcov´a, Hladk´a, 2001</marker>
+<rawString>B¨ohmova, A., Jan Hajiˇc, Eva Hajiˇcov´a, and B. Hladk´a. 2001. The Prague dependency treebank: Threelevel annotaion scenario. In Treebanks: Building and using syntactically annotated corpora, Kluwer Academic Publishers, pages 103–127.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cristina Bosco</author>
+<author>Vincenzo Lombardo</author>
+</authors>
+<title>Comparing linguistic information in treebank annotations.</title>
+<date>2006</date>
+<booktitle>In LREC</booktitle>
+<contexts>
+<context position="7864" citStr="Bosco and Lombardo, 2006" startWordPosition="1161" endWordPosition="1164">roblem to the idea that every phrase is headed by a preterminal, or the equivalent assumption in dependency grammar that every argument has a governing head word. In constituent treebanks, the solution to this problem is rather simple: deviate from the descriptiveXbar schema outlined earlier on and introduce headless projections for these clauses. Dependency treebanks lack this additional degree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment </context>
+</contexts>
+<marker>Bosco, Lombardo, 2006</marker>
+<rawString>Bosco, Cristina and Vincenzo Lombardo. 2006. Comparing linguistic information in treebank annotations. In LREC 2006.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sabine Brants</author>
+<author>Stefanie Dipper</author>
+<author>Silvia Hansen</author>
+<author>Wolfgang Lezius</author>
+<author>George Smith</author>
+</authors>
+<title>The TIGER treebank.</title>
+<date>2002</date>
+<booktitle>In Proc. TLT</booktitle>
+<contexts>
+<context position="2809" citStr="Brants et al., 2002" startWordPosition="403" endWordPosition="406">alism should also deal with a wide range of constructions including verbless clauses. Finally, parsing speed is somewhat important for many application cases, and a parser that changes the tokenization of the input or inserts additional “null” tokens runs afoul many of the fundamental assumptions in pipelines for semantic processing or information extraction. If we look at the current three largest treebanks for German, namely the Hamburg Dependency Treebank (Foth et al., 2014) with 101000 sentences, the T¨uBa-D/Z treebank (Telljohann et al., 2009) with 85 000 sentences or the Tiger treebank (Brants et al., 2002) with about 50 000 sentences, we see find a continuum of the nonprojective single-parent dependencies of the HDT on one side and projective phrase structures of T¨uBa-D/Z, with Tiger straddling in the middle with a scheme that is neither projective nor limited to dependencies, and which represents, we’ll argue, both the best and the worst of both worlds. This work is licenced under a Creative Commons Attribution 4.0 International License. Page numbers and proceedings footer are added by the organizers. License details: http://creativecommons.org/licenses/by/4.0/ 39 First Joint Workshop on Stat</context>
+</contexts>
+<marker>Brants, Dipper, Hansen, Lezius, Smith, 2002</marker>
+<rawString>Brants, Sabine, Stefanie Dipper, Silvia Hansen, Wolfgang Lezius, and George Smith. 2002. The TIGER treebank. In Proc. TLT 2002.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Shu Cai</author>
+<author>David Chiang</author>
+<author>Yoav Goldberg</author>
+</authors>
+<title>Language-independent parsing with empty elements.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL</booktitle>
+<contexts>
+<context position="4638" citStr="Cai et al. (2011)" startWordPosition="670" endWordPosition="673">h have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The straightforward approach of Kallmeyer and Maier (2013) to use a treebank-derived linear contextfree rewriting system suffers from near-exponential observed time consumption in practice. Approaches that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be suitable for the subsequent steps with increased grammar complexity. In this paper, we present a novel application of the easy-first parsing principle of Goldberg and Elhalad (2010) to discontinuous constituent parsing, which performs fast enough for interactive use (about 40 sentences per second) while giving an acceptable accuracy that is within the range normally seen with unmodi</context>
+</contexts>
+<marker>Cai, Chiang, Goldberg, 2011</marker>
+<rawString>Cai, Shu, David Chiang, and Yoav Goldberg. 2011. Language-independent parsing with empty elements. In Proceedings of ACL 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xavier Carreras</author>
+<author>Michael Collins</author>
+<author>Terry Koo</author>
+</authors>
+<title>TAG, dynamic programming, and the perceptron for efficient, feature-rich parsing.</title>
+<date>2008</date>
+<booktitle>In Proceedings of CoNLL.</booktitle>
+<contexts>
+<context position="10773" citStr="Carreras et al. (2008)" startWordPosition="1596" endWordPosition="1599">and Bod (2013) use a more practical approach that first creates phrase candidates from the n-best list of a projective constituent parser, and uses these to construct LCFRS items that do not necessarily correspond to grammar rules seen in the training set, but which are then matched against a collection of tree fragments extracted from the training set. There exists some work on transforming dependency structures into constituents that may help in the recovery of discontinuous constituents: Hall and Nivre (2008) propose to encode information about node labels in the dependency labels, whereas Carreras et al. (2008) show that an ILP-based combination of finding dependencies and adding phrase projections and adjunctions to a dependency backbone works well for constructing structures matching those of the Penn Treebank. Seddah (2010) found that similar spinal structures can be used for the French Treebank. 3 Incremental parsing In general, statistical parsing follows one of several general approaches: one is the approach of itembased decoding, which is centered around the creation of a parse forest that implicitly stores a very large number of possible trees, followed by either dynamic programming in the c</context>
+<context position="12339" citStr="Carreras et al. (2008)" startWordPosition="1839" endWordPosition="1842">or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be described in terms of a spinal transform: each terminal in the input string is assigned a set of governing nodes that form its spine; parsing then consists of assigning a dependency structure among the terminal nodes and of assigning spines and the relation to each other. In the remainder of this section, we describe two approaches that we used to perform nonprojective constituent parsing in expected linear time: one is relatively close to the approach of Hall and Nivre (2008), but instead of assigning nodes to the first terminal of their yield, uses a strategy more like the spinal t</context>
+</contexts>
+<marker>Carreras, Collins, Koo, 2008</marker>
+<rawString>Carreras, Xavier, Michael Collins, and Terry Koo. 2008. TAG, dynamic programming, and the perceptron for efficient, feature-rich parsing. In Proceedings of CoNLL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Head-Driven statistical models for Natural Language parsing.</title>
+<date>2003</date>
+<journal>Computational Linguistics</journal>
+<volume>29</volume>
+<issue>4</issue>
+<contexts>
+<context position="11420" citStr="Collins, 2003" startWordPosition="1696" endWordPosition="1697">on of finding dependencies and adding phrase projections and adjunctions to a dependency backbone works well for constructing structures matching those of the Penn Treebank. Seddah (2010) found that similar spinal structures can be used for the French Treebank. 3 Incremental parsing In general, statistical parsing follows one of several general approaches: one is the approach of itembased decoding, which is centered around the creation of a parse forest that implicitly stores a very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective const</context>
+</contexts>
+<marker>Collins, 2003</marker>
+<rawString>Collins, Michael. 2003. Head-Driven statistical models for Natural Language parsing. Computational Linguistics 29(4):589–637.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+<author>Brian Roark</author>
+</authors>
+<title>Incremental parsing with the perceptron algorithm.</title>
+<date>2004</date>
+<booktitle>In ACL-04.</booktitle>
+<contexts>
+<context position="18887" citStr="Collins and Roark (2004)" startWordPosition="2915" endWordPosition="2918">ar classifier with a pre-defined feature set (POS, word form, morphological tag and lemma in a two-token window around the two nodes that are being considered, the category and part-of-speech tag of the leftmost and rightmost dependent of the nodes that are being considered; bigrams of words, categories, and one of each, in a window of one around the two nodes being considered, and trigrams consisting of two category and one category, part-of-speech tag, or word form within said window). Weights are learned by performing online learning with early stopping, similar to the strategy employed by Collins and Roark (2004). We use the Adaptive Gradients method (Duchi et al., 2011) for weight updates and averaging of the weight vector (in a fashion identical to the averaged perceptron). We found that 5-10 epochs of training on Tiger were sufficient to get a mostly usable model, and used 15 epochs of training for the results reported in the later section. Considering that Goldberg and Elhalad (2010) use a learning strategy that performs multiple perceptron updates until the constraint violation is fixed, we also tried this strategy but did not achieve convergence. 3.3 Reordering Oracles for Constituents The basic</context>
+</contexts>
+<marker>Collins, Roark, 2004</marker>
+<rawString>Collins, Michael and Brian Roark. 2004. Incremental parsing with the perceptron algorithm. In ACL-04.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stefanie Dipper</author>
+</authors>
+<title>Anke L¨udeling, and Marc Resnicek.</title>
+<date>2013</date>
+<booktitle>In Marcos Zampieri and Sascha Diwersy, editors, Non-standard DataSources in Corpusbased Research, Shaker Verlag.</booktitle>
+<marker>Dipper, 2013</marker>
+<rawString>Dipper, Stefanie, Anke L¨udeling, and Marc Resnicek. 2013. NoSta-D: A corpus of german non-standard varieties. In Marcos Zampieri and Sascha Diwersy, editors, Non-standard DataSources in Corpusbased Research, Shaker Verlag.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Amit Dubey</author>
+<author>Frank Keller</author>
+</authors>
+<title>Probabilistic parsing for German using sister-head dependencies.</title>
+<date>2003</date>
+<booktitle>In ACL’2003.</booktitle>
+<contexts>
+<context position="9313" citStr="Dubey and Keller (2003)" startWordPosition="1375" endWordPosition="1378">ven makes it necessary to re-engineer subsequent processing stages for dealing with the newly introduced empty nodes, or (equally impractical) require the refactoring of annotated corpus resources to accommodate a new tokenization whenever a null element is introduced or changed. In constituency parsing, the problem of discontinuous constituents in parsing has, at least in German, first been met with a proposals of raising degrees of complexity (among others, van Noord, 1991; Plaehn, 2000) and then silently been ignored both in the building of parsers and in their evaluation: researchers from Dubey and Keller (2003) to the present day cite bracketing scores based on structures that would make the reconstruction of “Heads, arguments, modifiers, and conjuncts” – usually – rather difficult. Only relatively recently has the problem of discontinuous constituent parsing been tackled head-on. Kallmeyer and Maier (2013) propose an approach that extracts a treebank LCFRS grammar, which is then used for probabilistic parsing, albeit with near-exponential time consumption. Maier et al. (2012) present an approach to make parsing in this approach more efficient by flattening coherent structures in a sentence to one s</context>
+</contexts>
+<marker>Dubey, Keller, 2003</marker>
+<rawString>Dubey, Amit and Frank Keller. 2003. Probabilistic parsing for German using sister-head dependencies. In ACL’2003.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>John Duchi</author>
+<author>Elad Hazan</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Adaptive subgradient methods for online learning and stochastic optimization.</title>
+<date>2011</date>
+<journal>Journal of Machine Learning Research</journal>
+<pages>12--2121</pages>
+<contexts>
+<context position="18946" citStr="Duchi et al., 2011" startWordPosition="2925" endWordPosition="2928">rphological tag and lemma in a two-token window around the two nodes that are being considered, the category and part-of-speech tag of the leftmost and rightmost dependent of the nodes that are being considered; bigrams of words, categories, and one of each, in a window of one around the two nodes being considered, and trigrams consisting of two category and one category, part-of-speech tag, or word form within said window). Weights are learned by performing online learning with early stopping, similar to the strategy employed by Collins and Roark (2004). We use the Adaptive Gradients method (Duchi et al., 2011) for weight updates and averaging of the weight vector (in a fashion identical to the averaged perceptron). We found that 5-10 epochs of training on Tiger were sufficient to get a mostly usable model, and used 15 epochs of training for the results reported in the later section. Considering that Goldberg and Elhalad (2010) use a learning strategy that performs multiple perceptron updates until the constraint violation is fixed, we also tried this strategy but did not achieve convergence. 3.3 Reordering Oracles for Constituents The basic idea for reordering oracles in deterministic dependency pa</context>
+</contexts>
+<marker>Duchi, Hazan, Singer, 2011</marker>
+<rawString>Duchi, John, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization. Journal of Machine Learning Research 12:2121–2159.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Martin Forst</author>
+</authors>
+<title>Filling statistics with linguistics - property design for the disambiguation of German LFG parses.</title>
+<date>2007</date>
+<booktitle>In ACL</booktitle>
+<contexts>
+<context position="35576" citStr="Forst, 2007" startWordPosition="5801" endWordPosition="5802">inction in the phenomena that create discontinuities, according to the following questions: • If we serialize the sorted (sub)tree, would the result yield a grammatical sequence? Or, to ask a related question, would anything be missing if we kept only the continuous block of the head? • If we flatten the tree by introducing a common ordering domain for multiple heads (which would be the result of tree flattening as proposed by Uszkoreit, 1987 or of a common argument list as advocated by Hinrichs and Nakazawa, 1989; flattening the sentence is also the solution used in the German LFG grammar of Forst, 2007), would we have gotten rid of the problem? Making these distinctions gives us three rather large categories that we can use to classify nonprojectivity phenomena: Extraposition8 is phenomenon where the sorted subtree would (usually) be grammatical, and where the continuous part only would (usually) be acceptable: 6sentences 40698, 40788, 40836, 41003, 41174, 41218, 41356, 41399, 41544, 41665 7sentences 40698, 40749, 40861, 40894, 40899, 40924, 41219, 41267, 41437, 41443 8Sentences 40506, 40507, 40517, 40528, 40567, 40583, 40589, 40594, 40622, 40672 48 hat has mir me [ein a [¨uber about die the</context>
+</contexts>
+<marker>Forst, 2007</marker>
+<rawString>Forst, Martin. 2007. Filling statistics with linguistics - property design for the disambiguation of German LFG parses. In ACL 2007 workshop on deep linguistic processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kilian Foth</author>
+</authors>
+<title>Eine umfassende Dependenzgrammatik des Deutschen.</title>
+<date>2006</date>
+<tech>Technical report,</tech>
+<institution>Fachbereich Informatik, Universit¨at Hamburg.</institution>
+<contexts>
+<context position="7765" citStr="Foth, 2006" startWordPosition="1146" endWordPosition="1147">ontrol phenomena. However, verbless clauses as they may occur in coordination pose a problem to the idea that every phrase is headed by a preterminal, or the equivalent assumption in dependency grammar that every argument has a governing head word. In constituent treebanks, the solution to this problem is rather simple: deviate from the descriptiveXbar schema outlined earlier on and introduce headless projections for these clauses. Dependency treebanks lack this additional degree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion in</context>
+</contexts>
+<marker>Foth, 2006</marker>
+<rawString>Foth, Kilian. 2006. Eine umfassende Dependenzgrammatik des Deutschen. Technical report, Fachbereich Informatik, Universit¨at Hamburg.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kilian Foth</author>
+<author>Arne K¨ohn</author>
+<author>Niels Beuck</author>
+<author>Wolfgang Menzel</author>
+</authors>
+<title>Because size does matter: The Hamburg dependency treebank.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Language Resources and Evaluation Conference (LREC</booktitle>
+<marker>Foth, K¨ohn, Beuck, Menzel, 2014</marker>
+<rawString>Foth, Kilian, Arne K¨ohn, Niels Beuck, and Wolfgang Menzel. 2014. Because size does matter: The Hamburg dependency treebank. In Proceedings of the Language Resources and Evaluation Conference (LREC 2014).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Goldberg</author>
+<author>Michael Elhalad</author>
+</authors>
+<title>An efficient algorithm for easy-first non-directional dependency parsing.</title>
+<date>2010</date>
+<booktitle>In Proceedings of NAACL-2010.</booktitle>
+<contexts>
+<context position="5034" citStr="Goldberg and Elhalad (2010)" startWordPosition="734" endWordPosition="737">a treebank-derived linear contextfree rewriting system suffers from near-exponential observed time consumption in practice. Approaches that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be suitable for the subsequent steps with increased grammar complexity. In this paper, we present a novel application of the easy-first parsing principle of Goldberg and Elhalad (2010) to discontinuous constituent parsing, which performs fast enough for interactive use (about 40 sentences per second) while giving an acceptable accuracy that is within the range normally seen with unmodified treebank grammars. In the remainder of the paper, we will include a short discussion of the interrelation between constituency and dependency relations of syntax, as well as relevant prior work in section 2, and discuss the construction of the parser in section 3. Section 4 and following contain a discussion of quantitative results on the Tiger corpus, whereas the penultimate section cont</context>
+<context position="13383" citStr="Goldberg and Elhalad (2010)" startWordPosition="2016" endWordPosition="2019">ear time: one is relatively close to the approach of Hall and Nivre (2008), but instead of assigning nodes to the first terminal of their yield, uses a strategy more like the spinal tree adjoining grammr of Carreras et al. (2008). The other is an application of the principle 41 add ↗ add ↘ ist er he is Zum einen on the one hand [i] AP ADJD popul¨ar popular [i:i+1] AP ADJD außergew¨ohnlich extraordinarily PP S Figure 1: Example for an intermediate state in EaFi, with the preferred action candidates for each position of easy-first parsing, which has been used for unlabeled dependency parsing by Goldberg and Elhalad (2010), and for non-projective labeled dependency parsing by Tratz and Hovy (2011), towards discontinuous constituency parsing. Because computed feature vectors can be memorized and only have to be recomputed in a small window around the last parser action, this latter approach, just as a left-to-right transition-based parser, has an expected time consumption that is linear in the number of words to be parsed. 3.1 ADG: Constituency-to-Dependency Reduction Our baseline is an approach close in spirit to Hall and Nivre (2008): The tree with node labels is turned into a dependency graph that encodes, on</context>
+<context position="19269" citStr="Goldberg and Elhalad (2010)" startWordPosition="2979" endWordPosition="2982">, and trigrams consisting of two category and one category, part-of-speech tag, or word form within said window). Weights are learned by performing online learning with early stopping, similar to the strategy employed by Collins and Roark (2004). We use the Adaptive Gradients method (Duchi et al., 2011) for weight updates and averaging of the weight vector (in a fashion identical to the averaged perceptron). We found that 5-10 epochs of training on Tiger were sufficient to get a mostly usable model, and used 15 epochs of training for the results reported in the later section. Considering that Goldberg and Elhalad (2010) use a learning strategy that performs multiple perceptron updates until the constraint violation is fixed, we also tried this strategy but did not achieve convergence. 3.3 Reordering Oracles for Constituents The basic idea for reordering oracles in deterministic dependency parsing has been presented by Nivre (2009). In the following, we present a straightforward adapation of the idea to constituent trees. Given a set of terminals T = {w1, ... , wn} that is totally ordered by a relation &lt;, an unordered tree graph is a directed graph (NT ∪T, &lt;) with nonterminal (NT) and terminal nodes (T), wher</context>
+</contexts>
+<marker>Goldberg, Elhalad, 2010</marker>
+<rawString>Goldberg, Yoav and Michael Elhalad. 2010. An efficient algorithm for easy-first non-directional dependency parsing. In Proceedings of NAACL-2010.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Johann Hall</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>Parsing discontinuous phrase structure with grammatical functions.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 6th International Conference on Natural Language Processing (GoTAL</booktitle>
+<contexts>
+<context position="10668" citStr="Hall and Nivre (2008)" startWordPosition="1580" endWordPosition="1583">a time complexity of O(n6) and parsing times of about 2 minutes for a 40-word sentence. van Cranenburgh and Bod (2013) use a more practical approach that first creates phrase candidates from the n-best list of a projective constituent parser, and uses these to construct LCFRS items that do not necessarily correspond to grammar rules seen in the training set, but which are then matched against a collection of tree fragments extracted from the training set. There exists some work on transforming dependency structures into constituents that may help in the recovery of discontinuous constituents: Hall and Nivre (2008) propose to encode information about node labels in the dependency labels, whereas Carreras et al. (2008) show that an ILP-based combination of finding dependencies and adding phrase projections and adjunctions to a dependency backbone works well for constructing structures matching those of the Penn Treebank. Seddah (2010) found that similar spinal structures can be used for the French Treebank. 3 Incremental parsing In general, statistical parsing follows one of several general approaches: one is the approach of itembased decoding, which is centered around the creation of a parse forest that</context>
+<context position="12309" citStr="Hall and Nivre (2008)" startWordPosition="1833" endWordPosition="1836">pproaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be described in terms of a spinal transform: each terminal in the input string is assigned a set of governing nodes that form its spine; parsing then consists of assigning a dependency structure among the terminal nodes and of assigning spines and the relation to each other. In the remainder of this section, we describe two approaches that we used to perform nonprojective constituent parsing in expected linear time: one is relatively close to the approach of Hall and Nivre (2008), but instead of assigning nodes to the first terminal of their yield, uses a s</context>
+<context position="13905" citStr="Hall and Nivre (2008)" startWordPosition="2096" endWordPosition="2099">-first parsing, which has been used for unlabeled dependency parsing by Goldberg and Elhalad (2010), and for non-projective labeled dependency parsing by Tratz and Hovy (2011), towards discontinuous constituency parsing. Because computed feature vectors can be memorized and only have to be recomputed in a small window around the last parser action, this latter approach, just as a left-to-right transition-based parser, has an expected time consumption that is linear in the number of words to be parsed. 3.1 ADG: Constituency-to-Dependency Reduction Our baseline is an approach close in spirit to Hall and Nivre (2008): The tree with node labels is turned into a dependency graph that encodes, on the governor edge of each terminal, a combination of (i) the node labels on the spine of this node, and (ii) the level at which this node attaches to its parent’s spine. We change two parameters of Hall and Nivre’s approach: on one hand, we do not use the first terminal in the yield of a node as its representative but the head according to the head table that we also use to assign the head in the easy-first parser. The reason for this is a practical one: using the head, we get a distribution of 531 different spine/l</context>
+<context position="29025" citStr="Hall and Nivre (2008)" startWordPosition="4685" endWordPosition="4688">nonprojective one, corresponding to our intuition that the reordering part improves the parsing on average. We also see that the projective evaluation yields an estimate of parser performance that is substantially more optimistic than evaluating on the original treebank. 4.1 Comparison with Related work Tables 4 and 5 show previous results for discontinous constituent parsing on the Tiger and Negra treebanks. The current best results on the Tiger treebank have been achieved by van Cranenburgh and Bod (2013), whose approach yields 78.8% Parseval F1 measure on the Tiger treebank in the split by Hall and Nivre (2008), and 76.8% on the Negra treebank, in both cases with above 40% of exact matches among the sentences of up to 40 words. Kallmeyer and Maier (2013) only report results on shorter sentences in Negra for their approach using a modified treebank LCFRS. They achieve 75.6% on sentences of up to 30 words. A recent approach that attempts to speed up discontinuous constituent parsing is the one by Angelov and Ljungl¨of (2014), whose parser takes about 100 seconds for a length-40 sentence, which can be reduced to 10 seconds for a length-40 sentence with an approximate search strategy. For sentences betw</context>
+<context position="30639" citStr="Hall and Nivre (2008)" startWordPosition="4941" endWordPosition="4944">alitative Analysis In the following, we will provide a categorization of the phenomena concerning verbless clauses on one hand, and discontinuous constituents on the other. Table 6 contains a breakdown on these types of 3Data from http://www.cis.lmu.de/˜muellets/marmot/marmot_spmrl.tar.bz2, version with file dates of June 13th 2014. See http://code.google.com/p/cistern/wiki/marmotSPMRL 4The SPMRL shared task dataset is idiosyncratic in that it deprojectivizes before attaching punctuation, which leads to a result that is rather dissimilar to the original treebank. 46 `!&lt; 30 ` !&lt; 40 F1 EX F1 EX Hall and Nivre (2008), gold&apos; — — 79.93 37.78 Hall and Nivre (2008), pred&apos; — — 75.33 32.63 van Cranenburgh and Bod (2013), pred&apos; — — 78.8 40.8 This work, gold&apos; 76.47 40.61 74.23 37.32 Maier (2010), LCFRS gold&apos; 73.43 29.87 — — Maier (2010), CFG gold&apos; 75.57 31.80 — — This work, goldb 77.95 43.81 76.64 41.71 This work, gold, eval w/ ROOTb&apos; 81.13 43.81 79.80 41.71 a) Hall&amp;Nivre split b) SPMRL split `) includes the ROOT node in the evaluation Table 4: Previous results on the Tiger treebank ` !&lt; 30 ` !&lt; 40 F1 EX F1 EX Maier (2010), LCFRS gold&apos; 71.52 31.65 — — Maier (2010), CFG gold&apos; 74.04 33.43 — — van Craenburgh (2012),</context>
+</contexts>
+<marker>Hall, Nivre, 2008</marker>
+<rawString>Hall, Johann and Joakim Nivre. 2008. Parsing discontinuous phrase structure with grammatical functions. In Proceedings of the 6th International Conference on Natural Language Processing (GoTAL 2008).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Erhard Hinrichs</author>
+<author>Tsuneko Nakazawa</author>
+</authors>
+<title>Flipped out: AUX in German.</title>
+<date>1989</date>
+<booktitle>In Papers from the 25th Annual Regional Meeting of the Chicago Linguistic Society.</booktitle>
+<contexts>
+<context position="35483" citStr="Hinrichs and Nakazawa, 1989" startWordPosition="5783" endWordPosition="5786">elves.7 5.2 Types of Non-projectivity Phenomena For the purpose of this paper, we will make a three-way distinction in the phenomena that create discontinuities, according to the following questions: • If we serialize the sorted (sub)tree, would the result yield a grammatical sequence? Or, to ask a related question, would anything be missing if we kept only the continuous block of the head? • If we flatten the tree by introducing a common ordering domain for multiple heads (which would be the result of tree flattening as proposed by Uszkoreit, 1987 or of a common argument list as advocated by Hinrichs and Nakazawa, 1989; flattening the sentence is also the solution used in the German LFG grammar of Forst, 2007), would we have gotten rid of the problem? Making these distinctions gives us three rather large categories that we can use to classify nonprojectivity phenomena: Extraposition8 is phenomenon where the sorted subtree would (usually) be grammatical, and where the continuous part only would (usually) be acceptable: 6sentences 40698, 40788, 40836, 41003, 41174, 41218, 41356, 41399, 41544, 41665 7sentences 40698, 40749, 40861, 40894, 40899, 40924, 41219, 41267, 41437, 41443 8Sentences 40506, 40507, 40517, </context>
+</contexts>
+<marker>Hinrichs, Nakazawa, 1989</marker>
+<rawString>Hinrichs, Erhard and Tsuneko Nakazawa. 1989. Flipped out: AUX in German. In Papers from the 25th Annual Regional Meeting of the Chicago Linguistic Society.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Julia Hockenmaier</author>
+</authors>
+<title>CCG grammar extraction from treebanks: translation algorithms and applications. Presentation from the Treebank Workshop,</title>
+<date>2007</date>
+<location>Rochester NY.</location>
+<contexts>
+<context position="6406" citStr="Hockenmaier, 2007" startWordPosition="947" endWordPosition="948">g. 2 Constituency and Dependency: Good friends? Constituency and dependency structures are two formalisms that are frequently used for theory-neutral description of syntactic structures. In constituent structures, usually influenced by some version of Xbar theory (see Kornai and Pullum, 1990 for a discussion; most notably, phrases are supposed to be projections of a head), whereas in dependency structures it is usually assumed that each word has exactly one governor (except one or more words that are attached to a virtual root node). The common subset of both can be described (in the words of Hockenmaier, 2007) as “Heads, arguments, modifiers, conjuncts”, which includes the grammatical function labels that are added in dependency structures, and to varying extent in phrase structure treebanks. Nivre (2011) goes further and asks whether we need constituents at all, since pure dependency parsing recovers arguments and adjuncts while being generally faster (and, at least for results published on Czech and French which Nivre cites, more accurate). Versley and Zinsmeister (2006) similarly argue that even “deep” dependency relations (including nonlocal ones) can be recovered from single-parent dependencie</context>
+</contexts>
+<marker>Hockenmaier, 2007</marker>
+<rawString>Hockenmaier, Julia. 2007. CCG grammar extraction from treebanks: translation algorithms and applications. Presentation from the Treebank Workshop, 2007, Rochester NY.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>David Chiang</author>
+</authors>
+<title>Forest rescoring: Faster decoding with integrated language models.</title>
+<date>2007</date>
+<booktitle>In Proceedings of ACL</booktitle>
+<contexts>
+<context position="1578" citStr="Huang and Chiang, 2007" startWordPosition="215" endWordPosition="218">reordering, an approach that previously has only been used for dependencies, and that the approach yields very fast parsing with reasonably accurate results that are close to the state of the art, surpassing existing results that use treebank grammars. We also investigate the question whether phenomena where dependency representations may be problematic – in particular, verbless clauses – can be handled by this model. 1 Introduction Automatic syntactic parsing has been fruitfully incorporated into sytems for information extraction (Miyao et al., 2008), question answering, machine translation (Huang and Chiang, 2007), among others, but we also see syntactic structures being used to communicate facts about language use in the digital humanities or in investigations of the language of language learners. In all of these applications, we see fruitful use both of constituent trees, and of dependency trees. Depending on the application, different criteria may become important: on one hand, the ability to produce structures that are (intuitively) compatible with semantic composition, or where arguments and adjuncts are related to their predicate in the tree, which commonly requires dealing with nonprojectivity. </context>
+</contexts>
+<marker>Huang, Chiang, 2007</marker>
+<rawString>Huang, Liang and David Chiang. 2007. Forest rescoring: Faster decoding with integrated language models. In Proceedings of ACL 2007.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Kenji Sagae</author>
+</authors>
+<title>Dynamic programming for linear-time incremental parsing.</title>
+<date>2010</date>
+<booktitle>In Proceedings of ACL</booktitle>
+<contexts>
+<context position="11911" citStr="Huang and Sagae (2010)" startWordPosition="1772" endWordPosition="1775">very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be described in terms of a spinal transform: each terminal in the input string is assigned a set of governing nodes that form its spine; parsing then consists of ass</context>
+</contexts>
+<marker>Huang, Sagae, 2010</marker>
+<rawString>Huang, Liang and Kenji Sagae. 2010. Dynamic programming for linear-time incremental parsing. In Proceedings of ACL 2010.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Laura Kallmeyer</author>
+<author>Wolfgang Maier</author>
+</authors>
+<title>Data-driven parsing using probabilistic linear context-free rewriting systems.</title>
+<date>2013</date>
+<journal>Computational Linguistics</journal>
+<pages>39--87</pages>
+<contexts>
+<context position="4399" citStr="Kallmeyer and Maier (2013)" startWordPosition="636" endWordPosition="639">rman (Pauly et al., 2012). The Tiger scheme is arguably more expressive than either of the alternatives since it can capture both elliptic clauses (which are difficult to represent in normal dependency schemes) and nonprojective constructions (which have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The straightforward approach of Kallmeyer and Maier (2013) to use a treebank-derived linear contextfree rewriting system suffers from near-exponential observed time consumption in practice. Approaches that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be suitable for the subsequent steps with increased grammar complexity. In this paper, we present a novel application of the easy-first parsing princ</context>
+<context position="9615" citStr="Kallmeyer and Maier (2013)" startWordPosition="1418" endWordPosition="1421">rsing, the problem of discontinuous constituents in parsing has, at least in German, first been met with a proposals of raising degrees of complexity (among others, van Noord, 1991; Plaehn, 2000) and then silently been ignored both in the building of parsers and in their evaluation: researchers from Dubey and Keller (2003) to the present day cite bracketing scores based on structures that would make the reconstruction of “Heads, arguments, modifiers, and conjuncts” – usually – rather difficult. Only relatively recently has the problem of discontinuous constituent parsing been tackled head-on. Kallmeyer and Maier (2013) propose an approach that extracts a treebank LCFRS grammar, which is then used for probabilistic parsing, albeit with near-exponential time consumption. Maier et al. (2012) present an approach to make parsing in this approach more efficient by flattening coherent structures in a sentence to one single sentence node and thus eliminating scrambling as a source of discontinuities, together with other transformations, which allows a time complexity of O(n6) and parsing times of about 2 minutes for a 40-word sentence. van Cranenburgh and Bod (2013) use a more practical approach that first creates </context>
+<context position="29171" citStr="Kallmeyer and Maier (2013)" startWordPosition="4712" endWordPosition="4715">valuation yields an estimate of parser performance that is substantially more optimistic than evaluating on the original treebank. 4.1 Comparison with Related work Tables 4 and 5 show previous results for discontinous constituent parsing on the Tiger and Negra treebanks. The current best results on the Tiger treebank have been achieved by van Cranenburgh and Bod (2013), whose approach yields 78.8% Parseval F1 measure on the Tiger treebank in the split by Hall and Nivre (2008), and 76.8% on the Negra treebank, in both cases with above 40% of exact matches among the sentences of up to 40 words. Kallmeyer and Maier (2013) only report results on shorter sentences in Negra for their approach using a modified treebank LCFRS. They achieve 75.6% on sentences of up to 30 words. A recent approach that attempts to speed up discontinuous constituent parsing is the one by Angelov and Ljungl¨of (2014), whose parser takes about 100 seconds for a length-40 sentence, which can be reduced to 10 seconds for a length-40 sentence with an approximate search strategy. For sentences between 5 and 60 tokens, their approach reaches an F1 score of 69.3%, which however deteriorates quickly when approximate search is used, to 61.9% F1 </context>
+</contexts>
+<marker>Kallmeyer, Maier, 2013</marker>
+<rawString>Kallmeyer, Laura and Wolfgang Maier. 2013. Data-driven parsing using probabilistic linear context-free rewriting systems. Computational Linguistics 39:87–119.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Oleg Kapanadze</author>
+</authors>
+<title>Building parallel treebanks for the lesser-resourced languages.</title>
+<date>2012</date>
+<tech>Technical report,</tech>
+<institution>Tbilisi State University.</institution>
+<contexts>
+<context position="3747" citStr="Kapanadze, 2012" startWordPosition="539" endWordPosition="540">best and the worst of both worlds. This work is licenced under a Creative Commons Attribution 4.0 International License. Page numbers and proceedings footer are added by the organizers. License details: http://creativecommons.org/licenses/by/4.0/ 39 First Joint Workshop on Statistical Parsing of Morphologically Rich Languages and Syntactic Analysis of Non-Canonical Languages, pages 39–53 Dublin, Ireland, August 23-29 2014. Because of its expressivity, the Negra/Tiger scheme has also been used for other languages such as Swedish Volk and Samuelsson (2004) as well as Georgian/Russian/Ukrainian (Kapanadze, 2012), and as Early New High German (Pauly et al., 2012). The Tiger scheme is arguably more expressive than either of the alternatives since it can capture both elliptic clauses (which are difficult to represent in normal dependency schemes) and nonprojective constructions (which have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The st</context>
+</contexts>
+<marker>Kapanadze, 2012</marker>
+<rawString>Kapanadze, Oleg. 2012. Building parallel treebanks for the lesser-resourced languages. Technical report, Tbilisi State University.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Terry Koo</author>
+<author>Alexander M Rush</author>
+<author>Michael Collins</author>
+<author>Tommi Jaakkola</author>
+<author>David Sontag</author>
+</authors>
+<title>Dual decomposition for parsing with non-projective head automata.</title>
+<date>2010</date>
+<booktitle>In Proceedings of EMNLP</booktitle>
+<contexts>
+<context position="8108" citStr="Koo et al., 2010" startWordPosition="1196" endWordPosition="1199">e descriptiveXbar schema outlined earlier on and introduce headless projections for these clauses. Dependency treebanks lack this additional degree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields uninformative structures for subsequent processing components or even makes it neces</context>
+<context position="11590" citStr="Koo et al., 2010" startWordPosition="1720" endWordPosition="1723">ebank. Seddah (2010) found that similar spinal structures can be used for the French Treebank. 3 Incremental parsing In general, statistical parsing follows one of several general approaches: one is the approach of itembased decoding, which is centered around the creation of a parse forest that implicitly stores a very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for th</context>
+</contexts>
+<marker>Koo, Rush, Collins, Jaakkola, Sontag, 2010</marker>
+<rawString>Koo, Terry, Alexander M. Rush, Michael Collins, Tommi Jaakkola, and David Sontag. 2010. Dual decomposition for parsing with non-projective head automata. In Proceedings of EMNLP 2010.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andras Kornai</author>
+<author>Geoff Pullum</author>
+</authors>
+<title>The X-bar theory of phrase structure.</title>
+<date>1990</date>
+<journal>Language</journal>
+<booktitle>In ACL’1995.</booktitle>
+<contexts>
+<context position="6080" citStr="Kornai and Pullum, 1990" startWordPosition="889" endWordPosition="892">scuss the construction of the parser in section 3. Section 4 and following contain a discussion of quantitative results on the Tiger corpus, whereas the penultimate section contains a more detailed analysis of the parser behaviour on constructions that are problematic for either dependency parsers or projective constituent parsing. 2 Constituency and Dependency: Good friends? Constituency and dependency structures are two formalisms that are frequently used for theory-neutral description of syntactic structures. In constituent structures, usually influenced by some version of Xbar theory (see Kornai and Pullum, 1990 for a discussion; most notably, phrases are supposed to be projections of a head), whereas in dependency structures it is usually assumed that each word has exactly one governor (except one or more words that are attached to a virtual root node). The common subset of both can be described (in the words of Hockenmaier, 2007) as “Heads, arguments, modifiers, conjuncts”, which includes the grammatical function labels that are added in dependency structures, and to varying extent in phrase structure treebanks. Nivre (2011) goes further and asks whether we need constituents at all, since pure depe</context>
+</contexts>
+<marker>Kornai, Pullum, 1990</marker>
+<rawString>Kornai, Andras and Geoff Pullum. 1990. The X-bar theory of phrase structure. Language 66:24–50. Magerman, David M. 1995. Statistical decision-tree models for parsing. In ACL’1995.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Maier</author>
+</authors>
+<title>Direct parsing of discontinuous constituents in German.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the NAACL-HLT First Workshop on Statistical Parsing of Morphologically Rich Languages.</booktitle>
+<contexts>
+<context position="30813" citStr="Maier (2010)" startWordPosition="4976" endWordPosition="4977">ntains a breakdown on these types of 3Data from http://www.cis.lmu.de/˜muellets/marmot/marmot_spmrl.tar.bz2, version with file dates of June 13th 2014. See http://code.google.com/p/cistern/wiki/marmotSPMRL 4The SPMRL shared task dataset is idiosyncratic in that it deprojectivizes before attaching punctuation, which leads to a result that is rather dissimilar to the original treebank. 46 `!&lt; 30 ` !&lt; 40 F1 EX F1 EX Hall and Nivre (2008), gold&apos; — — 79.93 37.78 Hall and Nivre (2008), pred&apos; — — 75.33 32.63 van Cranenburgh and Bod (2013), pred&apos; — — 78.8 40.8 This work, gold&apos; 76.47 40.61 74.23 37.32 Maier (2010), LCFRS gold&apos; 73.43 29.87 — — Maier (2010), CFG gold&apos; 75.57 31.80 — — This work, goldb 77.95 43.81 76.64 41.71 This work, gold, eval w/ ROOTb&apos; 81.13 43.81 79.80 41.71 a) Hall&amp;Nivre split b) SPMRL split `) includes the ROOT node in the evaluation Table 4: Previous results on the Tiger treebank ` !&lt; 30 ` !&lt; 40 F1 EX F1 EX Maier (2010), LCFRS gold&apos; 71.52 31.65 — — Maier (2010), CFG gold&apos; 74.04 33.43 — — van Craenburgh (2012), LCFRS, gold — — 67.26 27.90 van Craenburgh (2012), Disco-DOP, gold — — 72.33 33.16 Maier et al. (2012) 74.5 — — — Kallmaier and Maier (2013), LCFRS, gold 75.75 — — — van Cra</context>
+</contexts>
+<marker>Maier, 2010</marker>
+<rawString>Maier, Wolfgang. 2010. Direct parsing of discontinuous constituents in German. In Proceedings of the NAACL-HLT First Workshop on Statistical Parsing of Morphologically Rich Languages.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Maier</author>
+<author>Miriam Kaeshammer</author>
+<author>Peter Baumann</author>
+<author>Sandra K¨ubler</author>
+</authors>
+<title>Discosuite – a parser test suite for German discontinuous structures.</title>
+<date>2014</date>
+<booktitle>In Proceedings of LREC</booktitle>
+<marker>Maier, Kaeshammer, Baumann, K¨ubler, 2014</marker>
+<rawString>Maier, Wolfgang, Miriam Kaeshammer, Peter Baumann, and Sandra K¨ubler. 2014. Discosuite – a parser test suite for German discontinuous structures. In Proceedings of LREC 2014.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Maier</author>
+<author>Miriam Kaeshammer</author>
+<author>Laura Kallmeyer</author>
+</authors>
+<title>PLCFRS parsing revisited: Restricting the fan-out to two.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 11th International Workshop on Tree Adjoining Grammar and Related Formalisms (TAG+11).</booktitle>
+<contexts>
+<context position="9788" citStr="Maier et al. (2012)" startWordPosition="1443" endWordPosition="1446">; Plaehn, 2000) and then silently been ignored both in the building of parsers and in their evaluation: researchers from Dubey and Keller (2003) to the present day cite bracketing scores based on structures that would make the reconstruction of “Heads, arguments, modifiers, and conjuncts” – usually – rather difficult. Only relatively recently has the problem of discontinuous constituent parsing been tackled head-on. Kallmeyer and Maier (2013) propose an approach that extracts a treebank LCFRS grammar, which is then used for probabilistic parsing, albeit with near-exponential time consumption. Maier et al. (2012) present an approach to make parsing in this approach more efficient by flattening coherent structures in a sentence to one single sentence node and thus eliminating scrambling as a source of discontinuities, together with other transformations, which allows a time complexity of O(n6) and parsing times of about 2 minutes for a 40-word sentence. van Cranenburgh and Bod (2013) use a more practical approach that first creates phrase candidates from the n-best list of a projective constituent parser, and uses these to construct LCFRS items that do not necessarily correspond to grammar rules seen i</context>
+<context position="26737" citStr="Maier et al. (2012)" startWordPosition="4321" endWordPosition="4324">h the state-of-the-art preprocessing results for part-of-speech and morphological tags3 which were produced by Bj¨orkelund et al. (2013) using the MarMoT tagger (M¨uller et al., 2013), in addition to the gold-standard preprocessing (gold) and automatic predictions (pred) that are part of the official dataset of the SPMRL shared task. We applied two transformations to the data, which are automatically reversed in the parser output: one is adding NPs into PPs, which is also done by Seeker et al. (2012), and the other is that we make parenthetical material subordinate to its embedding clause, as Maier et al. (2012) also advocate. Evaluation was performed using the evaluator from the DISCODOP package of van Cranenburgh and Bod (2013), excluding punctuation and the ROOT label added by disco-dop from the evaluation. Training was run for 15 epochs. Parsing the 5000 development sentences took about 90-120 seconds for EAFI, which corresponds to 40-55 sentences per second (on a Core i7 2GHz) and is slightly faster than MaltParser using the ADG-derived model and a LibLinear classifier. In the results in table 2, we see the results for the dependency-to-constiuents approach, as well as for the easy-first parsing</context>
+<context position="31342" citStr="Maier et al. (2012)" startWordPosition="5075" endWordPosition="5078"> and Bod (2013), pred&apos; — — 78.8 40.8 This work, gold&apos; 76.47 40.61 74.23 37.32 Maier (2010), LCFRS gold&apos; 73.43 29.87 — — Maier (2010), CFG gold&apos; 75.57 31.80 — — This work, goldb 77.95 43.81 76.64 41.71 This work, gold, eval w/ ROOTb&apos; 81.13 43.81 79.80 41.71 a) Hall&amp;Nivre split b) SPMRL split `) includes the ROOT node in the evaluation Table 4: Previous results on the Tiger treebank ` !&lt; 30 ` !&lt; 40 F1 EX F1 EX Maier (2010), LCFRS gold&apos; 71.52 31.65 — — Maier (2010), CFG gold&apos; 74.04 33.43 — — van Craenburgh (2012), LCFRS, gold — — 67.26 27.90 van Craenburgh (2012), Disco-DOP, gold — — 72.33 33.16 Maier et al. (2012) 74.5 — — — Kallmaier and Maier (2013), LCFRS, gold 75.75 — — — van Cranenburgh and Bod (2013), gold — — 76.8 40.5 `) includes the ROOT node in the evaluation Table 5: Previous results on the NeGra treebank phenomena according to whether they are: • correctly parsed (+): when the incredients for the construction are present in the parse and they are combined in a suitable fashion. • missed (o): when the ingredients for the construction are present, but combined in another way – for example, an extraposition where the extraposed item is misattached • broken (-): when the ingredients for the con</context>
+</contexts>
+<marker>Maier, Kaeshammer, Kallmeyer, 2012</marker>
+<rawString>Maier, Wolfgang, Miriam Kaeshammer, and Laura Kallmeyer. 2012. PLCFRS parsing revisited: Restricting the fan-out to two. In Proceedings of the 11th International Workshop on Tree Adjoining Grammar and Related Formalisms (TAG+11).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yusuke Miyao</author>
+</authors>
+<title>Rune Sætre, Kenji Sagae, Takuya Matsuzaki, and Jun’ichi Tsujii.</title>
+<date>2008</date>
+<booktitle>In ACL</booktitle>
+<marker>Miyao, 2008</marker>
+<rawString>Miyao, Yusuke, Rune Sætre, Kenji Sagae, Takuya Matsuzaki, and Jun’ichi Tsujii. 2008. Task-oriented evaluation of syntactic parsers and their representations. In ACL 2008.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas M¨uller</author>
+<author>Helmut Schmid</author>
+<author>Hinrich Sch¨utze</author>
+</authors>
+<title>Efficient higher-order CRFs for morphological tagging.</title>
+<date>2013</date>
+<booktitle>In Proceedings fo EMNLP</booktitle>
+<marker>M¨uller, Schmid, Sch¨utze, 2013</marker>
+<rawString>M¨uller, Thomas, Helmut Schmid, and Hinrich Sch¨utze. 2013. Efficient higher-order CRFs for morphological tagging. In Proceedings fo EMNLP 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joakim Nivre</author>
+</authors>
+<title>An efficient algorithm for projective dependency parsing.</title>
+<date>2003</date>
+<booktitle>In 8th International Workshop on Parsing Technologies.</booktitle>
+<contexts>
+<context position="11797" citStr="Nivre (2003)" startWordPosition="1755" endWordPosition="1756">of itembased decoding, which is centered around the creation of a parse forest that implicitly stores a very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be described in terms of a spinal transform: each t</context>
+</contexts>
+<marker>Nivre, 2003</marker>
+<rawString>Nivre, Joakim. 2003. An efficient algorithm for projective dependency parsing. In 8th International Workshop on Parsing Technologies.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joakim Nivre</author>
+</authors>
+<title>Non-projective dependency parsing in expected linear time.</title>
+<date>2009</date>
+<booktitle>In Proc. Joint ACLAFNLP 2009. Nivre,</booktitle>
+<location>Joakim.</location>
+<contexts>
+<context position="8166" citStr="Nivre, 2009" startWordPosition="1206" endWordPosition="1207">less projections for these clauses. Dependency treebanks lack this additional degree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields uninformative structures for subsequent processing components or even makes it necessary to re-engineer subsequent processing stages for deali</context>
+<context position="16680" citStr="Nivre (2009)" startWordPosition="2543" endWordPosition="2544">he preprocessing consisting of morphological analyzer and lemmatization, and at each point applies one of several actions: • Reduce-Unary: one node is grouped under a unary node of a given category, with the restriction that the corresponding unary rule must have been observed in the treebank. (Additionally, we collapse any two nodes with the same category embedding each other, which sometimes occurs in the Tiger treebank when several empty-headed phrases are assumed to embed each other in coordination). 1MaltParser is able to do direct nonprojective parsing using the reordering approaches of Nivre (2009) and Nivre et al. (2009), however the pseudoprojective approach was selected in MaltOptimizer’s parameter selection. 42 Basic featureset Unigram: n E ni−2 ... ni+3 CnPn CnWn CnMn CnLn Left/Right Children: n E ni,Lni,Rni+1,Lni+1,R CnPn Bigram: m, n E ni−1ni ... ni+2ni+3 WmWn WmCn CmWn WmWn Trigram: r, m, n E ni−1nini+1 . . . ni+1ni+2ni+3 Medium featureset Bigram+Child: m, n, r E {nini+1ni+1,L; nini+1ni,R; ni+1ni+2ni+1,R; nini−1ni,L} CmCnCr CmCnPr Distance: O E {dist(ni,ni+1), gap(ni,ni+1)} OCm OCn OPm OPn m, n = ni, ni+1 OFm OFn Large featureset Gap bigram: m, n E ni−1ni+2, nini+2 WmWn WmCn CmW</context>
+<context position="19586" citStr="Nivre (2009)" startWordPosition="3027" endWordPosition="3028">aging of the weight vector (in a fashion identical to the averaged perceptron). We found that 5-10 epochs of training on Tiger were sufficient to get a mostly usable model, and used 15 epochs of training for the results reported in the later section. Considering that Goldberg and Elhalad (2010) use a learning strategy that performs multiple perceptron updates until the constraint violation is fixed, we also tried this strategy but did not achieve convergence. 3.3 Reordering Oracles for Constituents The basic idea for reordering oracles in deterministic dependency parsing has been presented by Nivre (2009). In the following, we present a straightforward adapation of the idea to constituent trees. Given a set of terminals T = {w1, ... , wn} that is totally ordered by a relation &lt;, an unordered tree graph is a directed graph (NT ∪T, &lt;) with nonterminal (NT) and terminal nodes (T), where the transitive hull &lt;∗ of the parent relation &lt; is acyclic, no node has a parent from T, and exactly one node, vroot, has no parent. An node ordering &lt; is consistent with &lt; whenever, for any node u and an descendant u′ &gt;∗ u, and a node v with an descendant v′ &gt;∗ v, u &lt; v entails u′ &lt; v′. 43 A tree cut of a tree is</context>
+<context position="22563" citStr="Nivre (2009)" startWordPosition="3607" endWordPosition="3608">ld to each node will do the same, with an extension h*(w) = w for all terminals and h*(v) = h*(h(v)) otherwise, through u &lt; v :⇒ h*(u) &lt; h*(v).2 A transition sequence for parsing a tree is then a sequence consisting of reductions (leading from a cut ... vi, u′, ... u″, vj, ... with a contiguous subsequence of the children of u to the sequence ... vi, u, vj, ... that contains u instead) and swaps (leading from a cut ... vi, vj ... that has h*(vi) and h*(vj) ordered with respect to &lt; but not with respect to &lt; to a cut ... vj, vi ... that is orders h*(vi) and h*(vj) with respect to &lt; but not &lt;). Nivre (2009) defines an oracle for shift-reduce parsing that is swap-eager in that it always allows swapping. In Nivre’s case, the oracle is deterministic and always performs the swapping before any reduction. Nivre et al. (2009) note that the swap-eager oracle performs too many swaps because it swaps groups of words that are later reduced. They propose a swap-lazy algorithm that does not swap two nodes if one of them is adjacent to another node that is within the same maximal projective subtree. The perspective of parsing as a series of swap and reduce actions allows us to specify a strategy that perform</context>
+</contexts>
+<marker>Nivre, 2009</marker>
+<rawString>Nivre, Joakim. 2009. Non-projective dependency parsing in expected linear time. In Proc. Joint ACLAFNLP 2009. Nivre, Joakim. 2011. Bare-bones dependency parsing - a case for occam’s razor? In Nodalida 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joakim Nivre</author>
+<author>Marco Kuhlmann</author>
+<author>Johan Hall</author>
+</authors>
+<title>An improved oracle for dependency parsing with online reordering.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 11th International Conference on Parsing Technologies (IWPT).</booktitle>
+<contexts>
+<context position="16704" citStr="Nivre et al. (2009)" startWordPosition="2546" endWordPosition="2549">consisting of morphological analyzer and lemmatization, and at each point applies one of several actions: • Reduce-Unary: one node is grouped under a unary node of a given category, with the restriction that the corresponding unary rule must have been observed in the treebank. (Additionally, we collapse any two nodes with the same category embedding each other, which sometimes occurs in the Tiger treebank when several empty-headed phrases are assumed to embed each other in coordination). 1MaltParser is able to do direct nonprojective parsing using the reordering approaches of Nivre (2009) and Nivre et al. (2009), however the pseudoprojective approach was selected in MaltOptimizer’s parameter selection. 42 Basic featureset Unigram: n E ni−2 ... ni+3 CnPn CnWn CnMn CnLn Left/Right Children: n E ni,Lni,Rni+1,Lni+1,R CnPn Bigram: m, n E ni−1ni ... ni+2ni+3 WmWn WmCn CmWn WmWn Trigram: r, m, n E ni−1nini+1 . . . ni+1ni+2ni+3 Medium featureset Bigram+Child: m, n, r E {nini+1ni+1,L; nini+1ni,R; ni+1ni+2ni+1,R; nini−1ni,L} CmCnCr CmCnPr Distance: O E {dist(ni,ni+1), gap(ni,ni+1)} OCm OCn OPm OPn m, n = ni, ni+1 OFm OFn Large featureset Gap bigram: m, n E ni−1ni+2, nini+2 WmWn WmCn CmWn WmWn Bigram+2child: m,</context>
+<context position="22780" citStr="Nivre et al. (2009)" startWordPosition="3639" endWordPosition="3642">sting of reductions (leading from a cut ... vi, u′, ... u″, vj, ... with a contiguous subsequence of the children of u to the sequence ... vi, u, vj, ... that contains u instead) and swaps (leading from a cut ... vi, vj ... that has h*(vi) and h*(vj) ordered with respect to &lt; but not with respect to &lt; to a cut ... vj, vi ... that is orders h*(vi) and h*(vj) with respect to &lt; but not &lt;). Nivre (2009) defines an oracle for shift-reduce parsing that is swap-eager in that it always allows swapping. In Nivre’s case, the oracle is deterministic and always performs the swapping before any reduction. Nivre et al. (2009) note that the swap-eager oracle performs too many swaps because it swaps groups of words that are later reduced. They propose a swap-lazy algorithm that does not swap two nodes if one of them is adjacent to another node that is within the same maximal projective subtree. The perspective of parsing as a series of swap and reduce actions allows us to specify a strategy that performs less reductions in some cases: Consider that we need to reorder the &lt;-contiguous sequence of terminals to the -&lt;-contiguous sequence that is needed for reducing the tree to its final form. The number of swaps perfor</context>
+<context position="27401" citStr="Nivre et al. (2009)" startWordPosition="4426" endWordPosition="4429">g the evaluator from the DISCODOP package of van Cranenburgh and Bod (2013), excluding punctuation and the ROOT label added by disco-dop from the evaluation. Training was run for 15 epochs. Parsing the 5000 development sentences took about 90-120 seconds for EAFI, which corresponds to 40-55 sentences per second (on a Core i7 2GHz) and is slightly faster than MaltParser using the ADG-derived model and a LibLinear classifier. In the results in table 2, we see the results for the dependency-to-constiuents approach, as well as for the easy-first parsing with different reordering heuristics. As in Nivre et al. (2009), we notice that the lazy strategy that keeps projective constituents together yields better results than the eager strategy which allows moving right away. The overall results – around 76.6% f-score on gold tags and 73.1% f-score on predicted tags in sentences of 40 words and below – indicate the promise of this approach, even though they are significantly below the results of van Cranenburgh and Bod (2013) who achieve more than 78% f-measure using predicted tags on a different split of the Tiger treebank. Van Cranenburgh’s approach is about 15-20 times slower than ours, using 10 seconds for </context>
+</contexts>
+<marker>Nivre, Kuhlmann, Hall, 2009</marker>
+<rawString>Nivre, Joakim, Marco Kuhlmann, and Johan Hall. 2009. An improved oracle for dependency parsing with online reordering. In Proceedings of the 11th International Conference on Parsing Technologies (IWPT).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joakim Nivre</author>
+<author>Jens Nilsson</author>
+</authors>
+<title>Pseudo-projective dependency parsing.</title>
+<date>2005</date>
+<booktitle>In Proceedings of ACL</booktitle>
+<contexts>
+<context position="8048" citStr="Nivre and Nilsson, 2005" startWordPosition="1188" endWordPosition="1191">nks, the solution to this problem is rather simple: deviate from the descriptiveXbar schema outlined earlier on and introduce headless projections for these clauses. Dependency treebanks lack this additional degree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields uninformative structures</context>
+</contexts>
+<marker>Nivre, Nilsson, 2005</marker>
+<rawString>Nivre, Joakim and Jens Nilsson. 2005. Pseudo-projective dependency parsing. In Proceedings of ACL 2005.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dennis Pauly</author>
+<author>Ulyana Senyuk</author>
+<author>Ulrike Demske</author>
+</authors>
+<date>2012</date>
+<booktitle>Strukturelle Mehrdeutigkeit in fr¨uhneuhochdeutschen Texten. Journal for Language Technology and Computational Linguistics</booktitle>
+<pages>27--2</pages>
+<contexts>
+<context position="3798" citStr="Pauly et al., 2012" startWordPosition="547" endWordPosition="550">licenced under a Creative Commons Attribution 4.0 International License. Page numbers and proceedings footer are added by the organizers. License details: http://creativecommons.org/licenses/by/4.0/ 39 First Joint Workshop on Statistical Parsing of Morphologically Rich Languages and Syntactic Analysis of Non-Canonical Languages, pages 39–53 Dublin, Ireland, August 23-29 2014. Because of its expressivity, the Negra/Tiger scheme has also been used for other languages such as Swedish Volk and Samuelsson (2004) as well as Georgian/Russian/Ukrainian (Kapanadze, 2012), and as Early New High German (Pauly et al., 2012). The Tiger scheme is arguably more expressive than either of the alternatives since it can capture both elliptic clauses (which are difficult to represent in normal dependency schemes) and nonprojective constructions (which have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The straightforward approach of Kallmeyer and Maier (2013</context>
+</contexts>
+<marker>Pauly, Senyuk, Demske, 2012</marker>
+<rawString>Pauly, Dennis, Ulyana Senyuk, and Ulrike Demske. 2012. Strukturelle Mehrdeutigkeit in fr¨uhneuhochdeutschen Texten. Journal for Language Technology and Computational Linguistics 27(2):65–82.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Oliver Plaehn</author>
+</authors>
+<title>Computing the most probable parse for a discontinuous phrase structure grammar.</title>
+<date>2000</date>
+<booktitle>In Proceedings of the 6th International Workshop on Parsing Technologies.</booktitle>
+<contexts>
+<context position="9184" citStr="Plaehn, 2000" startWordPosition="1356" endWordPosition="1357">e Seeker et al., 2012 and references therein) yields uninformative structures for subsequent processing components or even makes it necessary to re-engineer subsequent processing stages for dealing with the newly introduced empty nodes, or (equally impractical) require the refactoring of annotated corpus resources to accommodate a new tokenization whenever a null element is introduced or changed. In constituency parsing, the problem of discontinuous constituents in parsing has, at least in German, first been met with a proposals of raising degrees of complexity (among others, van Noord, 1991; Plaehn, 2000) and then silently been ignored both in the building of parsers and in their evaluation: researchers from Dubey and Keller (2003) to the present day cite bracketing scores based on structures that would make the reconstruction of “Heads, arguments, modifiers, and conjuncts” – usually – rather difficult. Only relatively recently has the problem of discontinuous constituent parsing been tackled head-on. Kallmeyer and Maier (2013) propose an approach that extracts a treebank LCFRS grammar, which is then used for probabilistic parsing, albeit with near-exponential time consumption. Maier et al. (2</context>
+</contexts>
+<marker>Plaehn, 2000</marker>
+<rawString>Plaehn, Oliver. 2000. Computing the most probable parse for a discontinuous phrase structure grammar. In Proceedings of the 6th International Workshop on Parsing Technologies.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenji Sagae</author>
+<author>Alon Lavie</author>
+</authors>
+<title>A best-first probabilistic shift-reduce parser.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Human Language Technology Conference of the NAACL (NAACL/HLT</booktitle>
+<contexts>
+<context position="11742" citStr="Sagae and Lavie (2006)" startWordPosition="1743" endWordPosition="1746">g follows one of several general approaches: one is the approach of itembased decoding, which is centered around the creation of a parse forest that implicitly stores a very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) co</context>
+</contexts>
+<marker>Sagae, Lavie, 2006</marker>
+<rawString>Sagae, Kenji and Alon Lavie. 2006. A best-first probabilistic shift-reduce parser. In Proceedings of the Human Language Technology Conference of the NAACL (NAACL/HLT 2006).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Francesco Sartorio</author>
+<author>Giorgio Satta</author>
+<author>Joakim Nivre</author>
+</authors>
+<title>A transition-based dependency parser using a dynamic parsing strategy.</title>
+<date>2013</date>
+<booktitle>In Proceedings of ACL</booktitle>
+<contexts>
+<context position="38670" citStr="Sartorio et al. (2013)" startWordPosition="6294" endWordPosition="6297">x structure than is actually present. In general, verbless copula clauses, asyndetic coordination, and gapping/ellipsis, which are difficult for dependency parsing, are also especially prone to confuse the very local view of the easy-first parser, which is a rather anticlimactic, yet commonsensical conclusion. In summary, simple material is often handled surprisingly well, whereas sentences with a complex topological structure – i.e., coordination, clauses embedded in a nominal phrase, or correlations, are rather challenging for easy-first parsing. Parsing algorithms with more context such as Sartorio et al. (2013) or an application of beam search might help in some of these cases. 6 Summary and Future Work In this article, we presented a deterministic parser that uses an easy-first strategy to perform nonprojective constituent parsing in expected linear time, with results that perform in a similar range as results for discontinuous treebank grammars, and provides a means to provide rather fast parsing in cases where discontinuous structure is required. We introduced the barrier formulation as an alternative to the lazy reordering of Nivre et al. (2009), which shows similar performance but which may rev</context>
+</contexts>
+<marker>Sartorio, Satta, Nivre, 2013</marker>
+<rawString>Sartorio, Francesco, Giorgio Satta, and Joakim Nivre. 2013. A transition-based dependency parser using a dynamic parsing strategy. In Proceedings of ACL 2013.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Helmut Schmid</author>
+</authors>
+<title>Trace prediction and recovery with unlexicalized PCFGs and slash features.</title>
+<date>2006</date>
+<booktitle>In Proceedings of COLING-ACL 2006. Seddah, Djam´e.</booktitle>
+<contexts>
+<context position="4619" citStr="Schmid (2006)" startWordPosition="668" endWordPosition="669">tructions (which have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous constituents has only recently become practical. The straightforward approach of Kallmeyer and Maier (2013) to use a treebank-derived linear contextfree rewriting system suffers from near-exponential observed time consumption in practice. Approaches that use context-free grammar approximation such as the ones of Schmid (2006), Cai et al. (2011) or van Cranenburgh and Bod (2013), still have cubic time complexity; especially in the latter case, it is not clear whether techniques that allow fast PCFG parsing such as those of Bodenstab et al. (2011) would be suitable for the subsequent steps with increased grammar complexity. In this paper, we present a novel application of the easy-first parsing principle of Goldberg and Elhalad (2010) to discontinuous constituent parsing, which performs fast enough for interactive use (about 40 sentences per second) while giving an acceptable accuracy that is within the range normal</context>
+</contexts>
+<marker>Schmid, 2006</marker>
+<rawString>Schmid, Helmut. 2006. Trace prediction and recovery with unlexicalized PCFGs and slash features. In Proceedings of COLING-ACL 2006. Seddah, Djam´e. 2010. Exploring the spinal-tig model for parsing French. In Proceedings of LREC 2010.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Djam´e Seddah</author>
+<author>Reut Tsarfaty</author>
+<author>Sandra K¨ubler</author>
+<author>Marie Candito</author>
+<author>Jinho D Choi</author>
+<author>Rich´ard Farkas</author>
+<author>Jennifer Foster</author>
+</authors>
+<title>Iakes Goenaga, Koldo Gojenola Galletebeitia, Yoav Goldberg, Spence Green, Nizar Habash, Marco Kuhlmann, Wolfgang Maier, Joakim Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang Seeker, Yannick Versley, Veronika Vincze, Marcin Woli´nski, Alina Wr´oblewska, and Eric Villemonte de la Clergerie.</title>
+<date>2013</date>
+<journal>Overview of the SPMRL</journal>
+<booktitle>In Proceedings of the Fourth Workshop on Statistical Parsing of Morphologically-Rich Languages.</booktitle>
+<pages>146--182</pages>
+<location>Seattle, WA,</location>
+<marker>Seddah, Tsarfaty, K¨ubler, Candito, Choi, Farkas, Foster, 2013</marker>
+<rawString>Seddah, Djam´e, Reut Tsarfaty, Sandra K¨ubler, Marie Candito, Jinho D. Choi, Rich´ard Farkas, Jennifer Foster, Iakes Goenaga, Koldo Gojenola Galletebeitia, Yoav Goldberg, Spence Green, Nizar Habash, Marco Kuhlmann, Wolfgang Maier, Joakim Nivre, Adam Przepi´orkowski, Ryan Roth, Wolfgang Seeker, Yannick Versley, Veronika Vincze, Marcin Woli´nski, Alina Wr´oblewska, and Eric Villemonte de la Clergerie. 2013. Overview of the SPMRL 2013 Shared Task: A Cross-Framework Evaluation of Parsing Morphologically Rich Languages. In Proceedings of the Fourth Workshop on Statistical Parsing of Morphologically-Rich Languages. Seattle, WA, pages 146–182.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Seeker</author>
+<author>Rich´ard Farkas</author>
+<author>Bernd Bohnet</author>
+<author>Helmut Schmid</author>
+<author>Jonas Kuhn</author>
+</authors>
+<title>Data-driven dependency parsing with empty heads.</title>
+<date>2012</date>
+<booktitle>In Proceedings of Coling</booktitle>
+<contexts>
+<context position="8277" citStr="Seeker et al. (2012)" startWordPosition="1222" endWordPosition="1225">e choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields uninformative structures for subsequent processing components or even makes it necessary to re-engineer subsequent processing stages for dealing with the newly introduced empty nodes, or (equally impractical) require the refactoring of annotated corpus </context>
+<context position="26623" citStr="Seeker et al. (2012)" startWordPosition="4302" endWordPosition="4305">0.6 48.9 retag 74.62 73.16 90.83 37.51 71.5 80.3 49.4 45 Seddah et al., 2013 for a more extensive description), with the state-of-the-art preprocessing results for part-of-speech and morphological tags3 which were produced by Bj¨orkelund et al. (2013) using the MarMoT tagger (M¨uller et al., 2013), in addition to the gold-standard preprocessing (gold) and automatic predictions (pred) that are part of the official dataset of the SPMRL shared task. We applied two transformations to the data, which are automatically reversed in the parser output: one is adding NPs into PPs, which is also done by Seeker et al. (2012), and the other is that we make parenthetical material subordinate to its embedding clause, as Maier et al. (2012) also advocate. Evaluation was performed using the evaluator from the DISCODOP package of van Cranenburgh and Bod (2013), excluding punctuation and the ROOT label added by disco-dop from the evaluation. Training was run for 15 epochs. Parsing the 5000 development sentences took about 90-120 seconds for EAFI, which corresponds to 40-55 sentences per second (on a Core i7 2GHz) and is slightly faster than MaltParser using the ADG-derived model and a LibLinear classifier. In the result</context>
+</contexts>
+<marker>Seeker, Farkas, Bohnet, Schmid, Kuhn, 2012</marker>
+<rawString>Seeker, Wolfgang, Rich´ard Farkas, Bernd Bohnet, Helmut Schmid, and Jonas Kuhn. 2012. Data-driven dependency parsing with empty heads. In Proceedings of Coling 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Seeker</author>
+<author>Jonas Kuhn</author>
+</authors>
+<title>Making ellipses explicit in dependency conversion for a german treebank.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Eight International Conference on Language Resources and Evaluation (LREC’12).</booktitle>
+<contexts>
+<context position="32087" citStr="Seeker and Kuhn (2012)" startWordPosition="5203" endWordPosition="5206">des the ROOT node in the evaluation Table 5: Previous results on the NeGra treebank phenomena according to whether they are: • correctly parsed (+): when the incredients for the construction are present in the parse and they are combined in a suitable fashion. • missed (o): when the ingredients for the construction are present, but combined in another way – for example, an extraposition where the extraposed item is misattached • broken (-): when the ingredients for the construction are not present and the parse has a completely different structure. Many of the same categories are discussed by Seeker and Kuhn (2012), who only discuss examples, and by Maier et al. (2014), who published a list of sentence numbers for each phenomenon that is, however, disjoint with the development portion considered here. Although the distinctions between “missed” and “broken” analyses are somewhat subjective, we think that it is still informative in the sense that it helps to compare the relative difficulty of the problems involved. 5.1 Types of Verbless Clauses In their conversion Seeker and Kuhn (2012) found 3 035 sentences that contain at least one empty node in the Tiger treebank, or about one every 16 sentences. While</context>
+</contexts>
+<marker>Seeker, Kuhn, 2012</marker>
+<rawString>Seeker, Wolfgang and Jonas Kuhn. 2012. Making ellipses explicit in dependency conversion for a german treebank. In Proceedings of the Eight International Conference on Language Resources and Evaluation (LREC’12).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+</authors>
+<title>An efficient probabilistic context-free parsing algorithm that computes prefix probabilities.</title>
+<date>1995</date>
+<journal>Computational Linguistics</journal>
+<volume>21</volume>
+<issue>2</issue>
+<contexts>
+<context position="11885" citStr="Stolcke (1995)" startWordPosition="1769" endWordPosition="1770">plicitly stores a very large number of possible trees, followed by either dynamic programming in the case of projective parsing (e.g. (Collins, 2003)) or techniques that provide an approximate or exact solution to the intractable problem in the case of nonprojective parsing with second-order factors (Koo et al., 2010). The second large group of approaches is based on incremental structure building, including the approaches of Magerman (1995) or Sagae and Lavie (2006) in the case of constituent parsing, or of Nivre (2003) and following in the case of dependency parsing, with approaches such as Stolcke (1995) or Huang and Sagae (2010) occupying a middle ground. While the idea of head lexicalization has played a large role in projective constituent parsing, there are rather few approaches that attempt to bridge the gap between dependency and constituency representations in a way that could be exploited for the efficient building of discontinuous constituent structures. Among these, both the approaches of Hall and Nivre (2008) and of Carreras et al. (2008) could be described in terms of a spinal transform: each terminal in the input string is assigned a set of governing nodes that form its spine; pa</context>
+</contexts>
+<marker>Stolcke, 1995</marker>
+<rawString>Stolcke, Andreas. 1995. An efficient probabilistic context-free parsing algorithm that computes prefix probabilities. Computational Linguistics 21(2):165–201.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Heike Telljohann</author>
+<author>Erhard W Hinrichs</author>
+<author>Sandra K¨ubler</author>
+<author>Heike Zinsmeister</author>
+<author>Kathrin Beck</author>
+</authors>
+<title>Stylebook for the T¨ubingen Treebank of Written German (T¨uBa-D/Z).</title>
+<date>2009</date>
+<tech>Technical report, Seminar f¨ur Sprachwissenschaft, Universit¨at T¨ubingen.</tech>
+<marker>Telljohann, Hinrichs, K¨ubler, Zinsmeister, Beck, 2009</marker>
+<rawString>Telljohann, Heike, Erhard W. Hinrichs, Sandra K¨ubler, Heike Zinsmeister, and Kathrin Beck. 2009. Stylebook for the T¨ubingen Treebank of Written German (T¨uBa-D/Z). Technical report, Seminar f¨ur Sprachwissenschaft, Universit¨at T¨ubingen.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stephen Tratz</author>
+<author>Eduard Hovy</author>
+</authors>
+<title>A fast, accurate, non-projective, semantically-enriched parser.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing (EMNLP</booktitle>
+<contexts>
+<context position="8255" citStr="Tratz and Hovy, 2011" startWordPosition="1218" endWordPosition="1221">gree of freedom, and the choice is usually to either attach the respective nodes somewhere else (B¨ohmova et al., 2001; Foth, 2006) or introduce empty nodes that are the governors of the orphaned subtrees (Bosco and Lombardo, 2006; Vincze et al., 2010; Dipper et al., 2013). In dependency parsing, good solutions for nonprojective edges have been found, including pseudoprojective parsing (Nivre and Nilsson, 2005), approximate weighted constraint solving (Koo et al., 2010), as well as deterministic online reordering (Nivre, 2009), which also has been applied to easy-first decoding 40 strategies (Tratz and Hovy, 2011). Seeker et al. (2012) additionally employs an attach-inner operation which allows non-projective insertion into a structure that has already been built. Despite these very reasonable solutions, the treatment of elliptic phrases, whether it is done using the somewhere-else approach or by introducing empty nodes (see Seeker et al., 2012 and references therein) yields uninformative structures for subsequent processing components or even makes it necessary to re-engineer subsequent processing stages for dealing with the newly introduced empty nodes, or (equally impractical) require the refactorin</context>
+<context position="13459" citStr="Tratz and Hovy (2011)" startWordPosition="2027" endWordPosition="2030">stead of assigning nodes to the first terminal of their yield, uses a strategy more like the spinal tree adjoining grammr of Carreras et al. (2008). The other is an application of the principle 41 add ↗ add ↘ ist er he is Zum einen on the one hand [i] AP ADJD popul¨ar popular [i:i+1] AP ADJD außergew¨ohnlich extraordinarily PP S Figure 1: Example for an intermediate state in EaFi, with the preferred action candidates for each position of easy-first parsing, which has been used for unlabeled dependency parsing by Goldberg and Elhalad (2010), and for non-projective labeled dependency parsing by Tratz and Hovy (2011), towards discontinuous constituency parsing. Because computed feature vectors can be memorized and only have to be recomputed in a small window around the last parser action, this latter approach, just as a left-to-right transition-based parser, has an expected time consumption that is linear in the number of words to be parsed. 3.1 ADG: Constituency-to-Dependency Reduction Our baseline is an approach close in spirit to Hall and Nivre (2008): The tree with node labels is turned into a dependency graph that encodes, on the governor edge of each terminal, a combination of (i) the node labels on</context>
+</contexts>
+<marker>Tratz, Hovy, 2011</marker>
+<rawString>Tratz, Stephen and Eduard Hovy. 2011. A fast, accurate, non-projective, semantically-enriched parser. In Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing (EMNLP 2011).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hans Uszkoreit</author>
+</authors>
+<title>Word order and constituent structure in German.</title>
+<date>1987</date>
+<journal>Number</journal>
+<booktitle>in CSLI Lecture Notes. Center for the Study of Language and Information.</booktitle>
+<volume>8</volume>
+<contexts>
+<context position="35410" citStr="Uszkoreit, 1987" startWordPosition="5772" endWordPosition="5773">arenthetical material in a larger clause rather than by themselves.7 5.2 Types of Non-projectivity Phenomena For the purpose of this paper, we will make a three-way distinction in the phenomena that create discontinuities, according to the following questions: • If we serialize the sorted (sub)tree, would the result yield a grammatical sequence? Or, to ask a related question, would anything be missing if we kept only the continuous block of the head? • If we flatten the tree by introducing a common ordering domain for multiple heads (which would be the result of tree flattening as proposed by Uszkoreit, 1987 or of a common argument list as advocated by Hinrichs and Nakazawa, 1989; flattening the sentence is also the solution used in the German LFG grammar of Forst, 2007), would we have gotten rid of the problem? Making these distinctions gives us three rather large categories that we can use to classify nonprojectivity phenomena: Extraposition8 is phenomenon where the sorted subtree would (usually) be grammatical, and where the continuous part only would (usually) be acceptable: 6sentences 40698, 40788, 40836, 41003, 41174, 41218, 41356, 41399, 41544, 41665 7sentences 40698, 40749, 40861, 40894, </context>
+</contexts>
+<marker>Uszkoreit, 1987</marker>
+<rawString>Uszkoreit, Hans. 1987. Word order and constituent structure in German. Number 8 in CSLI Lecture Notes. Center for the Study of Language and Information.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas van Cranenburgh</author>
+</authors>
+<title>Efficient parsing with linear context-free rewriting systems.</title>
+<date>2012</date>
+<booktitle>In EACL</booktitle>
+<marker>van Cranenburgh, 2012</marker>
+<rawString>van Cranenburgh, Andreas. 2012. Efficient parsing with linear context-free rewriting systems. In EACL 2012.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas van Cranenburgh</author>
+<author>Rens Bod</author>
+</authors>
+<title>Discontinuous parsing with an efficient and accurate DOP model.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the International Conference on Parsing Technologies (IWPT</booktitle>
+<marker>van Cranenburgh, Bod, 2013</marker>
+<rawString>van Cranenburgh, Andreas and Rens Bod. 2013. Discontinuous parsing with an efficient and accurate DOP model. In Proceedings of the International Conference on Parsing Technologies (IWPT 2013).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Geertjan van Noord</author>
+</authors>
+<title>Head corner parsing for discontinuous constituency.</title>
+<date>1991</date>
+<booktitle>In Proceedings ofACL</booktitle>
+<marker>van Noord, 1991</marker>
+<rawString>van Noord, Geertjan. 1991. Head corner parsing for discontinuous constituency. In Proceedings ofACL 1991.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yannick Versley</author>
+<author>Heike Zinsmeister</author>
+</authors>
+<title>From dependency parsing to deep(er) semantics.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Fifth International Workshop on Treebanks and Linguistic Theories (TLT</booktitle>
+<contexts>
+<context position="6878" citStr="Versley and Zinsmeister (2006)" startWordPosition="1015" endWordPosition="1018">e governor (except one or more words that are attached to a virtual root node). The common subset of both can be described (in the words of Hockenmaier, 2007) as “Heads, arguments, modifiers, conjuncts”, which includes the grammatical function labels that are added in dependency structures, and to varying extent in phrase structure treebanks. Nivre (2011) goes further and asks whether we need constituents at all, since pure dependency parsing recovers arguments and adjuncts while being generally faster (and, at least for results published on Czech and French which Nivre cites, more accurate). Versley and Zinsmeister (2006) similarly argue that even “deep” dependency relations (including nonlocal ones) can be recovered from single-parent dependencies if subsequent disambiguation steps identify the scope of conjunctions, argument sharing in coordination, passive identification, and lexicalized control phenomena. However, verbless clauses as they may occur in coordination pose a problem to the idea that every phrase is headed by a preterminal, or the equivalent assumption in dependency grammar that every argument has a governing head word. In constituent treebanks, the solution to this problem is rather simple: de</context>
+</contexts>
+<marker>Versley, Zinsmeister, 2006</marker>
+<rawString>Versley, Yannick and Heike Zinsmeister. 2006. From dependency parsing to deep(er) semantics. In Proceedings of the Fifth International Workshop on Treebanks and Linguistic Theories (TLT 2006).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Veronika Vincze</author>
+</authors>
+<title>D´ora Szauter, Attila Alm´asi adn Gy¨orgy M´ora, Zolt´an Alexin, and J´anos Csirik.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Seventh Conference on International Language Resources and Evaluation (LREC</booktitle>
+<marker>Vincze, 2010</marker>
+<rawString>Vincze, Veronika, D´ora Szauter, Attila Alm´asi adn Gy¨orgy M´ora, Zolt´an Alexin, and J´anos Csirik. 2010. Hungarian dependency treebank. In Proceedings of the Seventh Conference on International Language Resources and Evaluation (LREC 2010).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Martin Volk</author>
+<author>Yvonne Samuelsson</author>
+</authors>
+<title>Bootstrapping parallel treebanks.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the 5th International Workshop on Linguistically Interpreted Corpora (LINC) at Coling</booktitle>
+<contexts>
+<context position="3691" citStr="Volk and Samuelsson (2004)" startWordPosition="531" endWordPosition="534">ited to dependencies, and which represents, we’ll argue, both the best and the worst of both worlds. This work is licenced under a Creative Commons Attribution 4.0 International License. Page numbers and proceedings footer are added by the organizers. License details: http://creativecommons.org/licenses/by/4.0/ 39 First Joint Workshop on Statistical Parsing of Morphologically Rich Languages and Syntactic Analysis of Non-Canonical Languages, pages 39–53 Dublin, Ireland, August 23-29 2014. Because of its expressivity, the Negra/Tiger scheme has also been used for other languages such as Swedish Volk and Samuelsson (2004) as well as Georgian/Russian/Ukrainian (Kapanadze, 2012), and as Early New High German (Pauly et al., 2012). The Tiger scheme is arguably more expressive than either of the alternatives since it can capture both elliptic clauses (which are difficult to represent in normal dependency schemes) and nonprojective constructions (which have to be added as a second annotation layer in purely projective treebanks such as T¨uBa-D/Z). It also makes it the most difficult to provide good automatic tool support, in terms of effective parsing components or of annotation tools, since parsing of discontinuous</context>
+</contexts>
+<marker>Volk, Samuelsson, 2004</marker>
+<rawString>Volk, Martin and Yvonne Samuelsson. 2004. Bootstrapping parallel treebanks. In Proceedings of the 5th International Workshop on Linguistically Interpreted Corpora (LINC) at Coling 2004.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

@@ -1,0 +1,956 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000053">
+<title confidence="0.984623">
+Transducer Disambiguation with Sparse Topological Features
+</title>
+<author confidence="0.674487">
+Gonzalo Iglesias† Adri`a de Gispert†$ Bill Byrne†$
+</author>
+<affiliation confidence="0.582889">
+†SDL Research, Cambridge, U.K.
+</affiliation>
+<email confidence="0.92057">
+{giglesias|agispert|bbyrne}@sdl.com
+</email>
+<affiliation confidence="0.99006">
+$Department of Engineering, University of Cambridge, U.K.
+</affiliation>
+<sectionHeader confidence="0.978455" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9999725">
+We describe a simple and efficient al-
+gorithm to disambiguate non-functional
+weighted finite state transducers (WFSTs),
+i.e. to generate a new WFST that con-
+tains a unique, best-scoring path for each
+hypothesis in the input labels along with
+the best output labels. The algorithm uses
+topological features combined with a trop-
+ical sparse tuple vector semiring. We em-
+pirically show that our algorithm is more
+efficient than previous work in a PoS-
+tagging disambiguation task. We use our
+method to rescore very large translation
+lattices with a bilingual neural network
+language model, obtaining gains in line
+with the literature.
+</bodyText>
+<sectionHeader confidence="0.998993" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9997378">
+Weighted finite-state transducers (WFSTs), or lat-
+tices, are used in speech and language process-
+ing to compactly represent and manipulate a large
+number of strings. Applying a finite-state opera-
+tion (eg. PoS tagging) to a lattice via composition
+produces a WFST that maps input (eg. words)
+onto output strings (eg. PoS tags) and preserves
+the arc-level alignment between each input and
+output symbol (eg. each arc is labeled with a
+word-tag pair and has a weight). Typically, the
+result of such operation is a WFST that is am-
+biguous because it contains multiple paths with the
+same input string, and non-functional because it
+contains multiple output strings for a given input
+string (Mohri, 2009).
+Disambiguating such WFSTs is the task of cre-
+ating a WFST that encodes only the best-scoring
+path of each input string, while still maintaining
+the arc-level mapping between input and output
+symbols. This is a non-trivial task1, and so far only
+</bodyText>
+<footnote confidence="0.612924">
+1Unless one enumerates all the possible input strings in
+</footnote>
+<listItem confidence="0.977913090909091">
+one algorithm has been described (Shafran et al.,
+2011); the main steps are:
+(a) Map the WFST into an equivalent weighted
+finite-state automata (WFSA) using weights
+that contain both the WFST weight and out-
+put symbols (using a special semiring)
+(b) Apply WFSA determinization under this
+semiring to ensure that only one unique path
+per input string survives
+(c) Expand the result back to an WFST that pre-
+serves arc-level alignments
+</listItem>
+<bodyText confidence="0.999747133333333">
+We present a new disambiguation algorithm
+that can efficiently accomplish this. In Section 2
+we describe how the tropical sparse tuple vec-
+tor semiring can keep track of individual arcs in
+the original WFST as topological features during
+the mapping step (a). This allows us to describe
+in Section 3 an efficient expansion algorithm for
+step (c). We show in Section 4 empirical evidence
+that our algorithm is more efficient than Shafran et
+al. (2011) in their same PoS-tagging task. We also
+show how our method can be applied in rescor-
+ing translation lattices under a bilingual neural-
+network model (Devlin et al., 2014), obtaining
+BLEU score gains consistent with the literature.
+Section 5 reviews related work and concludes.
+</bodyText>
+<sectionHeader confidence="0.929866" genericHeader="method">
+2 Semiring Definitions
+</sectionHeader>
+<bodyText confidence="0.979557571428571">
+A WFST T = (E, A, Q, I, F, E, p) over a semir-
+ing (K, ®, ®, 0,1) has input and output alphabets
+E and A, a set of states Q, the initial state I E Q,
+a set of final states F C Q, a set of transitions
+(edges)EC (Q x E x A x K x Q), and a final
+state function p : F —* K. We focus on extensions
+to the tropical semiring (R + oc, min, +, oc, 0).
+</bodyText>
+<footnote confidence="0.896836333333333">
+the lattice, searches for the best output string for each in-
+put string, and converts the resulting sequences back into a
+WFST, which is clearly inefficient.
+</footnote>
+<page confidence="0.862825">
+2275
+</page>
+<note confidence="0.676077">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2275–2280,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.9909605">
+Let e = (p[e], i[e], o[e], w[e], n[e]) be an edge
+in E. A path 7r = e1...en is a sequence of edges
+</bodyText>
+<equation confidence="0.901314571428572">
+such that n[ej] = p[ej+1],1 &lt; j &lt; n. w[7r] =
+(9
+ejEπ w[ej] ; p[7r] = p[e1], n[7r] = n[en]. A path
+is accepting ifp[7r] = I and n[7r] E F. The weight
+associated by T to a set of paths II is T (II) =
+®
+πErf w[7r] ® ρ(n[7r]).
+</equation>
+<subsectionHeader confidence="0.993029">
+2.1 Tropical Sparse Vector Semiring
+</subsectionHeader>
+<bodyText confidence="0.992487230769231">
+Let ¯f[ei] = fi E RN be the unweighted feature
+vector associated with edge ei, and let α¯ E RN be
+a global feature weight vector. The tropical weight
+is then found as wi = w[ei] = ¯α� fi = Ek αkfi,k.
+Given a fixed ¯α, we define the operators for the
+For each edge ek = (pk, ik, ok, wk, nk) of T,
+we create an edge ek = (pk,ik,ik, fk, nk) in A,
+fk = [wk, 0, ... , 0,1, 0, ... , 0]; the 1 is in
+the kth position. In other words, fk,0 is the tropical
+weight of the kth edge in T and fk,k = 1 indicates
+that this tropical weight belongs to edge k in T. In
+sparse notation, fk = [(0, wk), (k, 1)].
+For example, this non-deterministic transducer T:
+</bodyText>
+<figure confidence="0.932066285714286">
+b : B/1
+3
+a : A/2
+1
+a : Z/3
+c : D/4
+b : V/5
+4
+2
+5
+where
+fj = min(¯α �
+tropical vector semiring as:
+is mapped to acceptor A with topological features:
+</figure>
+<equation confidence="0.9699216">
+fi ®α
+fi, α¯ .
+fi ®α
+fj) and
+fj = Ek αk(fi,k + fj,k). The
+fi ®α
+vector semiring as
+fj =wi®wj and fi ®α
+fi *
+times operator as:
+fj = fm, where fm,k =
+tropical weights are maintained correctly by the
+fj = wi ®wj. Finally, we define the element-wise
+fi,k+fj,k, bk. It follows that wi0wj = α-(
+fi*
+fj).
+b/[(0, 1), (3, 1)]
+b/[(0, 5), (4, 1)]
+a/[(0, 3), (2, 1)] c/[(0, 4), (5, 1)]
+a/[(0, 2), (1, 1)]
+</equation>
+<bodyText confidence="0.99989">
+When dealing with high-dimensional feature
+vectors which have few non-zero elements, it
+is convenient in practice (for computational effi-
+ciency) to use a sparse representation for vectors:
+f¯ = [(i, fi), i : fi =� 0]. That is, f¯ is comprised
+of a sparse set of tuples (i, fi), where i is a feature
+index and fi is its value; e.g. [(2, f2)] is short for
+[0, f2, 0, 0] if N = 4.
+The semiring that operates on sparse feature
+vectors, which we call tropical sparse tuple vec-
+tor semiring2, uses conceptually identical opera-
+tors as the non-sparse version defined above, so it
+also maintains the tropical weights w correctly.
+</bodyText>
+<sectionHeader confidence="0.985107" genericHeader="method">
+3 A Disambiguation Algorithm
+</sectionHeader>
+<bodyText confidence="0.9999916">
+We now describe how we use the semiring de-
+scribed in Section 2 for steps (a) and (b), and de-
+scribe an expansion algorithm for step (c) that effi-
+ciently converts the output of determinization into
+an unambiguous WFST with arc-level alignments.
+</bodyText>
+<subsectionHeader confidence="0.422387">
+WFSA with Sparse Topological Features
+</subsectionHeader>
+<bodyText confidence="0.999454428571429">
+Let T be a tropical-weight WFST with K edges.
+T is topologically sorted so that if an edge ek pre-
+ceeds an edge ek&apos; on a path, then k &lt; k�. We now
+use tropical sparse tuple vector weights to create
+a WFSA A that maintains (in its weights) pointers
+to specific edges in T. These ’pointers’ are sparse
+topological features.
+</bodyText>
+<footnote confidence="0.7201085">
+2We implement this semiring as an extension to the sparse
+tuple weights of the OpenFst library (Allauzen et al., 2007).
+</footnote>
+<bodyText confidence="0.942800166666667">
+Given α = [1, 0, ... , 0], operations on A yield the
+same path weights as in the usual tropical semir-
+ing.
+WFSA determinization
+We now apply the standard determinization algo-
+rithm to A, which yields AD:
+</bodyText>
+<equation confidence="0.905537">
+a/[(0, 2), (1, 1)]
+c/[(0, 5), (1, −1), (2, 1), (5, 1)]
+</equation>
+<bodyText confidence="0.999700368421053">
+This now accepts only one best-scoring path
+for each input string, and the weights ’point’ to
+the sequence of arcs traversed by the relevant
+path in T. In turn, this reveals the best output
+string for the given input string. For example,
+the path-level features associated with ‘a b’ are
+[(0, 3), (1, 1), (3,1)], indicating a path 7r = e1e3
+with tropical weight 3 through T (and hence out-
+put string ‘AB’).
+The topology of AD is compact because multi-
+ple input strings may share arcs while still encod-
+ing different output strings in their weights. This
+is achieved by ‘cancelling’ topological features in
+subsequent arcs and ‘replacing’ them by new ones
+as one traverses the path. For example, the string
+‘a c’ initially has feature (1, 1), but this gets can-
+celled later in the path by (1, -1), and replaced by
+[(2, 1), (5,1)], indicating a path 7r = e2e5 through
+T with output string ‘ZD’.
+</bodyText>
+<equation confidence="0.6424614">
+b/[(0, 1), (3, 1)]
+2276
+EXPANDTFEA(A&apos; = (E, A, Q, I, F, E))
+1 I0 ← (I,0)
+2 ENQUEUE(S, I0)
+</equation>
+<figure confidence="0.976213363636364">
+3 while |S |do
+4 (q, ¯f) ← HEAD(S)
+5 DEQUEUE(S)
+6 if q ∈ F then
+7 F0 ← F0 ∪ {(q, f))}
+10 q0 ← (n[e], ¯f0)
+11 e0 ← ((q, ¯f), i[e], i[e], [(0, w0), (t0, 1)], q0)
+12 Q0 ← Q0 ∪ {q0}
+13 E0 ← E0 ∪ {e0}
+14 ENQUEUE(S, (n[e], ¯f0))
+15 return B&apos; = (E, A, Q0, I0, F0, E0)
+</figure>
+<figureCaption confidence="0.8768425">
+Figure 1: Expansion and topological feature repo-
+sitioning algorithm for step (c).
+</figureCaption>
+<sectionHeader confidence="0.516126" genericHeader="method">
+Expansion Algorithm
+</sectionHeader>
+<bodyText confidence="0.999953117647059">
+We now describe an expansion algorithm to con-
+vert AD into an unambiguous WFST T0 that main-
+tains the arc-level input-output alignments of the
+original transducer T. In our example, T0 should
+be identical to T except for edge 4, which is re-
+moved.
+Due to the WFSA determinization algorithm,
+we observe empirically that the cancelling features
+in AD tend to appear in a path after the feature it-
+self. This allows us to define an algorithm that tra-
+verses AD in reverse (from its final states to its ini-
+tial state) and creates an equivalent acceptor with
+the topology of T0.
+The algorithm is described in Figure 1. It per-
+forms a forward pass through Ar (the reverse of
+AD). The intuition is that, for each arc, we cre-
+ate a new arc where we ‘pop’ the highest topo-
+logical feature (as it will not be cancelled later)
+and its tropical weight. The new states encode the
+original state q and the residual features that have
+not been ‘popped’ yet. For each edge E(q), the
+auxiliary POPTFEA(¯f, e) returns a (w0, t0, ¯f0) tu-
+ple, where w0 is the tropical weight obtained as
+f®ca f[e] (which is equivalent to fo + f[e]0 given
+our ¯α); t0 is the index of the highest topological
+feature of f* f[e]; and f0 is the vector of resid-
+ual topological features after excluding fo and ft0,
+that is, f* f[e] * [(0, −w0), (t0, −1)]. For exam-
+ple, POPTFEA([(0, 5), (1, −1), (2,1), (6,1)]) re-
+turns (5, 6, [(1, −1), (2,1)]); if w has only one
+topological feature, the residual is 0. The residual
+in all final states of Br will be 0 (no topological
+features still to be popped).
+Graphically, in our running example Ar is:
+</bodyText>
+<equation confidence="0.9985225">
+b/[(0, 1), (3, 1)] a/[(0, 2), (1, 1)]
+1 2 3
+</equation>
+<bodyText confidence="0.50332">
+c/[(0, 5), (1, −1), (2, 1), (5, 1)]
+and the output is Br:
+</bodyText>
+<equation confidence="0.99804925">
+b/[(0, 1), (3, 1)] a/[(0, 2), (1, 1)]
+(2, 0)
+(1, 0)
+c/[(0, 5), (5, 1)] (2, [(1, −1), (2,1)]) a/[(0, 2), (2, 1)]
+</equation>
+<bodyText confidence="0.999775571428571">
+Reversing Br yields an acceptor B (still in
+the sparse tuple vector semiring) which has the
+same topology as our goal T0 and can be trivially
+mapped to T0 in linear time: each arc takes the
+tropical weight via α¯ and has only one topological
+feature which points to the arc in T containing the
+required output symbol.
+</bodyText>
+<sectionHeader confidence="0.622842" genericHeader="method">
+Two-pass Expansion
+</sectionHeader>
+<bodyText confidence="0.99998878125">
+As mentioned earlier, our algorithm relies on ‘can-
+celling’ topological features appearing after the
+feature they cancel in a given path. In general,
+consider T a weighted transducer and A it’s equiv-
+alent automaton with sparse topological features,
+as described here. Ap is the result of applying
+standard WFST operations, such as determiniza-
+tion, minimization or shortest path. Assume as a
+final step that the weights have been pushed to-
+wards the final states. It is worth noting the prop-
+erty that: two topological features in a path ac-
+cepted by A will never get reordered in Ap, al-
+though they can appear together on the same edge,
+as shown in our running example. Indeed, if Ap
+contains only one single path, all the topological
+features would appear on the final state.
+Let us define a function dA(e) as the minimum
+number of edges on any path in A from the start
+state to n[e] through edge e.
+Consider all edges ei in A and ep in Ap, with
+f[ei]i = 1 and f[ep]i =� 0, i.e. we are interested
+in the topological feature contribution on ep due
+to the edge ei in A. If dA(ei) G dA,(ep) is al-
+ways satisfied, then EXPANDTFEA will yield the
+correct answer because the residual at each state,
+together with the the weight of the current edge,
+contains all the necessary information to pop the
+next correct topological feature.
+However, many deterministic WFSAs will not
+exhibit this behaviour (eg. minimised WFSAs),
+even after pushing the weights towards the final
+states. For example see this acceptor A:
+</bodyText>
+<equation confidence="0.8263296">
+8 for each e ∈ E(q) do
+9 (w0, t0,
+¯f0)←POP
+TFEA(¯f, e)
+(3, 0)
+</equation>
+<page confidence="0.968911">
+2277
+</page>
+<figureCaption confidence="0.9792425">
+Figure 2: Number of succesfully disambiguated transducers over time for PoS tagged lattices (left) and
+HiFST lattices (right).
+</figureCaption>
+<bodyText confidence="0.995477166666667">
+that t&apos; is now the index of the lowest topological
+feature of f¯ ∗ ¯f[e]. This expands the acceptor cor-
+rectly. Because correct expansions yield 0 residu-
+als on the final states, the algorithm can be trivially
+modified to trigger the second pass automatically
+if the residual on any final state is not 0.
+</bodyText>
+<equation confidence="0.997053545454546">
+And Ap is a minimised version of A:
+ep1 = y
+ep3 = x/[(0, 3), (1, 1)(3, 1)]
+0 1 2
+ep2 = z/[(0, 4), (1, −1), (3, −1), (2, 1), (4, 1)]
+e1 = y/[(0, 1), (1, 1)] e3 = x/[(0, 2), (3, 1)]
+1
+3
+2
+e2 = z/[(0, 3), (2, 1)] e4 = x/[(0, 4), (4, 1)]
+0
+</equation>
+<bodyText confidence="0.999812043478261">
+As dA(e3) = dA(e4) = 2 and dAp(ep2) = 1,
+the distance test fails for both topo-
+logical features (3, −1)(4,1). Running
+Br=EXPANDTFEA((Ap)r) will not cancel
+feature (3, 1) along the path ‘z x’ and will pop
+(4, 1) instead, storing the remaining none-0
+residual in a final state of Br.
+As mentioned before, two topological features
+along the same path in A will not reorder in Ap.
+In this example, as (4, 1) appears in edge ep2, fea-
+ture (2, 1) must also appear in this edge (or on an
+earlier edge, in a more complicated machine). In
+general, any remaining topological features along
+the path back to the start state of Ap will all be
+popped after their correct edges in Br. All edges
+in Br pass the distance test compared to Ar, the re-
+versed form of A: for all edges ez with f[ez]z = 1
+in Ar and eq in Br such that f[eq]z =� 0, dAr(ez) ≤
+dBr(eq). Edges in these machines are now reverse
+sorted, i.e. if an edge ek precedes an edge ek&apos; on a
+path, then k&apos; &lt; k.
+We can perform a second pass with the same al-
+gorithm over B, with the only minor modification
+</bodyText>
+<sectionHeader confidence="0.998973" genericHeader="evaluation">
+4 Experiments
+</sectionHeader>
+<bodyText confidence="0.999979">
+We evaluate our algorithm, henceforth called topo-
+logical, in two ways: we empirically contrast
+disambiguation times against previous work, and
+then apply it to rescore translation lattices with
+bilingual neural network models.
+</bodyText>
+<subsectionHeader confidence="0.999126">
+4.1 PoS Transducer Disambiguation
+</subsectionHeader>
+<bodyText confidence="0.999909157894737">
+We apply our algorithm to the 4,664 NIST English
+CTS RT Dev04 set PoS tagged lattices used by
+Sproat el al. (2014); these were generated with a
+speech recognizer similar to (Soltau et al., 2005)
+and tagged with a WFST-based HMM tagger. The
+average number of states is 493. We contrast with
+the lexicographic tropical categorial semiring im-
+plementation of Shafran et al. (2011), henceforth
+referred to as the categorial method.
+Figure 2 (left) shows the number of disam-
+biguated WFSTs as processing time increases.
+The topological algorithm proves much faster (and
+we observe no memory footprint differences). In
+50ms it disambiguates 3540 transducers, as op-
+posed to the 2771 completed by the categorial pro-
+cedure; the slowest WFST to disambiguate takes
+230 seconds in the categorial procedure and 60
+seconds in our method. Using sparse topological
+features with our semiring disambiguates all WF-
+</bodyText>
+<page confidence="0.974815">
+2278
+</page>
+<bodyText confidence="0.937547">
+STs faster in 99.8% of cases.
+</bodyText>
+<subsectionHeader confidence="0.97206">
+4.2 Neural Network Bilingual Rescoring
+</subsectionHeader>
+<bodyText confidence="0.998643055555556">
+We use the disambiguation algorithm to apply the
+bilingual neural network language model (BiLM)
+of Devlin et al. (2014) to the output lattices of the
+CUED OpenMT12 Arabic-English hierarchical
+phrase-based translation system3 using HiFST (de
+Gispert et al., 2010). We use a development set
+mt0205tune (2075 sentences) and a validation set
+mt0205test (2040 sentences) from the NIST MT02
+through MT05 evaluation sets.
+The edges in these WFSTs are of the form
+t:i/w, where t is the target word, i is the source
+sentence position t aligns to, and w contains the
+translation and language model score. HiFST
+outputs these WFSTs by using a standard hi-
+ero grammar (Chiang, 2007) augmented with tar-
+get side heuristic alignments or affiliations to the
+source (Devlin et al., 2014).
+In a rule over source and target words
+</bodyText>
+<equation confidence="0.954747">
+X →&lt; s1 X s2 s3, t1 X t2 &gt; /2,1
+</equation>
+<bodyText confidence="0.99927937037037">
+the feature ‘2, 1’ indicates that the target word t1
+is aligned to source word s2 and that t2 aligns to
+s1. As rules are applied in translation, this infor-
+mation can be used to link target words to absolute
+positions within the source sentence.
+Allowing for admissible pruning, all possible
+affiliation sequences under the grammar for ev-
+ery translation are available in the WFSTs; dis-
+ambiguation keeps the best affiliation sequence
+for each translation hypothesis, which allows the
+rescoring of very large lattices with the BiLM
+model.
+This disambiguation task involves much bigger
+lattices than the POS-tagging task: the average
+number of states of the HiFST lattices is 38,200.
+Figure 2 (right) shows the number of mt0205tune
+disambiguated WFSTs over time compared to the
+categorial method. As with the PoS disambigua-
+tion task, the topological method is always much
+faster than the categorial one. After 10 seconds,
+our method has disambiguated 1953 lattices out of
+2075, whereas the categorial method has only fin-
+ished 1405. The slowest WFST to disambiguate
+takes 6700 seconds with the categorial procedure,
+which compares to 1000 seconds in our case.
+The BiLM model is trained with
+NPLM (Vaswani et al., 2013) with a context
+</bodyText>
+<footnote confidence="0.981231">
+3See http://www.nist.gov/itl/iad/mig/openmt12results.cfm.
+</footnote>
+<table confidence="0.997048666666667">
+system mt0205tune mt0205test
+baseline 52.2 51.9
++BiLM 53.0 52.9
+</table>
+<tableCaption confidence="0.999938">
+Table 1: Translation scores in lower-case BLEU.
+</tableCaption>
+<bodyText confidence="0.98841625">
+of 3 source and 4 target words. Lattice rescoring
+with this model requires a special variation of the
+standard WFST composition which looks at both
+input and output labels on a transducer arc; we use
+KenLM (Heafield, 2011) to retrieve neural net-
+work scores for on-the-fly composition. We retune
+the parameters with Lattice MERT (Macherey
+et al., 2008) . Results are shown in Table 1.
+Acknowledging the task differences with respect
+to (Devlin et al., 2014), we find BLEU gains
+consistent with rescoring results reported in their
+Table 5.
+</bodyText>
+<sectionHeader confidence="0.997649" genericHeader="conclusions">
+5 Conclusions and Related Work
+</sectionHeader>
+<bodyText confidence="0.999970629629629">
+We have described a tagging disambiguation algo-
+rithm that supports non-functional WFSTs, which
+cannot be handled directly by neither WFST deter-
+minization (Mohri, 1997) nor WFST disambigua-
+tion (Mohri, 2012). We show it is faster than
+the implementation with a lexicographic-tropical-
+categorial semiring described by Shafran et al.
+(2011) and describe a use case in a practical
+rescoring task of an MT system with bilingual
+neural networks that yield 1.0 BLEU gain.
+Povey et al. (2012) also use a special semir-
+ing that allows to map non-functional WFSTs into
+WFSAs by inserting the tag into a string weight.
+However, in contrast to our implementation and
+that of Shafran et al (2011), no expansion into an
+WFST with aligned input/output is described.
+Lexicographic semirings, used for PoS tagging
+disambiguation (Shafran et al., 2011), have been
+also shown to be useful in other tasks (Sproat et
+al., 2014), such as optimized epsilon encoding for
+backoff language models (Roark et al., 2011), and
+hierarchical phrase-based decoding with Push-
+down Automata (Allauzen et al., 2014).
+The tools for disambiguation and WFST com-
+position with bilingual models, along with a tu-
+torial to replicate Section 4.2, are all available at
+http://ucam-smt.github.io.
+</bodyText>
+<sectionHeader confidence="0.99862" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9977385">
+We thank the authors of (Sproat et al., 2014) for
+generously sharing their PoS-tagging experiments.
+</bodyText>
+<page confidence="0.992397">
+2279
+</page>
+<sectionHeader confidence="0.990176" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.99990419402985">
+Cyril Allauzen, Michael Riley, Johan Schalkwyk, Wo-
+jciech Skut, and Mehryar Mohri. 2007. OpenFst: A
+General and Efficient Weighted Finite-State Trans-
+ducer Library. In Proceedings of CIAA.
+Cyril Allauzen, Bill Byrne, Adri`a de Gispert, Gonzalo
+Iglesias, and Michael Riley. 2014. Pushdown Au-
+tomata in Statistical Machine Translation. Compu-
+tational Linguistics, 40(3):687–723.
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Computational Linguistics, 33(2):201–228.
+Adri`a de Gispert, Gonzalo Iglesias, Graeme Black-
+wood, Eduardo R. Banga, and William Byrne. 2010.
+Hierarchical phrase-based translation with weighted
+finite-state transducers and shallow-n grammars.
+Computational Linguistics, 36(3):505–533.
+Jacob Devlin, Rabih Zbib, Zhongqiang Huang, Thomas
+Lamar, Richard Schwartz, and John Makhoul. 2014.
+Fast and Robust Neural Network Joint Models for
+Statistical Machine Translation. In Proceedings of
+ACL.
+Kenneth Heafield. 2011. KenLM: Faster and Smaller
+Language Model Queries. In Proceedings of
+EMNLP.
+Wolfgang Macherey, Franz Och, Ignacio Thayer, and
+Jakob Uszkoreit. 2008. Lattice-based Minimum
+Error Rate Training for Statistical Machine Trans-
+lation. In Proceedings of EMNLP.
+Mehryar Mohri. 1997. Finite-state transducers in lan-
+guage and speech processing. Computational Lin-
+guistics, 23:269–311.
+Mehryar Mohri. 2009. Weighted automata algo-
+rithms. In Manfred Droste, Werner Kuich, and
+Heiko Vogler, editors, Handbook of Weighted Au-
+tomata, Monographs in Theoretical Computer Sci-
+ence. An EATCS Series, pages 213–254. Springer
+Berlin Heidelberg.
+Mehryar Mohri. 2012. A Disambiguation Algorithm
+for Finite Automata and Functional Transducers. In
+Proceedings of CIAA, volume 7381, pages 265–277.
+Daniel Povey, Mirko Hannemann, Gilles Boulianne,
+Lukas Burget, Arnab Ghoshal, Milos Janda, Mar-
+tin Karafiat, Stefan Kombrink, Petr Motlıcek, Yan-
+min Qian, Korbinian Riedhammer, Karel Vesely,
+and Ngoc Thang Vu. 2012. Generating Exact Lat-
+tices in the WFST Framework. In Proceedings of
+ICASSP.
+Brian Roark, Richard Sproat, and Izhak Shafran. 2011.
+Lexicographic Semirings for Exact Automata En-
+coding of Sequence Models. In Proceedings of
+ACL-HLT.
+Izhak Shafran, Richard Sproat, Mahsa Yarmohammadi,
+and Brian Roark. 2011. Efficient Determinization
+of Tagged Word Lattices using Categorial and Lexi-
+cographic Semirings. In Proceedings of ASRU.
+Hagen Soltau, Brian Kingsbury, Lidia Mangu, Daniel
+Povey, George Saon, and Geoffrey Zweig. 2005.
+The IBM 2004 Conversational Telephony System
+for Rich Transcription. In Proceedings of ICASSP.
+Richard Sproat, Mahsa Yarmohammadi, Izhak Shafran,
+and Brian Roark. 2014. Applications of Lex-
+icographic Semirings to Problems in Speech and
+Language Processing. Computational Linguistics,
+40(4):733–761.
+Ashish Vaswani, Yinggong Zhao, Victoria Fossum, and
+David Chiang. 2013. Decoding with Large-Scale
+Neural Language Models Improves Translation. In
+Proceedings of EMNLP.
+</reference>
+<page confidence="0.988516">
+2280
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.458389">
+<title confidence="0.996691">Transducer Disambiguation with Sparse Topological Features</title>
+<author confidence="0.968958">Adri`a de_Bill</author>
+<affiliation confidence="0.520733">Research, Cambridge,</affiliation>
+<address confidence="0.805122">of Engineering, University of Cambridge, U.K.</address>
+<abstract confidence="0.999652588235294">We describe a simple and efficient algorithm to disambiguate non-functional weighted finite state transducers (WFSTs), i.e. to generate a new WFST that contains a unique, best-scoring path for each hypothesis in the input labels along with the best output labels. The algorithm uses topological features combined with a tropical sparse tuple vector semiring. We empirically show that our algorithm is more efficient than previous work in a PoStagging disambiguation task. We use our method to rescore very large translation lattices with a bilingual neural network language model, obtaining gains in line with the literature.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Michael Riley</author>
+<author>Johan Schalkwyk</author>
+<author>Wojciech Skut</author>
+<author>Mehryar Mohri</author>
+</authors>
+<title>OpenFst: A General and Efficient Weighted Finite-State Transducer Library.</title>
+<date>2007</date>
+<booktitle>In Proceedings of CIAA.</booktitle>
+<contexts>
+<context position="6676" citStr="Allauzen et al., 2007" startWordPosition="1196" endWordPosition="1199"> an expansion algorithm for step (c) that efficiently converts the output of determinization into an unambiguous WFST with arc-level alignments. WFSA with Sparse Topological Features Let T be a tropical-weight WFST with K edges. T is topologically sorted so that if an edge ek preceeds an edge ek&apos; on a path, then k &lt; k�. We now use tropical sparse tuple vector weights to create a WFSA A that maintains (in its weights) pointers to specific edges in T. These ’pointers’ are sparse topological features. 2We implement this semiring as an extension to the sparse tuple weights of the OpenFst library (Allauzen et al., 2007). Given α = [1, 0, ... , 0], operations on A yield the same path weights as in the usual tropical semiring. WFSA determinization We now apply the standard determinization algorithm to A, which yields AD: a/[(0, 2), (1, 1)] c/[(0, 5), (1, −1), (2, 1), (5, 1)] This now accepts only one best-scoring path for each input string, and the weights ’point’ to the sequence of arcs traversed by the relevant path in T. In turn, this reveals the best output string for the given input string. For example, the path-level features associated with ‘a b’ are [(0, 3), (1, 1), (3,1)], indicating a path 7r = e1e3 </context>
+</contexts>
+<marker>Allauzen, Riley, Schalkwyk, Skut, Mohri, 2007</marker>
+<rawString>Cyril Allauzen, Michael Riley, Johan Schalkwyk, Wojciech Skut, and Mehryar Mohri. 2007. OpenFst: A General and Efficient Weighted Finite-State Transducer Library. In Proceedings of CIAA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Cyril Allauzen</author>
+<author>Bill Byrne</author>
+<author>Adri`a de Gispert</author>
+<author>Gonzalo Iglesias</author>
+<author>Michael Riley</author>
+</authors>
+<date>2014</date>
+<booktitle>Pushdown Automata in Statistical Machine Translation. Computational Linguistics,</booktitle>
+<pages>40--3</pages>
+<marker>Allauzen, Byrne, de Gispert, Iglesias, Riley, 2014</marker>
+<rawString>Cyril Allauzen, Bill Byrne, Adri`a de Gispert, Gonzalo Iglesias, and Michael Riley. 2014. Pushdown Automata in Statistical Machine Translation. Computational Linguistics, 40(3):687–723.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Computational Linguistics,</journal>
+<volume>33</volume>
+<issue>2</issue>
+<contexts>
+<context position="15610" citStr="Chiang, 2007" startWordPosition="2830" endWordPosition="2831">al neural network language model (BiLM) of Devlin et al. (2014) to the output lattices of the CUED OpenMT12 Arabic-English hierarchical phrase-based translation system3 using HiFST (de Gispert et al., 2010). We use a development set mt0205tune (2075 sentences) and a validation set mt0205test (2040 sentences) from the NIST MT02 through MT05 evaluation sets. The edges in these WFSTs are of the form t:i/w, where t is the target word, i is the source sentence position t aligns to, and w contains the translation and language model score. HiFST outputs these WFSTs by using a standard hiero grammar (Chiang, 2007) augmented with target side heuristic alignments or affiliations to the source (Devlin et al., 2014). In a rule over source and target words X →&lt; s1 X s2 s3, t1 X t2 &gt; /2,1 the feature ‘2, 1’ indicates that the target word t1 is aligned to source word s2 and that t2 aligns to s1. As rules are applied in translation, this information can be used to link target words to absolute positions within the source sentence. Allowing for admissible pruning, all possible affiliation sequences under the grammar for every translation are available in the WFSTs; disambiguation keeps the best affiliation sequ</context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Computational Linguistics, 33(2):201–228.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adri`a de Gispert</author>
+<author>Gonzalo Iglesias</author>
+<author>Graeme Blackwood</author>
+<author>Eduardo R Banga</author>
+<author>William Byrne</author>
+</authors>
+<title>Hierarchical phrase-based translation with weighted finite-state transducers and shallow-n grammars.</title>
+<date>2010</date>
+<journal>Computational Linguistics,</journal>
+<volume>36</volume>
+<issue>3</issue>
+<marker>de Gispert, Iglesias, Blackwood, Banga, Byrne, 2010</marker>
+<rawString>Adri`a de Gispert, Gonzalo Iglesias, Graeme Blackwood, Eduardo R. Banga, and William Byrne. 2010. Hierarchical phrase-based translation with weighted finite-state transducers and shallow-n grammars. Computational Linguistics, 36(3):505–533.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Devlin</author>
+<author>Rabih Zbib</author>
+<author>Zhongqiang Huang</author>
+<author>Thomas Lamar</author>
+<author>Richard Schwartz</author>
+<author>John Makhoul</author>
+</authors>
+<title>Fast and Robust Neural Network Joint Models for Statistical Machine Translation.</title>
+<date>2014</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="2934" citStr="Devlin et al., 2014" startWordPosition="462" endWordPosition="465">s We present a new disambiguation algorithm that can efficiently accomplish this. In Section 2 we describe how the tropical sparse tuple vector semiring can keep track of individual arcs in the original WFST as topological features during the mapping step (a). This allows us to describe in Section 3 an efficient expansion algorithm for step (c). We show in Section 4 empirical evidence that our algorithm is more efficient than Shafran et al. (2011) in their same PoS-tagging task. We also show how our method can be applied in rescoring translation lattices under a bilingual neuralnetwork model (Devlin et al., 2014), obtaining BLEU score gains consistent with the literature. Section 5 reviews related work and concludes. 2 Semiring Definitions A WFST T = (E, A, Q, I, F, E, p) over a semiring (K, ®, ®, 0,1) has input and output alphabets E and A, a set of states Q, the initial state I E Q, a set of final states F C Q, a set of transitions (edges)EC (Q x E x A x K x Q), and a final state function p : F —* K. We focus on extensions to the tropical semiring (R + oc, min, +, oc, 0). the lattice, searches for the best output string for each input string, and converts the resulting sequences back into a WFST, wh</context>
+<context position="15060" citStr="Devlin et al. (2014)" startWordPosition="2738" endWordPosition="2741">mbiguated WFSTs as processing time increases. The topological algorithm proves much faster (and we observe no memory footprint differences). In 50ms it disambiguates 3540 transducers, as opposed to the 2771 completed by the categorial procedure; the slowest WFST to disambiguate takes 230 seconds in the categorial procedure and 60 seconds in our method. Using sparse topological features with our semiring disambiguates all WF2278 STs faster in 99.8% of cases. 4.2 Neural Network Bilingual Rescoring We use the disambiguation algorithm to apply the bilingual neural network language model (BiLM) of Devlin et al. (2014) to the output lattices of the CUED OpenMT12 Arabic-English hierarchical phrase-based translation system3 using HiFST (de Gispert et al., 2010). We use a development set mt0205tune (2075 sentences) and a validation set mt0205test (2040 sentences) from the NIST MT02 through MT05 evaluation sets. The edges in these WFSTs are of the form t:i/w, where t is the target word, i is the source sentence position t aligns to, and w contains the translation and language model score. HiFST outputs these WFSTs by using a standard hiero grammar (Chiang, 2007) augmented with target side heuristic alignments o</context>
+<context position="17638" citStr="Devlin et al., 2014" startWordPosition="3157" endWordPosition="3160">ttp://www.nist.gov/itl/iad/mig/openmt12results.cfm. system mt0205tune mt0205test baseline 52.2 51.9 +BiLM 53.0 52.9 Table 1: Translation scores in lower-case BLEU. of 3 source and 4 target words. Lattice rescoring with this model requires a special variation of the standard WFST composition which looks at both input and output labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescoring task of an MT system with bilingual neural networks that yield 1.0 BLEU gain. Povey et al. (2012) also</context>
+</contexts>
+<marker>Devlin, Zbib, Huang, Lamar, Schwartz, Makhoul, 2014</marker>
+<rawString>Jacob Devlin, Rabih Zbib, Zhongqiang Huang, Thomas Lamar, Richard Schwartz, and John Makhoul. 2014. Fast and Robust Neural Network Joint Models for Statistical Machine Translation. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+</authors>
+<title>KenLM: Faster and Smaller Language Model Queries.</title>
+<date>2011</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="17404" citStr="Heafield, 2011" startWordPosition="3121" endWordPosition="3122">s only finished 1405. The slowest WFST to disambiguate takes 6700 seconds with the categorial procedure, which compares to 1000 seconds in our case. The BiLM model is trained with NPLM (Vaswani et al., 2013) with a context 3See http://www.nist.gov/itl/iad/mig/openmt12results.cfm. system mt0205tune mt0205test baseline 52.2 51.9 +BiLM 53.0 52.9 Table 1: Translation scores in lower-case BLEU. of 3 source and 4 target words. Lattice rescoring with this model requires a special variation of the standard WFST composition which looks at both input and output labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation w</context>
+</contexts>
+<marker>Heafield, 2011</marker>
+<rawString>Kenneth Heafield. 2011. KenLM: Faster and Smaller Language Model Queries. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Wolfgang Macherey</author>
+<author>Franz Och</author>
+<author>Ignacio Thayer</author>
+<author>Jakob Uszkoreit</author>
+</authors>
+<title>Lattice-based Minimum Error Rate Training for Statistical Machine Translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="17533" citStr="Macherey et al., 2008" startWordPosition="3139" endWordPosition="3142"> 1000 seconds in our case. The BiLM model is trained with NPLM (Vaswani et al., 2013) with a context 3See http://www.nist.gov/itl/iad/mig/openmt12results.cfm. system mt0205tune mt0205test baseline 52.2 51.9 +BiLM 53.0 52.9 Table 1: Translation scores in lower-case BLEU. of 3 source and 4 target words. Lattice rescoring with this model requires a special variation of the standard WFST composition which looks at both input and output labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescori</context>
+</contexts>
+<marker>Macherey, Och, Thayer, Uszkoreit, 2008</marker>
+<rawString>Wolfgang Macherey, Franz Och, Ignacio Thayer, and Jakob Uszkoreit. 2008. Lattice-based Minimum Error Rate Training for Statistical Machine Translation. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mehryar Mohri</author>
+</authors>
+<title>Finite-state transducers in language and speech processing.</title>
+<date>1997</date>
+<journal>Computational Linguistics,</journal>
+<pages>23--269</pages>
+<contexts>
+<context position="17918" citStr="Mohri, 1997" startWordPosition="3201" endWordPosition="3202">ion which looks at both input and output labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescoring task of an MT system with bilingual neural networks that yield 1.0 BLEU gain. Povey et al. (2012) also use a special semiring that allows to map non-functional WFSTs into WFSAs by inserting the tag into a string weight. However, in contrast to our implementation and that of Shafran et al (2011), no expansion into an WFST with aligned input/output is described. Lexicographic semir</context>
+</contexts>
+<marker>Mohri, 1997</marker>
+<rawString>Mehryar Mohri. 1997. Finite-state transducers in language and speech processing. Computational Linguistics, 23:269–311.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mehryar Mohri</author>
+</authors>
+<title>Weighted automata algorithms.</title>
+<date>2009</date>
+<booktitle>Handbook of Weighted Automata, Monographs in Theoretical Computer Science. An EATCS Series,</booktitle>
+<pages>213--254</pages>
+<editor>In Manfred Droste, Werner Kuich, and Heiko Vogler, editors,</editor>
+<publisher>Springer</publisher>
+<location>Berlin Heidelberg.</location>
+<contexts>
+<context position="1581" citStr="Mohri, 2009" startWordPosition="239" endWordPosition="240">age processing to compactly represent and manipulate a large number of strings. Applying a finite-state operation (eg. PoS tagging) to a lattice via composition produces a WFST that maps input (eg. words) onto output strings (eg. PoS tags) and preserves the arc-level alignment between each input and output symbol (eg. each arc is labeled with a word-tag pair and has a weight). Typically, the result of such operation is a WFST that is ambiguous because it contains multiple paths with the same input string, and non-functional because it contains multiple output strings for a given input string (Mohri, 2009). Disambiguating such WFSTs is the task of creating a WFST that encodes only the best-scoring path of each input string, while still maintaining the arc-level mapping between input and output symbols. This is a non-trivial task1, and so far only 1Unless one enumerates all the possible input strings in one algorithm has been described (Shafran et al., 2011); the main steps are: (a) Map the WFST into an equivalent weighted finite-state automata (WFSA) using weights that contain both the WFST weight and output symbols (using a special semiring) (b) Apply WFSA determinization under this semiring t</context>
+</contexts>
+<marker>Mohri, 2009</marker>
+<rawString>Mehryar Mohri. 2009. Weighted automata algorithms. In Manfred Droste, Werner Kuich, and Heiko Vogler, editors, Handbook of Weighted Automata, Monographs in Theoretical Computer Science. An EATCS Series, pages 213–254. Springer Berlin Heidelberg.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mehryar Mohri</author>
+</authors>
+<title>A Disambiguation Algorithm for Finite Automata and Functional Transducers.</title>
+<date>2012</date>
+<booktitle>In Proceedings of CIAA,</booktitle>
+<volume>7381</volume>
+<pages>265--277</pages>
+<contexts>
+<context position="17956" citStr="Mohri, 2012" startWordPosition="3207" endWordPosition="3208">ut labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescoring task of an MT system with bilingual neural networks that yield 1.0 BLEU gain. Povey et al. (2012) also use a special semiring that allows to map non-functional WFSTs into WFSAs by inserting the tag into a string weight. However, in contrast to our implementation and that of Shafran et al (2011), no expansion into an WFST with aligned input/output is described. Lexicographic semirings, used for PoS tagging disambiguat</context>
+</contexts>
+<marker>Mohri, 2012</marker>
+<rawString>Mehryar Mohri. 2012. A Disambiguation Algorithm for Finite Automata and Functional Transducers. In Proceedings of CIAA, volume 7381, pages 265–277.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Povey</author>
+<author>Mirko Hannemann</author>
+<author>Gilles Boulianne</author>
+<author>Lukas Burget</author>
+<author>Arnab Ghoshal</author>
+<author>Milos Janda</author>
+<author>Martin Karafiat</author>
+<author>Stefan Kombrink</author>
+</authors>
+<title>Petr Motlıcek, Yanmin Qian, Korbinian Riedhammer, Karel Vesely, and Ngoc Thang Vu.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ICASSP.</booktitle>
+<contexts>
+<context position="18233" citStr="Povey et al. (2012)" startWordPosition="3251" endWordPosition="3254">to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescoring task of an MT system with bilingual neural networks that yield 1.0 BLEU gain. Povey et al. (2012) also use a special semiring that allows to map non-functional WFSTs into WFSAs by inserting the tag into a string weight. However, in contrast to our implementation and that of Shafran et al (2011), no expansion into an WFST with aligned input/output is described. Lexicographic semirings, used for PoS tagging disambiguation (Shafran et al., 2011), have been also shown to be useful in other tasks (Sproat et al., 2014), such as optimized epsilon encoding for backoff language models (Roark et al., 2011), and hierarchical phrase-based decoding with Pushdown Automata (Allauzen et al., 2014). The t</context>
+</contexts>
+<marker>Povey, Hannemann, Boulianne, Burget, Ghoshal, Janda, Karafiat, Kombrink, 2012</marker>
+<rawString>Daniel Povey, Mirko Hannemann, Gilles Boulianne, Lukas Burget, Arnab Ghoshal, Milos Janda, Martin Karafiat, Stefan Kombrink, Petr Motlıcek, Yanmin Qian, Korbinian Riedhammer, Karel Vesely, and Ngoc Thang Vu. 2012. Generating Exact Lattices in the WFST Framework. In Proceedings of ICASSP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Brian Roark</author>
+<author>Richard Sproat</author>
+<author>Izhak Shafran</author>
+</authors>
+<title>Lexicographic Semirings for Exact Automata Encoding of Sequence Models.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ACL-HLT.</booktitle>
+<marker>Roark, Sproat, Shafran, 2011</marker>
+<rawString>Brian Roark, Richard Sproat, and Izhak Shafran. 2011. Lexicographic Semirings for Exact Automata Encoding of Sequence Models. In Proceedings of ACL-HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Izhak Shafran</author>
+<author>Richard Sproat</author>
+<author>Mahsa Yarmohammadi</author>
+<author>Brian Roark</author>
+</authors>
+<title>Efficient Determinization of Tagged Word Lattices using Categorial and Lexicographic Semirings.</title>
+<date>2011</date>
+<booktitle>In Proceedings of ASRU.</booktitle>
+<contexts>
+<context position="1939" citStr="Shafran et al., 2011" startWordPosition="296" endWordPosition="299">rd-tag pair and has a weight). Typically, the result of such operation is a WFST that is ambiguous because it contains multiple paths with the same input string, and non-functional because it contains multiple output strings for a given input string (Mohri, 2009). Disambiguating such WFSTs is the task of creating a WFST that encodes only the best-scoring path of each input string, while still maintaining the arc-level mapping between input and output symbols. This is a non-trivial task1, and so far only 1Unless one enumerates all the possible input strings in one algorithm has been described (Shafran et al., 2011); the main steps are: (a) Map the WFST into an equivalent weighted finite-state automata (WFSA) using weights that contain both the WFST weight and output symbols (using a special semiring) (b) Apply WFSA determinization under this semiring to ensure that only one unique path per input string survives (c) Expand the result back to an WFST that preserves arc-level alignments We present a new disambiguation algorithm that can efficiently accomplish this. In Section 2 we describe how the tropical sparse tuple vector semiring can keep track of individual arcs in the original WFST as topological fe</context>
+<context position="14349" citStr="Shafran et al. (2011)" startWordPosition="2627" endWordPosition="2630">algorithm, henceforth called topological, in two ways: we empirically contrast disambiguation times against previous work, and then apply it to rescore translation lattices with bilingual neural network models. 4.1 PoS Transducer Disambiguation We apply our algorithm to the 4,664 NIST English CTS RT Dev04 set PoS tagged lattices used by Sproat el al. (2014); these were generated with a speech recognizer similar to (Soltau et al., 2005) and tagged with a WFST-based HMM tagger. The average number of states is 493. We contrast with the lexicographic tropical categorial semiring implementation of Shafran et al. (2011), henceforth referred to as the categorial method. Figure 2 (left) shows the number of disambiguated WFSTs as processing time increases. The topological algorithm proves much faster (and we observe no memory footprint differences). In 50ms it disambiguates 3540 transducers, as opposed to the 2771 completed by the categorial procedure; the slowest WFST to disambiguate takes 230 seconds in the categorial procedure and 60 seconds in our method. Using sparse topological features with our semiring disambiguates all WF2278 STs faster in 99.8% of cases. 4.2 Neural Network Bilingual Rescoring We use t</context>
+<context position="18086" citStr="Shafran et al. (2011)" startWordPosition="3224" endWordPosition="3227">. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differences with respect to (Devlin et al., 2014), we find BLEU gains consistent with rescoring results reported in their Table 5. 5 Conclusions and Related Work We have described a tagging disambiguation algorithm that supports non-functional WFSTs, which cannot be handled directly by neither WFST determinization (Mohri, 1997) nor WFST disambiguation (Mohri, 2012). We show it is faster than the implementation with a lexicographic-tropicalcategorial semiring described by Shafran et al. (2011) and describe a use case in a practical rescoring task of an MT system with bilingual neural networks that yield 1.0 BLEU gain. Povey et al. (2012) also use a special semiring that allows to map non-functional WFSTs into WFSAs by inserting the tag into a string weight. However, in contrast to our implementation and that of Shafran et al (2011), no expansion into an WFST with aligned input/output is described. Lexicographic semirings, used for PoS tagging disambiguation (Shafran et al., 2011), have been also shown to be useful in other tasks (Sproat et al., 2014), such as optimized epsilon enco</context>
+</contexts>
+<marker>Shafran, Sproat, Yarmohammadi, Roark, 2011</marker>
+<rawString>Izhak Shafran, Richard Sproat, Mahsa Yarmohammadi, and Brian Roark. 2011. Efficient Determinization of Tagged Word Lattices using Categorial and Lexicographic Semirings. In Proceedings of ASRU.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hagen Soltau</author>
+<author>Brian Kingsbury</author>
+<author>Lidia Mangu</author>
+<author>Daniel Povey</author>
+<author>George Saon</author>
+<author>Geoffrey Zweig</author>
+</authors>
+<title>Conversational Telephony System for Rich Transcription.</title>
+<date>2005</date>
+<booktitle>The IBM</booktitle>
+<contexts>
+<context position="14167" citStr="Soltau et al., 2005" startWordPosition="2598" endWordPosition="2601"> an edge ek precedes an edge ek&apos; on a path, then k&apos; &lt; k. We can perform a second pass with the same algorithm over B, with the only minor modification 4 Experiments We evaluate our algorithm, henceforth called topological, in two ways: we empirically contrast disambiguation times against previous work, and then apply it to rescore translation lattices with bilingual neural network models. 4.1 PoS Transducer Disambiguation We apply our algorithm to the 4,664 NIST English CTS RT Dev04 set PoS tagged lattices used by Sproat el al. (2014); these were generated with a speech recognizer similar to (Soltau et al., 2005) and tagged with a WFST-based HMM tagger. The average number of states is 493. We contrast with the lexicographic tropical categorial semiring implementation of Shafran et al. (2011), henceforth referred to as the categorial method. Figure 2 (left) shows the number of disambiguated WFSTs as processing time increases. The topological algorithm proves much faster (and we observe no memory footprint differences). In 50ms it disambiguates 3540 transducers, as opposed to the 2771 completed by the categorial procedure; the slowest WFST to disambiguate takes 230 seconds in the categorial procedure an</context>
+</contexts>
+<marker>Soltau, Kingsbury, Mangu, Povey, Saon, Zweig, 2005</marker>
+<rawString>Hagen Soltau, Brian Kingsbury, Lidia Mangu, Daniel Povey, George Saon, and Geoffrey Zweig. 2005. The IBM 2004 Conversational Telephony System for Rich Transcription. In Proceedings of ICASSP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Sproat</author>
+<author>Mahsa Yarmohammadi</author>
+<author>Izhak Shafran</author>
+<author>Brian Roark</author>
+</authors>
+<date>2014</date>
+<booktitle>Applications of Lexicographic Semirings to Problems in Speech and Language Processing. Computational Linguistics,</booktitle>
+<volume>40</volume>
+<issue>4</issue>
+<marker>Sproat, Yarmohammadi, Shafran, Roark, 2014</marker>
+<rawString>Richard Sproat, Mahsa Yarmohammadi, Izhak Shafran, and Brian Roark. 2014. Applications of Lexicographic Semirings to Problems in Speech and Language Processing. Computational Linguistics, 40(4):733–761.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ashish Vaswani</author>
+<author>Yinggong Zhao</author>
+<author>Victoria Fossum</author>
+<author>David Chiang</author>
+</authors>
+<title>Decoding with Large-Scale Neural Language Models Improves Translation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="16996" citStr="Vaswani et al., 2013" startWordPosition="3060" endWordPosition="3063">han the POS-tagging task: the average number of states of the HiFST lattices is 38,200. Figure 2 (right) shows the number of mt0205tune disambiguated WFSTs over time compared to the categorial method. As with the PoS disambiguation task, the topological method is always much faster than the categorial one. After 10 seconds, our method has disambiguated 1953 lattices out of 2075, whereas the categorial method has only finished 1405. The slowest WFST to disambiguate takes 6700 seconds with the categorial procedure, which compares to 1000 seconds in our case. The BiLM model is trained with NPLM (Vaswani et al., 2013) with a context 3See http://www.nist.gov/itl/iad/mig/openmt12results.cfm. system mt0205tune mt0205test baseline 52.2 51.9 +BiLM 53.0 52.9 Table 1: Translation scores in lower-case BLEU. of 3 source and 4 target words. Lattice rescoring with this model requires a special variation of the standard WFST composition which looks at both input and output labels on a transducer arc; we use KenLM (Heafield, 2011) to retrieve neural network scores for on-the-fly composition. We retune the parameters with Lattice MERT (Macherey et al., 2008) . Results are shown in Table 1. Acknowledging the task differe</context>
+</contexts>
+<marker>Vaswani, Zhao, Fossum, Chiang, 2013</marker>
+<rawString>Ashish Vaswani, Yinggong Zhao, Victoria Fossum, and David Chiang. 2013. Decoding with Large-Scale Neural Language Models Improves Translation. In Proceedings of EMNLP.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

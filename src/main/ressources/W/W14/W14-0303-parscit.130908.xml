@@ -1,0 +1,1169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.001513">
+<title confidence="0.999655">
+Estimating Grammar Correctness for a Priori Estimation
+of Machine Translation Post-Editing Effort
+</title>
+<author confidence="0.995955">
+Nicholas H. Kirk, Guchun Zhang
+</author>
+<affiliation confidence="0.978083">
+Alpha Calligraphic Research Cambridge Ltd.
+</affiliation>
+<address confidence="0.7479705">
+St Andrew’s House, St Andrew’s Road,
+Cambridge CB4 1DL, UK
+</address>
+<email confidence="0.998816">
+{nkirk,gzhang}@alphacrc.com
+</email>
+<author confidence="0.963904">
+Georg Groh
+</author>
+<affiliation confidence="0.820759666666667">
+Fakultat f¨ur Informatik
+Technische Universit¨at M¨unchen,
+Germany
+</affiliation>
+<email confidence="0.98853">
+grohg@in.tum.de
+</email>
+<sectionHeader confidence="0.993576" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999922529411765">
+We present a supervised learning pilot ap-
+plication for estimating Machine Transla-
+tion (MT) output reusability, in view of
+supporting a human post-editor of MT
+content. We train our model on typed
+dependencies (labeled grammar relation-
+ships) extracted from human reference
+and raw MT data, to then predict gram-
+mar relationship correctness values that
+we aggregate to provide a binary segment-
+level evaluation. In view of scaling up
+to larger data, we provide implemented
+Naive Bayes and Stochastic Gradient De-
+scent with Support Vector Machine loss
+function approaches and their evaluation,
+and verify the correlation of predicted val-
+ues with human judgement.
+</bodyText>
+<sectionHeader confidence="0.998986" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999771625">
+Currently the Machine Translation (MT) research
+community attempts to seamlessly integrate both
+humans and MT-instances in the workflow of tex-
+tual translation. Efforts towards this integration
+focus, for instance, on automating a posteriori pro-
+cesses such as post-editing (Simard et al., 2007),
+or other format coherence maintenance (e.g. date,
+spelling). Our contribution addresses cases when
+a post-editor has to start a segment from scratch,
+because the MT raw output turns out to be a hin-
+drance rather than an aid, and the corresponding
+evaluation time between editing and manually re-
+translating a sequence is wasted a posteriori. Rea-
+sons for unusable MT output in this context could
+potentially be a combination of the following or
+more factors, with reference to the target segment:
+</bodyText>
+<listItem confidence="0.9943625">
+• the word order, or grammar, are such that the
+sentence structure is unintelligible
+• the lexical semantics of the words do not con-
+vey the meaning of the source segment
+</listItem>
+<bodyText confidence="0.999890454545454">
+These lexical or structural factors can be present
+to various extents and their threshold of iden-
+tification can be subjective for each post-editor,
+but hypothetically any intervention on the latter
+points is quantifiable in terms of post-editing time,
+being this the most observable aspect of post-
+editing effort (Krings, 2001). This paper proposes
+a supervised learning approach to discriminate
+typed grammar relation instances that compose a
+human-written sentence from any other form, in
+order to identify segments that can potentially lead
+to time loss on the basis of its incorrect grammar
+or word adjacency and delete them before post-
+editing. The remainder presents the project’s as-
+sumptions and the nature of the adopted learn-
+ing features (Section 2), the high-level algorith-
+mic approach and the theory behind the adopted
+prediction models (Section 3). We then provide
+our implementation outline and the evaluation ap-
+proaches (Section 4). In conclusion we present
+current limitations (Section 5), related and future
+work (Section 6), and the conclusions (Section 7).
+</bodyText>
+<sectionHeader confidence="0.994337" genericHeader="introduction">
+2 Concept
+</sectionHeader>
+<bodyText confidence="0.99919">
+We will now provide some background and a se-
+ries of assertions as regards creating a classifi-
+cation method to estimate MT output grammar
+correctness, which mainly aims to support the
+post-editor in assessing which segments will take
+longer to post-edit than to translate from scratch.
+We assume the following post-editing behavioral
+phases:
+</bodyText>
+<listItem confidence="0.9933395">
+1. Read source and/or target to various extents,
+in order to:
+• check grammatical consistency of target
+• check whether semantics have been con-
+veyed between source and target
+2. Insert or delete text accordingly
+</listItem>
+<page confidence="0.970457">
+16
+</page>
+<note confidence="0.5323715">
+Workshop on Humans and Computer-assisted Translation, pages 16–21,
+Gothenburg, Sweden, 26 April 2014. c�2014 Association for Computational Linguistics
+</note>
+<figure confidence="0.992976454545454">
+Predict
+td1,s, (M3)
+Typed Gram-
+mar Feature
+Extrac-
+tion (M1)
+Predict
+tdk,sn (M3)
+Model
+Training (M2)
+Trained
+Hypothesis
+Model
+Aggregation
+(sentence-level
+predic-
+tion) (M4)
+test data
+source text
+Machine
+Translation
+Typed Gram-
+mar Feature
+Extrac-
+tion (M1)
+target
+human
+reference
+text
+Typed Gram-
+mar Feature
+Extrac-
+tion (M1)
+</figure>
+<bodyText confidence="0.999571933333333">
+Given the lack of robust adequacy understand-
+ing methods (i.e. verifying meaning conveyance),
+we will perform analysis at a grammar and word
+order level, and for this we will seek a grammar-
+related formalism that is informative, scalable and
+robust to multiple, potentially unseen grammar in-
+stance variants. We therefore exploit typed depen-
+dencies (De Marneffe and Manning, 2008), a la-
+beled, directed grammar relationship among pairs
+of words, which provides information on the order
+of arguments and their relationship type. Figure 1
+shows words of a segment instance, and for each
+of these the unary and binary predicates of Part-
+Of-Speech tagging and typed dependency, respec-
+tively.
+</bodyText>
+<figure confidence="0.513377125">
+Pred. Labels
+ps, . . . psn
+amod
+nsubj
+cop
+root
+Word order is important.
+JJ NN VBZ JJ
+</figure>
+<figureCaption confidence="0.91832275">
+Figure 1: Example of words that compose a seg-
+ment instance, their typed dependencies (illus-
+trated as labeled directed edges), and the Part-Of-
+Speech (POS) tags.
+</figureCaption>
+<sectionHeader confidence="0.994099" genericHeader="method">
+3 Algorithm
+</sectionHeader>
+<bodyText confidence="0.992913676470588">
+Having discussed our aim and the required infor-
+mativeness, we present a pipeline for both train-
+ing a hypothesis model and the prediction itself
+(Figure 2). The process comprises a typed de-
+pendency extraction module (M1) that, given a
+set of sentences from a test or training text,
+provides instances of grammar relationships in
+the form of two word arguments (arg1, arg2)
+and a type label (deptype), which we will adopt
+as features. In the training phase, a training
+module (M2) labels the feature data obtained
+from {trainHuman} instances as 1, and from
+{trainHuman \ trainMT} as 0, where \ is the
+set difference operator. We therefore consider any
+typed dependency instance that does not appear
+in the human reference text as ’bad’. This as-
+sumption holds when training on large datasets
+that comprise different grammar variants. From
+such labeled dataset, M2 then formulates a hy-
+pothesis model. More details on generating the hy-
+pothesis are provided in the next paragraph. Dur-
+ing a test phase, various instances of a predic-
+tion module (M3) exploit such hypothesis model
+Figure 2: Abstract implementation pipeline for
+training the hypothesis model (in bold), and for
+the prediction itself of a typed dependency-based
+segment reusability estimator.
+to predict the grammar relationship goodness val-
+ues of td1,si ... tdk,si for a sentence si and its
+typed dependencies td1 ... tdk, for all sentences
+si E {s1 ... sn}. A final phase (M4) aggregates
+the output predictions of grammar relationships
+for each sentence, in order to construct segment-
+level estimations (Equation 1).
+</bodyText>
+<equation confidence="0.90960675">
+�k Ptdj,si (1)
+1
+Psi = k
+j=1
+</equation>
+<bodyText confidence="0.9998526">
+Hypothesis Model Given our aim to achieve
+method robustness and breadth of applicability,
+and that context abstraction is potentially achiev-
+able since correctness of a grammar relationship
+is not dependent on neighbouring dependencies,
+we train on a high number of diverse training in-
+stances. In order to obtain a reduction in time and
+space complexity, we approximate our hypothe-
+sis by making sample independence assumptions,
+such as the Naive Bayes (NB) approach (Good,
+1965). NB is a model that assumes feature inde-
+pendence, i.e. the ’naiveness’ implies that every
+feature Fi is conditionally independent of every
+other feature Fj for j =� i given the class C. Equa-
+tion 2 describes the core of all current NB variants.
+</bodyText>
+<page confidence="0.908003">
+17
+</page>
+<equation confidence="0.968964666666667">
+n
+p(C|F1 ... Fn) a p(C) p (Fi|C) (2)
+i=1
+</equation>
+<bodyText confidence="0.999884916666667">
+Such generative model is efficient and requires
+just one linear iteration for training, hence its suit-
+ability for large input scaling. Unfortunately, the
+modeling assumptions that enable efficient com-
+putability come at the expense of accuracy. More
+precisely, NB-based methods maximize likelihood
+conditioned only over the class label C, and not
+over the set of all other remaining features, and
+as a result its effectiveness is often outperformed
+by discriminative classifiers such as Support Vec-
+tor Machines (SVM) (Crammer and Singer, 2002;
+Puurula, 2012). However, given its high efficiency
+and scalability, we will use NB as our primary
+model and compare it with an algorithm that has
+deeper modeling assumptions, but exploits infer-
+ence approximation to reduce complexity, namely
+SVM with Stochastic Gradient Descent for pa-
+rameter finding. Approximated inference is often
+achieved via traditional gradient descent methods
+(see Equation 3 for linear classification or regres-
+sion approaches) that are largely used, first-order,
+stepwise optimization algorithms that seek min-
+ima of a problem with large dimensionality and
+unknown convexity status.
+</bodyText>
+<equation confidence="0.937138">
+VwQ(zt, wt) (3)
+</equation>
+<bodyText confidence="0.999901666666667">
+where our objective is to iteratively minimize,
+given an initial parameterization (starting point
+w0, number of iterations, step length γ0), and a
+function Q(w), or more specifically when within
+the machine learning context, an empirical risk
+En(f), defined as:
+</bodyText>
+<equation confidence="0.994565">
+1
+Q(w) = En(f) = n
+</equation>
+<bodyText confidence="0.999962230769231">
+where in turn l(ˆy, y) is a loss function that quan-
+tifies the cost of predicting yˆ when the actual an-
+swer is y. One advantage is computational effi-
+ciency, while the disadvantages include the inabil-
+ity to provide certainty of termination or result de-
+terminism. Recent literature partially circumvents
+these problems (Hager and Zhang, 2005), and the
+use of such family of algorithms has been redis-
+covered for large scale data learning, whose appli-
+cations prefer approximate over exact inference,
+by using a stochastic variant (Equation 5) of the
+traditional method (Zhang, 2004; Bottou, 2010),
+which samples a subset of the training data.
+</bodyText>
+<equation confidence="0.997376">
+wt+1 = wt − γtVwQ(zt, wt) (5)
+</equation>
+<bodyText confidence="0.999179666666667">
+We adopt a hinge loss function for Support Vec-
+tor Machine (SVM) classification, a method which
+has proven to be reliable for elaborating high
+scale, sparsely distributed instance vector applica-
+tions that have dense concept vectors (Joachims,
+1998; Rosasco et al., 2004).
+</bodyText>
+<sectionHeader confidence="0.993491" genericHeader="method">
+4 Implementation &amp; Evaluation
+</sectionHeader>
+<bodyText confidence="0.9998235">
+As a proof-of-concept and means of evaluation,
+we constructed a Java prototype that implements
+the pipeline in Figure 2, by making use of the
+Moses process (Koehn et al., 2007) for machine
+translation, the Stanford Parser (De Marneffe and
+Manning, 2008) for typed dependency extraction,
+the API of the general-purpose machine learn-
+ing analysis platform Weka (Hall et al., 2009)
+for training and prediction, and ad-hoc imple-
+mentations of the remaining specified modules.
+Typed dependency extraction is possible by feed-
+ing a pre-trained language-specific Probabilistic
+Context-Free Grammar (PCFG) into the parser,
+which is a model that defines probabilistic gram-
+mar production rules for such language. Such a
+model is trained beforehand on a large, syntacti-
+cally annotated text corpus (i.e. a treebank) (Je-
+linek et al., 1992).
+</bodyText>
+<subsectionHeader confidence="0.965263">
+4.1 Experiment
+</subsectionHeader>
+<bodyText confidence="0.9999902">
+We used our prototype on a subset of the Eu-
+roparl test data (Koehn, 2005), extracting 536404
+instances from 11270 human reference lines, and
+from 11270 machine-translated lines that share the
+same source. Our Naive Bayes algorithm (using
+word frequencies, no pruning) required 1.08 sec-
+onds to formulate a hypothesis model, versus the
+28613.64 seconds required for the construction of
+a Stochastic Gradient Descent model (hinge loss
+function for SVM, step length 0.01, 500 steps, no
+pruning). A 10-fold cross validation on the train-
+ing set provided a correct instance classification of
+67.0168% for NB model, versus the 66.0118% of
+the SGD model. Table 1 provides further statistics
+of the latter evaluations.
+</bodyText>
+<equation confidence="0.996105">
+1 n
+wt+1 = wt − γt n i=1
+n
+l (f (xi) , yi) (4)
+i=1
+</equation>
+<page confidence="0.991875">
+18
+</page>
+<table confidence="0.9999778">
+Precision Recall F-1
+NB ’good’ 0.665 0.839 0.742
+’bad’ 0.683 0.451 0.543
+SGD ’good’ 0.646 0.883 0.746
+’bad’ 0.709 0.370 0.487
+</table>
+<tableCaption confidence="0.9974525">
+Table 1: Precision and recall values of the 10-fold
+cross validation for both NB and SGD methods
+</tableCaption>
+<subsectionHeader confidence="0.999497">
+4.2 Correlation with Human Judgement
+</subsectionHeader>
+<bodyText confidence="0.99964920754717">
+We organized a survey among post-editors to
+gather human judgement values on a small set
+of 80 segments, for independent analysis and
+for comparison with machine predicted labels.
+Four translators with different experience level (in
+terms of years, 10+,5,1+, 1) evaluated a question-
+naire of 80 Europarl-domain segments. Half of
+these were official human reference Europarl seg-
+ments, while the other half were MT processed
+FR → EN segments. The process first involved
+a binary labeling task {aid|hindrance} (two
+instances of results are in Figure 3), and the sec-
+ond a phase assigning a mark {0... 10} to de-
+fine its level of usefulness. Together with the
+lineNumber, we will consider these three fea-
+tures and their data as the human judgement
+dataset. By aggregating the human binary evalu-
+ations with a majority vote and comparing these
+with the sentence-level prediction of our system,
+NB correctly classified 82.5% of the segments,
+while SGD classified 83.75%.
+Preliminary clustering analysis on the latter
+confirmed the intuitive idea of the subjectivity of
+this kind of reusability evaluation for each trans-
+lator. An unsupervised categorization was per-
+formed using an Expectation Maximization (EM)
+of Gaussian mixtures on the human judgement
+survey dataset, to understand distributional prop-
+erties and use this as a basis to evaluate how the
+prototype results correlate with human judgement.
+Starting with a human-only dataset and no ini-
+tial prior, the EM algorithm estimated by cross-
+validation only one homogeneous cluster. By then
+providing the number of clusters (i.e. the num-
+ber of human translators, 4), the cluster evaluation
+assignments were not aligned with the number of
+instances present for each translator, which im-
+plies post-editor behavior indistinguishability via
+this method. Once machine predicted samples are
+added to the evaluation set, a further step is to ver-
+ify whether the cluster assignments are within an
+acceptable neighborhood of the previous cluster
+assignment values. As shown in Table 2, clus-
+ter assignment percentages of NB predicted la-
+bels are closer to the original cluster assignments
+from the training set than SGD value-based cluster
+assignments. The clustering approach described
+will be used as a preliminary method for effective-
+ness evaluation, i.e. by evaluating the extent to
+which machine predicted values are a mixture of
+human behavior data based on the cluster assign-
+ment value distance from the generating model
+values.
+</bodyText>
+<table confidence="0.9191082">
+label eval.: human eval.: NB eval.: SGD
+0 179 (56%) 52 (65%) 58 (73%)
+1 24 (8%) 3 (4%) 2 (3%)
+2 52 (16%) 7 (9%) 2 (3%)
+3 65 (20%) 18 (23%) 18 (23%)
+</table>
+<tableCaption confidence="0.986732">
+Table 2: Evaluation data obtained with the clus-
+</tableCaption>
+<bodyText confidence="0.7450655">
+ter model generated from the human judgement
+dataset, with the number of clusters defined as 4.
+</bodyText>
+<listItem confidence="0.902821">
+1) on the issue of Jerusalem , they
+have shown in a spirit of openness
+and a capacity for listening hopeless .
+2) that is completely disproportionate
+and it does no favours for the
+peace process .
+</listItem>
+<figureCaption confidence="0.978830333333333">
+Figure 3: Examples of segments classified as ’bad’
+(1) and ’good’ (2) by all the post-editors of the
+experiment described in Section 4.2.
+</figureCaption>
+<sectionHeader confidence="0.993083" genericHeader="method">
+5 Limitations
+</sectionHeader>
+<bodyText confidence="0.9998606">
+Method robustness would imply that the grammar
+relationships under test are known, or that the pre-
+diction algorithm reacts well to unseen data. Fig-
+ure 4 presents an example that shows how typed
+dependencies of two related sentences (namely
+reference and MT output of the same source) and
+the word usage itself can be scarcely related, or
+not overlap. This highlights that we cannot as-
+sume training coverage of the typed dependencies
+in the test segment, even if the contained words
+are present in the training set in multiple gram-
+matical contexts. This stresses the importance of
+the scaling requirement and the complexity reduc-
+tion measures stated in Section 3, in order to train
+diverse grammatical instance variants. A further
+</bodyText>
+<page confidence="0.998171">
+19
+</page>
+<bodyText confidence="0.818489777777778">
+aspect to consider with the Naive Bayes formula-
+tion is that the model defines a likelihood for each
+entry conditioned on an unconditional class prob-
+ability, which is correlated to the ratio of ’bad’ and
+’good’ grammar relationships present in the train-
+ing set. This information usage decreases robust-
+ness, as the model captures quality information of
+the MT instance, which can be subject to variabil-
+ity (e.g. the language pair, MT instance setup).
+This is a lie : the accounts have been fiddled.
+DT VBZ DT NN : DT NNS VBP VBN VBN
+In fact , it is not true because even accounting tricks.
+IN NN , PRP VBZ RB JJ IN RB NN NNS
+Figure 4: Human reference and raw MT output
+derived from the test subset of Europarl FR-EN
+corpus, which show typed dependency relation-
+ships, the words, and related part-of-speech tags
+that highlight possible word usage variance
+</bodyText>
+<sectionHeader confidence="0.999551" genericHeader="method">
+6 Related &amp; Future Work
+</sectionHeader>
+<bodyText confidence="0.999970613636364">
+In order to estimate MT output quality, literature
+in the past has traditionally compared an auto-
+matically translated sentence to one or more hu-
+man text references (Papineni et al., 2002), while
+other work has exploited unlabeled dependencies
+in order to take into account legitimate grammat-
+ical or lexical choice variations (Liu and Gildea,
+2005). Other work improves the classification
+effectiveness of the latter by considering typed
+dependencies (Owczarzak et al., 2007). Some
+data-driven, referenceless evaluation approaches
+to learning human judgement have been intro-
+duced (Corston-Oliver et al., 2001), which ex-
+ploit syntactic features and linguistic indicators
+(Gamon et al., 2005), but have also been com-
+bined with typed dependency features (He and
+Way, 2009). Estimation of post-editing effort is
+a growing concern addressed by Confidence Es-
+timation (CE) (Specia, 2011), but so far, to the
+best of our knowledge, work within the domain
+performs supervised learning of statistical linguis-
+tic features (Felice and Specia, 2012), but not of
+dependency features, i.e. the main focus of this
+contribution. Previous quality estimation meth-
+ods differ in nature from the presented view, given
+that they attempt to predict a discrete level of post-
+editing effort (Bojar et al., 2013), more subject to
+annotation subjectivity, or to perform binary clas-
+sification (Hardmeier, 2011), but do not focus on
+segment reusability estimation. Future work will
+focus on testing the hypothesis modeling and fea-
+ture extraction for scalability on larger context-
+abstract data, and verifying the distinguishability
+of predicted values from more human-annotated
+judgements using the method stated in Section 4.2.
+Time gain values have not yet been acquired given
+the unusability of the time productivity metrics
+currently favored, which do not exhibit direct cor-
+relation with real PE time, and are also focus of
+future investigations. Futhermore, evaluation on
+the WMT Quality Estimation Shared Task datasets
+will be performed, for comparisons with state of
+the art methods of post-editing effort quantifica-
+tion (Bojar et al., 2013).
+</bodyText>
+<sectionHeader confidence="0.995303" genericHeader="conclusions">
+7 Conclusions
+</sectionHeader>
+<bodyText confidence="0.999972363636364">
+The presented pilot study proposes a grammar-
+based analysis for categorizing MT output in terms
+of whether it is an aid or a hindrance to the post-
+editor. Our contributions are mainly the (i) use of
+typed dependency learning for binary evaluation
+of confidence estimation and (ii) the analysis of
+adequate algorithmic solutions to achieve its scal-
+ability and context abstraction. Preliminary results
+show that aggregation of predictions operated at a
+typed dependency level provide an evaluation that
+resembles the segment-level judgement displayed
+by post-editors. Futhermore, for the hypothesis
+models created on the dataset tested, Naive Bayes
+outperformed Stochastic Gradient Descent with
+hinge loss for Support Vector Machine in terms of
+training efficiency, and is on a par regarding clas-
+sification effectiveness. We have showed the pre-
+liminary advantages of typed dependency-based
+estimation in terms of context abstraction, which
+provides a novel type of assistance to human post-
+editors and correlates with post-editing cost rather
+than commonly analyzed linguistic metrics.
+</bodyText>
+<sectionHeader confidence="0.99929" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.9960025">
+Ondˇrej Bojar, Christian Buck, Chris Callison-Burch,
+Christian Federmann, Barry Haddow, Philipp
+Koehn, Christof Monz, Matt Post, Radu Soricut, and
+Lucia Specia. 2013. Findings of the 2013 Work-
+</reference>
+<figure confidence="0.999162842105263">
+nsubjpass
+aux
+det
+auxpass
+parataxis
+root
+cop
+det
+nsubj
+prep
+root
+nsubj
+cop
+pobj
+advmod
+pobj
+neg
+prep
+nn
+</figure>
+<page confidence="0.723841">
+20
+</page>
+<reference confidence="0.998155504672897">
+shop on Statistical Machine Translation. In Pro-
+ceedings of the Eighth Workshop on Statistical Ma-
+chine Translation, pages 1–44, Sofia, Bulgaria, Au-
+gust. Association for Computational Linguistics.
+L´eon Bottou. 2010. Large-scale machine learning
+with stochastic gradient descent. In Proceedings of
+COMPSTAT’2010, pages 177–186. Springer.
+Simon Corston-Oliver, Michael Gamon, and Chris
+Brockett. 2001. A machine learning approach to
+the automatic evaluation of machine translation. In
+Proceedings of the 39th Annual Meeting on Associa-
+tion for Computational Linguistics, pages 148–155.
+Association for Computational Linguistics.
+Koby Crammer and Yoram Singer. 2002. On the learn-
+ability and design of output codes for multiclass
+problems. Machine Learning, 47(2-3):201–233.
+Marie-Catherine De Marneffe and Christopher D Man-
+ning. 2008. The stanford typed dependencies rep-
+resentation. In Coling 2008: Proceedings of the
+workshop on Cross-Framework and Cross-Domain
+Parser Evaluation, pages 1–8. Association for Com-
+putational Linguistics.
+Mariano Felice and Lucia Specia. 2012. Linguis-
+tic features for quality estimation. In Proceed-
+ings of the Seventh Workshop on Statistical Machine
+Translation, pages 96–103. Association for Compu-
+tational Linguistics.
+Michael Gamon, Anthony Aue, and Martine Smets.
+2005. Sentence-level mt evaluation without refer-
+ence translations: Beyond language modeling. In
+Proceedings of EAMT, pages 103–111.
+Irving John Good. 1965. The estimation of probabil-
+ities: An essay on modern Bayesian methods, vol-
+ume 30. MIT press Cambridge, MA.
+William W Hager and Hongchao Zhang. 2005. A new
+conjugate gradient method with guaranteed descent
+and an efficient line search. SIAM Journal on Opti-
+mization, 16(1):170–192.
+Mark Hall, Eibe Frank, Geoffrey Holmes, Bernhard
+Pfahringer, Peter Reutemann, and Ian H Witten.
+2009. The weka data mining software: an update.
+ACM SIGKDD Explorations Newsletter, 11(1):10–
+18.
+Christian Hardmeier. 2011. Improving machine trans-
+lation quality prediction with syntactic tree kernels.
+In Proceedings of the 15th conference of the Euro-
+pean Association for Machine Translation (EAMT
+2011), pages 233–240.
+Yifan He and Andy Way. 2009. Learning labelled de-
+pendencies in machine translation evaluation.
+Frederick Jelinek, John D Lafferty, and Robert L Mer-
+cer. 1992. Basic methods of probabilistic context
+free grammars. Springer.
+Thorsten Joachims. 1998. Text categorization with
+support vector machines: Learning with many rel-
+evant features. Springer.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, et al. 2007. Moses: Open source
+toolkit for statistical machine translation. In Pro-
+ceedings of the 45th Annual Meeting of the ACL
+on Interactive Poster and Demonstration Sessions,
+pages 177–180. Association for Computational Lin-
+guistics.
+Philipp Koehn. 2005. Europarl: A parallel corpus for
+statistical machine translation. In MT summit, vol-
+ume 5.
+Hans P Krings. 2001. Repairing texts: empirical in-
+vestigations of machine translation post-editing pro-
+cesses, volume 5. Kent State University Press.
+Ding Liu and Daniel Gildea. 2005. Syntactic features
+for evaluation of machine translation. In Proceed-
+ings of the ACL Workshop on Intrinsic and Extrin-
+sic Evaluation Measures for Machine Translation
+and/or Summarization, pages 25–32.
+Karolina Owczarzak, Josef Van Genabith, and Andy
+Way. 2007. Dependency-based automatic evalu-
+ation for machine translation. In Proceedings of
+the NAACL-HLT 2007/AMTA Workshop on Syntax
+and Structure in Statistical Translation, pages 80–
+87. Association for Computational Linguistics.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic
+evaluation of machine translation. In Proceedings of
+the 40th annual meeting on association for compu-
+tational linguistics, pages 311–318. Association for
+Computational Linguistics.
+Antti Puurula. 2012. Combining modifications to
+multinomial naive bayes for text classification. In
+Information Retrieval Technology, pages 114–125.
+Springer.
+Lorenzo Rosasco, Ernesto De Vito, Andrea Capon-
+netto, Michele Piana, and Alessandro Verri. 2004.
+Are loss functions all the same? Neural Computa-
+tion, 16(5):1063–1076.
+Michel Simard, Cyril Goutte, and Pierre Isabelle.
+2007. Statistical phrase-based post-editing.
+Lucia Specia. 2011. Exploiting objective annotations
+for measuring translation post-editing effort. In Pro-
+ceedings of the 15th Conference of the European As-
+sociation for Machine Translation, pages 73–80.
+Tong Zhang. 2004. Solving large scale linear predic-
+tion problems using stochastic gradient descent al-
+gorithms. In Proceedings of the twenty-first inter-
+national conference on Machine learning, page 116.
+ACM.
+</reference>
+<page confidence="0.999437">
+21
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.039010">
+<title confidence="0.994899">Estimating Grammar Correctness for a Priori of Machine Translation Post-Editing Effort</title>
+<author confidence="0.99983">Nicholas H Kirk</author>
+<author confidence="0.99983">Guchun</author>
+<affiliation confidence="0.647754">Alpha Calligraphic Research Cambridge St Andrew’s House, St Andrew’s</affiliation>
+<address confidence="0.7016725">Cambridge CB4 1DL, Georg</address>
+<author confidence="0.4060475">Fakultat f¨ur Technische Universit¨at</author>
+<email confidence="0.931831">grohg@in.tum.de</email>
+<abstract confidence="0.9945145">We present a supervised learning pilot application for estimating Machine Translation (MT) output reusability, in view of supporting a human post-editor of MT content. We train our model on typed dependencies (labeled grammar relationships) extracted from human reference and raw MT data, to then predict grammar relationship correctness values that we aggregate to provide a binary segmentlevel evaluation. In view of scaling up to larger data, we provide implemented Naive Bayes and Stochastic Gradient Descent with Support Vector Machine loss function approaches and their evaluation, and verify the correlation of predicted values with human judgement.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Ondˇrej Bojar</author>
+<author>Christian Buck</author>
+<author>Chris Callison-Burch</author>
+<author>Christian Federmann</author>
+<author>Barry Haddow</author>
+<author>Philipp Koehn</author>
+<author>Christof Monz</author>
+<author>Matt Post</author>
+<author>Radu Soricut</author>
+<author>Lucia Specia</author>
+</authors>
+<date>2013</date>
+<booktitle>Findings of the 2013 Workshop on Statistical Machine Translation. In Proceedings of the Eighth Workshop on Statistical Machine Translation,</booktitle>
+<pages>1--44</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<location>Sofia, Bulgaria,</location>
+<contexts>
+<context position="17684" citStr="Bojar et al., 2013" startWordPosition="2827" endWordPosition="2830">tors (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more subject to annotation subjectivity, or to perform binary classification (Hardmeier, 2011), but do not focus on segment reusability estimation. Future work will focus on testing the hypothesis modeling and feature extraction for scalability on larger contextabstract data, and verifying the distinguishability of predicted values from more human-annotated judgements using the method stated in Section 4.2. Time gain values have not yet been acquired given the unusability of the time productivity metrics currently favored, which do not exhibit direct correlation with real PE time, and are al</context>
+</contexts>
+<marker>Bojar, Buck, Callison-Burch, Federmann, Haddow, Koehn, Monz, Post, Soricut, Specia, 2013</marker>
+<rawString>Ondˇrej Bojar, Christian Buck, Chris Callison-Burch, Christian Federmann, Barry Haddow, Philipp Koehn, Christof Monz, Matt Post, Radu Soricut, and Lucia Specia. 2013. Findings of the 2013 Workshop on Statistical Machine Translation. In Proceedings of the Eighth Workshop on Statistical Machine Translation, pages 1–44, Sofia, Bulgaria, August. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L´eon Bottou</author>
+</authors>
+<title>Large-scale machine learning with stochastic gradient descent.</title>
+<date>2010</date>
+<booktitle>In Proceedings of COMPSTAT’2010,</booktitle>
+<pages>177--186</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="9443" citStr="Bottou, 2010" startWordPosition="1484" endWordPosition="1485">s: 1 Q(w) = En(f) = n where in turn l(ˆy, y) is a loss function that quantifies the cost of predicting yˆ when the actual answer is y. One advantage is computational efficiency, while the disadvantages include the inability to provide certainty of termination or result determinism. Recent literature partially circumvents these problems (Hager and Zhang, 2005), and the use of such family of algorithms has been rediscovered for large scale data learning, whose applications prefer approximate over exact inference, by using a stochastic variant (Equation 5) of the traditional method (Zhang, 2004; Bottou, 2010), which samples a subset of the training data. wt+1 = wt − γtVwQ(zt, wt) (5) We adopt a hinge loss function for Support Vector Machine (SVM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). 4 Implementation &amp; Evaluation As a proof-of-concept and means of evaluation, we constructed a Java prototype that implements the pipeline in Figure 2, by making use of the Moses process (Koehn et al., 2007) for machine translation, the Stanford Parser </context>
+</contexts>
+<marker>Bottou, 2010</marker>
+<rawString>L´eon Bottou. 2010. Large-scale machine learning with stochastic gradient descent. In Proceedings of COMPSTAT’2010, pages 177–186. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Simon Corston-Oliver</author>
+<author>Michael Gamon</author>
+<author>Chris Brockett</author>
+</authors>
+<title>A machine learning approach to the automatic evaluation of machine translation.</title>
+<date>2001</date>
+<booktitle>In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics,</booktitle>
+<pages>148--155</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="17009" citStr="Corston-Oliver et al., 2001" startWordPosition="2719" endWordPosition="2722">lated &amp; Future Work In order to estimate MT output quality, literature in the past has traditionally compared an automatically translated sentence to one or more human text references (Papineni et al., 2002), while other work has exploited unlabeled dependencies in order to take into account legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they att</context>
+</contexts>
+<marker>Corston-Oliver, Gamon, Brockett, 2001</marker>
+<rawString>Simon Corston-Oliver, Michael Gamon, and Chris Brockett. 2001. A machine learning approach to the automatic evaluation of machine translation. In Proceedings of the 39th Annual Meeting on Association for Computational Linguistics, pages 148–155. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Yoram Singer</author>
+</authors>
+<title>On the learnability and design of output codes for multiclass problems.</title>
+<date>2002</date>
+<booktitle>Machine Learning,</booktitle>
+<pages>47--2</pages>
+<contexts>
+<context position="7947" citStr="Crammer and Singer, 2002" startWordPosition="1250" endWordPosition="1253">s the core of all current NB variants. 17 n p(C|F1 ... Fn) a p(C) p (Fi|C) (2) i=1 Such generative model is efficient and requires just one linear iteration for training, hence its suitability for large input scaling. Unfortunately, the modeling assumptions that enable efficient computability come at the expense of accuracy. More precisely, NB-based methods maximize likelihood conditioned only over the class label C, and not over the set of all other remaining features, and as a result its effectiveness is often outperformed by discriminative classifiers such as Support Vector Machines (SVM) (Crammer and Singer, 2002; Puurula, 2012). However, given its high efficiency and scalability, we will use NB as our primary model and compare it with an algorithm that has deeper modeling assumptions, but exploits inference approximation to reduce complexity, namely SVM with Stochastic Gradient Descent for parameter finding. Approximated inference is often achieved via traditional gradient descent methods (see Equation 3 for linear classification or regression approaches) that are largely used, first-order, stepwise optimization algorithms that seek minima of a problem with large dimensionality and unknown convexity </context>
+</contexts>
+<marker>Crammer, Singer, 2002</marker>
+<rawString>Koby Crammer and Yoram Singer. 2002. On the learnability and design of output codes for multiclass problems. Machine Learning, 47(2-3):201–233.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marie-Catherine De Marneffe</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>The stanford typed dependencies representation.</title>
+<date>2008</date>
+<booktitle>In Coling 2008: Proceedings of the workshop on Cross-Framework and Cross-Domain Parser Evaluation,</booktitle>
+<pages>1--8</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>De Marneffe, Manning, 2008</marker>
+<rawString>Marie-Catherine De Marneffe and Christopher D Manning. 2008. The stanford typed dependencies representation. In Coling 2008: Proceedings of the workshop on Cross-Framework and Cross-Domain Parser Evaluation, pages 1–8. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mariano Felice</author>
+<author>Lucia Specia</author>
+</authors>
+<title>Linguistic features for quality estimation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</booktitle>
+<pages>96--103</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="17436" citStr="Felice and Specia, 2012" startWordPosition="2786" endWordPosition="2789">tter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more subject to annotation subjectivity, or to perform binary classification (Hardmeier, 2011), but do not focus on segment reusability estimation. Future work will focus on testing the hypothesis modeling and feature extraction for scalability on larger contextabstract data, and verifying the distinguishability of predicted values from more human-</context>
+</contexts>
+<marker>Felice, Specia, 2012</marker>
+<rawString>Mariano Felice and Lucia Specia. 2012. Linguistic features for quality estimation. In Proceedings of the Seventh Workshop on Statistical Machine Translation, pages 96–103. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Gamon</author>
+<author>Anthony Aue</author>
+<author>Martine Smets</author>
+</authors>
+<title>Sentence-level mt evaluation without reference translations: Beyond language modeling.</title>
+<date>2005</date>
+<booktitle>In Proceedings of EAMT,</booktitle>
+<pages>103--111</pages>
+<contexts>
+<context position="17090" citStr="Gamon et al., 2005" startWordPosition="2731" endWordPosition="2734">ditionally compared an automatically translated sentence to one or more human text references (Papineni et al., 2002), while other work has exploited unlabeled dependencies in order to take into account legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more</context>
+</contexts>
+<marker>Gamon, Aue, Smets, 2005</marker>
+<rawString>Michael Gamon, Anthony Aue, and Martine Smets. 2005. Sentence-level mt evaluation without reference translations: Beyond language modeling. In Proceedings of EAMT, pages 103–111.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Irving John Good</author>
+</authors>
+<title>The estimation of probabilities: An essay on modern Bayesian methods, volume 30.</title>
+<date>1965</date>
+<publisher>MIT press</publisher>
+<location>Cambridge, MA.</location>
+<contexts>
+<context position="7117" citStr="Good, 1965" startWordPosition="1115" endWordPosition="1116">of grammar relationships for each sentence, in order to construct segmentlevel estimations (Equation 1). �k Ptdj,si (1) 1 Psi = k j=1 Hypothesis Model Given our aim to achieve method robustness and breadth of applicability, and that context abstraction is potentially achievable since correctness of a grammar relationship is not dependent on neighbouring dependencies, we train on a high number of diverse training instances. In order to obtain a reduction in time and space complexity, we approximate our hypothesis by making sample independence assumptions, such as the Naive Bayes (NB) approach (Good, 1965). NB is a model that assumes feature independence, i.e. the ’naiveness’ implies that every feature Fi is conditionally independent of every other feature Fj for j =� i given the class C. Equation 2 describes the core of all current NB variants. 17 n p(C|F1 ... Fn) a p(C) p (Fi|C) (2) i=1 Such generative model is efficient and requires just one linear iteration for training, hence its suitability for large input scaling. Unfortunately, the modeling assumptions that enable efficient computability come at the expense of accuracy. More precisely, NB-based methods maximize likelihood conditioned on</context>
+</contexts>
+<marker>Good, 1965</marker>
+<rawString>Irving John Good. 1965. The estimation of probabilities: An essay on modern Bayesian methods, volume 30. MIT press Cambridge, MA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>William W Hager</author>
+<author>Hongchao Zhang</author>
+</authors>
+<title>A new conjugate gradient method with guaranteed descent and an efficient line search.</title>
+<date>2005</date>
+<journal>SIAM Journal on Optimization,</journal>
+<volume>16</volume>
+<issue>1</issue>
+<contexts>
+<context position="9191" citStr="Hager and Zhang, 2005" startWordPosition="1442" endWordPosition="1445">) where our objective is to iteratively minimize, given an initial parameterization (starting point w0, number of iterations, step length γ0), and a function Q(w), or more specifically when within the machine learning context, an empirical risk En(f), defined as: 1 Q(w) = En(f) = n where in turn l(ˆy, y) is a loss function that quantifies the cost of predicting yˆ when the actual answer is y. One advantage is computational efficiency, while the disadvantages include the inability to provide certainty of termination or result determinism. Recent literature partially circumvents these problems (Hager and Zhang, 2005), and the use of such family of algorithms has been rediscovered for large scale data learning, whose applications prefer approximate over exact inference, by using a stochastic variant (Equation 5) of the traditional method (Zhang, 2004; Bottou, 2010), which samples a subset of the training data. wt+1 = wt − γtVwQ(zt, wt) (5) We adopt a hinge loss function for Support Vector Machine (SVM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). </context>
+</contexts>
+<marker>Hager, Zhang, 2005</marker>
+<rawString>William W Hager and Hongchao Zhang. 2005. A new conjugate gradient method with guaranteed descent and an efficient line search. SIAM Journal on Optimization, 16(1):170–192.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Hall</author>
+<author>Eibe Frank</author>
+<author>Geoffrey Holmes</author>
+<author>Bernhard Pfahringer</author>
+<author>Peter Reutemann</author>
+<author>Ian H Witten</author>
+</authors>
+<title>The weka data mining software: an update.</title>
+<date>2009</date>
+<journal>ACM SIGKDD Explorations Newsletter,</journal>
+<volume>11</volume>
+<issue>1</issue>
+<pages>18</pages>
+<contexts>
+<context position="10198" citStr="Hall et al., 2009" startWordPosition="1603" endWordPosition="1606">VM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). 4 Implementation &amp; Evaluation As a proof-of-concept and means of evaluation, we constructed a Java prototype that implements the pipeline in Figure 2, by making use of the Moses process (Koehn et al., 2007) for machine translation, the Stanford Parser (De Marneffe and Manning, 2008) for typed dependency extraction, the API of the general-purpose machine learning analysis platform Weka (Hall et al., 2009) for training and prediction, and ad-hoc implementations of the remaining specified modules. Typed dependency extraction is possible by feeding a pre-trained language-specific Probabilistic Context-Free Grammar (PCFG) into the parser, which is a model that defines probabilistic grammar production rules for such language. Such a model is trained beforehand on a large, syntactically annotated text corpus (i.e. a treebank) (Jelinek et al., 1992). 4.1 Experiment We used our prototype on a subset of the Europarl test data (Koehn, 2005), extracting 536404 instances from 11270 human reference lines, </context>
+</contexts>
+<marker>Hall, Frank, Holmes, Pfahringer, Reutemann, Witten, 2009</marker>
+<rawString>Mark Hall, Eibe Frank, Geoffrey Holmes, Bernhard Pfahringer, Peter Reutemann, and Ian H Witten. 2009. The weka data mining software: an update. ACM SIGKDD Explorations Newsletter, 11(1):10– 18.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christian Hardmeier</author>
+</authors>
+<title>Improving machine translation quality prediction with syntactic tree kernels.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 15th conference of the European Association for Machine Translation (EAMT</booktitle>
+<pages>233--240</pages>
+<contexts>
+<context position="17780" citStr="Hardmeier, 2011" startWordPosition="2842" endWordPosition="2843">2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more subject to annotation subjectivity, or to perform binary classification (Hardmeier, 2011), but do not focus on segment reusability estimation. Future work will focus on testing the hypothesis modeling and feature extraction for scalability on larger contextabstract data, and verifying the distinguishability of predicted values from more human-annotated judgements using the method stated in Section 4.2. Time gain values have not yet been acquired given the unusability of the time productivity metrics currently favored, which do not exhibit direct correlation with real PE time, and are also focus of future investigations. Futhermore, evaluation on the WMT Quality Estimation Shared T</context>
+</contexts>
+<marker>Hardmeier, 2011</marker>
+<rawString>Christian Hardmeier. 2011. Improving machine translation quality prediction with syntactic tree kernels. In Proceedings of the 15th conference of the European Association for Machine Translation (EAMT 2011), pages 233–240.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yifan He</author>
+<author>Andy Way</author>
+</authors>
+<title>Learning labelled dependencies in machine translation evaluation.</title>
+<date>2009</date>
+<contexts>
+<context position="17169" citStr="He and Way, 2009" startWordPosition="2745" endWordPosition="2748">t references (Papineni et al., 2002), while other work has exploited unlabeled dependencies in order to take into account legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more subject to annotation subjectivity, or to perform binary classification (Hardm</context>
+</contexts>
+<marker>He, Way, 2009</marker>
+<rawString>Yifan He and Andy Way. 2009. Learning labelled dependencies in machine translation evaluation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Frederick Jelinek</author>
+<author>John D Lafferty</author>
+<author>Robert L Mercer</author>
+</authors>
+<title>Basic methods of probabilistic context free grammars.</title>
+<date>1992</date>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="10644" citStr="Jelinek et al., 1992" startWordPosition="1669" endWordPosition="1673">the Stanford Parser (De Marneffe and Manning, 2008) for typed dependency extraction, the API of the general-purpose machine learning analysis platform Weka (Hall et al., 2009) for training and prediction, and ad-hoc implementations of the remaining specified modules. Typed dependency extraction is possible by feeding a pre-trained language-specific Probabilistic Context-Free Grammar (PCFG) into the parser, which is a model that defines probabilistic grammar production rules for such language. Such a model is trained beforehand on a large, syntactically annotated text corpus (i.e. a treebank) (Jelinek et al., 1992). 4.1 Experiment We used our prototype on a subset of the Europarl test data (Koehn, 2005), extracting 536404 instances from 11270 human reference lines, and from 11270 machine-translated lines that share the same source. Our Naive Bayes algorithm (using word frequencies, no pruning) required 1.08 seconds to formulate a hypothesis model, versus the 28613.64 seconds required for the construction of a Stochastic Gradient Descent model (hinge loss function for SVM, step length 0.01, 500 steps, no pruning). A 10-fold cross validation on the training set provided a correct instance classification o</context>
+</contexts>
+<marker>Jelinek, Lafferty, Mercer, 1992</marker>
+<rawString>Frederick Jelinek, John D Lafferty, and Robert L Mercer. 1992. Basic methods of probabilistic context free grammars. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thorsten Joachims</author>
+</authors>
+<title>Text categorization with support vector machines: Learning with many relevant features.</title>
+<date>1998</date>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="9766" citStr="Joachims, 1998" startWordPosition="1537" endWordPosition="1538"> these problems (Hager and Zhang, 2005), and the use of such family of algorithms has been rediscovered for large scale data learning, whose applications prefer approximate over exact inference, by using a stochastic variant (Equation 5) of the traditional method (Zhang, 2004; Bottou, 2010), which samples a subset of the training data. wt+1 = wt − γtVwQ(zt, wt) (5) We adopt a hinge loss function for Support Vector Machine (SVM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). 4 Implementation &amp; Evaluation As a proof-of-concept and means of evaluation, we constructed a Java prototype that implements the pipeline in Figure 2, by making use of the Moses process (Koehn et al., 2007) for machine translation, the Stanford Parser (De Marneffe and Manning, 2008) for typed dependency extraction, the API of the general-purpose machine learning analysis platform Weka (Hall et al., 2009) for training and prediction, and ad-hoc implementations of the remaining specified modules. Typed dependency extraction is possible by feeding a pre-trained language-s</context>
+</contexts>
+<marker>Joachims, 1998</marker>
+<rawString>Thorsten Joachims. 1998. Text categorization with support vector machines: Learning with many relevant features. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+</authors>
+<title>Moses: Open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions,</booktitle>
+<pages>177--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="9997" citStr="Koehn et al., 2007" startWordPosition="1573" endWordPosition="1576">Equation 5) of the traditional method (Zhang, 2004; Bottou, 2010), which samples a subset of the training data. wt+1 = wt − γtVwQ(zt, wt) (5) We adopt a hinge loss function for Support Vector Machine (SVM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). 4 Implementation &amp; Evaluation As a proof-of-concept and means of evaluation, we constructed a Java prototype that implements the pipeline in Figure 2, by making use of the Moses process (Koehn et al., 2007) for machine translation, the Stanford Parser (De Marneffe and Manning, 2008) for typed dependency extraction, the API of the general-purpose machine learning analysis platform Weka (Hall et al., 2009) for training and prediction, and ad-hoc implementations of the remaining specified modules. Typed dependency extraction is possible by feeding a pre-trained language-specific Probabilistic Context-Free Grammar (PCFG) into the parser, which is a model that defines probabilistic grammar production rules for such language. Such a model is trained beforehand on a large, syntactically annotated text </context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, et al. 2007. Moses: Open source toolkit for statistical machine translation. In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, pages 177–180. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+</authors>
+<title>Europarl: A parallel corpus for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In MT summit,</booktitle>
+<volume>5</volume>
+<contexts>
+<context position="10734" citStr="Koehn, 2005" startWordPosition="1689" endWordPosition="1690"> general-purpose machine learning analysis platform Weka (Hall et al., 2009) for training and prediction, and ad-hoc implementations of the remaining specified modules. Typed dependency extraction is possible by feeding a pre-trained language-specific Probabilistic Context-Free Grammar (PCFG) into the parser, which is a model that defines probabilistic grammar production rules for such language. Such a model is trained beforehand on a large, syntactically annotated text corpus (i.e. a treebank) (Jelinek et al., 1992). 4.1 Experiment We used our prototype on a subset of the Europarl test data (Koehn, 2005), extracting 536404 instances from 11270 human reference lines, and from 11270 machine-translated lines that share the same source. Our Naive Bayes algorithm (using word frequencies, no pruning) required 1.08 seconds to formulate a hypothesis model, versus the 28613.64 seconds required for the construction of a Stochastic Gradient Descent model (hinge loss function for SVM, step length 0.01, 500 steps, no pruning). A 10-fold cross validation on the training set provided a correct instance classification of 67.0168% for NB model, versus the 66.0118% of the SGD model. Table 1 provides further st</context>
+</contexts>
+<marker>Koehn, 2005</marker>
+<rawString>Philipp Koehn. 2005. Europarl: A parallel corpus for statistical machine translation. In MT summit, volume 5.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hans P Krings</author>
+</authors>
+<title>Repairing texts: empirical investigations of machine translation post-editing processes, volume 5. Kent State</title>
+<date>2001</date>
+<publisher>University Press.</publisher>
+<contexts>
+<context position="2319" citStr="Krings, 2001" startWordPosition="350" endWordPosition="351">s context could potentially be a combination of the following or more factors, with reference to the target segment: • the word order, or grammar, are such that the sentence structure is unintelligible • the lexical semantics of the words do not convey the meaning of the source segment These lexical or structural factors can be present to various extents and their threshold of identification can be subjective for each post-editor, but hypothetically any intervention on the latter points is quantifiable in terms of post-editing time, being this the most observable aspect of postediting effort (Krings, 2001). This paper proposes a supervised learning approach to discriminate typed grammar relation instances that compose a human-written sentence from any other form, in order to identify segments that can potentially lead to time loss on the basis of its incorrect grammar or word adjacency and delete them before postediting. The remainder presents the project’s assumptions and the nature of the adopted learning features (Section 2), the high-level algorithmic approach and the theory behind the adopted prediction models (Section 3). We then provide our implementation outline and the evaluation appro</context>
+</contexts>
+<marker>Krings, 2001</marker>
+<rawString>Hans P Krings. 2001. Repairing texts: empirical investigations of machine translation post-editing processes, volume 5. Kent State University Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ding Liu</author>
+<author>Daniel Gildea</author>
+</authors>
+<title>Syntactic features for evaluation of machine translation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization,</booktitle>
+<pages>25--32</pages>
+<contexts>
+<context position="16748" citStr="Liu and Gildea, 2005" startWordPosition="2685" endWordPosition="2688">Z RB JJ IN RB NN NNS Figure 4: Human reference and raw MT output derived from the test subset of Europarl FR-EN corpus, which show typed dependency relationships, the words, and related part-of-speech tags that highlight possible word usage variance 6 Related &amp; Future Work In order to estimate MT output quality, literature in the past has traditionally compared an automatically translated sentence to one or more human text references (Papineni et al., 2002), while other work has exploited unlabeled dependencies in order to take into account legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain p</context>
+</contexts>
+<marker>Liu, Gildea, 2005</marker>
+<rawString>Ding Liu and Daniel Gildea. 2005. Syntactic features for evaluation of machine translation. In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization, pages 25–32.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Karolina Owczarzak</author>
+<author>Josef Van Genabith</author>
+<author>Andy Way</author>
+</authors>
+<title>Dependency-based automatic evaluation for machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the NAACL-HLT 2007/AMTA Workshop on Syntax and Structure in Statistical Translation,</booktitle>
+<pages>pages</pages>
+<marker>Owczarzak, Van Genabith, Way, 2007</marker>
+<rawString>Karolina Owczarzak, Josef Van Genabith, and Andy Way. 2007. Dependency-based automatic evaluation for machine translation. In Proceedings of the NAACL-HLT 2007/AMTA Workshop on Syntax and Structure in Statistical Translation, pages 80– 87. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>Bleu: a method for automatic evaluation of machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 40th annual meeting on association for computational linguistics,</booktitle>
+<pages>311--318</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="16588" citStr="Papineni et al., 2002" startWordPosition="2661" endWordPosition="2664">setup). This is a lie : the accounts have been fiddled. DT VBZ DT NN : DT NNS VBP VBN VBN In fact , it is not true because even accounting tricks. IN NN , PRP VBZ RB JJ IN RB NN NNS Figure 4: Human reference and raw MT output derived from the test subset of Europarl FR-EN corpus, which show typed dependency relationships, the words, and related part-of-speech tags that highlight possible word usage variance 6 Related &amp; Future Work In order to estimate MT output quality, literature in the past has traditionally compared an automatically translated sentence to one or more human text references (Papineni et al., 2002), while other work has exploited unlabeled dependencies in order to take into account legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of pos</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2002. Bleu: a method for automatic evaluation of machine translation. In Proceedings of the 40th annual meeting on association for computational linguistics, pages 311–318. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antti Puurula</author>
+</authors>
+<title>Combining modifications to multinomial naive bayes for text classification.</title>
+<date>2012</date>
+<booktitle>In Information Retrieval Technology,</booktitle>
+<pages>114--125</pages>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="7963" citStr="Puurula, 2012" startWordPosition="1254" endWordPosition="1255">NB variants. 17 n p(C|F1 ... Fn) a p(C) p (Fi|C) (2) i=1 Such generative model is efficient and requires just one linear iteration for training, hence its suitability for large input scaling. Unfortunately, the modeling assumptions that enable efficient computability come at the expense of accuracy. More precisely, NB-based methods maximize likelihood conditioned only over the class label C, and not over the set of all other remaining features, and as a result its effectiveness is often outperformed by discriminative classifiers such as Support Vector Machines (SVM) (Crammer and Singer, 2002; Puurula, 2012). However, given its high efficiency and scalability, we will use NB as our primary model and compare it with an algorithm that has deeper modeling assumptions, but exploits inference approximation to reduce complexity, namely SVM with Stochastic Gradient Descent for parameter finding. Approximated inference is often achieved via traditional gradient descent methods (see Equation 3 for linear classification or regression approaches) that are largely used, first-order, stepwise optimization algorithms that seek minima of a problem with large dimensionality and unknown convexity status. VwQ(zt, </context>
+</contexts>
+<marker>Puurula, 2012</marker>
+<rawString>Antti Puurula. 2012. Combining modifications to multinomial naive bayes for text classification. In Information Retrieval Technology, pages 114–125. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lorenzo Rosasco</author>
+<author>Ernesto De Vito</author>
+<author>Andrea Caponnetto</author>
+<author>Michele Piana</author>
+<author>Alessandro Verri</author>
+</authors>
+<title>Are loss functions all the same?</title>
+<date>2004</date>
+<journal>Neural Computation,</journal>
+<volume>16</volume>
+<issue>5</issue>
+<marker>Rosasco, De Vito, Caponnetto, Piana, Verri, 2004</marker>
+<rawString>Lorenzo Rosasco, Ernesto De Vito, Andrea Caponnetto, Michele Piana, and Alessandro Verri. 2004. Are loss functions all the same? Neural Computation, 16(5):1063–1076.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Simard</author>
+<author>Cyril Goutte</author>
+<author>Pierre Isabelle</author>
+</authors>
+<date>2007</date>
+<note>Statistical phrase-based post-editing.</note>
+<contexts>
+<context position="1327" citStr="Simard et al., 2007" startWordPosition="186" endWordPosition="189">that we aggregate to provide a binary segmentlevel evaluation. In view of scaling up to larger data, we provide implemented Naive Bayes and Stochastic Gradient Descent with Support Vector Machine loss function approaches and their evaluation, and verify the correlation of predicted values with human judgement. 1 Introduction Currently the Machine Translation (MT) research community attempts to seamlessly integrate both humans and MT-instances in the workflow of textual translation. Efforts towards this integration focus, for instance, on automating a posteriori processes such as post-editing (Simard et al., 2007), or other format coherence maintenance (e.g. date, spelling). Our contribution addresses cases when a post-editor has to start a segment from scratch, because the MT raw output turns out to be a hindrance rather than an aid, and the corresponding evaluation time between editing and manually retranslating a sequence is wasted a posteriori. Reasons for unusable MT output in this context could potentially be a combination of the following or more factors, with reference to the target segment: • the word order, or grammar, are such that the sentence structure is unintelligible • the lexical seman</context>
+</contexts>
+<marker>Simard, Goutte, Isabelle, 2007</marker>
+<rawString>Michel Simard, Cyril Goutte, and Pierre Isabelle. 2007. Statistical phrase-based post-editing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lucia Specia</author>
+</authors>
+<title>Exploiting objective annotations for measuring translation post-editing effort.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 15th Conference of the European Association for Machine Translation,</booktitle>
+<pages>73--80</pages>
+<contexts>
+<context position="17280" citStr="Specia, 2011" startWordPosition="2763" endWordPosition="2764">ccount legitimate grammatical or lexical choice variations (Liu and Gildea, 2005). Other work improves the classification effectiveness of the latter by considering typed dependencies (Owczarzak et al., 2007). Some data-driven, referenceless evaluation approaches to learning human judgement have been introduced (Corston-Oliver et al., 2001), which exploit syntactic features and linguistic indicators (Gamon et al., 2005), but have also been combined with typed dependency features (He and Way, 2009). Estimation of post-editing effort is a growing concern addressed by Confidence Estimation (CE) (Specia, 2011), but so far, to the best of our knowledge, work within the domain performs supervised learning of statistical linguistic features (Felice and Specia, 2012), but not of dependency features, i.e. the main focus of this contribution. Previous quality estimation methods differ in nature from the presented view, given that they attempt to predict a discrete level of postediting effort (Bojar et al., 2013), more subject to annotation subjectivity, or to perform binary classification (Hardmeier, 2011), but do not focus on segment reusability estimation. Future work will focus on testing the hypothes</context>
+</contexts>
+<marker>Specia, 2011</marker>
+<rawString>Lucia Specia. 2011. Exploiting objective annotations for measuring translation post-editing effort. In Proceedings of the 15th Conference of the European Association for Machine Translation, pages 73–80.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tong Zhang</author>
+</authors>
+<title>Solving large scale linear prediction problems using stochastic gradient descent algorithms.</title>
+<date>2004</date>
+<booktitle>In Proceedings of the twenty-first international conference on Machine learning,</booktitle>
+<pages>116</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="9428" citStr="Zhang, 2004" startWordPosition="1482" endWordPosition="1483">f), defined as: 1 Q(w) = En(f) = n where in turn l(ˆy, y) is a loss function that quantifies the cost of predicting yˆ when the actual answer is y. One advantage is computational efficiency, while the disadvantages include the inability to provide certainty of termination or result determinism. Recent literature partially circumvents these problems (Hager and Zhang, 2005), and the use of such family of algorithms has been rediscovered for large scale data learning, whose applications prefer approximate over exact inference, by using a stochastic variant (Equation 5) of the traditional method (Zhang, 2004; Bottou, 2010), which samples a subset of the training data. wt+1 = wt − γtVwQ(zt, wt) (5) We adopt a hinge loss function for Support Vector Machine (SVM) classification, a method which has proven to be reliable for elaborating high scale, sparsely distributed instance vector applications that have dense concept vectors (Joachims, 1998; Rosasco et al., 2004). 4 Implementation &amp; Evaluation As a proof-of-concept and means of evaluation, we constructed a Java prototype that implements the pipeline in Figure 2, by making use of the Moses process (Koehn et al., 2007) for machine translation, the S</context>
+</contexts>
+<marker>Zhang, 2004</marker>
+<rawString>Tong Zhang. 2004. Solving large scale linear prediction problems using stochastic gradient descent algorithms. In Proceedings of the twenty-first international conference on Machine learning, page 116. ACM.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

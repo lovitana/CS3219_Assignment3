@@ -1,0 +1,1879 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000059">
+<title confidence="0.998818">
+Dependency-Based Bilingual Language Models for
+Reordering in Statistical Machine Translation
+</title>
+<author confidence="0.983683">
+Ekaterina Garmash and Christof Monz
+</author>
+<affiliation confidence="0.993354">
+Informatics Institute, University of Amsterdam
+</affiliation>
+<address confidence="0.93053">
+Science Park 904, 1098 XH Amsterdam, The Netherlands
+</address>
+<email confidence="0.998255">
+{e.garmash,c.monz}@uva.nl
+</email>
+<sectionHeader confidence="0.993871" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999984045454546">
+This paper presents a novel approach to
+improve reordering in phrase-based ma-
+chine translation by using richer, syntac-
+tic representations of units of bilingual
+language models (BiLMs). Our method
+to include syntactic information is simple
+in implementation and requires minimal
+changes in the decoding algorithm. The
+approach is evaluated in a series of Arabic-
+English and Chinese-English translation
+experiments. The best models demon-
+strate significant improvements in BLEU
+and TER over the phrase-based baseline,
+as well as over the lexicalized BiLM by
+Niehues et al. (2011). Further improve-
+ments of up to 0.45 BLEU for Arabic-
+English and up to 0.59 BLEU for Chinese-
+English are obtained by combining our de-
+pendency BiLM with a lexicalized BiLM.
+An improvement of 0.98 BLEU is ob-
+tained for Chinese-English in the setting of
+an increased distortion limit.
+</bodyText>
+<sectionHeader confidence="0.998992" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999812018518519">
+In statistical machine translation (SMT) reorder-
+ing (also called distortion) refers to the order in
+which source words are translated to generate the
+translation in the target language. Word orders
+can differ significantly across languages. For in-
+stance, Arabic declarative sentences can be verb-
+initial, while the corresponding English translation
+should realize the verb after the subject, hence re-
+quiring a reordering. Determining the correct re-
+ordering during decoding is a major challenge for
+SMT. This problem has received a lot of attention
+in the literature (see, e.g., Tillmann (2004), Zens
+and Ney (2003), Al-Onaizan and Papineni (2006)),
+as choosing the correct reordering improves read-
+ability of the translation and can have a substan-
+tial impact on translation quality (Birch, 2011). In
+this paper, we only consider those approaches that
+include a reordering feature function into the log-
+linear interpolation used during decoding.
+The simplest reordering model is linear distor-
+tion (Koehn et al., 2003) which scores the distance
+between phrases translated at steps t and t + 1 of
+the derivation. This model ignores any contex-
+tual information, as the distance between trans-
+lated phrases is its only parameter. Lexical dis-
+tortion modeling (Tillmann, 2004) conditions re-
+ordering probabilities on the phrase pairs trans-
+lated at the current and previous steps. Unlike
+linear distortion, it characterizes reordering not in
+terms of distance but type: monotone, swap, or
+discontinuous.
+In this paper, we base our approach to reorder-
+ing on bilingual language models (Marino et al.,
+2006; Niehues et al., 2011). Instead of directly
+characterizing reordering, they model sequences
+of elementary translation events as a Markov pro-
+cess.1 Originally, Marino et al. (2006) used this
+kind of model as the translation model, while more
+recently it has been used as an additional model
+in PBSMT systems (Niehues et al., 2011). We
+adopt and generalize the approach of Niehues et al.
+(2011) to investigate several variations of bilingual
+language models. Our method consists of labeling
+elementary translation events (tokens of bilingual
+LMs) with their different contextual properties.
+What kind of contextual information should be
+incorporated in a reordering model? Lexical in-
+formation has been used by Tillmann (2004) but
+is known to suffer from data sparsity (Galley and
+Manning, 2008). Also previous contributions to
+bilingual language modeling (Marino et al., 2006;
+Niehues et al., 2011) have mostly used lexical
+information, although Crego and Yvon (2010a)
+and Crego and Yvon (2010b) label bilingual to-
+</bodyText>
+<footnote confidence="0.983504666666667">
+1Note that the standard PBSMT translation model as-
+sumes that events of translating separate phrases in a sentence
+are independent.
+</footnote>
+<page confidence="0.913825">
+1689
+</page>
+<note confidence="0.907559">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999851322580645">
+kens with a rich set of POS tags. But in gen-
+eral, reordering is considered to be a syntactic phe-
+nomenon and thus the relevant features are syn-
+tactic (Fox, 2002; Cherry, 2008). Syntactic in-
+formation is incorporated in tree-based approaches
+in SMT, allowing one to provide a more detailed
+definition of translation events and to redefine de-
+coding as parsing of a source string (Liu et al.,
+2006; Huang et al., 2006; Marton and Resnik,
+2008), of a target string (Shen et al., 2008), or
+both (Chiang, 2007; Chiang, 2010). Reordering
+is a result of a given derivation, and CYK-based
+decoding used in tree-based approaches is more
+syntax-aware than the simple PBSMT decoding
+algorithm. Although tree-based approaches poten-
+tially offer a more accurate model of translation,
+they are also a lot more complex and requiring
+more intricate optimization and estimation tech-
+niques (Huang and Mi, 2010).
+Our idea is to keep the simplicity of PBSMT but
+move towards the expressiveness typical of tree-
+based models. We incrementally build up the syn-
+tactic representation of a translation during decod-
+ing by adding precomputed fragments from the
+source parse tree. The idea to combine the mer-
+its of the two SMT paradigms has been proposed
+before, where Huang and Mi (2010) introduce in-
+cremental decoding for a tree-based model. On a
+very general level, our approach is similar to theirs
+in that it keeps track of a sequence of source syn-
+tactic subtrees that are being translated at consec-
+utive decoding steps. An important difference is
+that they keep track of whether the visited subtrees
+have been fully translated, while in our approach,
+once a syntactic structural unit has been added to
+the history, it is not updated anymore.
+In this paper, we focus on source syntactic in-
+formation. During decoding we have full access
+to the source sentence, which allows us to obtain
+a better syntactic analysis (than for a partial sen-
+tence) and to precompute the units that the model
+operates with. We investigate the following re-
+search questions: How well can we capture re-
+ordering regularities of a language pair by incor-
+porating source syntactic parameters into the units
+of a bilingual language model? What kind of
+source syntactic parameters are necessary and suf-
+ficient?
+Our contributions can be summarized as fol-
+lows: We argue that the contextual information
+used in the original bilingual models (Niehues et
+al., 2011) is insufficient and introduce a simple
+model that exploits source-side syntax to improve
+reordering (Sections 2 and 3). We perform a thor-
+ough comparison between different variants of our
+general model and compare them to the original
+approach. We carry out translation experiments
+on multiple test sets, two language pairs (Arabic-
+English and Chinese-English), and with respect to
+two metrics (BLEU and TER). Finally, we present
+a preliminary analysis of the reorderings resulting
+from the proposed models (Section 4).
+</bodyText>
+<sectionHeader confidence="0.974922" genericHeader="introduction">
+2 Motivation
+</sectionHeader>
+<bodyText confidence="0.995623448275862">
+In this section, we elaborate on our research ques-
+tions and provide background for our approach.
+We also discuss existing bilingual n-gram mod-
+els and argue that they are often not expressive
+enough to differentiate between alternative re-
+orderings. We should first note that the most com-
+monly used n-gram model to distinguish between
+reorderings is a target language model, which does
+not take translation correspondence into account
+and just models target-side fluency. Al-Onaizan
+and Papineni (2006) show that target language
+models by themselves are not sufficient to cor-
+rectly characterize reordering. In what follows we
+only discuss bilingual models.
+The word-aligned sentence pair in Figure 1.a2
+demonstrates a common Arabic-English reorder-
+ing. As stated in the introduction, bilingual lan-
+guage models capture reordering regularities as a
+sequence of elementary translation events3. In the
+given example, one could decompose the sequen-
+tial process of translation as follows: First trans-
+late the first wordAlwzyr as the minister, then ArjE
+as attributed, then ArtfAE as the increase and so
+on. The sequence of elementary translation events
+is modeled as an n-gram model (Equation 1, where
+ti is a translation event). There are numerous ways
+in which ti can be defined. Below we first discuss
+how they have been defined within previous ap-
+proaches, and then introduce our definition.
+</bodyText>
+<equation confidence="0.9936465">
+p(t1, ... , tm) = �m p(ti|ti−n+1 ... ti−1) (1)
+i=1
+</equation>
+<subsectionHeader confidence="0.988782">
+2.1 Lexicalized bilingual LMs
+</subsectionHeader>
+<bodyText confidence="0.9973215">
+By including both source and target information
+into the representation of translation events we ob-
+</bodyText>
+<footnote confidence="0.999131">
+2We used Buckwalter transliteration for Arabic words.
+3By an elementary translation event we mean a translation
+of some substructure of a sentence.
+</footnote>
+<page confidence="0.987859">
+1690
+</page>
+<figure confidence="0.980526333333333">
+w ArjE Alwzyr ArtfAE AsEAr Albtrwl
+the minister attributed the increase of oil prices
+(a) The original word alignment.
+</figure>
+<figureCaption confidence="0.988167">
+Figure 1: Arabic-English parallel sentence, automatically word-aligned. The bilingual token sequences
+are produced according to two alternative definitions (BiLM and MTU).
+</figureCaption>
+<figure confidence="0.99955064">
+Alwzyr
+Alwzyr
+ArjE
+ArtfAE
+ArtfAE
+empty
+Albtrwl
+AsEAr
+w Alwzyr ArjE
+ArtfAE
+Albtrwl
+AsEAr
+the
+minister
+attributed
+the
+increase
+of
+oil
+prices
+empty
+the minister the the increase
+of oil
+prices
+(b) BiLM tokens extracted from sentence (a). (c) MTU tokens extracted from sentence (a).
+</figure>
+<bodyText confidence="0.9961701">
+tain a bilingual LM. The richer representation al-
+lows for a finer distinction between reorderings.
+For example, Arabic has a morphological marker
+of definiteness on both nouns and adjectives. If
+we first translate a definite adjective and then an
+indefinite noun, it will probably not be a likely se-
+quence according to the translation model. This
+kind of intuition underlies the model of Niehues et
+al. (2011), a bilingual LM (BiLM), which defines
+elementary translation events t1, ..., tn as follows:
+</bodyText>
+<equation confidence="0.978268">
+ti = (ei, IfIf E A(ei)}), (2)
+</equation>
+<bodyText confidence="0.999962463414634">
+where ei is the i-th target word and A : E -*
+P(F) is an alignment function, E and F refer-
+ring to target and source sentences, and P(·) is the
+powerset function. In other words, the i-th trans-
+lation event consists of the i-th target word and all
+source words aligned to it. Niehues et al. (2011)
+refer to the defined translation events ti as bilin-
+gual tokens and we adopt this terminology.
+There are alternative definitions of bilingual
+language models. Our choice of the above defi-
+nition is supported by the fact that it produces an
+unambiguous segmentation of a parallel sentence
+into tokens. Ambiguous segmentation is unde-
+sirable because it increases the token vocabulary,
+and thus the model sparsity. Another disadvan-
+tage comes from the fact that we want to compare
+permutations of the same set of elements. For ex-
+ample, the two different segmentations of ba into
+[ba] and [b][a] still represent the same permuta-
+tion of the sequence ab. In Figure 1 one can pro-
+duce a segmentation of (AsEAr Albtrwl, oil prices)
+into (Albtrwl, oil) and (AsEAr, prices) or leave
+it as is. If we allow for both segmentations, the
+learnt probability parameters may be different for
+the sum of (Albtrwl, oil) and (AsEAr, prices) and
+for the unsegmented phrase.
+Durrani et al. (2011) introduce an alternative
+method for unambiguous bilingual segmentation
+where tokens are defined as minimal phrases,
+called minimal translation units (MTUs). Figure 1
+compares the BiLM and MTU tokenization for a
+specific example. Since Niehues et al. (2011) have
+shown their model to work successfully as an addi-
+tional feature in combination with commonly used
+standard phrase-based features, we use their ap-
+proach as the main point of reference and base our
+approach on their segmentation method. In the
+rest of the text we refer to Niehues et al. (2011)
+as the original BiLM.4 At the same time, we do
+not see any specific obstacles for combining our
+work with MTUs.
+</bodyText>
+<subsectionHeader confidence="0.8514535">
+2.2 Suitability of lexicalized BiLM to model
+reordering
+</subsectionHeader>
+<bodyText confidence="0.98984935">
+As mentioned in the introduction, lexical informa-
+tion is not very well-suited to capture reordering
+regularities. Consider Figure 2.a. The extracted
+sequence of bilingual tokens is produced by align-
+ing source words with respect to target words (so
+that they are in the same order), as demonstrated
+by the shaded part of the picture. If we substituted
+the Arabic translation of Egyptian for the Arabic
+translation of Israeli, the reordering should remain
+the same. What matters for reordering is the syn-
+tactic role or context of a word. By using unneces-
+sarily fine-grained categories we risk running into
+sparsity issues.
+Niehues et al. (2011) also described an alterna-
+tive variant of the original BiLM, where words are
+substituted by their POS tags (Figure 2.a, shaded
+part). Also, however, POS information by itself
+may be insufficiently expressive to separate cor-
+4Although, strictly speaking, it is not the original ap-
+proach (see the references in Section 1).
+</bodyText>
+<page confidence="0.958338">
+1691
+</page>
+<figure confidence="0.861743117647059">
+VBD NNS NNP IN DTNN DTJJ
+trAjEt SAdrAt mSr l Aldwl AlErbyp É
+VBD NNS NNP IN DTNN DTJJ
+trAjEt SAdrAt mSr l Aldwl AlErbyp
+Arabic countries declined Egyptian exports to
+JJ NNS NNS TO
+VBD JJ
+AlErbyp Aldwl trAjEt mSr SAdrAt
+l
+DTJJ DTNN VBD NNP NNS IN
+Egyptian exports to
+JJ NNS TO
+Arabic countries declined É
+JJ NNS VBD
+mSr SAdrAt l AlErbyp Aldwl trAjEt É
+NNP NNS IN DTJJ DTNN VBD
+(a) (b)
+</figure>
+<figureCaption confidence="0.753041666666667">
+Figure 2: Arabic-English parallel sentence, automatically parsed and word-aligned, with corresponding
+sequences of bilingual tokens (in the shaded part). Comparison between translations produced via correct
+(a) and incorrect (b) reorderings.
+</figureCaption>
+<figure confidence="0.854175">
+JJ NNS TO JJ NNS VBD
+</figure>
+<figureCaption confidence="0.987242">
+Figure 3: Sequences of bilingual tokens with
+</figureCaption>
+<bodyText confidence="0.980741352941176">
+source words substituted with their and their par-
+ents’ POS tags: correct (a) and incorrect (b) re-
+orderings.
+rect and incorrect reorderings, see Figure 2.b. Al-
+though the corresponding sequence of POS-tag-
+substituted bilingual tokens is different from the
+correct sequence (Figure 2.b, shaded part), it still
+is a likely sequence. Indeed, the log-probabilities
+of the two sequences with respect to a 4-gram
+BiLM model5 result in a higher probability of
+−10.25 for the incorrect reordering than for the
+correct one (−10.39).
+Since fully lexicalized bilingual tokens suffer
+from data sparsity and POS-based bilingual tokens
+are insufficiently expressive, the question is which
+level of syntactic information strikes the right bal-
+ance between expressiveness and generality.
+</bodyText>
+<footnote confidence="0.667294">
+5Section 4 contains details about data and software setup.
+</footnote>
+<subsectionHeader confidence="0.997371">
+2.3 BiLM with dependency information
+</subsectionHeader>
+<bodyText confidence="0.999981857142857">
+Dependency grammar is commonly used in NLP
+to formalize role-based relations between words.
+The intuitive notion of syntactic modification is
+captured by the primitive binary relation of depen-
+dence. Dependency relations do not change with
+the linear order of words (Figure 2) and therefore
+can provide a characterization of a word’s syntac-
+tic class that invariant under reordering.
+If we incorporate dependency relations into the
+representation of bilingual tokens, the incorrect re-
+ordering in Figure 2.b will produce a highly un-
+likely sequence. For example, we can substitute
+each source word with its POS tag and its par-
+ent’s POS tag (Figure 3). Again, we computed
+4-gram log-probabilities for the corresponding se-
+quences: the correct reordering results in a sub-
+stantially higher probability of −10.58 than the in-
+correct one (−13.48). We may consider situations
+where more fine-grained distinctions are required.
+In the next section, we explore different represen-
+tations based on source dependency trees.
+</bodyText>
+<sectionHeader confidence="0.999272" genericHeader="method">
+3 Dependency-based BiLM
+</sectionHeader>
+<bodyText confidence="0.9998864">
+In this section, we introduce our model which
+combines the BiLM from Niehues et al. (2011)
+with source dependency information. We fur-
+ther give details on how the proposed models are
+trained and integrated into a phrase-based decoder.
+</bodyText>
+<equation confidence="0.2507">
+JJ NNS VBD JJ NNS TO
+</equation>
+<page confidence="0.921714">
+1692
+</page>
+<subsectionHeader confidence="0.998208">
+3.1 The general framework
+</subsectionHeader>
+<bodyText confidence="0.999903125">
+In the previous section we outlined our framework
+as composed of two steps: First, a parallel sen-
+tence is tokenized according to the BiLM model
+(Niehues et al., 2011). Next, words in the bilingual
+tokens are substituted with their contextual prop-
+erties. It is thus convenient to use the following
+generalized definition for a token sequence t1...tn
+in our framework:
+</bodyText>
+<equation confidence="0.961502">
+ti = (ContE(ei), {ContF (f)|f E A(ei)}), (3)
+</equation>
+<bodyText confidence="0.999987117647059">
+where ei is the i-th target word, A : E → P(F)
+is an alignment function, F and E are source and
+target sentences, and ContE and ContF are tar-
+get and source contextual functions, respectively.
+A contextual function returns a word’s contextual
+property, based on its sentential context (source or
+target). See Figure 4 for an example of a sequence
+of BiLM tokens with a ContF defined as return-
+ing the POS tag of the source word combined with
+the POS tags of its parent, grandparent and sib-
+lings, and ContE defined as an identity function
+(see Section 3.2 for a detailed explanation of the
+functions and notation).
+In this work we focus on source contextual
+functions (ContF). We also exploit some very
+simple target contextual functions, but do not go
+into an in-depth exploration.
+</bodyText>
+<subsectionHeader confidence="0.999525">
+3.2 Dependency-based contextual functions
+</subsectionHeader>
+<bodyText confidence="0.999931553846154">
+In NLP approaches exploiting dependency struc-
+ture, two kinds of relations are of special impor-
+tance: the parent-child relation and the sibling re-
+lation. Shen et al. (2008) work with two well-
+formed dependency structures, both of which are
+defined in such a way that there is one common
+parent and a set of siblings. Li et al. (2012) charac-
+terize rules in hierarchical SMT by labeling them
+with the POS tags of the parents of the words in-
+side the rule. Lerner and Petrov (2013) model re-
+ordering as a sequence of classification steps based
+on a dependency parse of a sentence. Their model
+first decides how a word is reordered with respect
+to its parent and then how it is reordered with re-
+spect to its siblings.
+Based on these previous approaches, we pro-
+pose to characterize contextual syntactic roles of
+a word in terms of POS tags of the words them-
+selves and their relatives in a dependency tree. It
+is straightforward to incorporate parent informa-
+tion since each node has a unique parent. As for
+siblings information, we incorporate POS tags of
+the closest sibling to the left and the closest to the
+right. We do not include all of the siblings to avoid
+overfitting. In addition to these basic syntactic re-
+lations, we consider the grandparent relation.
+The following list is a summary of the source
+contextual functions that we use. We describe
+a function with respect to the kind of contextual
+property of a word it returns: (i) the word itself
+(Lex); (ii) POS label of the word (Pos); (iii) POS
+label of the word’s parent; (iv) POS of the word’s
+closest sibling to the left, concatenated with the
+POS tag of the closest sibling to the right; (v)
+the POS label of the word’s grandparent. We use
+target-side contextual functions returning: (i) an
+empty string, (ii) POS of the word, (iii) the word
+itself.
+Notation. We do not use the above functions
+separately to define individual BiLM models, but
+use combinations of these functions. We use the
+following notation for function combinations: “•”
+horizontally connects source (on the left) and tar-
+get (on the right) contextual functions for a given
+model. For example, Lex•Lex refers to the original
+(lexicalized) BiLM. We use arrows (→) to des-
+ignate parental information (the arrow goes from
+parent to child). Pos--+Pos refers to a combination
+of a function returning the POS of a word and the
+POS of its parent (as in Figure 3). Pos--+Pos--+Pos
+is a combination of the previous with the func-
+tion returning the grandparent’s POS. Finally, we
+use +sibl to indicate the use of the sibling func-
+tion described above: For example, Pos--+Pos+sibl
+is a source function that returns the word’s POS,
+its parent’s POS and the POS labels of the closest
+siblings to left and right.6 Pos+sibl--+Pos is a source
+function returning the word’s own POS, the POS
+of a word’s parent, and the POS tags of the par-
+ent’s siblings (left- and right-adjacent).
+Figure 4 represents the sentence from Figure 2
+during decoding in a system with an integrated
+Pos--+Pos--+Pos+sibl•Lex feature. It shows the se-
+quence of produced bilingual tokens and corre-
+sponding labels in the introduced notation.
+</bodyText>
+<subsectionHeader confidence="0.994404">
+3.3 Training
+</subsectionHeader>
+<bodyText confidence="0.999526">
+Training of dependency-based BiLMs consists of
+a sequence of extraction steps: After having pro-
+duced word-alignments for a bitext (Section 4),
+</bodyText>
+<footnote confidence="0.9964395">
+6In case there is no sibling on one of the sides, a (empty
+word) is returned.
+</footnote>
+<page confidence="0.803383">
+1693
+</page>
+<table confidence="0.972250125">
+VBD NNS NNP IN DTNN DTJJ
+trAjEt SAdrAt mSr l Aldwl AlErbyp
+Training set N. of lines N. of tokens
+Source side of Ar-En set 4,376,320 148M
+Target side of Ar-En set 4,376,320 146M
+Source side of Ch-En set 2,104,652 20M
+Target side of Ch-En set 2,104,652 28M
+Egyptian exports to É
+</table>
+<tableCaption confidence="0.986922">
+Table 1: Training data for Arabic-English and
+Chinese-English experiments.
+</tableCaption>
+<figure confidence="0.439397">
+JJ NNS TO
+</figure>
+<figureCaption confidence="0.928040166666667">
+Figure 4: Sequence of bilingual tokens pro-
+duced by a Pos→Pos→Pos+sibl•Lex after
+translating three words of the source sentence:
+VBD→NNS→e+NNS+IN•Egyptian, ROOT→VBD→
+e+NNS+e•exports, VBD→NNS→NNP+IN+e•to (if there
+is no sibling on either of the sides, c is returned).
+</figureCaption>
+<bodyText confidence="0.998976294117647">
+sentences are segmented according to Equation 3.
+We produce a dependency parse of a source sen-
+tence and a POS-tag labeling of a target sen-
+tence. For Chinese, we use the Stanford depen-
+dency parser (Chang et al., 2009). For Arabic a
+dependency parser is not available for public use,
+so we produce a constituency parse with the Stan-
+ford parser (Green and Manning, 2010) and ex-
+tract dependencies based on the rules in Collins
+(1999). For English POS-tagging, we use the
+Stanford POS-tagger (Toutanova et al., 2003). Af-
+ter having produced a labeled sequence of tokens,
+we learn a 5-gram model using SRILM (Stolcke
+et al., 2011). Kneyser-Ney smoothing is used
+for all model variations except for Pos•Pos where
+Witten-Bell smoothing is used due to zero count-
+of-counts.
+</bodyText>
+<subsectionHeader confidence="0.70449">
+3.4 Decoder integration
+</subsectionHeader>
+<bodyText confidence="0.999894285714286">
+Dependency-based BiLMs are integrated into our
+phrase-based SMT decoder as follows: Before
+translating a sentence, we produce its dependency
+parse. Phrase-internal word-alignments, needed
+to segment the translation hypothesis into tokens,
+are stored in the phrase table, based on the most
+frequent internal alignment observed during train-
+ing. Likewise, we store the most likely target-side
+POS-labeling for each phrase pair.
+The decoding algorithm is augmented with one
+additional feature function and one additional, cor-
+responding feature weight. At each step of the
+derivation, as a new phrase pair is added to the
+partial translation hypothesis, this function seg-
+ments the new phrase into bilingual tokens (given
+the internal alignment information) and substitutes
+the words in the phrase pair with syntactic labels
+(given the source parse and the target POS labeling
+associated with the phrase). The new syntactified
+bilingual tokens are added to the stack of preced-
+ing n−1 tokens, and the feature function computes
+the weighted updated model probability. During
+decoding, the probabilities of the BiLMs are com-
+puted in a stream-based fashion, with bilingual
+tokens as string tokens, and not in a class-based
+fashion, with syntactic source-side representations
+emitting the corresponding target words (Bisazza
+and Monz, 2014).
+</bodyText>
+<sectionHeader confidence="0.99944" genericHeader="method">
+4 Experiments
+</sectionHeader>
+<subsectionHeader confidence="0.969254">
+4.1 Setup
+</subsectionHeader>
+<bodyText confidence="0.99880885">
+We conduct translation experiments with a base-
+line PBSMT system with additionally one of the
+dependency-based BiLM feature functions speci-
+fied in Section 3. We compare the translation per-
+formance to a baseline PBSMT system and to a
+baseline augmented with the original BiLMs from
+(Niehues et al., 2011).
+Word-alignment is produced with GIZA++
+(Och and Ney, 2003). We use an in-house imple-
+mentation of a PBSMT system similar to Moses
+(Koehn et al., 2007). Our baseline contains
+all standard PBSMT features including language
+model, lexical weighting, and lexicalized reorder-
+ing. The distortion limit is set to 5. A 5-gram LM
+is trained on the English Gigaword corpus (1.6B
+tokens) using SRILM with modified Kneyser-Ney
+smoothing and interpolation. The BiLMs were
+trained as described in Section 3.3. Informa-
+tion about the parallel data used for training the
+Arabic-English7 and Chinese-English systems8 is
+</bodyText>
+<footnote confidence="0.879754666666667">
+7The following Arabic-English parallel corpora were
+used: LDC2006E25, LDC2004T18, several gale corpora,
+LDC2004T17, LDC2005E46, LDC2007T08, LDC2004E13.
+8The following Chinese-English parallel corpora
+were used: LDC2002E18, LDC2002L27, LDC2003E07,
+LDC2003E14, LDC2005T06, LDC2005T10, LDC2005T34,
+</footnote>
+<figure confidence="0.704322833333333">
+VBD NNS NNP IN
+Egyptian
+VBD NNS
+exports
+VBD NNS NNP IN
+to
+</figure>
+<page confidence="0.715966">
+1694
+</page>
+<table confidence="0.997658">
+Configuration MT08 MT09 MT08+MT09
+BLEU TER BLEU TER BLEU TER
+a PBSMT baseline 45.12 47.94 48.16 44.30 46.57 46.21
+b Lex•Lex 45.27 47.79 48.85N 43.96M 46.98N 45.96M
+Pos•Pos 44.80 47.84 48.22 44.14M,− 46.44 46.07
+c Pos--+Pos•Pos 45.66N,M 47.17N,N 49.00N,− 43.45N,N 47.25N,M 45.40N,N
+d Pos--+Pos−sibl•Pos 45.46M,− 47.45N,M 48.69N,− 43.64N,M 47.00N,− 45.64N,−
+e Pos--+Pos--+Pos•Pos 45.68N,M 47.42N,M 49.09N,− 43.59N,N 47.30N,M 45.60N,N
+f Lex•Lex + Pos--+Pos--+Pos•Pos 45.63N,M 47.48N,M 49.30N,N 43.60N,M 47.38N,N 45.63N,N
+</table>
+<tableCaption confidence="0.7573355">
+Table 2: BLEU and TER scores for Arabic-English experiments. Statistically significant improvements
+over the baseline (a) are marked • at the p &lt; .01 level and ° at the p &lt; .05 level. Additionally, ·,• and
+·,A indicate significant improvements with respect to BiLM Lex•Lex (b). Since TER is an error rate, lower
+scores are better.
+</tableCaption>
+<table confidence="0.999941">
+Configuration MT08 MT09 MT08+MT09
+BLEU TER BLEU TER BLEU TER
+Pos--+Pos• a 45.66N,M 47.44N,M 48.78N,− 43.94N,− 47.15N,− 45.77N,M
+Pos--+Pos•Pos 45.66N,M 47.17N,N 49.00N,− 43.45N,N 47.25N,M 45.40N,N
+Pos--+Pos•Lex 45.48M,− 47.34N,N 48.90N,− 43.87N,M 47.12N,− 45.69N,N
+</table>
+<tableCaption confidence="0.9729515">
+Table 3: Different combinations of a target contextual function with the Pos→Pos source contextual
+function for Arabic-English. See Table 2 for the notation regarding statistical significance.
+</tableCaption>
+<bodyText confidence="0.99751936">
+shown in Table 1.
+The feature weights were tuned by using pair-
+wise ranking optimization (Hopkins and May,
+2011) on the MT04 benchmark (for both language
+pairs). During tuning, 14 PRO parameter estima-
+tion runs are performed in parallel on different
+samples of the n-best list after each decoder itera-
+tion. The weights of the individual PRO runs are
+then averaged and passed on to the next decoding
+iteration. Performing weight estimation indepen-
+dently for a number of samples corrects for some
+of the instability that can be caused by individual
+samples. For testing, we used MT08 and MT09 for
+Arabic, and MT06 and MT08 for Chinese. We use
+approximate randomization (Noreen, 1989; Rie-
+zler and Maxwell, 2005) to test for statistically sig-
+nificant differences.
+In the next two subsections we discuss the gen-
+eral results for Arabic and Chinese, where we use
+case-insensitive BLEU (Papineni et al., 2002) and
+TER (Snover et al., 2006) as evaluation metrics.
+This is followed by a preliminary analysis of ob-
+served reorderings where we compare 4-gram pre-
+cision results and conduct experiments with an in-
+creased distortion limit.
+</bodyText>
+<subsectionHeader confidence="0.997431">
+4.2 Arabic-English translation experiments
+</subsectionHeader>
+<bodyText confidence="0.99823229032258">
+We are interested in how a translation system
+with an integrated dependency-based BiLM fea-
+and several gale corpora.
+ture performs as compared to the standard PB-
+SMT baseline and, more importantly, to the orig-
+inal BiLM model. We consider two variants of
+BiLM discussed by Niehues et al. (2011): the stan-
+dard one, Lex•Lex, and the simplest syntactic one,
+Pos•Pos. Results for the experiments can be found
+in Table 2. In the discussion below we mostly fo-
+cus on the experimental results for the large, com-
+bined test set MT08+MT09.
+Table 2.a–b compares the performance of the
+baseline and original BiLM systems. Lex•Lex
+yields strongly significant improvements over the
+baseline for BLEU and weakly significant im-
+provements for TER. Therefore, for the rest of the
+experiments we are interested in obtaining further
+improvements over Lex•Lex.
+Pos--+Pos•Pos (Table 2.c) demonstrates the effect
+of adding minimal dependency information to a
+BiLM.9 It results in strongly significant improve-
+ments over the baseline and weak improvements
+over Lex•Lex in terms of BLEU. We additionally
+ran experiments with the different target functions
+(Table 3). •Pos shows the highest results, and •E the
+lowest ones: this implies that a rather expressive
+source syntactic representation alone still benefits
+from target-side syntactic information. Below, our
+dependency-based systems only use •Pos.
+Next, we tested the effect of adding more source
+</bodyText>
+<tableCaption confidence="0.906634333333333">
+9Additional significance testing, which is not shown in
+Table 2, shows a strongly significant improvement over the
+original syntactic BiLM Pos•Pos.
+</tableCaption>
+<page confidence="0.764555">
+1695
+</page>
+<table confidence="0.999789555555556">
+Configuration MT06 MT08 MT06+MT08
+BLEU TER BLEU TER BLEU TER
+a PBSMT baseline 31.89 57.79 25.53 60.71 28.99 59.14
+b Lex•Lex 32.84N 57.40N 25.91M 60.23N 29.69N 58.72N
+Pos•Pos 32.31N 57.89 25.66 60.79 29.28 59.24
+c Pos--+Pos•Pos 32.86N°− 57.05N°M 26.09N°− 59.87N°M 29.78N°− 58.36N°N
+d Pos--+Pos−sibl•Pos 32.27M°− 56.63N°M 25.75 59.47N°N 29.30M°− 57.95N°N
+e Pos--+Pos--+Pos•Pos 33.09N°− 57.54 26.35N°M 59.70N°N 30.05N°N 58.54N°−
+f Lex•Lex + Pos--+Pos--+Pos•Pos 33.43N°N 57.00N°N 26.50N°N 59.79N°N 30.28N°N 58.30N°N
+</table>
+<tableCaption confidence="0.941722">
+Table 4: BLEU and TER scores for Chinese-English PBSMT baseline and BiLM pipelines. See Table 2
+for the notation regarding statistical significance.
+</tableCaption>
+<table confidence="0.999966571428571">
+Configuration MT06 MT08 MT06+MT08
+BLEU TER BLEU TER BLEU TER
+Pos--+Pos• e 32.43N°− 57.42N°− 25.84 60.51 29.43N°− 58.86N°−
+Pos--+Pos•Pos
+Pos--+Pos•Lex
+32.86N°− 57.05N°M 26.09N°− 59.87N°M 29.78N°− 58.36N°N
+32.69N°− 57.03N°M 25.72 60.17N°− 29.52N°− 58.49N°M
+</table>
+<tableCaption confidence="0.9853535">
+Table 5: Different combinations of a target contextual function with the Pos--+Pos source contextual func-
+tion for Chinese-English. See Table 2 for the notation regarding statistical significance.
+</tableCaption>
+<bodyText confidence="0.999229866666667">
+dependency information. Pos--+Pos+sibl•Pos (Ta-
+ble 2.d) only improves over the PBSMT baseline
+(but also shows weak improvements over Lex•Lex
+for TER). It significantly degrades the perfor-
+mance with respect to the Pos--+Pos•Pos system (Ta-
+ble 2.c). Pos--+Pos--+Pos•Pos (Table 2.e) shows the
+best results overall for BLEU, although it must be
+pointed out that the difference with Pos--+Pos•Pos is
+very small. With respect to TER, Pos--+Pos•Pos out-
+performs the grandparent variant.
+So far, we can conclude that source par-
+ent information helps improve translation perfor-
+mance. Increased specificity of a parent (par-
+ent specified by a grandparent) tends to further
+improve performance. Up to now, we have
+only used syntactic information and obtained con-
+siderable improvements over Pos•Pos, surpass-
+ing the improvement provided by Lex•Lex. Can
+we gain further improvements by also adding
+lexical information? To this end, we con-
+duct experiments combining the best performing
+dependency-based BiLM (Pos--+Pos--+Pos•Pos) and
+the lexicalized BiLM (Lex•Lex). We hypothesize
+that the two models improve different aspects of
+translation: Lex•Lex is biased towards improving
+lexical choice and Pos--+Pos--+Pos•Pos towards im-
+proving reordering. Combining these two models,
+we may improve both aspects. The metric results
+for the combined set indeed support this hypothe-
+sis (Table 2.f).
+</bodyText>
+<subsectionHeader confidence="0.998833">
+4.3 Chinese-English translation experiments
+</subsectionHeader>
+<bodyText confidence="0.999916952380953">
+The results of the Chinese-English experiments
+are shown in Table 4. In the discussion below
+we mostly focus on the experimental results for
+the large, combined test set MT06+MT08. We
+observe the same general pattern for the Pos--+Pos
+source function (Table 4.c) as for Arabic-English:
+the system with the •Pos target function has the
+highest scores (Table 5). All of the Pos--+Pos• con-
+figurations show statistically significant improve-
+ments over the PBSMT baseline. For TER, two
+of the three Pos--+Pos• variants significantly out-
+perform Lex•Lex. The system with sibling in-
+formation (Table 4.d) obtains quite low BLEU
+results, just as in the Arabic experiments. On
+the other hand, its TER results are the highest
+overall. The system with the Pos--+Pos--+Pos•Pos
+function (Table 4.e) achieves the best results
+among dependency-based BiLMs for BLEU. Fi-
+nally, combining Pos--+Pos--+Pos•Pos and Lex•Lex re-
+sults in the largest and significant improvements
+over all competing systems for BLEU.
+</bodyText>
+<subsectionHeader confidence="0.9919965">
+4.4 Preliminary analysis of reordering in
+translation experiments
+</subsectionHeader>
+<bodyText confidence="0.999911428571429">
+In general, the experimental results show that us-
+ing source dependency information yields consis-
+tent improvements for translating from Arabic and
+Chinese into English. On the other hand, we have
+pointed out some discrepancies between the two
+metrics employed, suggesting that different sys-
+tem configurations may improve different aspects
+</bodyText>
+<page confidence="0.967547">
+1696
+</page>
+<table confidence="0.999470888888889">
+Configuration Ar-En Ch-En
+MT08 MT09 MT08+MT09 MT06 MT08 MT06+MT08
+a PBSMT baseline 26.14 29.81 27.88 14.48 10.96 12.89
+b Lex•Lex 26.33 30.55 28.32 15.43 11.45 13.65
+Pos•Pos 25.95 30.06 27.89 14.76 11.01 13.07
+c Pos--+Pos•Pos 26.91 31.08 28.87 15.29 11.52 13.60
+e Pos--+Pos−sibl•Pos 26.71 30.73 28.60 15.27 11.67 13.66
+d Pos--+Pos--+Pos•Pos 26.78 31.09 28.80 15.42 11.70 13.77
+f Lex•Lex + Pos--+Pos--+Pos•Pos 26.80 31.27 28.90 15.87 11.85 14.07
+</table>
+<tableCaption confidence="0.938762">
+Table 6: 4-gram precision scores for Arabic-English and Chinese-English baseline and BiLM systems.
+</tableCaption>
+<table confidence="0.999937">
+Configuration MT08 MT09 MT08+MT09
+BLEU TER 4gram BLEU TER 4gram BLEU TER 4gram
+Lex•Lex 45.19 47.06 26.41 48.39 44.11 30.23 46.72 45.97 28.21
+Pos--+Pos--+Pos•Pos
+45.49 47.31° 26.66 48.90&apos; 43.57&apos; 30.92 47.12&apos; 45.52&apos; 28.66
+</table>
+<tableCaption confidence="0.9896995">
+Table 7: BLEU, TER and 4-gram precision scores for Arabic-English Lex•Lex and Pos→Pos→Pos•Pos
+with a distortion limit of 10.
+</tableCaption>
+<table confidence="0.9999344">
+Configuration MT06 MT08 MT06+MT08
+BLEU TER 4gram BLEU TER 4gram BLEU TER 4gram
+Lex•Lex 33.26 56.81 16.06 25.67 60.19 11.42 29.79 58.38 13.96
+Pos--+Pos--+Pos•Pos
+33.92&apos; 56.29&apos; 16.26 27.00&apos; 59.58&apos; 12.26 30.77&apos; 57.82&apos; 14.46
+</table>
+<tableCaption confidence="0.9086135">
+Table 8: BLEU, TER and 4-gram precision scores for Chinese-English Lex•Lex and
+Pos→Pos→Pos•Pos with a distortion limit of 10.
+</tableCaption>
+<bodyText confidence="0.999958107142858">
+of translation. To this end, we conducted some ad-
+ditional evaluations to understand how reordering
+is affected by the proposed features.
+We use 4-gram precision as a metric of how
+much of the reference set word order is preserved.
+Table 6 shows the corresponding results for both
+languages. Just as in the previous two sections,
+configurations with parental information produce
+the best results. For Arabic, all of the depen-
+dency configurations outperform Lex•Lex. But the
+system with two feature functions, one of which
+is Lex•Lex, still obtains the best results, which
+may suggest that the lexicalized BiLM also helps
+to differentiate between word orders. For Chi-
+nese, Pos--+Pos--+Pos•Pos and the system combining
+the latter and Lex•Lex also obtain the best results.
+However, other dependency-based configurations
+do not outperform Lex•Lex.
+All the experiments so far were run with a dis-
+tortion limit of 5. But both of the languages, es-
+pecially Chinese, often require reorderings over a
+longer distance. We performed additional experi-
+ments with a distortion limit of 10 for the Lex•Lex
+and Pos--+Pos--+Pos•Pos systems (Tables 7 and 8). It
+is more difficult to translate with a higher distor-
+tion limit (Green et al., 2010) as the set of permu-
+tations grows larger thereby making it more diffi-
+cult to differentiate between correct and incorrect
+continuations of the current hypothesis. It has also
+been noted that higher distortion limits are more
+likely to result in improvements for Chinese rather
+than Arabic to English translation (Chiang, 2007;
+Green et al., 2010).
+We compared performance of fixed BiLM mod-
+els at distortion lengths of 5 and 10. Arabic-
+English results did not reveal statistically signif-
+icant differences between the two distortion lim-
+its for Pos--+Pos--+Pos•Pos. On the other hand, for
+Lex•Lex BLEU decreases when using a distor-
+tion limit of 10 compared to a limit of 5. This
+implies that the dependency BiLM is more ro-
+bust in the more challenging reordering setting
+than the lexicalized BiLM. Chinese-English re-
+sults for Pos--+Pos--+Pos•Pos do show significant im-
+provements over the distortion limit of 5 (up to
+0.49 BLEU higher than the best result in Table 4).
+This indicates that the dependency-based BiLM is
+better capable to take advantage of the increased
+distortion limit and discriminate between correct
+and incorrect reordering choices.
+Comparing the results for Pos--+Pos--+Pos•Pos and
+Lex•Lex at a distortion limit of 10, we obtain
+strongly significant improvements for all metrics.
+For Chinese, a larger distortion limit helps for both
+configurations, but more so for our dependency
+BiLM, yielding an improvement of 0.98 BLEU
+</bodyText>
+<page confidence="0.855963">
+1697
+</page>
+<bodyText confidence="0.884264666666667">
+over the original, lexicalized BiLM (Table 8).
+tics, pages 529–536, Sydney, Australia, July. Asso-
+ciation for Computational Linguistics.
+</bodyText>
+<sectionHeader confidence="0.999014" genericHeader="conclusions">
+5 Conclusions
+</sectionHeader>
+<bodyText confidence="0.999968909090909">
+In this paper, we have introduced a simple, yet ef-
+fective way to include syntactic information into
+phrase-based SMT. Our method consists of en-
+riching the representation of units of a bilingual
+language model (BiLM). We argued that the very
+limited contextual information used in the original
+bilingual models (Niehues et al., 2011) can capture
+reorderings only to a limited degree and proposed
+a method to incorporate information from a source
+dependency tree in bilingual units. In a series
+of translation experiments we performed a thor-
+ough comparison between various syntactically-
+enriched BiLMs and competing models. The re-
+sults demonstrated that adding syntactic informa-
+tion from a source dependency tree to the repre-
+sentations of bilingual tokens in an n-gram model
+can yield statistically significant improvements
+over the competing systems.
+A number of additional evaluations provided an
+indication for better modeling of reordering phe-
+nomena. The proposed dependency-based BiLMs
+resulted in an increase in 4-gram precision and
+provided further significant improvements over
+all considered metrics in experiments with an in-
+creased distortion limit.
+In this paper, we have focused on rather elemen-
+tary dependency relations, which we are planning
+to expand on in future work. Our current approach
+is still strictly tied to the number of target tokens.
+In particular, we are interested in exploring ways
+to better capture the notion of syntactic cohesion
+in translation (Fox, 2002; Cherry, 2008) within our
+framework.
+</bodyText>
+<sectionHeader confidence="0.997484" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9972406">
+We thank Arianna Bisazza and the reviewers for
+their useful comments. This research was funded
+in part by the Netherlands Organization for Sci-
+entific Research (NWO) under project numbers
+639.022.213 and 612.001.218.
+</bodyText>
+<sectionHeader confidence="0.99415" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.965375654545455">
+Yaser Al-Onaizan and Kishore Papineni. 2006. Dis-
+tortion models for statistical machine translation. In
+Proceedings of the 21st International Conference on
+Computational Linguistics and 44th Annual Meet-
+ing of the Association for Computational Linguis-
+Alexandra Birch. 2011. Reordering Metrics for Statis-
+tical Machine Translation. Ph.D. thesis, University
+of Edinburgh.
+Arianna Bisazza and Christof Monz. 2014. Class-
+based language modeling for translating into mor-
+phologically rich languages. In Proceedings of
+the 25th International Conference on Computa-
+tional Linguistics (COLING 2014), pages 1918–
+1927, Dublin, Ireland, August.
+Pi-Chuan Chang, Huihsin Tseng, Dan Jurafsky, and
+Christopher D. Manning. 2009. Discriminative
+reordering with chinese grammatical relations fea-
+tures. In Proceedings of the Third Workshop on Syn-
+tax and Structure in Statistical Translation, pages
+51–59. Association for Computational Linguistics.
+Colin Cherry. 2008. Cohesive phrase-based decoding
+for statistical machine translation. In Proceedings
+of Association for Computational Linguistics, pages
+72–80.
+David Chiang. 2007. Hierarchical phrase-based trans-
+lation. Computational Linguistics, 33(2):201–228.
+David Chiang. 2010. Learning to translate with source
+and target syntax. In Proceedings of the 48th An-
+nual Meeting of the Association for Computational
+Linguistics, pages 1443–1452. Association for Com-
+putational Linguistics.
+Michael Collins. 1999. Head-Driven Statistical Mod-
+els for Natural Language Parsing. Ph.D. thesis,
+University of Pennsylvania.
+Josep M. Crego and Franc¸ois Yvon. 2010a. Factored
+bilingual n-gram language models for statistical ma-
+chine translation. Machine Translation, 24(2):159–
+175.
+Josep M. Crego and Franc¸ois Yvon. 2010b. Improv-
+ing reordering with linguistically informed bilin-
+gual n-grams. In Proceedings of the 23rd Inter-
+national Conference on Computational Linguistics,
+pages 197–205. Association for Computational Lin-
+guistics.
+Nadir Durrani, Helmut Schmid, and Alexander Fraser.
+2011. A joint sequence translation model with in-
+tegrated reordering. In Proceedings of the 49th An-
+nual Meeting of the Association for Computational
+Linguistics, pages 1045–1054. Association for Com-
+putational Linguistics.
+Heidi J. Fox. 2002. Phrasal cohesion and statistical
+machine translation. In Proceedings of the ACL-
+02 conference on Empirical methods in natural lan-
+guage processing, pages 304–3111. Association for
+Computational Linguistics.
+</reference>
+<page confidence="0.923137">
+1698
+</page>
+<reference confidence="0.999470162162162">
+Michel Galley and Christopher D. Manning. 2008. A
+simple and effective hierarchical phrase reordering
+model. In Proceedings of the Conference on Em-
+pirical Methods in Natural Language Processing,
+pages 848–856. Association for Computational Lin-
+guistics.
+Spence Green and Christopher D. Manning. 2010.
+Better arabic parsing: Baselines, evaluations, and
+analysis. In Proceedings of the 23rd International
+Conference on Computational Linguistics, pages
+394–402. Association for Computational Linguis-
+tics.
+Spence Green, Michel Galley, and Christopher D. Man-
+ning. 2010. Improved models of distortion cost
+for statistical machine translation. In Proceedings
+of the 2010 Annual Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics, pages 867–875. Association for Com-
+putational Linguistics.
+Mark Hopkins and Jonathan May. 2011. Tuning as
+ranking. In Proceedings of the Conference on Em-
+pirical Methods in Natural Language Processing,
+pages 1352–1362. Association for Computational
+Linguistics.
+Liang Huang and Haitao Mi. 2010. Efficient incre-
+mental decoding for tree-to-string translation. In
+Proceedings of the 2010 Conference on Empirical
+Methods in Natural Language Processing, pages
+273–283. Association for Computational Linguis-
+tics.
+Liang Huang, Kevin Knight, and Aravind Joshi. 2006.
+Statistical syntax-directed translation with extended
+domain of locality. In Proceedings of AMTA, pages
+223–226.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Pro-
+ceedings of the 2003 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics on Human Language Technology, pages
+48–54. Association for Computational Linguistics.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, et al. 2007. Moses: Open source
+toolkit for statistical machine translation. In Pro-
+ceedings of the 45th Annual Meeting of the Associ-
+ation for Computational Linguistics on Interactive
+Poster and Demonstration Sessions, pages 177–180.
+Association for Computational Linguistics.
+Uri Lerner and Slav Petrov. 2013. Source-side classi-
+fier preordering for machine translation. In Proceed-
+ings of the Empirical Methods in Natural Language
+Processing.
+Junhui Li, Zhaopeng Tu, Guodong Zhou, and Josef van
+Genabith. 2012. Head-driven hierarchical phrase-
+based translation. In Proceedings of the 50th An-
+nual Meeting of the Association for Computational
+Linguistics, pages 33–37. Association for Computa-
+tional Linguistics.
+Yang Liu, Qun Liu, and Shouxun Lin. 2006. Tree-
+to-string alignment template for statistical machine
+translation. In Proceedings of the 21st International
+Conference on Computational Linguistics and the
+44th annual meeting of the Association for Compu-
+tational Linguistics, pages 609–616. Association for
+Computational Linguistics.
+Jos´e B Marino, Rafael E Banchs, Josep M. Crego,
+Adria de Gispert, Patrik Lambert, Jos´e A.R. Fonol-
+losa, and Marta R. Costa-Juss`a. 2006. N-gram-
+based machine translation. Computational Linguis-
+tics, 32(4):527–549.
+Yuval Marton and Philip Resnik. 2008. Soft syntac-
+tic constraints for hierarchical phrased-based trans-
+lation. In Proceedings of the Association for Com-
+putational Linguistics, pages 1003–1011.
+Jan Niehues, Teresa Herrmann, Stephan Vogel, and
+Alex Waibel. 2011. Wider context by using bilin-
+gual language models in machine translation. In
+Proceedings of the Sixth Workshop on Statistical
+Machine Translation, pages 198–206. Association
+for Computational Linguistics.
+Eric W. Noreen. 1989. Computer Intensive Meth-
+ods for Testing Hypotheses. An Introduction. Wiley-
+Interscience.
+Franz Josef Och and Hermann Ney. 2003. A sys-
+tematic comparison of various statistical alignment
+models. Computational Linguistics, 29(1):19–51.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic eval-
+uation of machine translation. In Proceedings of the
+40th annual meeting of the Association for Compu-
+tational Linguistics, pages 311–318. Association for
+Computational Linguistics.
+Stefan Riezler and John T. Maxwell. 2005. On some
+pitfalls in automatic evaluation and significance test-
+ing for MT. In Proceedings of the ACL Workshop on
+Intrinsic and Extrinsic Evaluation Measures for Ma-
+chine Translation and/or Summarization.
+Libin Shen, Jinxi Xu, and Ralph M. Weischedel. 2008.
+A new string-to-dependency machine translation al-
+gorithm with a target dependency language model.
+In Proceedings of the Association for Computational
+Linguistics, pages 577–585.
+Matthew Snover, Bonnie Dorr, Richard Schwartz, Lin-
+nea Micciulla, and John Makhoul. 2006. A study of
+translation edit rate with targeted human annotation.
+In Proceedings ofAMTA, pages 223–231.
+Andreas Stolcke, Jing Zheng, Wen Wang, and Victor
+Abrash. 2011. Srilm at sixteen: Update and out-
+look. In Proceedings of IEEE Automatic Speech
+Recognition and Understanding Workshop, page 5.
+</reference>
+<page confidence="0.923286">
+1699
+</page>
+<reference confidence="0.99930775">
+Christoph Tillmann. 2004. A unigram orientation
+model for statistical machine translation. In Pro-
+ceedings of of the North American Chapter of the
+Association for Computational Linguistics, pages
+101–104. Association for Computational Linguis-
+tics.
+Kristina Toutanova, Dan Klein, Christopher D. Man-
+ning, and Yoram Singer. 2003. Feature-rich part-of-
+speech tagging with a cyclic dependency network.
+In Proceedings of the 2003 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics on Human Language Technology,
+pages 173–180. Association for Computational Lin-
+guistics.
+Richard Zens and Hermann Ney. 2003. A comparative
+study on reordering constraints in statistical machine
+translation. In Proceedings of the 41st Annual Meet-
+ing on Association for Computational Linguistics-
+Volume 1, pages 144–151. Association for Compu-
+tational Linguistics.
+</reference>
+<page confidence="0.987333">
+1700
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.255083">
+<title confidence="0.98648">Dependency-Based Bilingual Language Models Reordering in Statistical Machine Translation</title>
+<author confidence="0.500329">Garmash</author>
+<affiliation confidence="0.57687">Informatics Institute, University of</affiliation>
+<address confidence="0.353252">Science Park 904, 1098 XH Amsterdam, The</address>
+<abstract confidence="0.989295956521739">This paper presents a novel approach to improve reordering in phrase-based machine translation by using richer, syntactic representations of units of bilingual language models (BiLMs). Our method to include syntactic information is simple in implementation and requires minimal changes in the decoding algorithm. The approach is evaluated in a series of Arabic- English and Chinese-English translation experiments. The best models demonstrate significant improvements in BLEU and TER over the phrase-based baseline, as well as over the lexicalized BiLM by Niehues et al. (2011). Further improvements of up to 0.45 BLEU for Arabic- English and up to 0.59 BLEU for Chinese- English are obtained by combining our dependency BiLM with a lexicalized BiLM. An improvement of 0.98 BLEU is obtained for Chinese-English in the setting of an increased distortion limit.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Yaser Al-Onaizan</author>
+<author>Kishore Papineni</author>
+</authors>
+<title>Distortion models for statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguis-</booktitle>
+<contexts>
+<context position="1778" citStr="Al-Onaizan and Papineni (2006)" startWordPosition="261" endWordPosition="264">machine translation (SMT) reordering (also called distortion) refers to the order in which source words are translated to generate the translation in the target language. Word orders can differ significantly across languages. For instance, Arabic declarative sentences can be verbinitial, while the corresponding English translation should realize the verb after the subject, hence requiring a reordering. Determining the correct reordering during decoding is a major challenge for SMT. This problem has received a lot of attention in the literature (see, e.g., Tillmann (2004), Zens and Ney (2003), Al-Onaizan and Papineni (2006)), as choosing the correct reordering improves readability of the translation and can have a substantial impact on translation quality (Birch, 2011). In this paper, we only consider those approaches that include a reordering feature function into the loglinear interpolation used during decoding. The simplest reordering model is linear distortion (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phrases is its only parameter. Lexical distortion modeli</context>
+<context position="7499" citStr="Al-Onaizan and Papineni (2006)" startWordPosition="1170" endWordPosition="1173"> TER). Finally, we present a preliminary analysis of the reorderings resulting from the proposed models (Section 4). 2 Motivation In this section, we elaborate on our research questions and provide background for our approach. We also discuss existing bilingual n-gram models and argue that they are often not expressive enough to differentiate between alternative reorderings. We should first note that the most commonly used n-gram model to distinguish between reorderings is a target language model, which does not take translation correspondence into account and just models target-side fluency. Al-Onaizan and Papineni (2006) show that target language models by themselves are not sufficient to correctly characterize reordering. In what follows we only discuss bilingual models. The word-aligned sentence pair in Figure 1.a2 demonstrates a common Arabic-English reordering. As stated in the introduction, bilingual language models capture reordering regularities as a sequence of elementary translation events3. In the given example, one could decompose the sequential process of translation as follows: First translate the first wordAlwzyr as the minister, then ArjE as attributed, then ArtfAE as the increase and so on. Th</context>
+</contexts>
+<marker>Al-Onaizan, Papineni, 2006</marker>
+<rawString>Yaser Al-Onaizan and Kishore Papineni. 2006. Distortion models for statistical machine translation. In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguis-</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexandra Birch</author>
+</authors>
+<title>Reordering Metrics for Statistical Machine Translation.</title>
+<date>2011</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of Edinburgh.</institution>
+<contexts>
+<context position="1926" citStr="Birch, 2011" startWordPosition="286" endWordPosition="287">age. Word orders can differ significantly across languages. For instance, Arabic declarative sentences can be verbinitial, while the corresponding English translation should realize the verb after the subject, hence requiring a reordering. Determining the correct reordering during decoding is a major challenge for SMT. This problem has received a lot of attention in the literature (see, e.g., Tillmann (2004), Zens and Ney (2003), Al-Onaizan and Papineni (2006)), as choosing the correct reordering improves readability of the translation and can have a substantial impact on translation quality (Birch, 2011). In this paper, we only consider those approaches that include a reordering feature function into the loglinear interpolation used during decoding. The simplest reordering model is linear distortion (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phrases is its only parameter. Lexical distortion modeling (Tillmann, 2004) conditions reordering probabilities on the phrase pairs translated at the current and previous steps. Unlike linear distortion, </context>
+</contexts>
+<marker>Birch, 2011</marker>
+<rawString>Alexandra Birch. 2011. Reordering Metrics for Statistical Machine Translation. Ph.D. thesis, University of Edinburgh.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Arianna Bisazza</author>
+<author>Christof Monz</author>
+</authors>
+<title>Classbased language modeling for translating into morphologically rich languages.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 25th International Conference on Computational Linguistics (COLING 2014),</booktitle>
+<pages>pages</pages>
+<location>Dublin, Ireland,</location>
+<contexts>
+<context position="22983" citStr="Bisazza and Monz, 2014" startWordPosition="3699" endWordPosition="3702">ns (given the internal alignment information) and substitutes the words in the phrase pair with syntactic labels (given the source parse and the target POS labeling associated with the phrase). The new syntactified bilingual tokens are added to the stack of preceding n−1 tokens, and the feature function computes the weighted updated model probability. During decoding, the probabilities of the BiLMs are computed in a stream-based fashion, with bilingual tokens as string tokens, and not in a class-based fashion, with syntactic source-side representations emitting the corresponding target words (Bisazza and Monz, 2014). 4 Experiments 4.1 Setup We conduct translation experiments with a baseline PBSMT system with additionally one of the dependency-based BiLM feature functions specified in Section 3. We compare the translation performance to a baseline PBSMT system and to a baseline augmented with the original BiLMs from (Niehues et al., 2011). Word-alignment is produced with GIZA++ (Och and Ney, 2003). We use an in-house implementation of a PBSMT system similar to Moses (Koehn et al., 2007). Our baseline contains all standard PBSMT features including language model, lexical weighting, and lexicalized reorderi</context>
+</contexts>
+<marker>Bisazza, Monz, 2014</marker>
+<rawString>Arianna Bisazza and Christof Monz. 2014. Classbased language modeling for translating into morphologically rich languages. In Proceedings of the 25th International Conference on Computational Linguistics (COLING 2014), pages 1918– 1927, Dublin, Ireland, August.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Pi-Chuan Chang</author>
+<author>Huihsin Tseng</author>
+<author>Dan Jurafsky</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Discriminative reordering with chinese grammatical relations features.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Third Workshop on Syntax and Structure in Statistical Translation,</booktitle>
+<pages>51--59</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="21083" citStr="Chang et al., 2009" startWordPosition="3409" endWordPosition="3412">de of Ch-En set 2,104,652 28M Egyptian exports to É Table 1: Training data for Arabic-English and Chinese-English experiments. JJ NNS TO Figure 4: Sequence of bilingual tokens produced by a Pos→Pos→Pos+sibl•Lex after translating three words of the source sentence: VBD→NNS→e+NNS+IN•Egyptian, ROOT→VBD→ e+NNS+e•exports, VBD→NNS→NNP+IN+e•to (if there is no sibling on either of the sides, c is returned). sentences are segmented according to Equation 3. We produce a dependency parse of a source sentence and a POS-tag labeling of a target sentence. For Chinese, we use the Stanford dependency parser (Chang et al., 2009). For Arabic a dependency parser is not available for public use, so we produce a constituency parse with the Stanford parser (Green and Manning, 2010) and extract dependencies based on the rules in Collins (1999). For English POS-tagging, we use the Stanford POS-tagger (Toutanova et al., 2003). After having produced a labeled sequence of tokens, we learn a 5-gram model using SRILM (Stolcke et al., 2011). Kneyser-Ney smoothing is used for all model variations except for Pos•Pos where Witten-Bell smoothing is used due to zero countof-counts. 3.4 Decoder integration Dependency-based BiLMs are in</context>
+</contexts>
+<marker>Chang, Tseng, Jurafsky, Manning, 2009</marker>
+<rawString>Pi-Chuan Chang, Huihsin Tseng, Dan Jurafsky, and Christopher D. Manning. 2009. Discriminative reordering with chinese grammatical relations features. In Proceedings of the Third Workshop on Syntax and Structure in Statistical Translation, pages 51–59. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Colin Cherry</author>
+</authors>
+<title>Cohesive phrase-based decoding for statistical machine translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of Association for Computational Linguistics,</booktitle>
+<pages>72--80</pages>
+<contexts>
+<context position="4241" citStr="Cherry, 2008" startWordPosition="646" endWordPosition="647">tly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they ar</context>
+</contexts>
+<marker>Cherry, 2008</marker>
+<rawString>Colin Cherry. 2008. Cohesive phrase-based decoding for statistical machine translation. In Proceedings of Association for Computational Linguistics, pages 72–80.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Hierarchical phrase-based translation.</title>
+<date>2007</date>
+<journal>Computational Linguistics,</journal>
+<volume>33</volume>
+<issue>2</issue>
+<contexts>
+<context position="4568" citStr="Chiang, 2007" startWordPosition="702" endWordPosition="703">g (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementally build up the syntactic representation of a translation during decoding by adding prec</context>
+<context position="35024" citStr="Chiang, 2007" startWordPosition="5498" endWordPosition="5499"> especially Chinese, often require reorderings over a longer distance. We performed additional experiments with a distortion limit of 10 for the Lex•Lex and Pos--+Pos--+Pos•Pos systems (Tables 7 and 8). It is more difficult to translate with a higher distortion limit (Green et al., 2010) as the set of permutations grows larger thereby making it more difficult to differentiate between correct and incorrect continuations of the current hypothesis. It has also been noted that higher distortion limits are more likely to result in improvements for Chinese rather than Arabic to English translation (Chiang, 2007; Green et al., 2010). We compared performance of fixed BiLM models at distortion lengths of 5 and 10. ArabicEnglish results did not reveal statistically significant differences between the two distortion limits for Pos--+Pos--+Pos•Pos. On the other hand, for Lex•Lex BLEU decreases when using a distortion limit of 10 compared to a limit of 5. This implies that the dependency BiLM is more robust in the more challenging reordering setting than the lexicalized BiLM. Chinese-English results for Pos--+Pos--+Pos•Pos do show significant improvements over the distortion limit of 5 (up to 0.49 BLEU hig</context>
+</contexts>
+<marker>Chiang, 2007</marker>
+<rawString>David Chiang. 2007. Hierarchical phrase-based translation. Computational Linguistics, 33(2):201–228.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>Learning to translate with source and target syntax.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 48th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>1443--1452</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4583" citStr="Chiang, 2010" startWordPosition="704" endWordPosition="705">es 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementally build up the syntactic representation of a translation during decoding by adding precomputed fragmen</context>
+</contexts>
+<marker>Chiang, 2010</marker>
+<rawString>David Chiang. 2010. Learning to translate with source and target syntax. In Proceedings of the 48th Annual Meeting of the Association for Computational Linguistics, pages 1443–1452. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Collins</author>
+</authors>
+<title>Head-Driven Statistical Models for Natural Language Parsing.</title>
+<date>1999</date>
+<tech>Ph.D. thesis,</tech>
+<institution>University of Pennsylvania.</institution>
+<contexts>
+<context position="21296" citStr="Collins (1999)" startWordPosition="3448" endWordPosition="3449">ranslating three words of the source sentence: VBD→NNS→e+NNS+IN•Egyptian, ROOT→VBD→ e+NNS+e•exports, VBD→NNS→NNP+IN+e•to (if there is no sibling on either of the sides, c is returned). sentences are segmented according to Equation 3. We produce a dependency parse of a source sentence and a POS-tag labeling of a target sentence. For Chinese, we use the Stanford dependency parser (Chang et al., 2009). For Arabic a dependency parser is not available for public use, so we produce a constituency parse with the Stanford parser (Green and Manning, 2010) and extract dependencies based on the rules in Collins (1999). For English POS-tagging, we use the Stanford POS-tagger (Toutanova et al., 2003). After having produced a labeled sequence of tokens, we learn a 5-gram model using SRILM (Stolcke et al., 2011). Kneyser-Ney smoothing is used for all model variations except for Pos•Pos where Witten-Bell smoothing is used due to zero countof-counts. 3.4 Decoder integration Dependency-based BiLMs are integrated into our phrase-based SMT decoder as follows: Before translating a sentence, we produce its dependency parse. Phrase-internal word-alignments, needed to segment the translation hypothesis into tokens, are</context>
+</contexts>
+<marker>Collins, 1999</marker>
+<rawString>Michael Collins. 1999. Head-Driven Statistical Models for Natural Language Parsing. Ph.D. thesis, University of Pennsylvania.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Josep M Crego</author>
+<author>Franc¸ois Yvon</author>
+</authors>
+<title>Factored bilingual n-gram language models for statistical machine translation.</title>
+<date>2010</date>
+<journal>Machine Translation,</journal>
+<volume>24</volume>
+<issue>2</issue>
+<pages>175</pages>
+<contexts>
+<context position="3687" citStr="Crego and Yvon (2010" startWordPosition="557" endWordPosition="560">generalize the approach of Niehues et al. (2011) to investigate several variations of bilingual language models. Our method consists of labeling elementary translation events (tokens of bilingual LMs) with their different contextual properties. What kind of contextual information should be incorporated in a reordering model? Lexical information has been used by Tillmann (2004) but is known to suffer from data sparsity (Galley and Manning, 2008). Also previous contributions to bilingual language modeling (Marino et al., 2006; Niehues et al., 2011) have mostly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tre</context>
+</contexts>
+<marker>Crego, Yvon, 2010</marker>
+<rawString>Josep M. Crego and Franc¸ois Yvon. 2010a. Factored bilingual n-gram language models for statistical machine translation. Machine Translation, 24(2):159– 175.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Josep M Crego</author>
+<author>Franc¸ois Yvon</author>
+</authors>
+<title>Improving reordering with linguistically informed bilingual n-grams.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 23rd International Conference on Computational Linguistics,</booktitle>
+<pages>197--205</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="3687" citStr="Crego and Yvon (2010" startWordPosition="557" endWordPosition="560">generalize the approach of Niehues et al. (2011) to investigate several variations of bilingual language models. Our method consists of labeling elementary translation events (tokens of bilingual LMs) with their different contextual properties. What kind of contextual information should be incorporated in a reordering model? Lexical information has been used by Tillmann (2004) but is known to suffer from data sparsity (Galley and Manning, 2008). Also previous contributions to bilingual language modeling (Marino et al., 2006; Niehues et al., 2011) have mostly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tre</context>
+</contexts>
+<marker>Crego, Yvon, 2010</marker>
+<rawString>Josep M. Crego and Franc¸ois Yvon. 2010b. Improving reordering with linguistically informed bilingual n-grams. In Proceedings of the 23rd International Conference on Computational Linguistics, pages 197–205. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nadir Durrani</author>
+<author>Helmut Schmid</author>
+<author>Alexander Fraser</author>
+</authors>
+<title>A joint sequence translation model with integrated reordering.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>1045--1054</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="11083" citStr="Durrani et al. (2011)" startWordPosition="1755" endWordPosition="1758"> increases the token vocabulary, and thus the model sparsity. Another disadvantage comes from the fact that we want to compare permutations of the same set of elements. For example, the two different segmentations of ba into [ba] and [b][a] still represent the same permutation of the sequence ab. In Figure 1 one can produce a segmentation of (AsEAr Albtrwl, oil prices) into (Albtrwl, oil) and (AsEAr, prices) or leave it as is. If we allow for both segmentations, the learnt probability parameters may be different for the sum of (Albtrwl, oil) and (AsEAr, prices) and for the unsegmented phrase. Durrani et al. (2011) introduce an alternative method for unambiguous bilingual segmentation where tokens are defined as minimal phrases, called minimal translation units (MTUs). Figure 1 compares the BiLM and MTU tokenization for a specific example. Since Niehues et al. (2011) have shown their model to work successfully as an additional feature in combination with commonly used standard phrase-based features, we use their approach as the main point of reference and base our approach on their segmentation method. In the rest of the text we refer to Niehues et al. (2011) as the original BiLM.4 At the same time, we </context>
+</contexts>
+<marker>Durrani, Schmid, Fraser, 2011</marker>
+<rawString>Nadir Durrani, Helmut Schmid, and Alexander Fraser. 2011. A joint sequence translation model with integrated reordering. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics, pages 1045–1054. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Heidi J Fox</author>
+</authors>
+<title>Phrasal cohesion and statistical machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the ACL02 conference on Empirical methods in natural language processing,</booktitle>
+<pages>304--3111</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4226" citStr="Fox, 2002" startWordPosition="644" endWordPosition="645">1) have mostly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of trans</context>
+</contexts>
+<marker>Fox, 2002</marker>
+<rawString>Heidi J. Fox. 2002. Phrasal cohesion and statistical machine translation. In Proceedings of the ACL02 conference on Empirical methods in natural language processing, pages 304–3111. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>A simple and effective hierarchical phrase reordering model.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>848--856</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="3515" citStr="Galley and Manning, 2008" startWordPosition="532" endWordPosition="535">t al. (2006) used this kind of model as the translation model, while more recently it has been used as an additional model in PBSMT systems (Niehues et al., 2011). We adopt and generalize the approach of Niehues et al. (2011) to investigate several variations of bilingual language models. Our method consists of labeling elementary translation events (tokens of bilingual LMs) with their different contextual properties. What kind of contextual information should be incorporated in a reordering model? Lexical information has been used by Tillmann (2004) but is known to suffer from data sparsity (Galley and Manning, 2008). Also previous contributions to bilingual language modeling (Marino et al., 2006; Niehues et al., 2011) have mostly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general</context>
+</contexts>
+<marker>Galley, Manning, 2008</marker>
+<rawString>Michel Galley and Christopher D. Manning. 2008. A simple and effective hierarchical phrase reordering model. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 848–856. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Spence Green</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Better arabic parsing: Baselines, evaluations, and analysis.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 23rd International Conference on Computational Linguistics,</booktitle>
+<pages>394--402</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="21234" citStr="Green and Manning, 2010" startWordPosition="3435" endWordPosition="3438"> Sequence of bilingual tokens produced by a Pos→Pos→Pos+sibl•Lex after translating three words of the source sentence: VBD→NNS→e+NNS+IN•Egyptian, ROOT→VBD→ e+NNS+e•exports, VBD→NNS→NNP+IN+e•to (if there is no sibling on either of the sides, c is returned). sentences are segmented according to Equation 3. We produce a dependency parse of a source sentence and a POS-tag labeling of a target sentence. For Chinese, we use the Stanford dependency parser (Chang et al., 2009). For Arabic a dependency parser is not available for public use, so we produce a constituency parse with the Stanford parser (Green and Manning, 2010) and extract dependencies based on the rules in Collins (1999). For English POS-tagging, we use the Stanford POS-tagger (Toutanova et al., 2003). After having produced a labeled sequence of tokens, we learn a 5-gram model using SRILM (Stolcke et al., 2011). Kneyser-Ney smoothing is used for all model variations except for Pos•Pos where Witten-Bell smoothing is used due to zero countof-counts. 3.4 Decoder integration Dependency-based BiLMs are integrated into our phrase-based SMT decoder as follows: Before translating a sentence, we produce its dependency parse. Phrase-internal word-alignments,</context>
+</contexts>
+<marker>Green, Manning, 2010</marker>
+<rawString>Spence Green and Christopher D. Manning. 2010. Better arabic parsing: Baselines, evaluations, and analysis. In Proceedings of the 23rd International Conference on Computational Linguistics, pages 394–402. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Spence Green</author>
+<author>Michel Galley</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Improved models of distortion cost for statistical machine translation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>867--875</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="34700" citStr="Green et al., 2010" startWordPosition="5445" endWordPosition="5448">BiLM also helps to differentiate between word orders. For Chinese, Pos--+Pos--+Pos•Pos and the system combining the latter and Lex•Lex also obtain the best results. However, other dependency-based configurations do not outperform Lex•Lex. All the experiments so far were run with a distortion limit of 5. But both of the languages, especially Chinese, often require reorderings over a longer distance. We performed additional experiments with a distortion limit of 10 for the Lex•Lex and Pos--+Pos--+Pos•Pos systems (Tables 7 and 8). It is more difficult to translate with a higher distortion limit (Green et al., 2010) as the set of permutations grows larger thereby making it more difficult to differentiate between correct and incorrect continuations of the current hypothesis. It has also been noted that higher distortion limits are more likely to result in improvements for Chinese rather than Arabic to English translation (Chiang, 2007; Green et al., 2010). We compared performance of fixed BiLM models at distortion lengths of 5 and 10. ArabicEnglish results did not reveal statistically significant differences between the two distortion limits for Pos--+Pos--+Pos•Pos. On the other hand, for Lex•Lex BLEU dec</context>
+</contexts>
+<marker>Green, Galley, Manning, 2010</marker>
+<rawString>Spence Green, Michel Galley, and Christopher D. Manning. 2010. Improved models of distortion cost for statistical machine translation. In Proceedings of the 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 867–875. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mark Hopkins</author>
+<author>Jonathan May</author>
+</authors>
+<title>Tuning as ranking.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>1352--1362</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="25689" citStr="Hopkins and May, 2011" startWordPosition="4090" endWordPosition="4093"> Since TER is an error rate, lower scores are better. Configuration MT08 MT09 MT08+MT09 BLEU TER BLEU TER BLEU TER Pos--+Pos• a 45.66N,M 47.44N,M 48.78N,− 43.94N,− 47.15N,− 45.77N,M Pos--+Pos•Pos 45.66N,M 47.17N,N 49.00N,− 43.45N,N 47.25N,M 45.40N,N Pos--+Pos•Lex 45.48M,− 47.34N,N 48.90N,− 43.87N,M 47.12N,− 45.69N,N Table 3: Different combinations of a target contextual function with the Pos→Pos source contextual function for Arabic-English. See Table 2 for the notation regarding statistical significance. shown in Table 1. The feature weights were tuned by using pairwise ranking optimization (Hopkins and May, 2011) on the MT04 benchmark (for both language pairs). During tuning, 14 PRO parameter estimation runs are performed in parallel on different samples of the n-best list after each decoder iteration. The weights of the individual PRO runs are then averaged and passed on to the next decoding iteration. Performing weight estimation independently for a number of samples corrects for some of the instability that can be caused by individual samples. For testing, we used MT08 and MT09 for Arabic, and MT06 and MT08 for Chinese. We use approximate randomization (Noreen, 1989; Riezler and Maxwell, 2005) to t</context>
+</contexts>
+<marker>Hopkins, May, 2011</marker>
+<rawString>Mark Hopkins and Jonathan May. 2011. Tuning as ranking. In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 1352–1362. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Haitao Mi</author>
+</authors>
+<title>Efficient incremental decoding for tree-to-string translation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>273--283</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4955" citStr="Huang and Mi, 2010" startWordPosition="758" endWordPosition="761">e a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementally build up the syntactic representation of a translation during decoding by adding precomputed fragments from the source parse tree. The idea to combine the merits of the two SMT paradigms has been proposed before, where Huang and Mi (2010) introduce incremental decoding for a tree-based model. On a very general level, our approach is similar to theirs in that it keeps track of a sequence of source syntactic subtrees that are being translated at consecutive decoding ste</context>
+</contexts>
+<marker>Huang, Mi, 2010</marker>
+<rawString>Liang Huang and Haitao Mi. 2010. Efficient incremental decoding for tree-to-string translation. In Proceedings of the 2010 Conference on Empirical Methods in Natural Language Processing, pages 273–283. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Kevin Knight</author>
+<author>Aravind Joshi</author>
+</authors>
+<title>Statistical syntax-directed translation with extended domain of locality.</title>
+<date>2006</date>
+<booktitle>In Proceedings of AMTA,</booktitle>
+<pages>223--226</pages>
+<contexts>
+<context position="4479" citStr="Huang et al., 2006" startWordPosition="684" endWordPosition="687">ent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementa</context>
+</contexts>
+<marker>Huang, Knight, Joshi, 2006</marker>
+<rawString>Liang Huang, Kevin Knight, and Aravind Joshi. 2006. Statistical syntax-directed translation with extended domain of locality. In Proceedings of AMTA, pages 223–226.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology,</booktitle>
+<pages>48--54</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="2146" citStr="Koehn et al., 2003" startWordPosition="318" endWordPosition="321">ce requiring a reordering. Determining the correct reordering during decoding is a major challenge for SMT. This problem has received a lot of attention in the literature (see, e.g., Tillmann (2004), Zens and Ney (2003), Al-Onaizan and Papineni (2006)), as choosing the correct reordering improves readability of the translation and can have a substantial impact on translation quality (Birch, 2011). In this paper, we only consider those approaches that include a reordering feature function into the loglinear interpolation used during decoding. The simplest reordering model is linear distortion (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phrases is its only parameter. Lexical distortion modeling (Tillmann, 2004) conditions reordering probabilities on the phrase pairs translated at the current and previous steps. Unlike linear distortion, it characterizes reordering not in terms of distance but type: monotone, swap, or discontinuous. In this paper, we base our approach to reordering on bilingual language models (Marino et al., 2006; Niehues et al., 2011).</context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology, pages 48–54. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+<author>Christine Moran</author>
+<author>Richard Zens</author>
+</authors>
+<title>Moses: Open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics on Interactive Poster and Demonstration Sessions,</booktitle>
+<pages>177--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="23462" citStr="Koehn et al., 2007" startWordPosition="3778" endWordPosition="3781">nd not in a class-based fashion, with syntactic source-side representations emitting the corresponding target words (Bisazza and Monz, 2014). 4 Experiments 4.1 Setup We conduct translation experiments with a baseline PBSMT system with additionally one of the dependency-based BiLM feature functions specified in Section 3. We compare the translation performance to a baseline PBSMT system and to a baseline augmented with the original BiLMs from (Niehues et al., 2011). Word-alignment is produced with GIZA++ (Och and Ney, 2003). We use an in-house implementation of a PBSMT system similar to Moses (Koehn et al., 2007). Our baseline contains all standard PBSMT features including language model, lexical weighting, and lexicalized reordering. The distortion limit is set to 5. A 5-gram LM is trained on the English Gigaword corpus (1.6B tokens) using SRILM with modified Kneyser-Ney smoothing and interpolation. The BiLMs were trained as described in Section 3.3. Information about the parallel data used for training the Arabic-English7 and Chinese-English systems8 is 7The following Arabic-English parallel corpora were used: LDC2006E25, LDC2004T18, several gale corpora, LDC2004T17, LDC2005E46, LDC2007T08, LDC2004E</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, Moran, Zens, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, et al. 2007. Moses: Open source toolkit for statistical machine translation. In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics on Interactive Poster and Demonstration Sessions, pages 177–180. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Uri Lerner</author>
+<author>Slav Petrov</author>
+</authors>
+<title>Source-side classifier preordering for machine translation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="17356" citStr="Lerner and Petrov (2013)" startWordPosition="2779" endWordPosition="2782"> We also exploit some very simple target contextual functions, but do not go into an in-depth exploration. 3.2 Dependency-based contextual functions In NLP approaches exploiting dependency structure, two kinds of relations are of special importance: the parent-child relation and the sibling relation. Shen et al. (2008) work with two wellformed dependency structures, both of which are defined in such a way that there is one common parent and a set of siblings. Li et al. (2012) characterize rules in hierarchical SMT by labeling them with the POS tags of the parents of the words inside the rule. Lerner and Petrov (2013) model reordering as a sequence of classification steps based on a dependency parse of a sentence. Their model first decides how a word is reordered with respect to its parent and then how it is reordered with respect to its siblings. Based on these previous approaches, we propose to characterize contextual syntactic roles of a word in terms of POS tags of the words themselves and their relatives in a dependency tree. It is straightforward to incorporate parent information since each node has a unique parent. As for siblings information, we incorporate POS tags of the closest sibling to the le</context>
+</contexts>
+<marker>Lerner, Petrov, 2013</marker>
+<rawString>Uri Lerner and Slav Petrov. 2013. Source-side classifier preordering for machine translation. In Proceedings of the Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Junhui Li</author>
+<author>Zhaopeng Tu</author>
+<author>Guodong Zhou</author>
+<author>Josef van Genabith</author>
+</authors>
+<title>Head-driven hierarchical phrasebased translation.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>33--37</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<marker>Li, Tu, Zhou, van Genabith, 2012</marker>
+<rawString>Junhui Li, Zhaopeng Tu, Guodong Zhou, and Josef van Genabith. 2012. Head-driven hierarchical phrasebased translation. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics, pages 33–37. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yang Liu</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Treeto-string alignment template for statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics,</booktitle>
+<pages>609--616</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="4459" citStr="Liu et al., 2006" startWordPosition="680" endWordPosition="683">tence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased m</context>
+</contexts>
+<marker>Liu, Liu, Lin, 2006</marker>
+<rawString>Yang Liu, Qun Liu, and Shouxun Lin. 2006. Treeto-string alignment template for statistical machine translation. In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, pages 609–616. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jos´e B Marino</author>
+<author>Rafael E Banchs</author>
+<author>Josep M Crego</author>
+<author>Adria de Gispert</author>
+<author>Patrik Lambert</author>
+<author>Jos´e A R Fonollosa</author>
+<author>Marta R Costa-Juss`a</author>
+</authors>
+<title>N-grambased machine translation.</title>
+<date>2006</date>
+<journal>Computational Linguistics,</journal>
+<volume>32</volume>
+<issue>4</issue>
+<marker>Marino, Banchs, Crego, de Gispert, Lambert, Fonollosa, Costa-Juss`a, 2006</marker>
+<rawString>Jos´e B Marino, Rafael E Banchs, Josep M. Crego, Adria de Gispert, Patrik Lambert, Jos´e A.R. Fonollosa, and Marta R. Costa-Juss`a. 2006. N-grambased machine translation. Computational Linguistics, 32(4):527–549.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuval Marton</author>
+<author>Philip Resnik</author>
+</authors>
+<title>Soft syntactic constraints for hierarchical phrased-based translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics,</booktitle>
+<pages>1003--1011</pages>
+<contexts>
+<context position="4505" citStr="Marton and Resnik, 2008" startWordPosition="688" endWordPosition="691">s of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementally build up the syntactic</context>
+</contexts>
+<marker>Marton, Resnik, 2008</marker>
+<rawString>Yuval Marton and Philip Resnik. 2008. Soft syntactic constraints for hierarchical phrased-based translation. In Proceedings of the Association for Computational Linguistics, pages 1003–1011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jan Niehues</author>
+<author>Teresa Herrmann</author>
+<author>Stephan Vogel</author>
+<author>Alex Waibel</author>
+</authors>
+<title>Wider context by using bilingual language models in machine translation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</booktitle>
+<pages>198--206</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="839" citStr="Niehues et al. (2011)" startWordPosition="112" endWordPosition="115">etherlands {e.garmash,c.monz}@uva.nl Abstract This paper presents a novel approach to improve reordering in phrase-based machine translation by using richer, syntactic representations of units of bilingual language models (BiLMs). Our method to include syntactic information is simple in implementation and requires minimal changes in the decoding algorithm. The approach is evaluated in a series of ArabicEnglish and Chinese-English translation experiments. The best models demonstrate significant improvements in BLEU and TER over the phrase-based baseline, as well as over the lexicalized BiLM by Niehues et al. (2011). Further improvements of up to 0.45 BLEU for ArabicEnglish and up to 0.59 BLEU for ChineseEnglish are obtained by combining our dependency BiLM with a lexicalized BiLM. An improvement of 0.98 BLEU is obtained for Chinese-English in the setting of an increased distortion limit. 1 Introduction In statistical machine translation (SMT) reordering (also called distortion) refers to the order in which source words are translated to generate the translation in the target language. Word orders can differ significantly across languages. For instance, Arabic declarative sentences can be verbinitial, wh</context>
+<context position="2745" citStr="Niehues et al., 2011" startWordPosition="414" endWordPosition="417">n (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phrases is its only parameter. Lexical distortion modeling (Tillmann, 2004) conditions reordering probabilities on the phrase pairs translated at the current and previous steps. Unlike linear distortion, it characterizes reordering not in terms of distance but type: monotone, swap, or discontinuous. In this paper, we base our approach to reordering on bilingual language models (Marino et al., 2006; Niehues et al., 2011). Instead of directly characterizing reordering, they model sequences of elementary translation events as a Markov process.1 Originally, Marino et al. (2006) used this kind of model as the translation model, while more recently it has been used as an additional model in PBSMT systems (Niehues et al., 2011). We adopt and generalize the approach of Niehues et al. (2011) to investigate several variations of bilingual language models. Our method consists of labeling elementary translation events (tokens of bilingual LMs) with their different contextual properties. What kind of contextual informati</context>
+<context position="6467" citStr="Niehues et al., 2011" startWordPosition="1012" endWordPosition="1015">ecoding we have full access to the source sentence, which allows us to obtain a better syntactic analysis (than for a partial sentence) and to precompute the units that the model operates with. We investigate the following research questions: How well can we capture reordering regularities of a language pair by incorporating source syntactic parameters into the units of a bilingual language model? What kind of source syntactic parameters are necessary and sufficient? Our contributions can be summarized as follows: We argue that the contextual information used in the original bilingual models (Niehues et al., 2011) is insufficient and introduce a simple model that exploits source-side syntax to improve reordering (Sections 2 and 3). We perform a thorough comparison between different variants of our general model and compare them to the original approach. We carry out translation experiments on multiple test sets, two language pairs (ArabicEnglish and Chinese-English), and with respect to two metrics (BLEU and TER). Finally, we present a preliminary analysis of the reorderings resulting from the proposed models (Section 4). 2 Motivation In this section, we elaborate on our research questions and provide </context>
+<context position="9696" citStr="Niehues et al. (2011)" startWordPosition="1514" endWordPosition="1517"> ArtfAE Albtrwl AsEAr the minister attributed the increase of oil prices empty the minister the the increase of oil prices (b) BiLM tokens extracted from sentence (a). (c) MTU tokens extracted from sentence (a). tain a bilingual LM. The richer representation allows for a finer distinction between reorderings. For example, Arabic has a morphological marker of definiteness on both nouns and adjectives. If we first translate a definite adjective and then an indefinite noun, it will probably not be a likely sequence according to the translation model. This kind of intuition underlies the model of Niehues et al. (2011), a bilingual LM (BiLM), which defines elementary translation events t1, ..., tn as follows: ti = (ei, IfIf E A(ei)}), (2) where ei is the i-th target word and A : E -* P(F) is an alignment function, E and F referring to target and source sentences, and P(·) is the powerset function. In other words, the i-th translation event consists of the i-th target word and all source words aligned to it. Niehues et al. (2011) refer to the defined translation events ti as bilingual tokens and we adopt this terminology. There are alternative definitions of bilingual language models. Our choice of the above</context>
+<context position="11340" citStr="Niehues et al. (2011)" startWordPosition="1792" endWordPosition="1795">the same permutation of the sequence ab. In Figure 1 one can produce a segmentation of (AsEAr Albtrwl, oil prices) into (Albtrwl, oil) and (AsEAr, prices) or leave it as is. If we allow for both segmentations, the learnt probability parameters may be different for the sum of (Albtrwl, oil) and (AsEAr, prices) and for the unsegmented phrase. Durrani et al. (2011) introduce an alternative method for unambiguous bilingual segmentation where tokens are defined as minimal phrases, called minimal translation units (MTUs). Figure 1 compares the BiLM and MTU tokenization for a specific example. Since Niehues et al. (2011) have shown their model to work successfully as an additional feature in combination with commonly used standard phrase-based features, we use their approach as the main point of reference and base our approach on their segmentation method. In the rest of the text we refer to Niehues et al. (2011) as the original BiLM.4 At the same time, we do not see any specific obstacles for combining our work with MTUs. 2.2 Suitability of lexicalized BiLM to model reordering As mentioned in the introduction, lexical information is not very well-suited to capture reordering regularities. Consider Figure 2.a</context>
+<context position="15451" citStr="Niehues et al. (2011)" startWordPosition="2452" endWordPosition="2455"> 2.b will produce a highly unlikely sequence. For example, we can substitute each source word with its POS tag and its parent’s POS tag (Figure 3). Again, we computed 4-gram log-probabilities for the corresponding sequences: the correct reordering results in a substantially higher probability of −10.58 than the incorrect one (−13.48). We may consider situations where more fine-grained distinctions are required. In the next section, we explore different representations based on source dependency trees. 3 Dependency-based BiLM In this section, we introduce our model which combines the BiLM from Niehues et al. (2011) with source dependency information. We further give details on how the proposed models are trained and integrated into a phrase-based decoder. JJ NNS VBD JJ NNS TO 1692 3.1 The general framework In the previous section we outlined our framework as composed of two steps: First, a parallel sentence is tokenized according to the BiLM model (Niehues et al., 2011). Next, words in the bilingual tokens are substituted with their contextual properties. It is thus convenient to use the following generalized definition for a token sequence t1...tn in our framework: ti = (ContE(ei), {ContF (f)|f E A(ei)</context>
+<context position="23311" citStr="Niehues et al., 2011" startWordPosition="3752" endWordPosition="3755">ated model probability. During decoding, the probabilities of the BiLMs are computed in a stream-based fashion, with bilingual tokens as string tokens, and not in a class-based fashion, with syntactic source-side representations emitting the corresponding target words (Bisazza and Monz, 2014). 4 Experiments 4.1 Setup We conduct translation experiments with a baseline PBSMT system with additionally one of the dependency-based BiLM feature functions specified in Section 3. We compare the translation performance to a baseline PBSMT system and to a baseline augmented with the original BiLMs from (Niehues et al., 2011). Word-alignment is produced with GIZA++ (Och and Ney, 2003). We use an in-house implementation of a PBSMT system similar to Moses (Koehn et al., 2007). Our baseline contains all standard PBSMT features including language model, lexical weighting, and lexicalized reordering. The distortion limit is set to 5. A 5-gram LM is trained on the English Gigaword corpus (1.6B tokens) using SRILM with modified Kneyser-Ney smoothing and interpolation. The BiLMs were trained as described in Section 3.3. Information about the parallel data used for training the Arabic-English7 and Chinese-English systems8 </context>
+<context position="27034" citStr="Niehues et al. (2011)" startWordPosition="4309" endWordPosition="4312">nese, where we use case-insensitive BLEU (Papineni et al., 2002) and TER (Snover et al., 2006) as evaluation metrics. This is followed by a preliminary analysis of observed reorderings where we compare 4-gram precision results and conduct experiments with an increased distortion limit. 4.2 Arabic-English translation experiments We are interested in how a translation system with an integrated dependency-based BiLM feaand several gale corpora. ture performs as compared to the standard PBSMT baseline and, more importantly, to the original BiLM model. We consider two variants of BiLM discussed by Niehues et al. (2011): the standard one, Lex•Lex, and the simplest syntactic one, Pos•Pos. Results for the experiments can be found in Table 2. In the discussion below we mostly focus on the experimental results for the large, combined test set MT08+MT09. Table 2.a–b compares the performance of the baseline and original BiLM systems. Lex•Lex yields strongly significant improvements over the baseline for BLEU and weakly significant improvements for TER. Therefore, for the rest of the experiments we are interested in obtaining further improvements over Lex•Lex. Pos--+Pos•Pos (Table 2.c) demonstrates the effect of ad</context>
+<context position="36624" citStr="Niehues et al., 2011" startWordPosition="5746" endWordPosition="5749">e, a larger distortion limit helps for both configurations, but more so for our dependency BiLM, yielding an improvement of 0.98 BLEU 1697 over the original, lexicalized BiLM (Table 8). tics, pages 529–536, Sydney, Australia, July. Association for Computational Linguistics. 5 Conclusions In this paper, we have introduced a simple, yet effective way to include syntactic information into phrase-based SMT. Our method consists of enriching the representation of units of a bilingual language model (BiLM). We argued that the very limited contextual information used in the original bilingual models (Niehues et al., 2011) can capture reorderings only to a limited degree and proposed a method to incorporate information from a source dependency tree in bilingual units. In a series of translation experiments we performed a thorough comparison between various syntacticallyenriched BiLMs and competing models. The results demonstrated that adding syntactic information from a source dependency tree to the representations of bilingual tokens in an n-gram model can yield statistically significant improvements over the competing systems. A number of additional evaluations provided an indication for better modeling of re</context>
+</contexts>
+<marker>Niehues, Herrmann, Vogel, Waibel, 2011</marker>
+<rawString>Jan Niehues, Teresa Herrmann, Stephan Vogel, and Alex Waibel. 2011. Wider context by using bilingual language models in machine translation. In Proceedings of the Sixth Workshop on Statistical Machine Translation, pages 198–206. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Eric W Noreen</author>
+</authors>
+<title>Computer Intensive Methods for Testing Hypotheses. An Introduction.</title>
+<date>1989</date>
+<publisher>WileyInterscience.</publisher>
+<contexts>
+<context position="26256" citStr="Noreen, 1989" startWordPosition="4186" endWordPosition="4187"> ranking optimization (Hopkins and May, 2011) on the MT04 benchmark (for both language pairs). During tuning, 14 PRO parameter estimation runs are performed in parallel on different samples of the n-best list after each decoder iteration. The weights of the individual PRO runs are then averaged and passed on to the next decoding iteration. Performing weight estimation independently for a number of samples corrects for some of the instability that can be caused by individual samples. For testing, we used MT08 and MT09 for Arabic, and MT06 and MT08 for Chinese. We use approximate randomization (Noreen, 1989; Riezler and Maxwell, 2005) to test for statistically significant differences. In the next two subsections we discuss the general results for Arabic and Chinese, where we use case-insensitive BLEU (Papineni et al., 2002) and TER (Snover et al., 2006) as evaluation metrics. This is followed by a preliminary analysis of observed reorderings where we compare 4-gram precision results and conduct experiments with an increased distortion limit. 4.2 Arabic-English translation experiments We are interested in how a translation system with an integrated dependency-based BiLM feaand several gale corpor</context>
+</contexts>
+<marker>Noreen, 1989</marker>
+<rawString>Eric W. Noreen. 1989. Computer Intensive Methods for Testing Hypotheses. An Introduction. WileyInterscience.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Hermann Ney</author>
+</authors>
+<title>A systematic comparison of various statistical alignment models.</title>
+<date>2003</date>
+<journal>Computational Linguistics,</journal>
+<volume>29</volume>
+<issue>1</issue>
+<contexts>
+<context position="23371" citStr="Och and Ney, 2003" startWordPosition="3761" endWordPosition="3764">he BiLMs are computed in a stream-based fashion, with bilingual tokens as string tokens, and not in a class-based fashion, with syntactic source-side representations emitting the corresponding target words (Bisazza and Monz, 2014). 4 Experiments 4.1 Setup We conduct translation experiments with a baseline PBSMT system with additionally one of the dependency-based BiLM feature functions specified in Section 3. We compare the translation performance to a baseline PBSMT system and to a baseline augmented with the original BiLMs from (Niehues et al., 2011). Word-alignment is produced with GIZA++ (Och and Ney, 2003). We use an in-house implementation of a PBSMT system similar to Moses (Koehn et al., 2007). Our baseline contains all standard PBSMT features including language model, lexical weighting, and lexicalized reordering. The distortion limit is set to 5. A 5-gram LM is trained on the English Gigaword corpus (1.6B tokens) using SRILM with modified Kneyser-Ney smoothing and interpolation. The BiLMs were trained as described in Section 3.3. Information about the parallel data used for training the Arabic-English7 and Chinese-English systems8 is 7The following Arabic-English parallel corpora were used:</context>
+</contexts>
+<marker>Och, Ney, 2003</marker>
+<rawString>Franz Josef Och and Hermann Ney. 2003. A systematic comparison of various statistical alignment models. Computational Linguistics, 29(1):19–51.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>Bleu: a method for automatic evaluation of machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 40th annual meeting of the Association for Computational Linguistics,</booktitle>
+<pages>311--318</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="26477" citStr="Papineni et al., 2002" startWordPosition="4220" endWordPosition="4223">ter each decoder iteration. The weights of the individual PRO runs are then averaged and passed on to the next decoding iteration. Performing weight estimation independently for a number of samples corrects for some of the instability that can be caused by individual samples. For testing, we used MT08 and MT09 for Arabic, and MT06 and MT08 for Chinese. We use approximate randomization (Noreen, 1989; Riezler and Maxwell, 2005) to test for statistically significant differences. In the next two subsections we discuss the general results for Arabic and Chinese, where we use case-insensitive BLEU (Papineni et al., 2002) and TER (Snover et al., 2006) as evaluation metrics. This is followed by a preliminary analysis of observed reorderings where we compare 4-gram precision results and conduct experiments with an increased distortion limit. 4.2 Arabic-English translation experiments We are interested in how a translation system with an integrated dependency-based BiLM feaand several gale corpora. ture performs as compared to the standard PBSMT baseline and, more importantly, to the original BiLM model. We consider two variants of BiLM discussed by Niehues et al. (2011): the standard one, Lex•Lex, and the simple</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2002. Bleu: a method for automatic evaluation of machine translation. In Proceedings of the 40th annual meeting of the Association for Computational Linguistics, pages 311–318. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Stefan Riezler</author>
+<author>John T Maxwell</author>
+</authors>
+<title>On some pitfalls in automatic evaluation and significance testing for MT.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization.</booktitle>
+<contexts>
+<context position="26284" citStr="Riezler and Maxwell, 2005" startWordPosition="4188" endWordPosition="4192">ization (Hopkins and May, 2011) on the MT04 benchmark (for both language pairs). During tuning, 14 PRO parameter estimation runs are performed in parallel on different samples of the n-best list after each decoder iteration. The weights of the individual PRO runs are then averaged and passed on to the next decoding iteration. Performing weight estimation independently for a number of samples corrects for some of the instability that can be caused by individual samples. For testing, we used MT08 and MT09 for Arabic, and MT06 and MT08 for Chinese. We use approximate randomization (Noreen, 1989; Riezler and Maxwell, 2005) to test for statistically significant differences. In the next two subsections we discuss the general results for Arabic and Chinese, where we use case-insensitive BLEU (Papineni et al., 2002) and TER (Snover et al., 2006) as evaluation metrics. This is followed by a preliminary analysis of observed reorderings where we compare 4-gram precision results and conduct experiments with an increased distortion limit. 4.2 Arabic-English translation experiments We are interested in how a translation system with an integrated dependency-based BiLM feaand several gale corpora. ture performs as compared</context>
+</contexts>
+<marker>Riezler, Maxwell, 2005</marker>
+<rawString>Stefan Riezler and John T. Maxwell. 2005. On some pitfalls in automatic evaluation and significance testing for MT. In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Libin Shen</author>
+<author>Jinxi Xu</author>
+<author>Ralph M Weischedel</author>
+</authors>
+<title>A new string-to-dependency machine translation algorithm with a target dependency language model.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics,</booktitle>
+<pages>577--585</pages>
+<contexts>
+<context position="4545" citStr="Shen et al., 2008" startWordPosition="696" endWordPosition="699">in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics kens with a rich set of POS tags. But in general, reordering is considered to be a syntactic phenomenon and thus the relevant features are syntactic (Fox, 2002; Cherry, 2008). Syntactic information is incorporated in tree-based approaches in SMT, allowing one to provide a more detailed definition of translation events and to redefine decoding as parsing of a source string (Liu et al., 2006; Huang et al., 2006; Marton and Resnik, 2008), of a target string (Shen et al., 2008), or both (Chiang, 2007; Chiang, 2010). Reordering is a result of a given derivation, and CYK-based decoding used in tree-based approaches is more syntax-aware than the simple PBSMT decoding algorithm. Although tree-based approaches potentially offer a more accurate model of translation, they are also a lot more complex and requiring more intricate optimization and estimation techniques (Huang and Mi, 2010). Our idea is to keep the simplicity of PBSMT but move towards the expressiveness typical of treebased models. We incrementally build up the syntactic representation of a translation during </context>
+<context position="17052" citStr="Shen et al. (2008)" startWordPosition="2721" endWordPosition="2724">efined as returning the POS tag of the source word combined with the POS tags of its parent, grandparent and siblings, and ContE defined as an identity function (see Section 3.2 for a detailed explanation of the functions and notation). In this work we focus on source contextual functions (ContF). We also exploit some very simple target contextual functions, but do not go into an in-depth exploration. 3.2 Dependency-based contextual functions In NLP approaches exploiting dependency structure, two kinds of relations are of special importance: the parent-child relation and the sibling relation. Shen et al. (2008) work with two wellformed dependency structures, both of which are defined in such a way that there is one common parent and a set of siblings. Li et al. (2012) characterize rules in hierarchical SMT by labeling them with the POS tags of the parents of the words inside the rule. Lerner and Petrov (2013) model reordering as a sequence of classification steps based on a dependency parse of a sentence. Their model first decides how a word is reordered with respect to its parent and then how it is reordered with respect to its siblings. Based on these previous approaches, we propose to characteriz</context>
+</contexts>
+<marker>Shen, Xu, Weischedel, 2008</marker>
+<rawString>Libin Shen, Jinxi Xu, and Ralph M. Weischedel. 2008. A new string-to-dependency machine translation algorithm with a target dependency language model. In Proceedings of the Association for Computational Linguistics, pages 577–585.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Snover</author>
+<author>Bonnie Dorr</author>
+<author>Richard Schwartz</author>
+<author>Linnea Micciulla</author>
+<author>John Makhoul</author>
+</authors>
+<title>A study of translation edit rate with targeted human annotation.</title>
+<date>2006</date>
+<booktitle>In Proceedings ofAMTA,</booktitle>
+<pages>223--231</pages>
+<contexts>
+<context position="26507" citStr="Snover et al., 2006" startWordPosition="4226" endWordPosition="4229">weights of the individual PRO runs are then averaged and passed on to the next decoding iteration. Performing weight estimation independently for a number of samples corrects for some of the instability that can be caused by individual samples. For testing, we used MT08 and MT09 for Arabic, and MT06 and MT08 for Chinese. We use approximate randomization (Noreen, 1989; Riezler and Maxwell, 2005) to test for statistically significant differences. In the next two subsections we discuss the general results for Arabic and Chinese, where we use case-insensitive BLEU (Papineni et al., 2002) and TER (Snover et al., 2006) as evaluation metrics. This is followed by a preliminary analysis of observed reorderings where we compare 4-gram precision results and conduct experiments with an increased distortion limit. 4.2 Arabic-English translation experiments We are interested in how a translation system with an integrated dependency-based BiLM feaand several gale corpora. ture performs as compared to the standard PBSMT baseline and, more importantly, to the original BiLM model. We consider two variants of BiLM discussed by Niehues et al. (2011): the standard one, Lex•Lex, and the simplest syntactic one, Pos•Pos. Res</context>
+</contexts>
+<marker>Snover, Dorr, Schwartz, Micciulla, Makhoul, 2006</marker>
+<rawString>Matthew Snover, Bonnie Dorr, Richard Schwartz, Linnea Micciulla, and John Makhoul. 2006. A study of translation edit rate with targeted human annotation. In Proceedings ofAMTA, pages 223–231.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Andreas Stolcke</author>
+<author>Jing Zheng</author>
+<author>Wen Wang</author>
+<author>Victor Abrash</author>
+</authors>
+<title>Srilm at sixteen: Update and outlook.</title>
+<date>2011</date>
+<booktitle>In Proceedings of IEEE Automatic Speech Recognition and Understanding Workshop,</booktitle>
+<pages>5</pages>
+<contexts>
+<context position="21490" citStr="Stolcke et al., 2011" startWordPosition="3478" endWordPosition="3481">ntences are segmented according to Equation 3. We produce a dependency parse of a source sentence and a POS-tag labeling of a target sentence. For Chinese, we use the Stanford dependency parser (Chang et al., 2009). For Arabic a dependency parser is not available for public use, so we produce a constituency parse with the Stanford parser (Green and Manning, 2010) and extract dependencies based on the rules in Collins (1999). For English POS-tagging, we use the Stanford POS-tagger (Toutanova et al., 2003). After having produced a labeled sequence of tokens, we learn a 5-gram model using SRILM (Stolcke et al., 2011). Kneyser-Ney smoothing is used for all model variations except for Pos•Pos where Witten-Bell smoothing is used due to zero countof-counts. 3.4 Decoder integration Dependency-based BiLMs are integrated into our phrase-based SMT decoder as follows: Before translating a sentence, we produce its dependency parse. Phrase-internal word-alignments, needed to segment the translation hypothesis into tokens, are stored in the phrase table, based on the most frequent internal alignment observed during training. Likewise, we store the most likely target-side POS-labeling for each phrase pair. The decodin</context>
+</contexts>
+<marker>Stolcke, Zheng, Wang, Abrash, 2011</marker>
+<rawString>Andreas Stolcke, Jing Zheng, Wen Wang, and Victor Abrash. 2011. Srilm at sixteen: Update and outlook. In Proceedings of IEEE Automatic Speech Recognition and Understanding Workshop, page 5.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christoph Tillmann</author>
+</authors>
+<title>A unigram orientation model for statistical machine translation.</title>
+<date>2004</date>
+<booktitle>In Proceedings of of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>101--104</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="1725" citStr="Tillmann (2004)" startWordPosition="255" endWordPosition="256"> limit. 1 Introduction In statistical machine translation (SMT) reordering (also called distortion) refers to the order in which source words are translated to generate the translation in the target language. Word orders can differ significantly across languages. For instance, Arabic declarative sentences can be verbinitial, while the corresponding English translation should realize the verb after the subject, hence requiring a reordering. Determining the correct reordering during decoding is a major challenge for SMT. This problem has received a lot of attention in the literature (see, e.g., Tillmann (2004), Zens and Ney (2003), Al-Onaizan and Papineni (2006)), as choosing the correct reordering improves readability of the translation and can have a substantial impact on translation quality (Birch, 2011). In this paper, we only consider those approaches that include a reordering feature function into the loglinear interpolation used during decoding. The simplest reordering model is linear distortion (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phr</context>
+<context position="3446" citStr="Tillmann (2004)" startWordPosition="522" endWordPosition="523">anslation events as a Markov process.1 Originally, Marino et al. (2006) used this kind of model as the translation model, while more recently it has been used as an additional model in PBSMT systems (Niehues et al., 2011). We adopt and generalize the approach of Niehues et al. (2011) to investigate several variations of bilingual language models. Our method consists of labeling elementary translation events (tokens of bilingual LMs) with their different contextual properties. What kind of contextual information should be incorporated in a reordering model? Lexical information has been used by Tillmann (2004) but is known to suffer from data sparsity (Galley and Manning, 2008). Also previous contributions to bilingual language modeling (Marino et al., 2006; Niehues et al., 2011) have mostly used lexical information, although Crego and Yvon (2010a) and Crego and Yvon (2010b) label bilingual to1Note that the standard PBSMT translation model assumes that events of translating separate phrases in a sentence are independent. 1689 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1689–1700, October 25-29, 2014, Doha, Qatar. c�2014 Association for Compu</context>
+</contexts>
+<marker>Tillmann, 2004</marker>
+<rawString>Christoph Tillmann. 2004. A unigram orientation model for statistical machine translation. In Proceedings of of the North American Chapter of the Association for Computational Linguistics, pages 101–104. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kristina Toutanova</author>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Feature-rich part-ofspeech tagging with a cyclic dependency network.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology,</booktitle>
+<pages>173--180</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="21378" citStr="Toutanova et al., 2003" startWordPosition="3458" endWordPosition="3461"> ROOT→VBD→ e+NNS+e•exports, VBD→NNS→NNP+IN+e•to (if there is no sibling on either of the sides, c is returned). sentences are segmented according to Equation 3. We produce a dependency parse of a source sentence and a POS-tag labeling of a target sentence. For Chinese, we use the Stanford dependency parser (Chang et al., 2009). For Arabic a dependency parser is not available for public use, so we produce a constituency parse with the Stanford parser (Green and Manning, 2010) and extract dependencies based on the rules in Collins (1999). For English POS-tagging, we use the Stanford POS-tagger (Toutanova et al., 2003). After having produced a labeled sequence of tokens, we learn a 5-gram model using SRILM (Stolcke et al., 2011). Kneyser-Ney smoothing is used for all model variations except for Pos•Pos where Witten-Bell smoothing is used due to zero countof-counts. 3.4 Decoder integration Dependency-based BiLMs are integrated into our phrase-based SMT decoder as follows: Before translating a sentence, we produce its dependency parse. Phrase-internal word-alignments, needed to segment the translation hypothesis into tokens, are stored in the phrase table, based on the most frequent internal alignment observe</context>
+</contexts>
+<marker>Toutanova, Klein, Manning, Singer, 2003</marker>
+<rawString>Kristina Toutanova, Dan Klein, Christopher D. Manning, and Yoram Singer. 2003. Feature-rich part-ofspeech tagging with a cyclic dependency network. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology, pages 173–180. Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Richard Zens</author>
+<author>Hermann Ney</author>
+</authors>
+<title>A comparative study on reordering constraints in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting on Association for Computational LinguisticsVolume 1,</booktitle>
+<pages>144--151</pages>
+<publisher>Association</publisher>
+<institution>for Computational Linguistics.</institution>
+<contexts>
+<context position="1746" citStr="Zens and Ney (2003)" startWordPosition="257" endWordPosition="260">ction In statistical machine translation (SMT) reordering (also called distortion) refers to the order in which source words are translated to generate the translation in the target language. Word orders can differ significantly across languages. For instance, Arabic declarative sentences can be verbinitial, while the corresponding English translation should realize the verb after the subject, hence requiring a reordering. Determining the correct reordering during decoding is a major challenge for SMT. This problem has received a lot of attention in the literature (see, e.g., Tillmann (2004), Zens and Ney (2003), Al-Onaizan and Papineni (2006)), as choosing the correct reordering improves readability of the translation and can have a substantial impact on translation quality (Birch, 2011). In this paper, we only consider those approaches that include a reordering feature function into the loglinear interpolation used during decoding. The simplest reordering model is linear distortion (Koehn et al., 2003) which scores the distance between phrases translated at steps t and t + 1 of the derivation. This model ignores any contextual information, as the distance between translated phrases is its only para</context>
+</contexts>
+<marker>Zens, Ney, 2003</marker>
+<rawString>Richard Zens and Hermann Ney. 2003. A comparative study on reordering constraints in statistical machine translation. In Proceedings of the 41st Annual Meeting on Association for Computational LinguisticsVolume 1, pages 144–151. Association for Computational Linguistics.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

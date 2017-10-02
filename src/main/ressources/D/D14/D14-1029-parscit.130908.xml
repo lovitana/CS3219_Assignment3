@@ -1,0 +1,948 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.005726">
+<title confidence="0.986645">
+Reordering Model for Forest-to-String Machine Translation
+</title>
+<author confidence="0.923455">
+Martin ˇCmejrek
+</author>
+<affiliation confidence="0.795075">
+IBM Watson Group
+Prague, Czech Republic
+</affiliation>
+<email confidence="0.99779">
+martin.cmejrek@us.ibm.com
+</email>
+<sectionHeader confidence="0.995636" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9997935">
+In this paper, we present a novel exten-
+sion of a forest-to-string machine transla-
+tion system with a reordering model. We
+predict reordering probabilities for every
+pair of source words with a model using
+features observed from the input parse for-
+est. Our approach naturally deals with the
+ambiguity present in the input parse forest,
+but, at the same time, takes into account
+only the parts of the input forest used
+by the current translation hypothesis. The
+method provides improvement from 0.6 up
+to 1.0 point measured by (T − B )/2
+metric.
+</bodyText>
+<sectionHeader confidence="0.998988" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.9998296">
+Various commonly adopted statistical machine
+translation (SMT) approaches differ in the amount
+of linguistic knowledge present in the rules they
+employ.
+Phrase-based (Koehn et al., 2003) models are
+strong in lexical coverage in local contexts, and
+use external models to score reordering op-
+tions (Tillman, 2004; Koehn et al., 2005).
+Hierarchical models (Chiang, 2005) use lexi-
+calized synchronous context-free grammar rules
+to produce local reorderings. The grammatical-
+ity of their output can be improved by addi-
+tional reordering models scoring permutations of
+the source words. Reordering model can be either
+used for source pre-ordering (Tromble and Eisner,
+), integrated into decoding via translation rules ex-
+tension (Hayashi et al., 2010), additional lexical
+features (He et al., ), or using external sources of
+information, such as source syntactic features ob-
+served from a parse tree (Huang et al., 2013).
+Tree-to-string (T2S) models (Liu et al., 2006;
+Galley et al., 2006) use rules with syntactic struc-
+tures, aiming at even more grammatically appro-
+priate reorderings.
+Forest-to-string (F2S) systems (Mi et al., 2008;
+Mi and Huang, 2008) use source syntactic forest
+as the input to overcome parsing errors, and to al-
+leviate sparseness of translation rules.
+The parse forest may often represent several
+meanings for an ambiguous input that may need
+to be transtated differently using different word or-
+derings. The following example of an ambiguous
+Chinese sentence with ambiguous part-of-speech
+labeling motivates our interest in the reordering
+model for the F2S translation.
+</bodyText>
+<equation confidence="0.967249">
+tˇaol`un (0) h`ui (1) zˇenmey`ang (2)
+discussion/NN meeting/NN how/VV
+discuss/VV will/VV
+</equation>
+<bodyText confidence="0.999678">
+There are several possible meanings based on
+the different POS tagging sequences. We present
+translations for two of them, together with the in-
+dices to their original source words:
+</bodyText>
+<equation confidence="0.9036235">
+(a) NN NN VV:
+How2 was2 the0 discussion0 meeting1?
+(b) VV VV VV:
+Discuss0 what2 will1 happen1.
+</equation>
+<bodyText confidence="0.99687375">
+A T2S system starts from a single parse corre-
+sponding to one of the possible POS sequences,
+the same tree can be used to predict word reorder-
+ings. On the other hand, a F2S system deals with
+the ambiguity through exploring translation hy-
+potheses for all competing parses representing the
+different meanings. As our example suggests, dif-
+ferent meanings also tend to reorder differently
+</bodyText>
+<page confidence="0.937973">
+227
+</page>
+<bodyText confidence="0.31909">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 227–232,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</bodyText>
+<equation confidence="0.903407666666667">
+id rule
+r1 NP(tˇaol`un/NN) discussion
+r2 NP(h`ui/NN) meeting
+r3 NP(x1:NP x2:NP) —� the x1 x2
+r4 IP(x1:NP zˇenmey`ang/VV) —� how was x1
+r5 IP(h`ui/VV zˇenmey`ang/VV) what will happen
+r6 IP(tˇaol`un/VV x1:IP) discuss x1
+IP
+x1:NP VP
+VV
+zˇenmey`ang
+—� how was x1
+</equation>
+<tableCaption confidence="0.918475">
+Table 1: Tree-to-string translation rules (without
+internal structures).
+</tableCaption>
+<bodyText confidence="0.997894">
+during translation. First, the reordering model suit-
+able for F2S translation should allow for trans-
+lation of all meanings present in the input. Sec-
+ond, as the process of deriving a partial transla-
+tion hypothesis rules out some of the meanings,
+the reordering model should restrict itself to fea-
+tures originating in the relevant parts of the input
+forest. Our work presents a novel technique satis-
+fying both these requirements, while leaving the
+disambuiguation decision up to the model using
+global features.
+The paper is organized as follows: We briefly
+overview the F2S and Hiero translation models in
+Section 2, present the proposed forest reordering
+model in Section 3, describe our experiment and
+present results in Section 4.
+</bodyText>
+<sectionHeader confidence="0.986485" genericHeader="method">
+2 Translation Models
+</sectionHeader>
+<bodyText confidence="0.999848173913043">
+Forest-to-string translation (Mi et al., 2008) is an
+extension of the tree-to-string model (Liu et al.,
+2006; Huang et al., 2006) allowing it to use a
+packed parse forest as the input instead of a sin-
+gle parse tree.
+Figure 1 shows a tree-to-string translation
+rule (Huang et al., 2006), which is a tuple
+(lhs(r), rhs(r), VI(r)), where lhs(r) is the source-
+side tree fragment, whose internal nodes are la-
+beled by nonterminal symbols (like NP), and
+whose frontier nodes are labeled by source-
+language words (like “zˇenmey`ang”) or variables
+from a finite set X = {x1, x2, ...1; rhs(r) is
+the target-side string expressed in target-language
+words (like “how was”) and variables; and VI(r) is
+a mapping from X to nonterminals. Each variable
+xi E X occurs exactly once in lhs(r) and exactly
+once in rhs(r).
+The Table 1 lists all rules necessary to derive
+translations (a) and (b), with their internal struc-
+ture removed for simplicity.
+Typically, an F2S system translates in two steps
+(shown in Figure 2): parsing and decoding. In the
+</bodyText>
+<figureCaption confidence="0.998121">
+Figure 1: Tree-to-string rule r4.
+</figureCaption>
+<bodyText confidence="0.999820333333333">
+parsing step, the source language input is con-
+verted into a parse forest (A). In the decoding step,
+we first convert the parse forest into a translation
+forest Ft in (B) by using the fast pattern-matching
+technique (Zhang et al., 2009). Then the decoder
+uses dynamic programing with beam search and
+cube pruning to find the approximation to the best
+scoring derivation in the translation forest, and
+outputs the target string.
+</bodyText>
+<sectionHeader confidence="0.992986" genericHeader="method">
+3 Forest Reordering Model
+</sectionHeader>
+<bodyText confidence="0.999972709677419">
+In this section, we describe the process of ap-
+plying the reordering model scores. We score
+pairwise translation reorderings for every pair of
+source words similarly as described by Huang et
+al. (2013). In their approach, an external model of
+ordering distributions of sibling constituent pairs
+predicts the reordering of word pairs. Our ap-
+proach deals with parse forests rather than with
+single trees, thus we have to model the scores dif-
+ferently. We model ordering distributions for ev-
+ery pair of close relatives–nodes in the parse forest
+that may occur together as frontier nodes of a sin-
+gle matching rule. We further condition the distri-
+bution on a third node–a common ancestor of the
+node pair that corresponds to the root node of the
+matching rule. This way our external model takes
+into acount the syntactic context of the hypothe-
+sis. For example, nodes NP0,1 and NP1, 2 are close
+relatives, NP0, 2 and IP0, 3 are their common ances-
+tors; NP0,1 and VV2,3 are close relatives, IP0,3 is
+their common ancestor; NP0,1 and VV1,2 are not
+close relatives.
+More formally, let us have an input sentence
+(w0, ..., wn) and its translation hypothesis h. For
+every i and j such that 0 &lt; i &lt; j &lt; n we as-
+sume that the translations of wi and wj are in the
+hypothesis h either in the same or inverted order-
+ing oij E {Inorder, Reorderl, with a probability
+Porder(oijlh). Conditioning on h signifies that the
+probabilistic model takes the current hypothesis as
+a parameter. The reordering score of the entire hy-
+</bodyText>
+<page confidence="0.977069">
+228
+</page>
+<figure confidence="0.9996217">
+tˇaol`un
+h`ui
+Rt ⇒(B)
+zˇenmey`ang
+VV0,1 NP1,2
+VV1,2
+VV2, 3
+NP0, 1
+(A)
+NP0, 2
+IP0, 3
+IP1, 3
+e4 e6
+tˇaol`un
+e5
+h`ui
+zˇenmey`ang
+e3
+e1
+e2
+</figure>
+<figureCaption confidence="0.944556833333333">
+Figure 2: Parse and translation hypergraphs. (A) The parse forest of the example sentence. Solid hy-
+peredges denote the best parse, dashed hyperedges denote the second best parse. Unary edges were col-
+lapsed. (B) The corresponding translation forest Ft after applying the tree-to-string translation rule set Rt.
+Each translation hyperedge (e.g. e4) has the same index as the corresponding rule (r4). The forest-to-
+string system can produce the example translation (a) (solid derivation: r1, r2, r3, and r4) and (b) (dashed
+derivation: r5, r6).
+</figureCaption>
+<equation confidence="0.966427">
+pothesis forder(h) is then computed as
+�forder = −log Porder(oi j = ohij  |h), (1)
+0≤i&lt;j≤n
+</equation>
+<bodyText confidence="0.98694931147541">
+where ohij denotes the actual ordering used in h.
+The score forder can be computed recursively by
+dynamic programing during the decoding. As an
+example, we show in Table 2 reordering probabil-
+ities retrieved in decoding of our sample sentence.
+(a) If h is a hypothesis formed by a single trans-
+lation rule r with no frontier nonterminals, we
+evaluate all word pairs wi and wj covered by h
+such that i &lt; j. For each such pair we find the
+frontier nodes x and y matched by r such that
+x spans exactly wi and y spans exactly wj. (In
+this case, x and y match preterminal nodes, each
+spanning one position). We also find the node z
+matching the root of r. Then we directly use the
+Equation 1 to compute the score using an exter-
+nal model Porder(oij|xyz) to estimate the probabil-
+ity of reordering the relative nodes. For example,
+when applying rule r5, we use the ordering dis-
+tribution Porder(o1,2|VV1,2,VV2,3,IP1,3) to score
+reorderings of h`ui and zˇenmey`ang.
+(b) If h is a hypothesis formed by a T2S rule
+with one or more frontier nonterminals, we eval-
+uate all word pairs as follows: If both wi and wj
+are spanned by the same frontier nonterminal (e.g.,
+tˇaol`un and h`ui when applying the rule r4), the
+score forder had been already computed for the un-
+derlying subhypothesis, and therefore was already
+included in the total score. Otherwise, we compute
+the word pair ordering cost. We find the close rel-
+atives x and y representing each wi and wj. If wi
+is matched by a terminal in r, we select x as the
+node matching r and spanning exactly wi. If wi is
+spanned by a frontier nonterminal in r (meaning
+that it was translated in a subhypothesis), we select
+x as the node matching that nonterminal. We pro-
+ceed identically for wj and y. For example, when
+applying the rule r4, the word zˇenmey`ang will be
+represented by the node VV2,3, while tˇaol`un and
+h`ui will be represented by the node NP0, 2.
+Note that the ordering ohij cannot be determined
+in some cases, sometimes a source word does not
+produce any translation, or the translation of one
+word is entirely surrounded by the translations of
+another word. A weight corresponding to the bi-
+nary discount feature founknown is added to the score
+for each such case.
+The external model Porder(oij|xyz) is imple-
+mented as a maximum entropy model. Features
+of the model are observed from paths connecting
+node z with nodes x and y as follows: First, we
+pick paths z → x and z → y. Let z′ be the last node
+shared by both paths (the closest common ances-
+tor of x and y). Then we distinguish three types of
+path: (1) The common prefix z → z′ (it may have
+zero length), the left path z → x, and the right path
+z → y. We observe the following features on each
+path: the syntactic labels of the nodes, the produc-
+tion rules, the spans of nodes, a list of stop words
+immediately preceding and following the span of
+the node. We merge the features observed from
+different paths z → x and z → y. This approach
+</bodyText>
+<page confidence="0.997136">
+229
+</page>
+<table confidence="0.999474222222222">
+rule word pair order probability
+a) how2 was2 the discussion0 meeting1
+r3 (tˇaol`un,h`ui) Inorder Porder (o0,1|NP0, 1, NP1, 2, NP0, 2 )
+r4 (tˇaol`un,zˇenmey`ang) Reorder Porder (o0,2|NP0, 2, VV2, 3, IP0, 3 )
+(h`ui,zˇenmey`ang) Reorder Porder (o1,2|NP0, 2, VV2, 3, IP0, 3 )
+b) discuss0 what2 will1 happen1
+r5 (h`ui, zˇenmey`ang) Reorder Porder (o1,2|VV1, 2, VV2, 3, IP1, 3 )
+r6 (tˇaol`un, h`ui) Inorder Porder (o0,1|VV0, 1, IP1, 3, IP0, 3 )
+(tˇaol`un, zˇenmey`ang Inorder Porder (o0,2|VV0,1, IP1, 3, IP0, 3 )
+</table>
+<tableCaption confidence="0.999659">
+Table 2: Example of reordering scores computed for derivations (a) and (b).
+</tableCaption>
+<bodyText confidence="0.99100475">
+ignores the internal structure of each rule1, relying
+on frontier node annotation. On the other hand it
+is still feasible to precompute the reordering prob-
+abilities for all combinations of xyz.
+</bodyText>
+<sectionHeader confidence="0.999386" genericHeader="method">
+4 Experiment
+</sectionHeader>
+<bodyText confidence="0.999965333333333">
+In this section we describe the setup of the exper-
+iment, and present results. Finally, we propose fu-
+ture directions of research.
+</bodyText>
+<subsectionHeader confidence="0.986296">
+4.1 Setup
+</subsectionHeader>
+<bodyText confidence="0.996091014925373">
+Our baseline is a strong F2S system (ˇCmejrek
+et al., 2013) built on large data with the full set
+of model features including rule translation prob-
+abilities, general lexical and provenance transla-
+tion probabilities, language model, and a vari-
+ety of sparse features. We build it as follows.
+The training corpus consists of 16 million sen-
+tence pairs available within the DARPA BOLT
+Chinese-English task. The corpus includes a mix
+of newswire, broadcast news, webblog data com-
+ing from various sources such as LDC, HK Law,
+HK Hansard and UN data. The Chinese text is seg-
+mented with a segmenter trained on CTB data us-
+ing conditional random fields (CRF).
+Bilingual word alignments are trained and com-
+bined from two sources: GIZA (Och, 2003) and
+maximum entropy word aligner (Ittycheriah and
+Roukos, 2005).
+Language models are trained on the English
+side of the parallel corpus, and on monolingual
+corpora, such as Gigaword (LDC2011T07) and
+Google News, altogether comprising around 10
+billion words.
+We parse the Chinese part of the training data
+with a modified version of the Berkeley parser
+1Only to some extent, the rule still has to match the input
+forest, but the reordering model decides based on the sum of
+paths observed between the root and frontier nodes.
+(Petrov and Klein, 2007), then prune the ob-
+tained parse forests for each training sentence with
+the marginal probability-based inside-outside al-
+gorithm to contain only 3n CFG nodes, where n is
+the sentence length.
+We extract tree-to-string translation rules from
+forest-string sentence pairs using the forest-based
+GHKM algorithm (Mi and Huang, 2008; Galley et
+al., 2004).
+In the decoding step, we use larger input
+parse forests than in training, we prune them to
+contain 10n nodes. Then we use fast pattern-
+matching (Zhang et al., 2009) to convert the parse
+forest into the translation forest.
+The proposed reordering model is trained on
+100, 000 automatically aligned forest-string sen-
+tence pairs from the parallel training data. These
+sentences provide 110M reordering events that are
+used by megam (Daum´e III, 2004) to train the max-
+imum entropy model.
+The current implementation of the reordering
+model requires offline preprocessing of the input
+hypergraphs to precompute reordering probabili-
+ties for applicable triples of nodes (x, y, z). Since
+the number of levels in the syntactic trees in T2S
+rules is limited to 4, we only need to consider such
+triples, where z is up to 4 levels above x or y.
+We tune on 1275 sentences, each with 4 refer-
+ences, from the LDC2010E30 corpus, initially re-
+leased under the DARPA GALE program.
+We combine two evaluation metrics for tun-
+ing and testing: B (Papineni et al., 2002) and
+T (Snover et al., 2006). Both the baseline and
+the reordering experiments are optimized with
+MIRA (Crammer et al., 2006) to maximize (T -
+B )/2.
+We test on three different test sets: GALE
+Web test set from LDC2010E30 corpus (1239
+sentences, 4 references), NIST MT08 Newswire
+</bodyText>
+<page confidence="0.988455">
+230
+</page>
+<table confidence="0.995496142857143">
+System T −B GALE T MT08 Newswire T −B MT08 T
+Web T −B B T Web
+B B
+2 2 2
+F2S 8.8 36.1 53.7 5.6 40.6 51.8 12.0 31.3 55.3
++Reordering 8.2 36.4 52.7 4.8 41.7 50.5 11.0 31.7 53.7
+A -0.6 +0.3 -1.0 -0.8 +1.1 -1.3 -1.0 +0.4 -1.6
+</table>
+<tableCaption confidence="0.998081">
+Table 3: Results.
+</tableCaption>
+<bodyText confidence="0.69001">
+portion (691 sentences, 4 references), and NIST
+MT08 Web portion (666 sentences, 4 references).
+</bodyText>
+<sectionHeader confidence="0.707677" genericHeader="evaluation">
+4.2 Results
+</sectionHeader>
+<bodyText confidence="0.999932571428572">
+Table 3 shows all results of the baseline and the
+system extended with the forest reordering model.
+The (T − B )/2 score of the baseline system
+is 12.0 on MT08 Newswire, showing that it is a
+strong baseline. The system with the proposed re-
+ordering model significantly improves the base-
+line by 0.6, 0.8, and 1.0 (T − B )/2 points on
+GALE Web, MT08 Newswire, and MT08 Web.
+The current approach relies on frontier node
+annotations, ignoring to some extent the internal
+structure of the T2S rules. As part of future re-
+search, we would like to compare this approach
+with the one that takes into accout the internal
+structure as well.
+</bodyText>
+<sectionHeader confidence="0.998904" genericHeader="conclusions">
+5 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999997555555555">
+We have presented a novel reordering model for
+the forest-to-string MT system. The model deals
+with the ambiguity of the input forests, but also
+predicts specifically to the current parse followed
+by the translation hypothesis. The reordering prob-
+abilities can be precomputed by an offline pro-
+cess, allowing for efficient scoring in runtime. The
+method provides improvement from 0.6 up to 1.0
+point measured by (T − B )/2 metrics.
+</bodyText>
+<sectionHeader confidence="0.997487" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.9999265">
+We thank Jiˇr´ı Havelka for proofreading and help-
+ful suggestions. We would like to acknowledge
+the support of DARPA under Grant HR0011-12-
+C-0015 for funding part of this work. The views,
+opinions, and/or findings contained in this article
+are those of the author and should not be inter-
+preted as representing the official views or poli-
+cies, either expressed or implied, of the DARPA.
+</bodyText>
+<sectionHeader confidence="0.99848" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.99969023255814">
+David Chiang. 2005. A hierarchical phrase-based
+model for statistical machine translation. In Pro-
+ceedings of the ACL.
+Koby Crammer, Ofer Dekel, Joseph Keshet, Shai
+Shalev-Shwartz, and Yoram Singer. 2006. Online
+passive-aggressive algorithms. Journal of Machine
+Learning Research, 7.
+Hal Daum´e III. 2004. Notes on CG and LM-BFGS op-
+timization of logistic regression. Paper available at
+http://pub.hal3.name#daume04cg-bfgs, im-
+plementation available at http://hal3.name/
+megam/.
+Michel Galley, Mark Hopkins, Kevin Knight, and
+Daniel Marcu. 2004. What’s in a translation rule?
+In Proceedings of the HLT-NAACL.
+Michel Galley, Jonathan Graehl, Kevin Knight, Daniel
+Marcu, Steve DeNeefe, Wei Wang, and Ignacio
+Thayer. 2006. Scalable inference and training of
+context-rich syntactic translation models. In Pro-
+ceedings of the COLING-ACL.
+Katsuhiko Hayashi, Hajime Tsukada, Katsuhito Sudoh,
+Kevin Duh, and Seiichi Yamamoto. 2010. Hi-
+erarchical Phrase-based Machine Translation with
+Word-based Reordering Model. In Proceedings of
+the COLING.
+Zhongjun He, Yao Meng, and Hao Yu. Maximum
+entropy based phrase reordering for hierarchical
+phrase-based translation. In Proceedings of the
+EMNLP.
+Liang Huang, Kevin Knight, and Aravind Joshi. 2006.
+Statistical syntax-directed translation with extended
+domain of locality. In Proceedings of the AMTA.
+Zhongqiang Huang, Jacob Devlin, and Rabih Zbib.
+2013. Factored soft source syntactic constraints for
+hierarchical machine translation. In Proceeedings of
+the EMNLP.
+Abraham Ittycheriah and Salim Roukos. 2005. A max-
+imum entropy word aligner for arabic-english ma-
+chine translation. In Proceedings of the HLT and
+EMNLP.
+Philipp Koehn, Franz Joseph Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Pro-
+ceedings of NAACL.
+</reference>
+<page confidence="0.963176">
+231
+</page>
+<reference confidence="0.999605292682927">
+Philipp Koehn, Amittai Axelrod, Alexandra Birch
+Mayne, Chris Callison-Burch, Miles Osborne, and
+David Talbot. 2005. Edinburgh system description
+for the 2005 iwslt speech translation evaluation. In
+Proceedings of the IWSLT.
+Yang Liu, Qun Liu, and Shouxun Lin. 2006. Tree-
+to-string alignment template for statistical machine
+translation. In Proceedings of COLING-ACL.
+Haitao Mi and Liang Huang. 2008. Forest-based trans-
+lation rule extraction. In Proceedings of EMNLP.
+Haitao Mi, Liang Huang, and Qun Liu. 2008. Forest-
+based translation. In Proceedings of ACL: HLT.
+Franz Joseph Och. 2003. Minimum error rate training
+in statistical machine translation. In Proceedings of
+ACL.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic eval-
+uation of machine translation. In Proceedings of
+ACL.
+Slav Petrov and Dan Klein. 2007. Improved inference
+for unlexicalized parsing. In Proceedings of HLT-
+NAACL.
+Matthew Snover, Bonnie Dorr, Richard Schwartz, Lin-
+nea Micciulla, and John Makhoul. 2006. A study of
+translation edit rate with targeted human annotation.
+In Proceedings of the AMTA.
+Christoph Tillman. 2004. A unigram orientation
+model for statistical machine translation. Proceed-
+ings of the HLT-NAACL.
+Roy Tromble and Jason Eisner. Learning linear order-
+ing problems for better translation. In Proceedings
+of the EMNLP.
+Martin ˇCmejrek, Haitao Mi, and Bowen Zhou. 2013.
+Flexible and efficient hypergraph interactions for
+joint hierarchical and forest-to-string decoding. In
+Proceedings of the EMNLP.
+Hui Zhang, Min Zhang, Haizhou Li, and Chew Lim
+Tan. 2009. Fast translation rule matching for
+syntax-based statistical machine translation. In Pro-
+ceedings of EMNLP, pages 1037–1045, Singapore,
+August.
+</reference>
+<page confidence="0.99515">
+232
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.253673">
+<title confidence="0.997938">Reordering Model for Forest-to-String Machine Translation</title>
+<author confidence="0.482524">IBM Watson</author>
+<affiliation confidence="0.447426">Prague, Czech</affiliation>
+<email confidence="0.998665">martin.cmejrek@us.ibm.com</email>
+<abstract confidence="0.9910618">In this paper, we present a novel extension of a forest-to-string machine translation system with a reordering model. We predict reordering probabilities for every pair of source words with a model using features observed from the input parse forest. Our approach naturally deals with the ambiguity present in the input parse forest, but, at the same time, takes into account only the parts of the input forest used by the current translation hypothesis. The provides improvement from up point measured by (T metric.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>David Chiang</author>
+</authors>
+<title>A hierarchical phrase-based model for statistical machine translation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the ACL.</booktitle>
+<contexts>
+<context position="1074" citStr="Chiang, 2005" startWordPosition="163" endWordPosition="164">e input parse forest, but, at the same time, takes into account only the parts of the input forest used by the current translation hypothesis. The method provides improvement from 0.6 up to 1.0 point measured by (T − B )/2 metric. 1 Introduction Various commonly adopted statistical machine translation (SMT) approaches differ in the amount of linguistic knowledge present in the rules they employ. Phrase-based (Koehn et al., 2003) models are strong in lexical coverage in local contexts, and use external models to score reordering options (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et</context>
+</contexts>
+<marker>Chiang, 2005</marker>
+<rawString>David Chiang. 2005. A hierarchical phrase-based model for statistical machine translation. In Proceedings of the ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Ofer Dekel</author>
+<author>Joseph Keshet</author>
+<author>Shai Shalev-Shwartz</author>
+<author>Yoram Singer</author>
+</authors>
+<title>Online passive-aggressive algorithms.</title>
+<date>2006</date>
+<journal>Journal of Machine Learning Research,</journal>
+<volume>7</volume>
+<contexts>
+<context position="14777" citStr="Crammer et al., 2006" startWordPosition="2473" endWordPosition="2476">line preprocessing of the input hypergraphs to precompute reordering probabilities for applicable triples of nodes (x, y, z). Since the number of levels in the syntactic trees in T2S rules is limited to 4, we only need to consider such triples, where z is up to 4 levels above x or y. We tune on 1275 sentences, each with 4 references, from the LDC2010E30 corpus, initially released under the DARPA GALE program. We combine two evaluation metrics for tuning and testing: B (Papineni et al., 2002) and T (Snover et al., 2006). Both the baseline and the reordering experiments are optimized with MIRA (Crammer et al., 2006) to maximize (T - B )/2. We test on three different test sets: GALE Web test set from LDC2010E30 corpus (1239 sentences, 4 references), NIST MT08 Newswire 230 System T −B GALE T MT08 Newswire T −B MT08 T Web T −B B T Web B B 2 2 2 F2S 8.8 36.1 53.7 5.6 40.6 51.8 12.0 31.3 55.3 +Reordering 8.2 36.4 52.7 4.8 41.7 50.5 11.0 31.7 53.7 A -0.6 +0.3 -1.0 -0.8 +1.1 -1.3 -1.0 +0.4 -1.6 Table 3: Results. portion (691 sentences, 4 references), and NIST MT08 Web portion (666 sentences, 4 references). 4.2 Results Table 3 shows all results of the baseline and the system extended with the forest reordering m</context>
+</contexts>
+<marker>Crammer, Dekel, Keshet, Shalev-Shwartz, Singer, 2006</marker>
+<rawString>Koby Crammer, Ofer Dekel, Joseph Keshet, Shai Shalev-Shwartz, and Yoram Singer. 2006. Online passive-aggressive algorithms. Journal of Machine Learning Research, 7.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hal Daum´e</author>
+</authors>
+<title>Notes on CG and LM-BFGS optimization of logistic regression. Paper available at http://pub.hal3.name#daume04cg-bfgs, implementation available at http://hal3.name/ megam/.</title>
+<date>2004</date>
+<marker>Daum´e, 2004</marker>
+<rawString>Hal Daum´e III. 2004. Notes on CG and LM-BFGS optimization of logistic regression. Paper available at http://pub.hal3.name#daume04cg-bfgs, implementation available at http://hal3.name/ megam/.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Mark Hopkins</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>What’s in a translation rule?</title>
+<date>2004</date>
+<booktitle>In Proceedings of the HLT-NAACL.</booktitle>
+<contexts>
+<context position="13608" citStr="Galley et al., 2004" startWordPosition="2274" endWordPosition="2277">se part of the training data with a modified version of the Berkeley parser 1Only to some extent, the rule still has to match the input forest, but the reordering model decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each training sentence with the marginal probability-based inside-outside algorithm to contain only 3n CFG nodes, where n is the sentence length. We extract tree-to-string translation rules from forest-string sentence pairs using the forest-based GHKM algorithm (Mi and Huang, 2008; Galley et al., 2004). In the decoding step, we use larger input parse forests than in training, we prune them to contain 10n nodes. Then we use fast patternmatching (Zhang et al., 2009) to convert the parse forest into the translation forest. The proposed reordering model is trained on 100, 000 automatically aligned forest-string sentence pairs from the parallel training data. These sentences provide 110M reordering events that are used by megam (Daum´e III, 2004) to train the maximum entropy model. The current implementation of the reordering model requires offline preprocessing of the input hypergraphs to preco</context>
+</contexts>
+<marker>Galley, Hopkins, Knight, Marcu, 2004</marker>
+<rawString>Michel Galley, Mark Hopkins, Kevin Knight, and Daniel Marcu. 2004. What’s in a translation rule? In Proceedings of the HLT-NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michel Galley</author>
+<author>Jonathan Graehl</author>
+<author>Kevin Knight</author>
+<author>Daniel Marcu</author>
+<author>Steve DeNeefe</author>
+<author>Wei Wang</author>
+<author>Ignacio Thayer</author>
+</authors>
+<title>Scalable inference and training of context-rich syntactic translation models.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the COLING-ACL.</booktitle>
+<contexts>
+<context position="1685" citStr="Galley et al., 2006" startWordPosition="256" endWordPosition="259">ng, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input that may need to be transtated differently using different word orderings. The following example of an ambiguous Chinese sentence with ambiguous part-of-speech labeling motivates our interest in the reordering model for the F2S translatio</context>
+</contexts>
+<marker>Galley, Graehl, Knight, Marcu, DeNeefe, Wang, Thayer, 2006</marker>
+<rawString>Michel Galley, Jonathan Graehl, Kevin Knight, Daniel Marcu, Steve DeNeefe, Wei Wang, and Ignacio Thayer. 2006. Scalable inference and training of context-rich syntactic translation models. In Proceedings of the COLING-ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Katsuhiko Hayashi</author>
+<author>Hajime Tsukada</author>
+<author>Katsuhito Sudoh</author>
+<author>Kevin Duh</author>
+<author>Seiichi Yamamoto</author>
+</authors>
+<title>Hierarchical Phrase-based Machine Translation with Word-based Reordering Model.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the COLING.</booktitle>
+<contexts>
+<context position="1448" citStr="Hayashi et al., 2010" startWordPosition="217" endWordPosition="220">resent in the rules they employ. Phrase-based (Koehn et al., 2003) models are strong in lexical coverage in local contexts, and use external models to score reordering options (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input t</context>
+</contexts>
+<marker>Hayashi, Tsukada, Sudoh, Duh, Yamamoto, 2010</marker>
+<rawString>Katsuhiko Hayashi, Hajime Tsukada, Katsuhito Sudoh, Kevin Duh, and Seiichi Yamamoto. 2010. Hierarchical Phrase-based Machine Translation with Word-based Reordering Model. In Proceedings of the COLING.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Zhongjun He</author>
+<author>Yao Meng</author>
+<author>Hao Yu</author>
+</authors>
+<title>Maximum entropy based phrase reordering for hierarchical phrase-based translation.</title>
+<booktitle>In Proceedings of the EMNLP.</booktitle>
+<marker>He, Meng, Yu, </marker>
+<rawString>Zhongjun He, Yao Meng, and Hao Yu. Maximum entropy based phrase reordering for hierarchical phrase-based translation. In Proceedings of the EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Liang Huang</author>
+<author>Kevin Knight</author>
+<author>Aravind Joshi</author>
+</authors>
+<title>Statistical syntax-directed translation with extended domain of locality.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the AMTA.</booktitle>
+<contexts>
+<context position="4449" citStr="Huang et al., 2006" startWordPosition="686" endWordPosition="689">l should restrict itself to features originating in the relevant parts of the input forest. Our work presents a novel technique satisfying both these requirements, while leaving the disambuiguation decision up to the model using global features. The paper is organized as follows: We briefly overview the F2S and Hiero translation models in Section 2, present the proposed forest reordering model in Section 3, describe our experiment and present results in Section 4. 2 Translation Models Forest-to-string translation (Mi et al., 2008) is an extension of the tree-to-string model (Liu et al., 2006; Huang et al., 2006) allowing it to use a packed parse forest as the input instead of a single parse tree. Figure 1 shows a tree-to-string translation rule (Huang et al., 2006), which is a tuple (lhs(r), rhs(r), VI(r)), where lhs(r) is the sourceside tree fragment, whose internal nodes are labeled by nonterminal symbols (like NP), and whose frontier nodes are labeled by sourcelanguage words (like “zˇenmey`ang”) or variables from a finite set X = {x1, x2, ...1; rhs(r) is the target-side string expressed in target-language words (like “how was”) and variables; and VI(r) is a mapping from X to nonterminals. Each var</context>
+</contexts>
+<marker>Huang, Knight, Joshi, 2006</marker>
+<rawString>Liang Huang, Kevin Knight, and Aravind Joshi. 2006. Statistical syntax-directed translation with extended domain of locality. In Proceedings of the AMTA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Zhongqiang Huang</author>
+<author>Jacob Devlin</author>
+<author>Rabih Zbib</author>
+</authors>
+<title>Factored soft source syntactic constraints for hierarchical machine translation.</title>
+<date>2013</date>
+<booktitle>In Proceeedings of the EMNLP.</booktitle>
+<contexts>
+<context position="1616" citStr="Huang et al., 2013" startWordPosition="245" endWordPosition="248">tions (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input that may need to be transtated differently using different word orderings. The following example of an ambiguous Chinese sentence with ambiguous part-of-speech labeling </context>
+<context position="6034" citStr="Huang et al. (2013)" startWordPosition="953" endWordPosition="956">input is converted into a parse forest (A). In the decoding step, we first convert the parse forest into a translation forest Ft in (B) by using the fast pattern-matching technique (Zhang et al., 2009). Then the decoder uses dynamic programing with beam search and cube pruning to find the approximation to the best scoring derivation in the translation forest, and outputs the target string. 3 Forest Reordering Model In this section, we describe the process of applying the reordering model scores. We score pairwise translation reorderings for every pair of source words similarly as described by Huang et al. (2013). In their approach, an external model of ordering distributions of sibling constituent pairs predicts the reordering of word pairs. Our approach deals with parse forests rather than with single trees, thus we have to model the scores differently. We model ordering distributions for every pair of close relatives–nodes in the parse forest that may occur together as frontier nodes of a single matching rule. We further condition the distribution on a third node–a common ancestor of the node pair that corresponds to the root node of the matching rule. This way our external model takes into acount </context>
+</contexts>
+<marker>Huang, Devlin, Zbib, 2013</marker>
+<rawString>Zhongqiang Huang, Jacob Devlin, and Rabih Zbib. 2013. Factored soft source syntactic constraints for hierarchical machine translation. In Proceeedings of the EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Abraham Ittycheriah</author>
+<author>Salim Roukos</author>
+</authors>
+<title>A maximum entropy word aligner for arabic-english machine translation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the HLT and EMNLP.</booktitle>
+<contexts>
+<context position="12774" citStr="Ittycheriah and Roukos, 2005" startWordPosition="2141" endWordPosition="2144">ical and provenance translation probabilities, language model, and a variety of sparse features. We build it as follows. The training corpus consists of 16 million sentence pairs available within the DARPA BOLT Chinese-English task. The corpus includes a mix of newswire, broadcast news, webblog data coming from various sources such as LDC, HK Law, HK Hansard and UN data. The Chinese text is segmented with a segmenter trained on CTB data using conditional random fields (CRF). Bilingual word alignments are trained and combined from two sources: GIZA (Och, 2003) and maximum entropy word aligner (Ittycheriah and Roukos, 2005). Language models are trained on the English side of the parallel corpus, and on monolingual corpora, such as Gigaword (LDC2011T07) and Google News, altogether comprising around 10 billion words. We parse the Chinese part of the training data with a modified version of the Berkeley parser 1Only to some extent, the rule still has to match the input forest, but the reordering model decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each training sentence with the marginal probability-based inside-out</context>
+</contexts>
+<marker>Ittycheriah, Roukos, 2005</marker>
+<rawString>Abraham Ittycheriah and Salim Roukos. 2005. A maximum entropy word aligner for arabic-english machine translation. In Proceedings of the HLT and EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Joseph Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of NAACL.</booktitle>
+<contexts>
+<context position="893" citStr="Koehn et al., 2003" startWordPosition="133" endWordPosition="136">ict reordering probabilities for every pair of source words with a model using features observed from the input parse forest. Our approach naturally deals with the ambiguity present in the input parse forest, but, at the same time, takes into account only the parts of the input forest used by the current translation hypothesis. The method provides improvement from 0.6 up to 1.0 point measured by (T − B )/2 metric. 1 Introduction Various commonly adopted statistical machine translation (SMT) approaches differ in the amount of linguistic knowledge present in the rules they employ. Phrase-based (Koehn et al., 2003) models are strong in lexical coverage in local contexts, and use external models to score reordering options (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), </context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Joseph Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proceedings of NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Amittai Axelrod</author>
+<author>Alexandra Birch Mayne</author>
+<author>Chris Callison-Burch</author>
+<author>Miles Osborne</author>
+<author>David Talbot</author>
+</authors>
+<title>Edinburgh system description for the 2005 iwslt speech translation evaluation.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the IWSLT.</booktitle>
+<contexts>
+<context position="1038" citStr="Koehn et al., 2005" startWordPosition="157" endWordPosition="160">lly deals with the ambiguity present in the input parse forest, but, at the same time, takes into account only the parts of the input forest used by the current translation hypothesis. The method provides improvement from 0.6 up to 1.0 point measured by (T − B )/2 metric. 1 Introduction Various commonly adopted statistical machine translation (SMT) approaches differ in the amount of linguistic knowledge present in the rules they employ. Phrase-based (Koehn et al., 2003) models are strong in lexical coverage in local contexts, and use external models to score reordering options (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S)</context>
+</contexts>
+<marker>Koehn, Axelrod, Mayne, Callison-Burch, Osborne, Talbot, 2005</marker>
+<rawString>Philipp Koehn, Amittai Axelrod, Alexandra Birch Mayne, Chris Callison-Burch, Miles Osborne, and David Talbot. 2005. Edinburgh system description for the 2005 iwslt speech translation evaluation. In Proceedings of the IWSLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yang Liu</author>
+<author>Qun Liu</author>
+<author>Shouxun Lin</author>
+</authors>
+<title>Treeto-string alignment template for statistical machine translation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of COLING-ACL.</booktitle>
+<contexts>
+<context position="1663" citStr="Liu et al., 2006" startWordPosition="252" endWordPosition="255">hical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input that may need to be transtated differently using different word orderings. The following example of an ambiguous Chinese sentence with ambiguous part-of-speech labeling motivates our interest in the reordering model </context>
+<context position="4428" citStr="Liu et al., 2006" startWordPosition="682" endWordPosition="685">he reordering model should restrict itself to features originating in the relevant parts of the input forest. Our work presents a novel technique satisfying both these requirements, while leaving the disambuiguation decision up to the model using global features. The paper is organized as follows: We briefly overview the F2S and Hiero translation models in Section 2, present the proposed forest reordering model in Section 3, describe our experiment and present results in Section 4. 2 Translation Models Forest-to-string translation (Mi et al., 2008) is an extension of the tree-to-string model (Liu et al., 2006; Huang et al., 2006) allowing it to use a packed parse forest as the input instead of a single parse tree. Figure 1 shows a tree-to-string translation rule (Huang et al., 2006), which is a tuple (lhs(r), rhs(r), VI(r)), where lhs(r) is the sourceside tree fragment, whose internal nodes are labeled by nonterminal symbols (like NP), and whose frontier nodes are labeled by sourcelanguage words (like “zˇenmey`ang”) or variables from a finite set X = {x1, x2, ...1; rhs(r) is the target-side string expressed in target-language words (like “how was”) and variables; and VI(r) is a mapping from X to n</context>
+</contexts>
+<marker>Liu, Liu, Lin, 2006</marker>
+<rawString>Yang Liu, Qun Liu, and Shouxun Lin. 2006. Treeto-string alignment template for statistical machine translation. In Proceedings of COLING-ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+</authors>
+<title>Forest-based translation rule extraction.</title>
+<date>2008</date>
+<booktitle>In Proceedings of EMNLP.</booktitle>
+<contexts>
+<context position="1850" citStr="Mi and Huang, 2008" startWordPosition="281" endWordPosition="284">ring models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input that may need to be transtated differently using different word orderings. The following example of an ambiguous Chinese sentence with ambiguous part-of-speech labeling motivates our interest in the reordering model for the F2S translation. tˇaol`un (0) h`ui (1) zˇenmey`ang (2) discussion/NN meeting/NN how/VV discuss/VV will/VV There are several possible meanings based on the different POS tagging se</context>
+<context position="13586" citStr="Mi and Huang, 2008" startWordPosition="2270" endWordPosition="2273">. We parse the Chinese part of the training data with a modified version of the Berkeley parser 1Only to some extent, the rule still has to match the input forest, but the reordering model decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each training sentence with the marginal probability-based inside-outside algorithm to contain only 3n CFG nodes, where n is the sentence length. We extract tree-to-string translation rules from forest-string sentence pairs using the forest-based GHKM algorithm (Mi and Huang, 2008; Galley et al., 2004). In the decoding step, we use larger input parse forests than in training, we prune them to contain 10n nodes. Then we use fast patternmatching (Zhang et al., 2009) to convert the parse forest into the translation forest. The proposed reordering model is trained on 100, 000 automatically aligned forest-string sentence pairs from the parallel training data. These sentences provide 110M reordering events that are used by megam (Daum´e III, 2004) to train the maximum entropy model. The current implementation of the reordering model requires offline preprocessing of the inpu</context>
+</contexts>
+<marker>Mi, Huang, 2008</marker>
+<rawString>Haitao Mi and Liang Huang. 2008. Forest-based translation rule extraction. In Proceedings of EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Haitao Mi</author>
+<author>Liang Huang</author>
+<author>Qun Liu</author>
+</authors>
+<title>Forestbased translation.</title>
+<date>2008</date>
+<booktitle>In Proceedings of ACL: HLT.</booktitle>
+<contexts>
+<context position="1829" citStr="Mi et al., 2008" startWordPosition="277" endWordPosition="280">additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013). Tree-to-string (T2S) models (Liu et al., 2006; Galley et al., 2006) use rules with syntactic structures, aiming at even more grammatically appropriate reorderings. Forest-to-string (F2S) systems (Mi et al., 2008; Mi and Huang, 2008) use source syntactic forest as the input to overcome parsing errors, and to alleviate sparseness of translation rules. The parse forest may often represent several meanings for an ambiguous input that may need to be transtated differently using different word orderings. The following example of an ambiguous Chinese sentence with ambiguous part-of-speech labeling motivates our interest in the reordering model for the F2S translation. tˇaol`un (0) h`ui (1) zˇenmey`ang (2) discussion/NN meeting/NN how/VV discuss/VV will/VV There are several possible meanings based on the dif</context>
+<context position="4366" citStr="Mi et al., 2008" startWordPosition="671" endWordPosition="674">rtial translation hypothesis rules out some of the meanings, the reordering model should restrict itself to features originating in the relevant parts of the input forest. Our work presents a novel technique satisfying both these requirements, while leaving the disambuiguation decision up to the model using global features. The paper is organized as follows: We briefly overview the F2S and Hiero translation models in Section 2, present the proposed forest reordering model in Section 3, describe our experiment and present results in Section 4. 2 Translation Models Forest-to-string translation (Mi et al., 2008) is an extension of the tree-to-string model (Liu et al., 2006; Huang et al., 2006) allowing it to use a packed parse forest as the input instead of a single parse tree. Figure 1 shows a tree-to-string translation rule (Huang et al., 2006), which is a tuple (lhs(r), rhs(r), VI(r)), where lhs(r) is the sourceside tree fragment, whose internal nodes are labeled by nonterminal symbols (like NP), and whose frontier nodes are labeled by sourcelanguage words (like “zˇenmey`ang”) or variables from a finite set X = {x1, x2, ...1; rhs(r) is the target-side string expressed in target-language words (lik</context>
+</contexts>
+<marker>Mi, Huang, Liu, 2008</marker>
+<rawString>Haitao Mi, Liang Huang, and Qun Liu. 2008. Forestbased translation. In Proceedings of ACL: HLT.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Joseph Och</author>
+</authors>
+<title>Minimum error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="12710" citStr="Och, 2003" startWordPosition="2134" endWordPosition="2135">g rule translation probabilities, general lexical and provenance translation probabilities, language model, and a variety of sparse features. We build it as follows. The training corpus consists of 16 million sentence pairs available within the DARPA BOLT Chinese-English task. The corpus includes a mix of newswire, broadcast news, webblog data coming from various sources such as LDC, HK Law, HK Hansard and UN data. The Chinese text is segmented with a segmenter trained on CTB data using conditional random fields (CRF). Bilingual word alignments are trained and combined from two sources: GIZA (Och, 2003) and maximum entropy word aligner (Ittycheriah and Roukos, 2005). Language models are trained on the English side of the parallel corpus, and on monolingual corpora, such as Gigaword (LDC2011T07) and Google News, altogether comprising around 10 billion words. We parse the Chinese part of the training data with a modified version of the Berkeley parser 1Only to some extent, the rule still has to match the input forest, but the reordering model decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each </context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Joseph Och. 2003. Minimum error rate training in statistical machine translation. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>Bleu: a method for automatic evaluation of machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<contexts>
+<context position="14652" citStr="Papineni et al., 2002" startWordPosition="2452" endWordPosition="2455">y megam (Daum´e III, 2004) to train the maximum entropy model. The current implementation of the reordering model requires offline preprocessing of the input hypergraphs to precompute reordering probabilities for applicable triples of nodes (x, y, z). Since the number of levels in the syntactic trees in T2S rules is limited to 4, we only need to consider such triples, where z is up to 4 levels above x or y. We tune on 1275 sentences, each with 4 references, from the LDC2010E30 corpus, initially released under the DARPA GALE program. We combine two evaluation metrics for tuning and testing: B (Papineni et al., 2002) and T (Snover et al., 2006). Both the baseline and the reordering experiments are optimized with MIRA (Crammer et al., 2006) to maximize (T - B )/2. We test on three different test sets: GALE Web test set from LDC2010E30 corpus (1239 sentences, 4 references), NIST MT08 Newswire 230 System T −B GALE T MT08 Newswire T −B MT08 T Web T −B B T Web B B 2 2 2 F2S 8.8 36.1 53.7 5.6 40.6 51.8 12.0 31.3 55.3 +Reordering 8.2 36.4 52.7 4.8 41.7 50.5 11.0 31.7 53.7 A -0.6 +0.3 -1.0 -0.8 +1.1 -1.3 -1.0 +0.4 -1.6 Table 3: Results. portion (691 sentences, 4 references), and NIST MT08 Web portion (666 sentenc</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2002. Bleu: a method for automatic evaluation of machine translation. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Slav Petrov</author>
+<author>Dan Klein</author>
+</authors>
+<title>Improved inference for unlexicalized parsing.</title>
+<date>2007</date>
+<booktitle>In Proceedings of HLTNAACL.</booktitle>
+<contexts>
+<context position="13261" citStr="Petrov and Klein, 2007" startWordPosition="2222" endWordPosition="2225">d alignments are trained and combined from two sources: GIZA (Och, 2003) and maximum entropy word aligner (Ittycheriah and Roukos, 2005). Language models are trained on the English side of the parallel corpus, and on monolingual corpora, such as Gigaword (LDC2011T07) and Google News, altogether comprising around 10 billion words. We parse the Chinese part of the training data with a modified version of the Berkeley parser 1Only to some extent, the rule still has to match the input forest, but the reordering model decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each training sentence with the marginal probability-based inside-outside algorithm to contain only 3n CFG nodes, where n is the sentence length. We extract tree-to-string translation rules from forest-string sentence pairs using the forest-based GHKM algorithm (Mi and Huang, 2008; Galley et al., 2004). In the decoding step, we use larger input parse forests than in training, we prune them to contain 10n nodes. Then we use fast patternmatching (Zhang et al., 2009) to convert the parse forest into the translation forest. The proposed reordering model </context>
+</contexts>
+<marker>Petrov, Klein, 2007</marker>
+<rawString>Slav Petrov and Dan Klein. 2007. Improved inference for unlexicalized parsing. In Proceedings of HLTNAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Matthew Snover</author>
+<author>Bonnie Dorr</author>
+<author>Richard Schwartz</author>
+<author>Linnea Micciulla</author>
+<author>John Makhoul</author>
+</authors>
+<title>A study of translation edit rate with targeted human annotation.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the AMTA.</booktitle>
+<contexts>
+<context position="14680" citStr="Snover et al., 2006" startWordPosition="2458" endWordPosition="2461">train the maximum entropy model. The current implementation of the reordering model requires offline preprocessing of the input hypergraphs to precompute reordering probabilities for applicable triples of nodes (x, y, z). Since the number of levels in the syntactic trees in T2S rules is limited to 4, we only need to consider such triples, where z is up to 4 levels above x or y. We tune on 1275 sentences, each with 4 references, from the LDC2010E30 corpus, initially released under the DARPA GALE program. We combine two evaluation metrics for tuning and testing: B (Papineni et al., 2002) and T (Snover et al., 2006). Both the baseline and the reordering experiments are optimized with MIRA (Crammer et al., 2006) to maximize (T - B )/2. We test on three different test sets: GALE Web test set from LDC2010E30 corpus (1239 sentences, 4 references), NIST MT08 Newswire 230 System T −B GALE T MT08 Newswire T −B MT08 T Web T −B B T Web B B 2 2 2 F2S 8.8 36.1 53.7 5.6 40.6 51.8 12.0 31.3 55.3 +Reordering 8.2 36.4 52.7 4.8 41.7 50.5 11.0 31.7 53.7 A -0.6 +0.3 -1.0 -0.8 +1.1 -1.3 -1.0 +0.4 -1.6 Table 3: Results. portion (691 sentences, 4 references), and NIST MT08 Web portion (666 sentences, 4 references). 4.2 Resul</context>
+</contexts>
+<marker>Snover, Dorr, Schwartz, Micciulla, Makhoul, 2006</marker>
+<rawString>Matthew Snover, Bonnie Dorr, Richard Schwartz, Linnea Micciulla, and John Makhoul. 2006. A study of translation edit rate with targeted human annotation. In Proceedings of the AMTA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christoph Tillman</author>
+</authors>
+<title>A unigram orientation model for statistical machine translation.</title>
+<date>2004</date>
+<booktitle>Proceedings of the HLT-NAACL.</booktitle>
+<contexts>
+<context position="1017" citStr="Tillman, 2004" startWordPosition="155" endWordPosition="156">approach naturally deals with the ambiguity present in the input parse forest, but, at the same time, takes into account only the parts of the input forest used by the current translation hypothesis. The method provides improvement from 0.6 up to 1.0 point measured by (T − B )/2 metric. 1 Introduction Various commonly adopted statistical machine translation (SMT) approaches differ in the amount of linguistic knowledge present in the rules they employ. Phrase-based (Koehn et al., 2003) models are strong in lexical coverage in local contexts, and use external models to score reordering options (Tillman, 2004; Koehn et al., 2005). Hierarchical models (Chiang, 2005) use lexicalized synchronous context-free grammar rules to produce local reorderings. The grammaticality of their output can be improved by additional reordering models scoring permutations of the source words. Reordering model can be either used for source pre-ordering (Tromble and Eisner, ), integrated into decoding via translation rules extension (Hayashi et al., 2010), additional lexical features (He et al., ), or using external sources of information, such as source syntactic features observed from a parse tree (Huang et al., 2013).</context>
+</contexts>
+<marker>Tillman, 2004</marker>
+<rawString>Christoph Tillman. 2004. A unigram orientation model for statistical machine translation. Proceedings of the HLT-NAACL.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Roy Tromble</author>
+<author>Jason Eisner</author>
+</authors>
+<title>Learning linear ordering problems for better translation.</title>
+<booktitle>In Proceedings of the EMNLP.</booktitle>
+<marker>Tromble, Eisner, </marker>
+<rawString>Roy Tromble and Jason Eisner. Learning linear ordering problems for better translation. In Proceedings of the EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Martin ˇCmejrek</author>
+<author>Haitao Mi</author>
+<author>Bowen Zhou</author>
+</authors>
+<title>Flexible and efficient hypergraph interactions for joint hierarchical and forest-to-string decoding.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the EMNLP.</booktitle>
+<marker>ˇCmejrek, Mi, Zhou, 2013</marker>
+<rawString>Martin ˇCmejrek, Haitao Mi, and Bowen Zhou. 2013. Flexible and efficient hypergraph interactions for joint hierarchical and forest-to-string decoding. In Proceedings of the EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hui Zhang</author>
+<author>Min Zhang</author>
+<author>Haizhou Li</author>
+<author>Chew Lim Tan</author>
+</authors>
+<title>Fast translation rule matching for syntax-based statistical machine translation.</title>
+<date>2009</date>
+<booktitle>In Proceedings of EMNLP,</booktitle>
+<pages>1037--1045</pages>
+<location>Singapore,</location>
+<contexts>
+<context position="5616" citStr="Zhang et al., 2009" startWordPosition="886" endWordPosition="889"> VI(r) is a mapping from X to nonterminals. Each variable xi E X occurs exactly once in lhs(r) and exactly once in rhs(r). The Table 1 lists all rules necessary to derive translations (a) and (b), with their internal structure removed for simplicity. Typically, an F2S system translates in two steps (shown in Figure 2): parsing and decoding. In the Figure 1: Tree-to-string rule r4. parsing step, the source language input is converted into a parse forest (A). In the decoding step, we first convert the parse forest into a translation forest Ft in (B) by using the fast pattern-matching technique (Zhang et al., 2009). Then the decoder uses dynamic programing with beam search and cube pruning to find the approximation to the best scoring derivation in the translation forest, and outputs the target string. 3 Forest Reordering Model In this section, we describe the process of applying the reordering model scores. We score pairwise translation reorderings for every pair of source words similarly as described by Huang et al. (2013). In their approach, an external model of ordering distributions of sibling constituent pairs predicts the reordering of word pairs. Our approach deals with parse forests rather than</context>
+<context position="13773" citStr="Zhang et al., 2009" startWordPosition="2304" endWordPosition="2307">el decides based on the sum of paths observed between the root and frontier nodes. (Petrov and Klein, 2007), then prune the obtained parse forests for each training sentence with the marginal probability-based inside-outside algorithm to contain only 3n CFG nodes, where n is the sentence length. We extract tree-to-string translation rules from forest-string sentence pairs using the forest-based GHKM algorithm (Mi and Huang, 2008; Galley et al., 2004). In the decoding step, we use larger input parse forests than in training, we prune them to contain 10n nodes. Then we use fast patternmatching (Zhang et al., 2009) to convert the parse forest into the translation forest. The proposed reordering model is trained on 100, 000 automatically aligned forest-string sentence pairs from the parallel training data. These sentences provide 110M reordering events that are used by megam (Daum´e III, 2004) to train the maximum entropy model. The current implementation of the reordering model requires offline preprocessing of the input hypergraphs to precompute reordering probabilities for applicable triples of nodes (x, y, z). Since the number of levels in the syntactic trees in T2S rules is limited to 4, we only nee</context>
+</contexts>
+<marker>Zhang, Zhang, Li, Tan, 2009</marker>
+<rawString>Hui Zhang, Min Zhang, Haizhou Li, and Chew Lim Tan. 2009. Fast translation rule matching for syntax-based statistical machine translation. In Proceedings of EMNLP, pages 1037–1045, Singapore, August.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

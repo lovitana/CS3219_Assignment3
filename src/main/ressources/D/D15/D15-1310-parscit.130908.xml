@@ -1,0 +1,1190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000443">
+<title confidence="0.987066">
+Twitter-scale New Event Detection via K-term Hashing
+</title>
+<author confidence="0.999149">
+Dominik Wurzer
+</author>
+<affiliation confidence="0.9983065">
+School of Informatics
+University of Edinburgh
+</affiliation>
+<note confidence="0.320611">
+d.s.wurzer
+</note>
+<email confidence="0.925911">
+@sms.ed.ac.uk
+</email>
+<author confidence="0.996572">
+Victor Lavrenko
+</author>
+<affiliation confidence="0.748299333333333">
+School of Informatics
+University of Edinburgh
+vlavrenk
+</affiliation>
+<email confidence="0.88919">
+@inf.ed.ac.uk
+</email>
+<note confidence="0.88235375">
+Miles Osborne
+Bloomberg
+London
+mosborne29
+</note>
+<email confidence="0.916103">
+@bloomberg.net
+</email>
+<sectionHeader confidence="0.991595" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999674461538462">
+First Story Detection is hard because
+the most accurate systems become pro-
+gressively slower with each document
+processed. We present a novel ap-
+proach to FSD, which operates in constant
+time/space and scales to very high volume
+streams. We show that when computing
+novelty over a large dataset of tweets, our
+method performs 192 times faster than a
+state-of-the-art baseline without sacrific-
+ing accuracy. Our method is capable of
+performing FSD on the full Twitter stream
+on a single core of modest hardware.
+</bodyText>
+<sectionHeader confidence="0.998781" genericHeader="introduction">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999459789473684">
+First Story Detection (FSD), also called New
+Event Detection, is the task of identifying the
+very first document in a stream to mention a new
+event1. FSD was introduced as port of the TDT2
+initiative and has direct applications in finance,
+news and government security. The most accurate
+approaches to FSD involve a runtime of O(n2) and
+cannot scale to unbounded high volume streams
+such as Twitter. We present a novel approach to
+FSD that operates in O(1) per tweet. Our method
+is able to process the load of the average Twit-
+ter Firehose3 stream on a single core of mod-
+est hardware while retaining effectiveness on par
+with one of the most accurate FSD systems. Dur-
+ing the TDT program, FSD was applied to news
+wire documents and solely focused on effective-
+ness, neglecting efficiency and scalability. The tra-
+ditional approach to FSD (Petrovic et al., 2010)
+computes the distance of each incoming document
+</bodyText>
+<footnote confidence="0.8890864">
+1e.g. a natural disaster or a scandal
+2TDT by NIST - 1998-2004. http://www.itl.nist.gov/
+iad/mig/tests/tdt/resources.html (Last Update: 2008)
+3 5,700 tweets per second https://about.twitter
+.com/company (last updated: March 31, 2015)
+</footnote>
+<bodyText confidence="0.992224714285714">
+to all previously seen documents and the mini-
+mum distance determines the novelty score. Doc-
+uments, whose minimum distance falls above a
+certain threshold are considered to talk about a
+new event and declared as first stories. Conse-
+quently, the computational effort increases with
+each document processed.
+</bodyText>
+<sectionHeader confidence="0.837295" genericHeader="related work">
+1.1 Related Work
+</sectionHeader>
+<bodyText confidence="0.999818875">
+Researchers have proposed a range of approaches
+to scale FSD to large data streams. Sankara-
+narayanan et al. (2009) were one of the first to
+apply FSD to Twitter. They reduced the volume
+by classifying documents into news/non-news and
+only compared to tweets within a 3-day window.
+They did not perform a quantitative evaluation of
+their approach. Sakaki et al. (2010) and Li et
+al. (2012) applied keyword filtering in conjunc-
+tion with classification algorithms, which allowed
+them to efficiently detect certain events with high
+precision. These two approaches, although effi-
+cient and effective, require a user to explicitly de-
+fine a set of keywords or to provide a set of exam-
+ples that he wants to track. The approach cannot
+detect previously unknown events.
+Phuvipadawat and Murata (2010), Ozdikis et al.
+(2012) and Cordeiro (2012), scale their systems by
+only considering tweets containing hashtags. Al-
+though efficient, this method don’t consider 90%
+of the tweets (Petrovic, 2013), which limits their
+scope.
+Cataldi et al. (2010), Weng et al.(2011) and
+Cordeiro (2012) use the degree of burstiness of
+terms during a time interval to detect new events.
+This approach is not suitable for FSD as events are
+detected with a time lag, once they grow in popu-
+larity.
+Petrovic et al. (2010) were the first to demonstrate
+FSD on Twitter in constant time and space, while
+maintaining effectiveness comparable to those of
+pair-wise comparison systems. The key was to
+</bodyText>
+<page confidence="0.882991">
+2584
+</page>
+<note confidence="0.6469">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.999942714285714">
+reduce the search space using Locality Sensitive
+Hashing (LSH). Each tweet was hashed, placing
+it into buckets that contain other similar tweets,
+which are subsequently compared. Operation in
+constant space was ensured by keeping the number
+of tweets per bucket constant. Because LSH alone
+performed ineffectively, Petrovic et al. (2010) ad-
+ditionally compared each incoming tweet with the
+k most recent tweets.
+Allan et al. (2003) analysed scoring functions for
+novelty detection while focusing on their effec-
+tiveness. They presented a language-model (LM)
+based novelty measure using the KL divergence
+between the LM of a document and a single LM
+built on all previously scored documents, which
+they referred to as an aggregate measure language
+model. The idea of maintaining a single repre-
+sentation covering all previously seen documents,
+instead of performing pairwise comparisons with
+every document is closely related to the approach
+presented in this paper.
+</bodyText>
+<sectionHeader confidence="0.982293" genericHeader="method">
+2 Approach
+</sectionHeader>
+<bodyText confidence="0.999699363636364">
+First Story Detection is a challenging task (Al-
+lan et al., 2000). The highest FSD accuracy is
+achieved by nearest-neighbour methods, where
+each incoming document (tweet) is compared to
+all documents that came before it, and the nov-
+elty score is determined by the most-similar doc-
+uments in the past. This approach requires us to
+make n−1 comparisons4 to determine the novelty
+of document dn. The approach becomes progres-
+sively slower with each processed document, and
+cannot scale up to unbounded streams like Twitter.
+Prior attempts to speed up FSD involve organising
+previously seen documents d1...dn−1 into clus-
+ters (Allan et al., 1989) or LSH buckets (Petrovic
+et al., 2010). The document dn is then compared
+only to past documents in the nearest cluster or
+LSH bucket, resulting in substantially fewer than
+n comparisons. While this approach is reasonably
+effective, it does lead to decreased accuracy, as
+potentially relevant past documents may exist in
+other clusters/buckets and would not be compared
+against.
+</bodyText>
+<subsectionHeader confidence="0.997835">
+2.1 First Story Detection in constant time
+</subsectionHeader>
+<bodyText confidence="0.966562565217391">
+Our method computes the novelty of document dn
+in a time that is constant with respect to n. The
+4Each comparison requires |dn |scalar multiplications; Ids
+denotes the number of distinct words in document d.
+main difference from previous approaches is that
+we do not compare dn to individual documents
+that came before it. Instead, we store the content
+of past documents d1...dn−1 in a single lookup
+table Hn−1. When dn arrives, we count what frac-
+tion of its content is novel by looking it up in
+Hn−1. The number of lookups is polynomial in
+|dn |(the length of the document), and is indepen-
+dent of n.
+Formally, let dn denote the set of distinct words
+occurring in the n’th document in the stream.
+Let a k-term t={w1, w2, ...} denote a non-empty
+set of up to k distinct words. We define the
+content cn to be the set of all k-terms that
+can be formed from the words in the document
+dn : cn = { t : t C dn, |t |G_ k}. We
+estimate the novelty of document dn as the pro-
+portion of novel k-terms, i.e. k-terms that do not
+appear in the history Hn−1:
+</bodyText>
+<equation confidence="0.940046666666667">
+� (|dn|)
+N(dn) = −11 : tVHn−1
+t∈cn α|t||t |{0 : tEHn−1} (1)
+Here α|t |is the weight assigned to k-terms of size
+|t|, and �|dn |� is the total number of such k-terms
+|t|
+</equation>
+<bodyText confidence="0.999345333333333">
+formed from dn. After the novelty is computed,
+we update the history H to include all k-terms
+formed from dn:
+</bodyText>
+<equation confidence="0.828282">
+Hn — Hn−1 U cn (2)
+</equation>
+<bodyText confidence="0.9998626">
+The computational cost of equations (1) and (2)
+is determined by the number of k-terms formed
+from the document dn, and can be bounded at
+O(|dn|k) operations. The complexity is manage-
+able, as tweets are short and we keep k small.
+</bodyText>
+<subsectionHeader confidence="0.999917">
+2.2 Operating in constant time and space
+</subsectionHeader>
+<bodyText confidence="0.999986230769231">
+We use a Bloom filter (Bloom, 1970) to maintain
+the history Hn−1 of previously seen k-terms. For
+each k-term t we compute a 32-bit Murmur5 hash-
+code, and use it as an index into a fixed-length
+bit-array. This ensures that both membership test-
+ing (tEH) and history update can be performed
+in constant time. Constraining H to be a fixed-
+length array also means that our method operates
+in constant space, irrespective of the size of the
+stream and its vocabulary growth. In contrast to
+our method, previous approaches to FSD required
+more and more memory to maintain the history of
+the stream (see Figure 3).
+</bodyText>
+<footnote confidence="0.956777">
+5https://en.wikipedia.org/wiki/MurmurHash
+</footnote>
+<page confidence="0.982725">
+2585
+</page>
+<bodyText confidence="0.999347466666667">
+A potential downside of using a Bloom filter is that
+it introduces a small probability of false matches:
+a novel k-term ti may collide with a previously
+observed k-term tj and would be reported as non-
+novel. The probability of collision is directly pro-
+portional to the load factor of the Bloom filter, i.e.
+the fraction of non-zero bits in the array. By Heaps
+law (Egghe, 2007) the number of distinct words
+(and k-terms) will continue to grow and will even-
+tually saturate the bit-array. To mitigate this prob-
+lem, we introduce a deletion strategy: whenever
+the load factor exceeds a pre-determined threshold
+p, we zero out a random bit in H. This allows us
+to keep low the probability of false matches, at the
+cost of forgetting some previously-seen k-terms.
+</bodyText>
+<subsectionHeader confidence="0.995606">
+2.3 Parameter settings
+</subsectionHeader>
+<bodyText confidence="0.999989444444444">
+We make the following parameter choices based
+on initial experiments on our training dataset. We
+set the maximum size of k-terms to be k = 3 and
+keep the Bloom filter load factor under p = 0.6.
+We tokenize the tweets on punctuation, treat all
+hashtags and mentions as words, stem them using
+the stemmer by Krovetz (1993), but do not remove
+stopwords. We optimise the weights α1...αk us-
+ing grid search on the same training data set.
+</bodyText>
+<sectionHeader confidence="0.999704" genericHeader="evaluation">
+3 Experiments
+</sectionHeader>
+<bodyText confidence="0.999939157894737">
+In a streaming setting, documents arrive one at a
+time on a continual basis. FSD requires computing
+a novelty score for each document in a single-pass
+over the data. High novelty scores indicate new
+topics. We use the standard TDT evaluation pro-
+cedure (Allan, 2002) and the official TDT3 eval-
+uation scripts with standard settings for evaluat-
+ing FSD accuracy. The Detection Error Trade-off
+(DET) curve shows the trade-off between miss and
+false alarm probability for the full range of novelty
+scores. The normalized Topic Weighted Minimum
+Cost (Corin) is a linear combination of miss and
+false alarm probabilities, which allows comparing
+different methods based on a single value metric.
+Efficiency is measured by the throughput of tweets
+per second and the memory footprint. To ensure
+a fair comparison, all reported numbers are aver-
+aged over 5 runs on an idle machine using a single
+core (Intel-Xeon CPU with 2.27GHz).
+</bodyText>
+<subsectionHeader confidence="0.997531">
+3.1 Data set
+</subsectionHeader>
+<bodyText confidence="0.999980166666667">
+We use the data set developed by Petrovic (2013),
+Petrovic et al. (2013b) as a test set, which consists
+of 27 topics and 116,000 tweets from the period of
+April till September 2011. Parameters were tuned
+using a sample of the data set annotated by Wurzer
+et al. (2015) as a training set.
+</bodyText>
+<subsectionHeader confidence="0.998789">
+3.2 Baselines
+</subsectionHeader>
+<bodyText confidence="0.999906692307692">
+We compare our system (k-term) against 3
+baselines.
+UMass is a state-of-the-art FSD system, de-
+veloped by Allan et al. (2000). It is known for
+its high effectiveness in the TDT2 and TDT3
+competitions (Fiscus, 2001) and widely used
+as a benchmark for FSD systems (Petrovic et
+al., 2010; Kasiviswanathan et al., 2011; Petrovic
+2013;). UMass makes use of an inverted index and
+k-nearest-neighbour clustering, which optimize
+the system for speed by ensuring a minimal num-
+ber of comparisons. To maximise efficiency, we
+set-up UMass to operate in-memory by turning off
+its default memory mapping to disk. This ensures
+fair comparisons, as all algorithms operate in
+memory.
+LSH-FSD is a highly-scalable system by Petrovic
+et al. (2010). It is based on Locality Sensitive
+Hashing (LSH) and claims to operate in constant
+time and space while performing on a comparable
+level of accuracy as UMass. We configure their
+system using the default parameters (Petrovic et
+al., 2010).
+KL-FSD We also compare our approach with the
+aggregate measure language model (Allan et al.,
+2003) because it builds upon a similar principle.
+</bodyText>
+<subsectionHeader confidence="0.998653">
+3.3 Effectiveness and Efficiency
+</subsectionHeader>
+<bodyText confidence="0.999980769230769">
+In Table 1, the UMass system shows state-of-the-
+art accuracy (Corin = 0.79, lower is better), but
+can only process 30 tweets per second. LSH-FSD
+operates 17 times faster, at the cost of a 13%
+decrease in accuracy (Corin = 0.90). Our system
+(k-term) operates on par with UMass in terms of
+accuracy, while being 197 times faster. KL-FSD,
+which is based on uni-grams, reveals the highest
+throughput at a considerable cost of efficiency
+(Corin = 0.96).
+To further investigate accuracy we also compare
+the systems over the full range of the novelty
+thresholds illustrated by the DET plot in Figure 1.
+</bodyText>
+<page confidence="0.973916">
+2586
+</page>
+<table confidence="0.9986975">
+Tweets per second (log-scale)
+Algorithm Cmin %-diff tweets/sec speed-up
+UMass 0.7981 - 30 -
+LSH-FSD 0.9061 -13.5% 500 17x
+KL-FSD 0.9648 -21% 6,600 220x
+k-term 0.7966 +0.2% 5,900 197x
+</table>
+<tableCaption confidence="0.998556">
+Table 1: Comparing the effectiveness and efficiency of our
+</tableCaption>
+<figure confidence="0.820341666666667">
+system (k-term) with the 3 baselines
+1 2 5 10 20 40 60 80 90
+False Alarms probability (in %)
+</figure>
+<figureCaption confidence="0.992872333333333">
+Figure 1: DET plot of UMass, Kl-FSD, LSH-FSD and k-
+term showing that LSH and k-term are statistically indistin-
+guishable from UMass in terms of effectiveness;
+</figureCaption>
+<bodyText confidence="0.999994769230769">
+Additionally we show the 90% confidence interval
+of UMass in two solid lines. We observer that
+both, FSD-LSH and our system (k-term) are
+statistically indistinguishable form UMass at any
+Miss-False Alarm trade-off point: their DET
+curves fall entirely within the 90% confidence
+interval of UMass. Note that DET curve of UMass
+is formed by the middle of it’s 90% confidence
+interval curves. KL-FSD in contrast results in
+significantly worse accuracy than UMass in the
+mid-range and in particular the high recall area
+of the DET plot. We conclude that uni-grams are
+insufficient for determining the novelty of tweets.
+</bodyText>
+<subsectionHeader confidence="0.970195">
+3.4 FSD in constant time and space
+</subsectionHeader>
+<bodyText confidence="0.9999279">
+High-volume streams require operation in con-
+stant time and space. Figure 2 compares the
+change in throughput of LSH-FSD, UMass and k-
+term as we process more and more tweets in the
+stream. Additionally, the plot also shows the aver-
+age rate of tweets in the Twitter Firehose6 at 5,787
+tweets per second. Note that our system processes
+the equivalent of the full Twitter stream on a sin-
+gle core of modest hardware. This surpasses the
+throughput of LSH-FSD, a system known for high
+</bodyText>
+<footnote confidence="0.9375085">
+6https://about.twitter.com/company (last updated: March
+31, 2015)
+</footnote>
+<figure confidence="0.9678015">
+20000 40000 60000 80000 100000 120000
+Tweets processed
+</figure>
+<figureCaption confidence="0.996438">
+Figure 2: Throughput of UMass, LSH-FSD and k-term in
+comparison to the full Twitter stream (Firehose)
+</figureCaption>
+<bodyText confidence="0.999715263157894">
+efficiency, by more than an order of magnitude.
+The throughput of LSH-FSD and k-term increases
+up until 20k documents because both approaches
+require initialisation of their data structures, which
+makes them slow when the number of documents
+is low. UMass has no initialization and performs
+the fastest when the number of documents is kept
+low. The pair-wise comparison of UMass causes
+it’s throughput to decrease drastically with every
+new document. In Figure 2 we compare the mem-
+ory requirements of k-term and LSH-FSD at dif-
+ferent points in the stream. Although Petrovic et
+al. (2010) designed their system (LSH-FSD) to
+operate in constant space, we found that the mem-
+ory requirement gradually increases with the num-
+ber of documents processed, as seen in Figure 3.
+We hypothesise that this increase results from new
+terms added to the vocabulary. Our system has a
+strictly constant memory footprint.
+</bodyText>
+<figureCaption confidence="0.8861365">
+Figure 3: Space requirement for LSH-FSD and k-term;
+showing constant space for k-term
+</figureCaption>
+<sectionHeader confidence="0.995673" genericHeader="conclusions">
+4 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999883666666667">
+We presented an approach to FSD in a high vol-
+ume streaming setting in constant time and space.
+Our approach computes novelty based on a single
+</bodyText>
+<figure confidence="0.998828891891892">
+Miss probability (in %)
+90
+80
+60
+40
+20
+10
+5
+2
+1
+random Performance
+90% Conf. UMASS
+k-term
+LSH
+KL
+10000
+1000
+100
+10
+LSH-FSD
+k-term
+UMass
+Firehose
+20000 40000 60000 80000 100000
+Tweets processed
+Memory (Megabyte)
+1600
+1400
+1200
+1000
+800
+600
+400
+200
+0
+k-term
+LSH-FSD
+</figure>
+<page confidence="0.99204">
+2587
+</page>
+<bodyText confidence="0.999936">
+lookup table that represents past documents. Shift-
+ing from direct comparisons with previous doc-
+uments to comparisons with a single model that
+combines them, accounts for a great increase in
+efficiency. For the first time, we showed that it is
+possible to perform FSD on the full Twitter stream
+on a single core of modest hardware. This greatly
+outperforms state-of-the-art systems by an order
+of magnitude without sacrificing accuracy.
+</bodyText>
+<sectionHeader confidence="0.901682" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.969521494736841">
+J. Allan, C. Wade, and A. Bolivar. Retrieval and nov-
+elty detection at the sentence level. In SIGIR 03:
+Proceedings of the 26th annual international ACM
+SIGIR conference on Research and development in
+informaion retrieval, pages 314 - 321. ACM Press,
+2003
+James Allan. 2002. Topic Detection and Track-
+ing: Event-Based Information Organization. Kluwer
+Academic Publishers, Norwell, MA, USA.
+James Allan, Victor Lavrenko and Hubert Jin. 2000.
+First story detection in TDT is hard. In Proceedings
+of the ninth international conference on Information
+and knowledge management. ACM.
+James Allan, Ron Papka and Victor Lavrenko. 1998.
+On-line new event detection and tracking. Proceed-
+ings of the 21st annual international ACM SIGIR
+conference on Research and development in infor-
+mation retrieval. ACM.
+Burton H. Bloom. 1970. Space/time trade-offs in hash
+coding with allowable errors. Communications of
+the ACM, 13(7), 422-426.
+Cataldi, M., Caro, L. D., and Schifanella, C. (2010).
+Emerging topic detection on Twitter based on tem-
+poral and social terms evaluation. In Proceedings
+of the 10th International Workshop on Multimedia
+Data Mining, pages 4:1 - 4:10. ACM.
+Cordeiro, M. (2012). Twitter event detection: Combin-
+ing wavelet analysis and topic inference summariza-
+tion. In Doctoral Symposium in Informatics Engi-
+neering, pages 123 - 138.
+Leo Egghe. 2007. Untangling Herdan’s law and Heaps’
+law: Mathematical and informetric arguments. Jour-
+nal of the American Society for Information Science
+and Technology 58.5: 702-709.
+Piotr Indyk and Rajeev Motwani. 1998. Approximate
+nearest neighbours: towards removing the curse of
+dimensionality. In Proceedings of the thirtieth an-
+nual ACM symposium on Theory of computing
+(STOC ’98). ACM, New York, NY, USA.
+Shiva Prasad Kasiviswanathan, Prem Melville,
+Arindam Banerjee, and Vikas Sindhwani. Emerg-
+ing topic detection using dictionary learning.
+In Proceedings of the Twentieth ACM interna-
+tional conference on Information and knowledge
+management, 2011.
+Robert Krovetz. 1993. Viewing morphology as an in-
+ference process. Proceedings of the 16th annual in-
+ternational ACM SIGIR conference on Research and
+development in information retrieval. ACM.
+Li, R., Lei, K. H., Khadiwala, R., and Chang, K. C.-
+C. (2012). TEDAS: A Twitter-based event detection
+and analysis system. In Proceedings of 28th Interna-
+tional Conference on Data Engineering, pages 1273
+- 1276. IEEE Computer Society.
+Li, C., Sun, A., and Datta, A. (2012b). Twevent:
+Segment-based event detection from tweets. In Pro-
+ceedings of ACM Conference on Information and
+Knowledge Management. ACM.
+Jimmy Lin, Rion Snow, and William Morgan. 2011.
+Smoothing techniques for adaptive online language
+models: topic tracking in tweet streams. In Proceed-
+ings of the 17th ACM SIGKDD international con-
+ference on Knowledge discovery and data mining
+(KDD ’11). ACM, New York, NY, USA, 422-429.
+S. Muthukrishnan. 2005. Data streams: Algorithms and
+applications. Now Publishers Inc.
+Jeffrey Nichols, Jalal Mahmud, and Clemens Drews.
+2012. Summarizing sporting events using twitter. In-
+Proceedings of the 2012 ACM international confer-
+ence on Intelligent User Interfaces (IUI ’12). ACM,
+New York, NY, USA.
+Ozdikis, O., Senkul, P., and Oguztuzun, H. (2012). Se-
+mantic expansion of hashtags for enhanced event de-
+tection in Twitter. In Proceedings of the 1st Interna-
+tional Workshop on Online Social Systems.
+Sasa Petrovic, Miles Osborne, and Victor Lavrenko.
+2010. Streaming first story detection with applica-
+tion to Twitter. In Human Language Technologies:
+The 2010 Annual Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics (HLT ’10). Association for Computational
+Linguistics, Stroudsburg, PA, USA.
+Sasa Petrovic. 2013. Real-time event detection in mas-
+sive streams. Ph.D. thesis, School of Informatics,
+University of Edinburgh.
+Sasa Petrovic, Miles Osborne, Richard McCreadie,
+Craig Macdonald, Iadh Ounis, and Luke Shrimpton.
+Can Twitter replace Newswire for breaking news?
+In Proc.of ICWSM, 2013b.
+Raymond K. Pon, Alfonso F. Cardenas, David Buttler,
+and Terence Critchlow. 2007. Tracking multiple top-
+ics for finding interesting articles. In Proceedings of
+the 13th ACM SIGKDD international conference on
+Knowledge discovery and data mining (KDD ’07).
+ACM, New York, NY, USA.
+</reference>
+<page confidence="0.713438">
+2588
+</page>
+<reference confidence="0.99960122">
+Phuvipadawat, S. and Murata, T. (2010). Breaking
+news detection and tracking in Twitter. In Pro-
+ceedings of the 2010 IEEE/WIC/ACM International
+Conference on Web Intelligence and Intelligent
+Agent Technology, pages 120 - 123. IEEE Computer
+Society.
+Deepak Ravichandran, Patrick Pantel, and Eduard
+Hovy. 2005. Randomized Algorithms and NLP: Us-
+ing Locality Sensitive Hash Functions for High
+Speed Noun Clustering. In Proceedings of ACL.
+Sankaranarayanan, J., Samet, H., Teitler, B. E.,
+Lieberman, M. D., and Sperling, J. (2009). Twit-
+terstand: news in tweets. In Proceedings of the
+17th ACM SIGSPATIAL International Conference
+on Advances in Geographic Information Systems,
+pages 42 - 51. ACM.
+Sakaki, T., Okazaki, M., and Matsuo, Y. (2010). Earth-
+quake shakes Twitter users: real-time event detec-
+tion by social sensors. In Proceedings of the 19th In-
+ternational Conference on World Wide Web, pages
+851 - 860. ACM.
+I. Soboroff, I.Ounis, and J. Lin. 2012. Overview of the
+trec-2012 microblog track. In Proceedings of TREC.
+Jintao Tang, Ting Wang, Qin Lu, Ji Wang, and Wenjie
+Li. 2011. A Wikipedia based semantic graph model
+for topic tracking in blogosphere. In Proceedings of
+the Twenty-Second international joint conference on
+Artificial Intelligence - Volume Three (IJCAI’11).
+TDT by NIST - 1998-2004.
+http://www.itl.nist.gov/iad/mig/
+tests/tdt/resources.html (Last Update: 2008)
+Jianshu Weng, Erwin Leonardi, Francis Lee. Event De-
+tection in Twitter. 2011. In Proceeding of ICWSM.
+AAAI Press.
+Weng, J., Yao, Y., Leonardi, E., and Lee, F. (2011).
+Event detection in Twitter. In Proceedings of the
+5th International Conference on Weblogs and Social
+Media, pages 401 - 408. The AAAI Press.
+Dominik Wurzer, Victor Lavrenko, Miles Osborne.
+2015. Tracking unbounded Topic Streams. In Pro-
+ceedings of the 53rd Annual Meeting of the Associ-
+ation for Computational Linguistics (ACL) and the
+7th International Joint Conference on Natural Lan-
+guage Processing, pages 1765 - 1773.
+Xintian Yang, Amol Ghoting, Yiye Ruan, and Srini-
+vasan Parthasarathy. 2012. A framework for summa-
+rizing and analysing twitter feeds. In Proceedings of
+the 18th ACM SIGKDD international conference on
+Knowledge discovery and data mining (KDD ’12).
+ACM, New York, NY, USA.
+</reference>
+<page confidence="0.993081">
+2589
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.787407">
+<title confidence="0.999887">Twitter-scale New Event Detection via K-term Hashing</title>
+<author confidence="0.998889">Dominik</author>
+<affiliation confidence="0.999277">School of University of</affiliation>
+<email confidence="0.966676">@sms.ed.ac.uk</email>
+<author confidence="0.988898">Victor</author>
+<affiliation confidence="0.9986105">School of University of</affiliation>
+<email confidence="0.961476">@inf.ed.ac.uk</email>
+<author confidence="0.8742">Miles</author>
+<email confidence="0.963093">@bloomberg.net</email>
+<abstract confidence="0.999657571428571">First Story Detection is hard because the most accurate systems become progressively slower with each document We present a novel proach to FSD, which operates in constant time/space and scales to very high volume streams. We show that when computing novelty over a large dataset of tweets, our method performs 192 times faster than a state-of-the-art baseline without sacrificing accuracy. Our method is capable of performing FSD on the full Twitter stream on a single core of modest hardware.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>J Allan</author>
+<author>C Wade</author>
+<author>A Bolivar</author>
+</authors>
+<title>Retrieval and novelty detection at the sentence level.</title>
+<date>2003</date>
+<booktitle>In SIGIR 03: Proceedings of the 26th annual international ACM SIGIR conference on Research and development in informaion retrieval,</booktitle>
+<pages>314--321</pages>
+<publisher>ACM Press,</publisher>
+<contexts>
+<context position="4364" citStr="Allan et al. (2003)" startWordPosition="679" endWordPosition="682">dings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. reduce the search space using Locality Sensitive Hashing (LSH). Each tweet was hashed, placing it into buckets that contain other similar tweets, which are subsequently compared. Operation in constant space was ensured by keeping the number of tweets per bucket constant. Because LSH alone performed ineffectively, Petrovic et al. (2010) additionally compared each incoming tweet with the k most recent tweets. Allan et al. (2003) analysed scoring functions for novelty detection while focusing on their effectiveness. They presented a language-model (LM) based novelty measure using the KL divergence between the LM of a document and a single LM built on all previously scored documents, which they referred to as an aggregate measure language model. The idea of maintaining a single representation covering all previously seen documents, instead of performing pairwise comparisons with every document is closely related to the approach presented in this paper. 2 Approach First Story Detection is a challenging task (Allan et al</context>
+<context position="11758" citStr="Allan et al., 2003" startWordPosition="1941" endWordPosition="1944">suring a minimal number of comparisons. To maximise efficiency, we set-up UMass to operate in-memory by turning off its default memory mapping to disk. This ensures fair comparisons, as all algorithms operate in memory. LSH-FSD is a highly-scalable system by Petrovic et al. (2010). It is based on Locality Sensitive Hashing (LSH) and claims to operate in constant time and space while performing on a comparable level of accuracy as UMass. We configure their system using the default parameters (Petrovic et al., 2010). KL-FSD We also compare our approach with the aggregate measure language model (Allan et al., 2003) because it builds upon a similar principle. 3.3 Effectiveness and Efficiency In Table 1, the UMass system shows state-of-theart accuracy (Corin = 0.79, lower is better), but can only process 30 tweets per second. LSH-FSD operates 17 times faster, at the cost of a 13% decrease in accuracy (Corin = 0.90). Our system (k-term) operates on par with UMass in terms of accuracy, while being 197 times faster. KL-FSD, which is based on uni-grams, reveals the highest throughput at a considerable cost of efficiency (Corin = 0.96). To further investigate accuracy we also compare the systems over the full </context>
+</contexts>
+<marker>Allan, Wade, Bolivar, 2003</marker>
+<rawString>J. Allan, C. Wade, and A. Bolivar. Retrieval and novelty detection at the sentence level. In SIGIR 03: Proceedings of the 26th annual international ACM SIGIR conference on Research and development in informaion retrieval, pages 314 - 321. ACM Press, 2003</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Allan</author>
+</authors>
+<title>Topic Detection and Tracking: Event-Based Information Organization.</title>
+<date>2002</date>
+<publisher>Kluwer Academic Publishers,</publisher>
+<location>Norwell, MA, USA.</location>
+<contexts>
+<context position="9723" citStr="Allan, 2002" startWordPosition="1608" endWordPosition="1609">t the maximum size of k-terms to be k = 3 and keep the Bloom filter load factor under p = 0.6. We tokenize the tweets on punctuation, treat all hashtags and mentions as words, stem them using the stemmer by Krovetz (1993), but do not remove stopwords. We optimise the weights α1...αk using grid search on the same training data set. 3 Experiments In a streaming setting, documents arrive one at a time on a continual basis. FSD requires computing a novelty score for each document in a single-pass over the data. High novelty scores indicate new topics. We use the standard TDT evaluation procedure (Allan, 2002) and the official TDT3 evaluation scripts with standard settings for evaluating FSD accuracy. The Detection Error Trade-off (DET) curve shows the trade-off between miss and false alarm probability for the full range of novelty scores. The normalized Topic Weighted Minimum Cost (Corin) is a linear combination of miss and false alarm probabilities, which allows comparing different methods based on a single value metric. Efficiency is measured by the throughput of tweets per second and the memory footprint. To ensure a fair comparison, all reported numbers are averaged over 5 runs on an idle mach</context>
+</contexts>
+<marker>Allan, 2002</marker>
+<rawString>James Allan. 2002. Topic Detection and Tracking: Event-Based Information Organization. Kluwer Academic Publishers, Norwell, MA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Allan</author>
+<author>Victor Lavrenko</author>
+<author>Hubert Jin</author>
+</authors>
+<title>First story detection in TDT is hard.</title>
+<date>2000</date>
+<booktitle>In Proceedings of the ninth international conference on Information and knowledge management.</booktitle>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="4972" citStr="Allan et al., 2000" startWordPosition="773" endWordPosition="777"> al. (2003) analysed scoring functions for novelty detection while focusing on their effectiveness. They presented a language-model (LM) based novelty measure using the KL divergence between the LM of a document and a single LM built on all previously scored documents, which they referred to as an aggregate measure language model. The idea of maintaining a single representation covering all previously seen documents, instead of performing pairwise comparisons with every document is closely related to the approach presented in this paper. 2 Approach First Story Detection is a challenging task (Allan et al., 2000). The highest FSD accuracy is achieved by nearest-neighbour methods, where each incoming document (tweet) is compared to all documents that came before it, and the novelty score is determined by the most-similar documents in the past. This approach requires us to make n−1 comparisons4 to determine the novelty of document dn. The approach becomes progressively slower with each processed document, and cannot scale up to unbounded streams like Twitter. Prior attempts to speed up FSD involve organising previously seen documents d1...dn−1 into clusters (Allan et al., 1989) or LSH buckets (Petrovic </context>
+<context position="10817" citStr="Allan et al. (2000)" startWordPosition="1790" endWordPosition="1793">r second and the memory footprint. To ensure a fair comparison, all reported numbers are averaged over 5 runs on an idle machine using a single core (Intel-Xeon CPU with 2.27GHz). 3.1 Data set We use the data set developed by Petrovic (2013), Petrovic et al. (2013b) as a test set, which consists of 27 topics and 116,000 tweets from the period of April till September 2011. Parameters were tuned using a sample of the data set annotated by Wurzer et al. (2015) as a training set. 3.2 Baselines We compare our system (k-term) against 3 baselines. UMass is a state-of-the-art FSD system, developed by Allan et al. (2000). It is known for its high effectiveness in the TDT2 and TDT3 competitions (Fiscus, 2001) and widely used as a benchmark for FSD systems (Petrovic et al., 2010; Kasiviswanathan et al., 2011; Petrovic 2013;). UMass makes use of an inverted index and k-nearest-neighbour clustering, which optimize the system for speed by ensuring a minimal number of comparisons. To maximise efficiency, we set-up UMass to operate in-memory by turning off its default memory mapping to disk. This ensures fair comparisons, as all algorithms operate in memory. LSH-FSD is a highly-scalable system by Petrovic et al. (20</context>
+</contexts>
+<marker>Allan, Lavrenko, Jin, 2000</marker>
+<rawString>James Allan, Victor Lavrenko and Hubert Jin. 2000. First story detection in TDT is hard. In Proceedings of the ninth international conference on Information and knowledge management. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>James Allan</author>
+<author>Ron Papka</author>
+<author>Victor Lavrenko</author>
+</authors>
+<title>On-line new event detection and tracking.</title>
+<date>1998</date>
+<booktitle>Proceedings of the 21st annual international ACM SIGIR conference on Research and development in information retrieval.</booktitle>
+<publisher>ACM.</publisher>
+<marker>Allan, Papka, Lavrenko, 1998</marker>
+<rawString>James Allan, Ron Papka and Victor Lavrenko. 1998. On-line new event detection and tracking. Proceedings of the 21st annual international ACM SIGIR conference on Research and development in information retrieval. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Burton H Bloom</author>
+</authors>
+<title>Space/time trade-offs in hash coding with allowable errors.</title>
+<date>1970</date>
+<journal>Communications of the ACM,</journal>
+<volume>13</volume>
+<issue>7</issue>
+<pages>422--426</pages>
+<contexts>
+<context position="7615" citStr="Bloom, 1970" startWordPosition="1248" endWordPosition="1249">y Hn−1: � (|dn|) N(dn) = −11 : tVHn−1 t∈cn α|t||t |{0 : tEHn−1} (1) Here α|t |is the weight assigned to k-terms of size |t|, and �|dn |� is the total number of such k-terms |t| formed from dn. After the novelty is computed, we update the history H to include all k-terms formed from dn: Hn — Hn−1 U cn (2) The computational cost of equations (1) and (2) is determined by the number of k-terms formed from the document dn, and can be bounded at O(|dn|k) operations. The complexity is manageable, as tweets are short and we keep k small. 2.2 Operating in constant time and space We use a Bloom filter (Bloom, 1970) to maintain the history Hn−1 of previously seen k-terms. For each k-term t we compute a 32-bit Murmur5 hashcode, and use it as an index into a fixed-length bit-array. This ensures that both membership testing (tEH) and history update can be performed in constant time. Constraining H to be a fixedlength array also means that our method operates in constant space, irrespective of the size of the stream and its vocabulary growth. In contrast to our method, previous approaches to FSD required more and more memory to maintain the history of the stream (see Figure 3). 5https://en.wikipedia.org/wiki</context>
+</contexts>
+<marker>Bloom, 1970</marker>
+<rawString>Burton H. Bloom. 1970. Space/time trade-offs in hash coding with allowable errors. Communications of the ACM, 13(7), 422-426.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Cataldi</author>
+<author>L D Caro</author>
+<author>C Schifanella</author>
+</authors>
+<title>Emerging topic detection on Twitter based on temporal and social terms evaluation.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 10th International Workshop on Multimedia Data Mining,</booktitle>
+<pages>4--1</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="3307" citStr="Cataldi et al. (2010)" startWordPosition="515" endWordPosition="518">ing in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those of pair-wise comparison systems. The key was to 2584 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for </context>
+</contexts>
+<marker>Cataldi, Caro, Schifanella, 2010</marker>
+<rawString>Cataldi, M., Caro, L. D., and Schifanella, C. (2010). Emerging topic detection on Twitter based on temporal and social terms evaluation. In Proceedings of the 10th International Workshop on Multimedia Data Mining, pages 4:1 - 4:10. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Cordeiro</author>
+</authors>
+<title>Twitter event detection: Combining wavelet analysis and topic inference summarization.</title>
+<date>2012</date>
+<booktitle>In Doctoral Symposium in Informatics Engineering,</booktitle>
+<pages>123--138</pages>
+<contexts>
+<context position="3107" citStr="Cordeiro (2012)" startWordPosition="487" endWordPosition="488">ews/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those of pair-wise comparis</context>
+</contexts>
+<marker>Cordeiro, 2012</marker>
+<rawString>Cordeiro, M. (2012). Twitter event detection: Combining wavelet analysis and topic inference summarization. In Doctoral Symposium in Informatics Engineering, pages 123 - 138.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Leo Egghe</author>
+</authors>
+<title>Untangling Herdan’s law and Heaps’ law: Mathematical and informetric arguments.</title>
+<date>2007</date>
+<journal>Journal of the American Society for Information Science and Technology</journal>
+<volume>58</volume>
+<pages>702--709</pages>
+<contexts>
+<context position="8608" citStr="Egghe, 2007" startWordPosition="1416" endWordPosition="1417"> the size of the stream and its vocabulary growth. In contrast to our method, previous approaches to FSD required more and more memory to maintain the history of the stream (see Figure 3). 5https://en.wikipedia.org/wiki/MurmurHash 2585 A potential downside of using a Bloom filter is that it introduces a small probability of false matches: a novel k-term ti may collide with a previously observed k-term tj and would be reported as nonnovel. The probability of collision is directly proportional to the load factor of the Bloom filter, i.e. the fraction of non-zero bits in the array. By Heaps law (Egghe, 2007) the number of distinct words (and k-terms) will continue to grow and will eventually saturate the bit-array. To mitigate this problem, we introduce a deletion strategy: whenever the load factor exceeds a pre-determined threshold p, we zero out a random bit in H. This allows us to keep low the probability of false matches, at the cost of forgetting some previously-seen k-terms. 2.3 Parameter settings We make the following parameter choices based on initial experiments on our training dataset. We set the maximum size of k-terms to be k = 3 and keep the Bloom filter load factor under p = 0.6. We</context>
+</contexts>
+<marker>Egghe, 2007</marker>
+<rawString>Leo Egghe. 2007. Untangling Herdan’s law and Heaps’ law: Mathematical and informetric arguments. Journal of the American Society for Information Science and Technology 58.5: 702-709.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Piotr Indyk</author>
+<author>Rajeev Motwani</author>
+</authors>
+<title>Approximate nearest neighbours: towards removing the curse of dimensionality.</title>
+<date>1998</date>
+<booktitle>In Proceedings of the thirtieth annual ACM symposium on Theory of computing (STOC ’98).</booktitle>
+<publisher>ACM,</publisher>
+<location>New York, NY, USA.</location>
+<marker>Indyk, Motwani, 1998</marker>
+<rawString>Piotr Indyk and Rajeev Motwani. 1998. Approximate nearest neighbours: towards removing the curse of dimensionality. In Proceedings of the thirtieth annual ACM symposium on Theory of computing (STOC ’98). ACM, New York, NY, USA.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Shiva Prasad Kasiviswanathan</author>
+<author>Prem Melville</author>
+</authors>
+<title>Arindam Banerjee, and Vikas Sindhwani. Emerging topic detection using dictionary learning.</title>
+<marker>Kasiviswanathan, Melville, </marker>
+<rawString>Shiva Prasad Kasiviswanathan, Prem Melville, Arindam Banerjee, and Vikas Sindhwani. Emerging topic detection using dictionary learning.</rawString>
+</citation>
+<citation valid="true">
+<date>2011</date>
+<booktitle>In Proceedings of the Twentieth ACM international conference on Information and knowledge management,</booktitle>
+<contexts>
+<context position="3326" citStr="(2011)" startWordPosition="521" endWordPosition="521">tion algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those of pair-wise comparison systems. The key was to 2584 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Lingu</context>
+</contexts>
+<marker>2011</marker>
+<rawString>In Proceedings of the Twentieth ACM international conference on Information and knowledge management, 2011.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert Krovetz</author>
+</authors>
+<title>Viewing morphology as an inference process.</title>
+<date>1993</date>
+<booktitle>Proceedings of the 16th annual international ACM SIGIR conference on Research and development in information retrieval.</booktitle>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="9332" citStr="Krovetz (1993)" startWordPosition="1541" endWordPosition="1542">To mitigate this problem, we introduce a deletion strategy: whenever the load factor exceeds a pre-determined threshold p, we zero out a random bit in H. This allows us to keep low the probability of false matches, at the cost of forgetting some previously-seen k-terms. 2.3 Parameter settings We make the following parameter choices based on initial experiments on our training dataset. We set the maximum size of k-terms to be k = 3 and keep the Bloom filter load factor under p = 0.6. We tokenize the tweets on punctuation, treat all hashtags and mentions as words, stem them using the stemmer by Krovetz (1993), but do not remove stopwords. We optimise the weights α1...αk using grid search on the same training data set. 3 Experiments In a streaming setting, documents arrive one at a time on a continual basis. FSD requires computing a novelty score for each document in a single-pass over the data. High novelty scores indicate new topics. We use the standard TDT evaluation procedure (Allan, 2002) and the official TDT3 evaluation scripts with standard settings for evaluating FSD accuracy. The Detection Error Trade-off (DET) curve shows the trade-off between miss and false alarm probability for the full</context>
+</contexts>
+<marker>Krovetz, 1993</marker>
+<rawString>Robert Krovetz. 1993. Viewing morphology as an inference process. Proceedings of the 16th annual international ACM SIGIR conference on Research and development in information retrieval. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Li</author>
+<author>K H Lei</author>
+<author>R Khadiwala</author>
+<author>K C-C Chang</author>
+</authors>
+<title>TEDAS: A Twitter-based event detection and analysis system.</title>
+<date>2012</date>
+<booktitle>In Proceedings of 28th International Conference on Data Engineering,</booktitle>
+<pages>1273--1276</pages>
+<publisher>IEEE Computer Society.</publisher>
+<contexts>
+<context position="2663" citStr="Li et al. (2012)" startWordPosition="415" endWordPosition="418">nts, whose minimum distance falls above a certain threshold are considered to talk about a new event and declared as first stories. Consequently, the computational effort increases with each document processed. 1.1 Related Work Researchers have proposed a range of approaches to scale FSD to large data streams. Sankaranarayanan et al. (2009) were one of the first to apply FSD to Twitter. They reduced the volume by classifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), whi</context>
+</contexts>
+<marker>Li, Lei, Khadiwala, Chang, 2012</marker>
+<rawString>Li, R., Lei, K. H., Khadiwala, R., and Chang, K. C.-C. (2012). TEDAS: A Twitter-based event detection and analysis system. In Proceedings of 28th International Conference on Data Engineering, pages 1273 - 1276. IEEE Computer Society.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Li</author>
+<author>A Sun</author>
+<author>A Datta</author>
+</authors>
+<title>Twevent: Segment-based event detection from tweets.</title>
+<date>2012</date>
+<booktitle>In Proceedings of ACM Conference on Information and Knowledge Management.</booktitle>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="2663" citStr="Li et al. (2012)" startWordPosition="415" endWordPosition="418">nts, whose minimum distance falls above a certain threshold are considered to talk about a new event and declared as first stories. Consequently, the computational effort increases with each document processed. 1.1 Related Work Researchers have proposed a range of approaches to scale FSD to large data streams. Sankaranarayanan et al. (2009) were one of the first to apply FSD to Twitter. They reduced the volume by classifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), whi</context>
+</contexts>
+<marker>Li, Sun, Datta, 2012</marker>
+<rawString>Li, C., Sun, A., and Datta, A. (2012b). Twevent: Segment-based event detection from tweets. In Proceedings of ACM Conference on Information and Knowledge Management. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jimmy Lin</author>
+<author>Rion Snow</author>
+<author>William Morgan</author>
+</authors>
+<title>Smoothing techniques for adaptive online language models: topic tracking in tweet streams.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 17th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’11).</booktitle>
+<pages>422--429</pages>
+<publisher>ACM,</publisher>
+<location>New York, NY, USA,</location>
+<marker>Lin, Snow, Morgan, 2011</marker>
+<rawString>Jimmy Lin, Rion Snow, and William Morgan. 2011. Smoothing techniques for adaptive online language models: topic tracking in tweet streams. In Proceedings of the 17th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’11). ACM, New York, NY, USA, 422-429.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Muthukrishnan</author>
+</authors>
+<title>Data streams: Algorithms and applications.</title>
+<date>2005</date>
+<publisher>Now Publishers Inc.</publisher>
+<marker>Muthukrishnan, 2005</marker>
+<rawString>S. Muthukrishnan. 2005. Data streams: Algorithms and applications. Now Publishers Inc.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Nichols</author>
+<author>Jalal Mahmud</author>
+<author>Clemens Drews</author>
+</authors>
+<title>Summarizing sporting events using twitter.</title>
+<date>2012</date>
+<booktitle>InProceedings of the 2012 ACM international conference on Intelligent User Interfaces (IUI ’12).</booktitle>
+<publisher>ACM,</publisher>
+<location>New York, NY, USA.</location>
+<marker>Nichols, Mahmud, Drews, 2012</marker>
+<rawString>Jeffrey Nichols, Jalal Mahmud, and Clemens Drews. 2012. Summarizing sporting events using twitter. InProceedings of the 2012 ACM international conference on Intelligent User Interfaces (IUI ’12). ACM, New York, NY, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>O Ozdikis</author>
+<author>P Senkul</author>
+<author>H Oguztuzun</author>
+</authors>
+<title>Semantic expansion of hashtags for enhanced event detection in Twitter.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 1st International Workshop on Online Social Systems.</booktitle>
+<contexts>
+<context position="3087" citStr="Ozdikis et al. (2012)" startWordPosition="482" endWordPosition="485">assifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those o</context>
+</contexts>
+<marker>Ozdikis, Senkul, Oguztuzun, 2012</marker>
+<rawString>Ozdikis, O., Senkul, P., and Oguztuzun, H. (2012). Semantic expansion of hashtags for enhanced event detection in Twitter. In Proceedings of the 1st International Workshop on Online Social Systems.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sasa Petrovic</author>
+<author>Miles Osborne</author>
+<author>Victor Lavrenko</author>
+</authors>
+<title>Streaming first story detection with application to Twitter. In Human Language Technologies: The</title>
+<date>2010</date>
+<booktitle>Annual Conference of the North American Chapter of the Association for Computational Linguistics (HLT ’10). Association for Computational Linguistics,</booktitle>
+<location>Stroudsburg, PA, USA.</location>
+<contexts>
+<context position="1670" citStr="Petrovic et al., 2010" startWordPosition="263" endWordPosition="266">nce, news and government security. The most accurate approaches to FSD involve a runtime of O(n2) and cannot scale to unbounded high volume streams such as Twitter. We present a novel approach to FSD that operates in O(1) per tweet. Our method is able to process the load of the average Twitter Firehose3 stream on a single core of modest hardware while retaining effectiveness on par with one of the most accurate FSD systems. During the TDT program, FSD was applied to news wire documents and solely focused on effectiveness, neglecting efficiency and scalability. The traditional approach to FSD (Petrovic et al., 2010) computes the distance of each incoming document 1e.g. a natural disaster or a scandal 2TDT by NIST - 1998-2004. http://www.itl.nist.gov/ iad/mig/tests/tdt/resources.html (Last Update: 2008) 3 5,700 tweets per second https://about.twitter .com/company (last updated: March 31, 2015) to all previously seen documents and the minimum distance determines the novelty score. Documents, whose minimum distance falls above a certain threshold are considered to talk about a new event and declared as first stories. Consequently, the computational effort increases with each document processed. 1.1 Related </context>
+<context position="3560" citStr="Petrovic et al. (2010)" startWordPosition="561" endWordPosition="564">a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those of pair-wise comparison systems. The key was to 2584 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589, Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics. reduce the search space using Locality Sensitive Hashing (LSH). Each tweet was hashed, placing it into buckets that contain other similar tweets, which are subsequently compared. Operation in constant space was ensured by keep</context>
+<context position="5585" citStr="Petrovic et al., 2010" startWordPosition="872" endWordPosition="875">l., 2000). The highest FSD accuracy is achieved by nearest-neighbour methods, where each incoming document (tweet) is compared to all documents that came before it, and the novelty score is determined by the most-similar documents in the past. This approach requires us to make n−1 comparisons4 to determine the novelty of document dn. The approach becomes progressively slower with each processed document, and cannot scale up to unbounded streams like Twitter. Prior attempts to speed up FSD involve organising previously seen documents d1...dn−1 into clusters (Allan et al., 1989) or LSH buckets (Petrovic et al., 2010). The document dn is then compared only to past documents in the nearest cluster or LSH bucket, resulting in substantially fewer than n comparisons. While this approach is reasonably effective, it does lead to decreased accuracy, as potentially relevant past documents may exist in other clusters/buckets and would not be compared against. 2.1 First Story Detection in constant time Our method computes the novelty of document dn in a time that is constant with respect to n. The 4Each comparison requires |dn |scalar multiplications; Ids denotes the number of distinct words in document d. main diff</context>
+<context position="10976" citStr="Petrovic et al., 2010" startWordPosition="1818" endWordPosition="1821">eon CPU with 2.27GHz). 3.1 Data set We use the data set developed by Petrovic (2013), Petrovic et al. (2013b) as a test set, which consists of 27 topics and 116,000 tweets from the period of April till September 2011. Parameters were tuned using a sample of the data set annotated by Wurzer et al. (2015) as a training set. 3.2 Baselines We compare our system (k-term) against 3 baselines. UMass is a state-of-the-art FSD system, developed by Allan et al. (2000). It is known for its high effectiveness in the TDT2 and TDT3 competitions (Fiscus, 2001) and widely used as a benchmark for FSD systems (Petrovic et al., 2010; Kasiviswanathan et al., 2011; Petrovic 2013;). UMass makes use of an inverted index and k-nearest-neighbour clustering, which optimize the system for speed by ensuring a minimal number of comparisons. To maximise efficiency, we set-up UMass to operate in-memory by turning off its default memory mapping to disk. This ensures fair comparisons, as all algorithms operate in memory. LSH-FSD is a highly-scalable system by Petrovic et al. (2010). It is based on Locality Sensitive Hashing (LSH) and claims to operate in constant time and space while performing on a comparable level of accuracy as UMa</context>
+<context position="14865" citStr="Petrovic et al. (2010)" startWordPosition="2453" endWordPosition="2456"> the full Twitter stream (Firehose) efficiency, by more than an order of magnitude. The throughput of LSH-FSD and k-term increases up until 20k documents because both approaches require initialisation of their data structures, which makes them slow when the number of documents is low. UMass has no initialization and performs the fastest when the number of documents is kept low. The pair-wise comparison of UMass causes it’s throughput to decrease drastically with every new document. In Figure 2 we compare the memory requirements of k-term and LSH-FSD at different points in the stream. Although Petrovic et al. (2010) designed their system (LSH-FSD) to operate in constant space, we found that the memory requirement gradually increases with the number of documents processed, as seen in Figure 3. We hypothesise that this increase results from new terms added to the vocabulary. Our system has a strictly constant memory footprint. Figure 3: Space requirement for LSH-FSD and k-term; showing constant space for k-term 4 Conclusion We presented an approach to FSD in a high volume streaming setting in constant time and space. Our approach computes novelty based on a single Miss probability (in %) 90 80 60 40 20 10 </context>
+</contexts>
+<marker>Petrovic, Osborne, Lavrenko, 2010</marker>
+<rawString>Sasa Petrovic, Miles Osborne, and Victor Lavrenko. 2010. Streaming first story detection with application to Twitter. In Human Language Technologies: The 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics (HLT ’10). Association for Computational Linguistics, Stroudsburg, PA, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sasa Petrovic</author>
+</authors>
+<title>Real-time event detection in massive streams.</title>
+<date>2013</date>
+<tech>Ph.D. thesis,</tech>
+<institution>School of Informatics, University of Edinburgh.</institution>
+<contexts>
+<context position="3258" citStr="Petrovic, 2013" startWordPosition="509" endWordPosition="510">and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectiveness comparable to those of pair-wise comparison systems. The key was to 2584 Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 2584–2589, Lisbon, Portug</context>
+<context position="10439" citStr="Petrovic (2013)" startWordPosition="1725" endWordPosition="1726">ection Error Trade-off (DET) curve shows the trade-off between miss and false alarm probability for the full range of novelty scores. The normalized Topic Weighted Minimum Cost (Corin) is a linear combination of miss and false alarm probabilities, which allows comparing different methods based on a single value metric. Efficiency is measured by the throughput of tweets per second and the memory footprint. To ensure a fair comparison, all reported numbers are averaged over 5 runs on an idle machine using a single core (Intel-Xeon CPU with 2.27GHz). 3.1 Data set We use the data set developed by Petrovic (2013), Petrovic et al. (2013b) as a test set, which consists of 27 topics and 116,000 tweets from the period of April till September 2011. Parameters were tuned using a sample of the data set annotated by Wurzer et al. (2015) as a training set. 3.2 Baselines We compare our system (k-term) against 3 baselines. UMass is a state-of-the-art FSD system, developed by Allan et al. (2000). It is known for its high effectiveness in the TDT2 and TDT3 competitions (Fiscus, 2001) and widely used as a benchmark for FSD systems (Petrovic et al., 2010; Kasiviswanathan et al., 2011; Petrovic 2013;). UMass makes us</context>
+</contexts>
+<marker>Petrovic, 2013</marker>
+<rawString>Sasa Petrovic. 2013. Real-time event detection in massive streams. Ph.D. thesis, School of Informatics, University of Edinburgh.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Sasa Petrovic</author>
+<author>Miles Osborne</author>
+<author>Richard McCreadie</author>
+<author>Craig Macdonald</author>
+</authors>
+<title>Iadh Ounis, and Luke Shrimpton. Can Twitter replace Newswire for breaking news?</title>
+<booktitle>In Proc.of ICWSM, 2013b.</booktitle>
+<marker>Petrovic, Osborne, McCreadie, Macdonald, </marker>
+<rawString>Sasa Petrovic, Miles Osborne, Richard McCreadie, Craig Macdonald, Iadh Ounis, and Luke Shrimpton. Can Twitter replace Newswire for breaking news? In Proc.of ICWSM, 2013b.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Raymond K Pon</author>
+<author>Alfonso F Cardenas</author>
+<author>David Buttler</author>
+<author>Terence Critchlow</author>
+</authors>
+<title>Tracking multiple topics for finding interesting articles.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 13th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’07).</booktitle>
+<publisher>ACM,</publisher>
+<location>New York, NY, USA.</location>
+<marker>Pon, Cardenas, Buttler, Critchlow, 2007</marker>
+<rawString>Raymond K. Pon, Alfonso F. Cardenas, David Buttler, and Terence Critchlow. 2007. Tracking multiple topics for finding interesting articles. In Proceedings of the 13th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’07). ACM, New York, NY, USA.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Phuvipadawat</author>
+<author>T Murata</author>
+</authors>
+<title>Breaking news detection and tracking in Twitter.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 IEEE/WIC/ACM International Conference on Web Intelligence and Intelligent Agent Technology,</booktitle>
+<pages>120--123</pages>
+<publisher>IEEE Computer Society.</publisher>
+<contexts>
+<context position="3064" citStr="Phuvipadawat and Murata (2010)" startWordPosition="478" endWordPosition="481">r. They reduced the volume by classifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets (Petrovic, 2013), which limits their scope. Cataldi et al. (2010), Weng et al.(2011) and Cordeiro (2012) use the degree of burstiness of terms during a time interval to detect new events. This approach is not suitable for FSD as events are detected with a time lag, once they grow in popularity. Petrovic et al. (2010) were the first to demonstrate FSD on Twitter in constant time and space, while maintaining effectivenes</context>
+</contexts>
+<marker>Phuvipadawat, Murata, 2010</marker>
+<rawString>Phuvipadawat, S. and Murata, T. (2010). Breaking news detection and tracking in Twitter. In Proceedings of the 2010 IEEE/WIC/ACM International Conference on Web Intelligence and Intelligent Agent Technology, pages 120 - 123. IEEE Computer Society.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Deepak Ravichandran</author>
+<author>Patrick Pantel</author>
+<author>Eduard Hovy</author>
+</authors>
+<title>Randomized Algorithms and NLP: Using Locality Sensitive Hash Functions for High Speed Noun Clustering.</title>
+<date>2005</date>
+<booktitle>In Proceedings of ACL.</booktitle>
+<marker>Ravichandran, Pantel, Hovy, 2005</marker>
+<rawString>Deepak Ravichandran, Patrick Pantel, and Eduard Hovy. 2005. Randomized Algorithms and NLP: Using Locality Sensitive Hash Functions for High Speed Noun Clustering. In Proceedings of ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Sankaranarayanan</author>
+<author>H Samet</author>
+<author>B E Teitler</author>
+<author>M D Lieberman</author>
+<author>J Sperling</author>
+</authors>
+<title>Twitterstand: news in tweets.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 17th ACM SIGSPATIAL International Conference on Advances in Geographic Information Systems,</booktitle>
+<pages>42--51</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="2389" citStr="Sankaranarayanan et al. (2009)" startWordPosition="367" endWordPosition="371">DT by NIST - 1998-2004. http://www.itl.nist.gov/ iad/mig/tests/tdt/resources.html (Last Update: 2008) 3 5,700 tweets per second https://about.twitter .com/company (last updated: March 31, 2015) to all previously seen documents and the minimum distance determines the novelty score. Documents, whose minimum distance falls above a certain threshold are considered to talk about a new event and declared as first stories. Consequently, the computational effort increases with each document processed. 1.1 Related Work Researchers have proposed a range of approaches to scale FSD to large data streams. Sankaranarayanan et al. (2009) were one of the first to apply FSD to Twitter. They reduced the volume by classifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The appro</context>
+</contexts>
+<marker>Sankaranarayanan, Samet, Teitler, Lieberman, Sperling, 2009</marker>
+<rawString>Sankaranarayanan, J., Samet, H., Teitler, B. E., Lieberman, M. D., and Sperling, J. (2009). Twitterstand: news in tweets. In Proceedings of the 17th ACM SIGSPATIAL International Conference on Advances in Geographic Information Systems, pages 42 - 51. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Sakaki</author>
+<author>M Okazaki</author>
+<author>Y Matsuo</author>
+</authors>
+<title>Earthquake shakes Twitter users: real-time event detection by social sensors.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 19th International Conference on World Wide Web,</booktitle>
+<pages>851--860</pages>
+<publisher>ACM.</publisher>
+<contexts>
+<context position="2642" citStr="Sakaki et al. (2010)" startWordPosition="410" endWordPosition="413">the novelty score. Documents, whose minimum distance falls above a certain threshold are considered to talk about a new event and declared as first stories. Consequently, the computational effort increases with each document processed. 1.1 Related Work Researchers have proposed a range of approaches to scale FSD to large data streams. Sankaranarayanan et al. (2009) were one of the first to apply FSD to Twitter. They reduced the volume by classifying documents into news/non-news and only compared to tweets within a 3-day window. They did not perform a quantitative evaluation of their approach. Sakaki et al. (2010) and Li et al. (2012) applied keyword filtering in conjunction with classification algorithms, which allowed them to efficiently detect certain events with high precision. These two approaches, although efficient and effective, require a user to explicitly define a set of keywords or to provide a set of examples that he wants to track. The approach cannot detect previously unknown events. Phuvipadawat and Murata (2010), Ozdikis et al. (2012) and Cordeiro (2012), scale their systems by only considering tweets containing hashtags. Although efficient, this method don’t consider 90% of the tweets </context>
+</contexts>
+<marker>Sakaki, Okazaki, Matsuo, 2010</marker>
+<rawString>Sakaki, T., Okazaki, M., and Matsuo, Y. (2010). Earthquake shakes Twitter users: real-time event detection by social sensors. In Proceedings of the 19th International Conference on World Wide Web, pages 851 - 860. ACM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>I Soboroff</author>
+<author>I Ounis</author>
+<author>J Lin</author>
+</authors>
+<title>Overview of the trec-2012 microblog track.</title>
+<date>2012</date>
+<booktitle>In Proceedings of TREC.</booktitle>
+<marker>Soboroff, Ounis, Lin, 2012</marker>
+<rawString>I. Soboroff, I.Ounis, and J. Lin. 2012. Overview of the trec-2012 microblog track. In Proceedings of TREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jintao Tang</author>
+<author>Ting Wang</author>
+<author>Qin Lu</author>
+<author>Ji Wang</author>
+<author>Wenjie Li</author>
+</authors>
+<title>A Wikipedia based semantic graph model for topic tracking in blogosphere.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Twenty-Second international joint conference on Artificial Intelligence - Volume Three (IJCAI’11).</booktitle>
+<marker>Tang, Wang, Lu, Wang, Li, 2011</marker>
+<rawString>Jintao Tang, Ting Wang, Qin Lu, Ji Wang, and Wenjie Li. 2011. A Wikipedia based semantic graph model for topic tracking in blogosphere. In Proceedings of the Twenty-Second international joint conference on Artificial Intelligence - Volume Three (IJCAI’11).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>TDT by NIST</author>
+</authors>
+<date>1998</date>
+<note>http://www.itl.nist.gov/iad/mig/ tests/tdt/resources.html (Last Update:</note>
+<marker>NIST, 1998</marker>
+<rawString>TDT by NIST - 1998-2004. http://www.itl.nist.gov/iad/mig/ tests/tdt/resources.html (Last Update: 2008)</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jianshu Weng</author>
+<author>Erwin Leonardi</author>
+<author>Francis Lee</author>
+</authors>
+<title>Event Detection in Twitter.</title>
+<date>2011</date>
+<booktitle>In Proceeding of ICWSM.</booktitle>
+<publisher>AAAI Press.</publisher>
+<marker>Weng, Leonardi, Lee, 2011</marker>
+<rawString>Jianshu Weng, Erwin Leonardi, Francis Lee. Event Detection in Twitter. 2011. In Proceeding of ICWSM. AAAI Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Weng</author>
+<author>Y Yao</author>
+<author>E Leonardi</author>
+<author>F Lee</author>
+</authors>
+<title>Event detection in Twitter.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 5th International Conference on Weblogs and Social Media,</booktitle>
+<pages>401--408</pages>
+<publisher>The AAAI Press.</publisher>
+<marker>Weng, Yao, Leonardi, Lee, 2011</marker>
+<rawString>Weng, J., Yao, Y., Leonardi, E., and Lee, F. (2011). Event detection in Twitter. In Proceedings of the 5th International Conference on Weblogs and Social Media, pages 401 - 408. The AAAI Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dominik Wurzer</author>
+<author>Victor Lavrenko</author>
+<author>Miles Osborne</author>
+</authors>
+<title>Tracking unbounded Topic Streams.</title>
+<date>2015</date>
+<booktitle>In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics (ACL) and the 7th International Joint Conference on Natural Language Processing,</booktitle>
+<pages>1765--1773</pages>
+<contexts>
+<context position="10659" citStr="Wurzer et al. (2015)" startWordPosition="1763" endWordPosition="1766">s and false alarm probabilities, which allows comparing different methods based on a single value metric. Efficiency is measured by the throughput of tweets per second and the memory footprint. To ensure a fair comparison, all reported numbers are averaged over 5 runs on an idle machine using a single core (Intel-Xeon CPU with 2.27GHz). 3.1 Data set We use the data set developed by Petrovic (2013), Petrovic et al. (2013b) as a test set, which consists of 27 topics and 116,000 tweets from the period of April till September 2011. Parameters were tuned using a sample of the data set annotated by Wurzer et al. (2015) as a training set. 3.2 Baselines We compare our system (k-term) against 3 baselines. UMass is a state-of-the-art FSD system, developed by Allan et al. (2000). It is known for its high effectiveness in the TDT2 and TDT3 competitions (Fiscus, 2001) and widely used as a benchmark for FSD systems (Petrovic et al., 2010; Kasiviswanathan et al., 2011; Petrovic 2013;). UMass makes use of an inverted index and k-nearest-neighbour clustering, which optimize the system for speed by ensuring a minimal number of comparisons. To maximise efficiency, we set-up UMass to operate in-memory by turning off its </context>
+</contexts>
+<marker>Wurzer, Lavrenko, Osborne, 2015</marker>
+<rawString>Dominik Wurzer, Victor Lavrenko, Miles Osborne. 2015. Tracking unbounded Topic Streams. In Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics (ACL) and the 7th International Joint Conference on Natural Language Processing, pages 1765 - 1773.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xintian Yang</author>
+<author>Amol Ghoting</author>
+<author>Yiye Ruan</author>
+<author>Srinivasan Parthasarathy</author>
+</authors>
+<title>A framework for summarizing and analysing twitter feeds.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 18th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’12).</booktitle>
+<publisher>ACM,</publisher>
+<location>New York, NY, USA.</location>
+<marker>Yang, Ghoting, Ruan, Parthasarathy, 2012</marker>
+<rawString>Xintian Yang, Amol Ghoting, Yiye Ruan, and Srinivasan Parthasarathy. 2012. A framework for summarizing and analysing twitter feeds. In Proceedings of the 18th ACM SIGKDD international conference on Knowledge discovery and data mining (KDD ’12). ACM, New York, NY, USA.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

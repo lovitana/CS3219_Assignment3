@@ -1,0 +1,2035 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000103">
+<title confidence="0.89002">
+Solving Geometry Problems:
+Combining Text and Diagram Interpretation
+</title>
+<author confidence="0.991897">
+Minjoon Seo, Hannaneh Hajishirzi, Ali Farhadi, Oren Etzioni, Clint Malcolm
+</author>
+<affiliation confidence="0.998221">
+University of Washington, Allen Institute for Artificial Intelligence
+</affiliation>
+<email confidence="0.96844">
+{minjoon,hannaneh,clintm}@washington.edu,{alif,orene}@allenai.org
+</email>
+<sectionHeader confidence="0.994129" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999943388888889">
+This paper introduces GEOS, the first au-
+tomated system to solve unaltered SAT ge-
+ometry questions by combining text un-
+derstanding and diagram interpretation.
+We model the problem of understanding
+geometry questions as submodular opti-
+mization, and identify a formal problem
+description likely to be compatible with
+both the question text and diagram. GEOS
+then feeds the description to a geometric
+solver that attempts to determine the cor-
+rect answer. In our experiments, GEOS
+achieves a 49% score on official SAT ques-
+tions, and a score of 61% on practice ques-
+tions.1 Finally, we show that by integrat-
+ing textual and visual information, GEOS
+boosts the accuracy of dependency and se-
+mantic parsing of the question text.
+</bodyText>
+<sectionHeader confidence="0.998784" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999973">
+This paper introduces the first fully-automated
+system for solving unaletered SAT-level geomet-
+ric word problems, each of which consists of text
+and the corresponding diagram (Figure 1). The ge-
+ometry domain has a long history in AI, but previ-
+ous work has focused on geometric theorem prov-
+ing (Feigenbaum and Feldman, 1963) or geomet-
+ric analogies (Evans, 1964). Arithmetic and alge-
+braic word problems have attracted several NLP
+researchers (Kushman et al., 2014; Hosseini et al.,
+2014; Roy et al., 2015), but geometric word prob-
+lems were first explored only last year by Seo et al.
+(2014). Still, this system merely aligned diagram
+elements with their textual mentions (e.g., “Circle
+O”)—it did not attempt to fully represent geome-
+try problems or solve them. Answering geometry
+questions requires a method that interpert question
+text and diagrams in concert.
+</bodyText>
+<footnote confidence="0.971895">
+1The source code, the dataset and the annotations are pub-
+licly available at geometry.allenai.org.
+</footnote>
+<figureCaption confidence="0.967176677419355">
+Questions Interpretations
+In the diagram at Equals(RadiusOf(O), 5)
+the left, circle O IsCircle(O)
+has a radius of 5, Equals(LengthOf(CE), 2)
+and CE = 2. IsDiameter(AC)
+Diameter AC is IsChord(BD)
+perpendicular to Perpendicular(AC), BD)
+chord BD. What is Equals(what, Length(BD))
+the length of BD? correct
+a) 12 b) 10 c) 8 d) 6 e) 4
+In isosceles IsIsoscelesTriangle(ABC)
+triangle ABC at BisectsAngle(AM, BAC)
+the left, lines AM IsLine(AM)
+and CM are the CC(AM, CM)
+angle bisectors of CC(BAC, BCA)
+angles BAC and IsAngle(BAC)
+BCA. What is the IsAngle(AMC)
+measure of angle Equals(what, MeasureOf(AMC))
+AMC? correct
+a) 110 b) 115 c) 120 d) 125 e) 130
+In the figure at left, IsAngle(BAC)
+The bisector of BisectsAngle(line, BAC)
+angle BAC is Perpendicular (line, BC)
+perpendicular to BC Equals(LengthOf(AB), 6)
+at point D. If AB = 6 Equals(LengthOf(BD), 3)
+and BD = 3, what is IsAngle(BAC)
+the measure of Equals(what, MeasureOf(BAC))
+angle BAC? correct
+a) 15 b) 30 c) 45 d) 60 e) 75
+Figure 1: Questions (left column) and interpretations (right
+column) derived by GEOS.
+</figureCaption>
+<bodyText confidence="0.999981904761905">
+The geometry genre has several distinctive char-
+acteristics. First, diagrams provide essential in-
+formation absent from question text. In Figure 1
+problem (a), for example, the unstated fact that
+lines BD and AC intersect at E is necessary to
+solve the problem. Second, the text often includes
+difficult references to diagram elements. For ex-
+ample, in the sentence “In the diagram, the longer
+line is tangent to the circle”, resolving the ref-
+erent of the phrase “longer line” is challenging.
+Third, the text often contains implicit relations.
+For example, in the sentence “AB is 5”, the rela-
+tions IsLine(AB) and length(AB)=5 are implicit.
+Fourth, geometric terms can be ambiguous as well.
+For instance, radius can be a type identifier in “the
+length of radius AO is 5”, or a predicate in “AO
+is the radius of circle O”. Fifth, identifying the
+correct arguments for each relation is challeng-
+ing. For example, in sentence “Lines AB and CD
+are perpendicular to EF”, the parser has to deter-
+mine what is perpendicular to EF—line AB? line
+</bodyText>
+<page confidence="0.932575">
+1466
+</page>
+<note confidence="0.9864475">
+Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing, pages 1466–1476,
+Lisbon, Portugal, 17-21 September 2015. c�2015 Association for Computational Linguistics.
+</note>
+<bodyText confidence="0.996234026315789">
+CD? Or both AB and CD? Finally, it is hard to
+obtain large number of SAT-level geometry ques-
+tions; Learning from a few examples makes this a
+particularly challenging NLP problem.
+This paper introduces GEOS, a system that
+maps geometry word problems into a logical rep-
+resentation that is compatible with both the prob-
+lem text and the accompanying diagram (Fig-
+ure 1). We cast the mapping problem as the prob-
+lem of selecting the subset of relations that is most
+likely to correspond to each question.
+We compute the mapping in three main steps
+(Figure 2). First, GEOS uses text- and diagram-
+parsing to overgenerate a set of relations that po-
+tentially correspond to the question text, and asso-
+ciates a score with each. Second, GEOS generates
+a set of relations (with scores) that corresponds to
+the diagram. Third, GEOS selects a subset of the
+relations that maximizes the joint text and diagram
+scores. We cast this maximization as a submodu-
+lar optimization problem, which enables GEOS to
+use a close-to-optimal greedy algorithm. Finally,
+we feed the derived formal model of the problem
+to a geometric solver, which computes the answer
+to the question.
+GEOS is able to solve unseen and unaltered
+multiple-choice geometry questions. We report on
+experiments where GEOS achieves a 49% score
+on official SAT questions, and a score of 61% on
+practice questions, providing the first results of
+this kind. Our contributions include: (1) designing
+and implementing the first end-to-end system that
+solves SAT plane geometry problems; (2) formal-
+izing the problem of interpreting geometry ques-
+tions as a submodular optimization problem; and
+(3) providing the first empirical results on the ge-
+ometry genre, making the data and software avail-
+able for future work.
+</bodyText>
+<sectionHeader confidence="0.999764" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999848413793104">
+Semantic parsing is an important area of NLP re-
+search (Zettlemoyer and Collins, 2005; Ge and
+Mooney, 2006; Flanigan et al., 2014; Eisenstein
+et al., 2009; Kate and Mooney, 2007; Goldwasser
+and Roth, 2011; Poon and Domingos, 2009; Be-
+rant and Liang, 2014; Kwiatkowski et al., 2013;
+Reddy et al., 2014). However, semantic parsers do
+not tackle diagrams—a critical element of the ge-
+ometry genre. In addition, the overall number of
+available geometry questions is quite small com-
+pared to the size of typical NLP corpora, making it
+challenging to learn semantic parsers directly from
+geometry questions. Relation extraction is another
+area of NLP that is related to our task (Cowie
+and Lehnert, 1996; Culotta and Sorensen, 2004).
+Again, both diagrams and small corpora are prob-
+lematic for this body of work.
+Our work is part of grounded language acqui-
+sition research (Branavan et al., 2012; Vogel and
+Jurafsky, 2010; Chen et al., 2010; Hajishirzi et
+al., 2011; Liang et al., 2009; Koncel-Kedziorski et
+al., 2014; Bordes et al., 2010; Kim and Mooney,
+2013; Angeli and Manning, 2014; Hixon et al.,
+2015; Koncel-Kedziorski et al., 2014; Artzi and
+Zettlemoyer, 2013) that involves mapping text
+to a restricted formalism (instead of a full, do-
+main independent representation). In the geom-
+etry domain, we recover the entities (e.g., circles)
+from diagrams, derive relations compatible with
+both text and diagram, and re-score relations de-
+rived from text parsing using diagram information.
+Casting the interpretation problem as selecting the
+most likely subset of literals can be generalized to
+grounded semantic parsing domains such as navi-
+gational instructions.
+Coupling images and the corresponding text has
+attracted attention in both vision and NLP (Farhadi
+et al., 2010; Kulkarni et al., 2011; Gupta and
+Mooney, 2010; Gong et al., 2014; Fang et al.,
+2014). We build on this powerful paradigm, but
+instead of generating captions we show how pro-
+cessing multimodal information help improve tex-
+tual or visual interpretations for solving geometry
+questions.
+Diagram understanding has been explored since
+early days in AI (Lin et al., 1985; Hegarty and Just,
+1989; Novak, 1995; O’Gorman and Kasturi, 1995;
+Bulko, 1988; Srihari, 1994; Lovett and Forbus,
+2012). Most previous approaches differ from our
+method because they address the twin problems of
+diagram understanding and text understanding in
+isolation. Often, previous work relies on manual
+identification of visual primitives, or on rule-based
+system for text analysis. The closest work to ours
+is the recent work of Seo et al. (2014) that aligns
+geometric shapes with their textual mentions, but
+does not identify geometric relations or solve ge-
+ometry problems.
+</bodyText>
+<sectionHeader confidence="0.983866" genericHeader="method">
+3 Problem Formulation
+</sectionHeader>
+<bodyText confidence="0.9978125">
+A geometry question is a tuple (t, d, c) consist-
+ing of a text t in natural language, a diagram d
+</bodyText>
+<page confidence="0.990046">
+1467
+</page>
+<table confidence="0.987069041666667">
+Solver Interpretation GeoS input B
+In triangle ABC, line DE is parallel
+line AC, DB 4, AD is 8, D E
+with equals
+and DE is 5. Find AC.
+(a) 9 (b) 10 (c) 12.5 (d) 15 (e) 17 A C
+Text Parsing Diagram Parsing
+Sec. 4 Sec. 5
+L, Atext LΔ+ Adiagram
+IsTriangle(ABC) 0.96 Colinear(A,D,B) 1.0
+Parallel(AC, DE) 0.91 Colinear(B,E,C) 1.0
+Parallel(AC, DB) 0.74 Parallel(AC, DE) 0.99
+Equals(LengthOf(DB), 4) 0.97 Parallel(AC, DB) 0.02
+Equals(LengthOf(AD), 8) 0.94 ...
+Equals(LengthOf(DE), 5) 0.94
+Equals(4, LengthOf(AD)) 0.31
+...
+L&amp;quot; ⊂ L Sec. 6
+IsTriangle(ABC) Parallel(AC, DE)
+Equals(LengthOf(DB), 4) Equals(LengthOf(AD), 8)
+Equals(LengthOf(DE), 5) Find(LengthOf(AC))
+...
+Sec. 7
+Answer: (d)
+</table>
+<figureCaption confidence="0.995024">
+Figure 2: Overview of our method for solving geometry
+questions.
+</figureCaption>
+<bodyText confidence="0.993626375">
+in raster graphics, and multiple choice answers
+c = {c1, ... , cMJ (M = 5 in SAT). Answering
+a geometry question is to find a correct choice ci.
+Our method, GEOS, consists of two steps (Fig-
+ure 2): (1) interpreting a geometry question by
+deriving a logical expression that represents the
+meaning of the text and the diagram, and (2) solv-
+ing the geometry question by checking the satis-
+fiablity of the derived logical expression. In this
+paper we mainly focus on interpreting geometry
+questions and use a standard algebraic solver (see
+section 7 for a brief description of the solver).
+Definitions: We formally represent logical ex-
+pressions in the geometry domain with the lan-
+guage Q, a subset of typed first-order logic that
+includes:
+</bodyText>
+<listItem confidence="0.9909523">
+• constants, corresponding to known numbers
+(e.g., 5 and 2 in Figure 1) or entities with known
+geometric coordinates.
+• variables, corresponding to unknown numbers
+or geometrical entities in the question (e.g., O
+and CE in Figure 1).
+• predicates, corresponding to geometric or arith-
+metic relations (e.g., Equals, IsDiameter,
+IsTangent).
+• functions, corresponding to properties of geo-
+</listItem>
+<bodyText confidence="0.996482806451613">
+metrical entities (e.g., LengthOf, AreaOf) or
+arithmetic operations (e.g., SumOf, RatioOf).
+Each element in the geometry language has either
+boolean (e.g., true), numeric (e.g., 4), or entity
+(e.g., line, circle) type. We refer to all symbols
+in the language Q as concepts.
+We use the term literal to refer to the application
+of a predicate to a sequence of arguments (e.g.,
+IsTriangle(ASC)). Literals are possibly negated
+atomic formulas in the language Q. Logical for-
+mulas contain constants, variables, functions, ex-
+istential quantifiers and conjunctions over literals
+(e.g., ∃x, IsTriangle(x)∧IsIsosceles(x)).
+Interpretation is the task of mapping a new ge-
+ometry question with each choice, (t, d, cm), into
+a logical formula -y in Q. More formally, the
+goal is to find -y* = arg maxyEΓ score(-y; t, d, cm)
+where F is the set of all logical formulas in Q and
+score measures the interpretation score of the for-
+mula according to both text and diagram. The
+problem of deriving the best formula -y* can be
+modeled as a combinatorial search in the space of
+literals L (note that each logical formula -y is rep-
+resented as a conjunction over literals li).
+GEOS efficiently searches this combinatorial
+space taking advantage of a submodular set func-
+tion that scores a subset of literals using both text
+and diagram. The best subset of literals is the one
+that has a high affinity with both text and diagram
+and is coherent i.e., does not suffer from redun-
+dancy (see Section 6). More formally,2
+</bodyText>
+<equation confidence="0.926417333333333">
+A A(L&apos;, t, d) +H(L&apos;, t, d), (1)
+1. N.,
+i 1. v i
+</equation>
+<subsectionHeader confidence="0.609061">
+Affinity Coherence
+</subsectionHeader>
+<bodyText confidence="0.999983352941177">
+where A(L&apos;, t, d) measures the affinity of the lit-
+erals in L&apos; with both the text and the diagram,
+H(L&apos;, t, d) measures the coverage of the literals
+in L&apos; compared to the text and discourages redun-
+dancies, and A is a trade-off parameter between A
+and H.
+The affinity A is decomposed into text-
+based affinity, Atext, and diagram-based affinity,
+Adiagram. The text-based affinity closely mirrors
+the linguistic structure of the sentences as well as
+type matches in the geometry language Q. For
+modeling the text score for each literal, we learn
+a log-linear model. The diagram-based affinity
+Adiagram grounds literals into the diagram, and
+scores literals according to the diagram parse. We
+describe the details on how to compute Atext in
+section 4 and Adiagram in section 5.
+</bodyText>
+<sectionHeader confidence="0.978917" genericHeader="method">
+4 Text Parser
+</sectionHeader>
+<bodyText confidence="0.834272666666667">
+The text-based scoring function Atext(L, t) com-
+putes the affinity score between the set of liter-
+2We omit the argument c„t for the ease of notation.
+</bodyText>
+<equation confidence="0.9461525">
+L* = arg max
+L&apos;CL
+</equation>
+<page confidence="0.877863">
+1468
+</page>
+<listItem confidence="0.996499214285714">
+1. {lj}, Atext ← TEXT PARSING(language Ω, text-choice pair (t, ci)) (Section 4)
+(i) concept identification: initialize a hypergraph G with concept nodes.
+(ii) relation identification: add a hyperedge (relation) rj between two or three related concept nodes and assign a
+weight Atext(rj, t; B) based on the learned classifier.
+(iii) literals parsing: obtain all subtrees of G, which are equivalent to all possible literals, {l&apos;j}. Let Atext(lj, t) =
+Ej Atext(rj, t; B) for all rj in the literal li.
+(iv) relation completion: obtain a complete literal lj for each (under-specified) l&apos;j, dealing with implication and
+coordinating conjunctions.
+2. LΔ, Adiagram ← DIAGRAM PARSING(diagram image d, literals {lj}) (Section 5)
+3. L* ← GREEDY MAXIMIZATION(literals L = {lj}, score functions Atext and Adiagram) (Section 6)
+(i) initialization: L&apos; ← {}
+(ii) greedy addition: add(L&apos;, lj) s.t. lj = argmaxl, ∈L\L1F(L&apos; ∪ {lj}) − F(L&apos;), where F = AA + H
+(iii) iteration: repeat step (ii) while the gain is positive.
+4. Answer c* ← one of choices s.t. L* ∪ LΔ are simultaneously satisfiable according to SOLVER (Section 7)
+</listItem>
+<figureCaption confidence="0.997930666666667">
+Figure 3: Solving geometry questions with GEOS.
+Figure 4: Hypergraph representation of the sentence “A
+tangent line is drawn to circle O with radius of 5”.
+</figureCaption>
+<bodyText confidence="0.999909142857143">
+als L and the question text t. This score is the
+sum of the affinity scores of individual literals
+lj E L i.e., Atext(L, t) = Ej Atext(lj, t) where
+Atext(lj, t) H [−OO, 0].3 GEOS learns a discrim-
+inative model Atext(lj, t; θ) that scores the affin-
+ity of every literal lj E L and the question text t
+through supervised learning from training data.
+We represent literals using a hypergraph (Fig-
+ure 4) (Klein and Manning, 2005; Flanigan et al.,
+2014). Each node in the graph corresponds to a
+concept in the geometry language (i.e. constants,
+variables, functions, or predicates). The edges
+capture the relations between concepts; concept
+nodes are connected if one concept is the argument
+of the other in the geometry language. In order to
+interpret the question text (Figure 3 step 1), GEOS
+first identifies concepts evoked by the words or
+phrases in the input text. Then, it learns the affin-
+ity scores which are the weights of edges in the
+hypergraph. It finally completes relations so that
+type matches are satistfied in the formal language.
+</bodyText>
+<subsectionHeader confidence="0.992861">
+4.1 Concept Identification
+</subsectionHeader>
+<bodyText confidence="0.999388333333333">
+Concepts are defined as symbols in the geometry
+language Q. The concept identification stage maps
+words or phrases to their corresponding concepts
+</bodyText>
+<footnote confidence="0.934174">
+3For the ease of notation, we use Atext as a function tak-
+ing sets of literals or a literal.
+</footnote>
+<bodyText confidence="0.9999708">
+in the geometry language. Note that a phrase can
+be mapped to several concepts. For instance, in
+the sentence “ABCD is a square with an area of
+1”, the word “square” is a noun referring to some
+object, so it maps to a variable square. In a similar
+sentence “square ABCD has an area 1”, the word
+“square” describes the variable ABCD, so it maps to
+a predicate IsSquare.
+GEOS builds a lexicon from training data that
+maps stemmed words and phrases to the con-
+cepts in the geometry language Q. The lexicon
+is derived from all correspondences between ge-
+ometry keywords and concepts in the geometry
+language as well as phrases and concepts from
+manual annotations in the training data. For in-
+stance, the lexicon contains (“square”, {square,
+IsSquare}) including all possible concepts for the
+phrase “square”. Note that GEOS does not make
+any hard decision on which identification is cor-
+rect in this stage, and defers it to the relation iden-
+tification stage (Section 4.2). To identify num-
+bers and explicit variables (e.g. “5”, “AB”, “O”),
+GEOS uses regular expressions. For an input text
+t, GEOS assigns one node in the graph (Figure 4)
+for each concept identified by the lexicon.
+</bodyText>
+<subsectionHeader confidence="0.985425">
+4.2 Relation Identification
+</subsectionHeader>
+<bodyText confidence="0.955743">
+A relation is a directed hyperedge between
+concept nodes. A hyperedge connects two
+nodes (for unary relations such as the edge be-
+tween RadiusOf and O in Figure 4) or three nodes
+(for binary relations such as the hyperedge be-
+tween Equals and its two arguments RadiusOf
+and 5 in Figure 4).
+We use a discriminative model (logistic re-
+gression) to predict the probability of a rela-
+tion ri being correct in text t: PB(yi|ri, t) =
+1 , where yi E {0, 1} is the label
+</bodyText>
+<figure confidence="0.980307461538461">
+1+exp (ftext(ri,t)·B)
+Constants,
+Variables
+Predicates
+Functions
+“A tangent line is drawn to circle O with radius of 5”
+IsTangentTo
+line
+IsCircle
+O
+RadiusOf
+Equals
+5
+</figure>
+<page confidence="0.972511">
+1469
+</page>
+<table confidence="0.9158457">
+Dependency tree distance Shortest distance between the words of the concept nodes in the dependency tree. We use
+indicator features for distances of -3 to 3. Positive distance shows if the child word is at the
+right of the parent’s in the sentence, and negative otherwise.
+Word distance Distance between the words of the concept nodes in the sentence.
+Dependency tree edge label Indicator functions for the outgoing edges of the parent and child for the shortest path
+between them.
+Part of speech tag Indicator functions for the POS tags of the parent and the child.
+Relation type Indicator functions for unary / binary parent and child nodes.
+Return type Indicator functions for the return types of the parent and the child nodes. For example,
+return type of Equals is boolean, and that of LengthOf is numeric.
+</table>
+<tableCaption confidence="0.99997">
+Table 1: The features of the unary relations. The features of the binary relations is computed in a similar way.
+</tableCaption>
+<figure confidence="0.991307666666667">
+(a) sentence: “What is the perimeter of ABCE?”
+intermediate: ∃ what, ABCE: Bridged(what, PerimeterOf(ABCE))
+final: ∃ what, ABCE: Equals(what, PerimeterOf(ABCE))
+(b) sentence: “AM and CM bisect BAC and BCA.”
+intermediate: ∃ AM, CM, BAC, BCA: BisectsAngle(AM, BAC) ∧ CC(AM, CM) ∧ CC(BAC, BCA)
+final: ∃ AM, CM, BAC, BCA: BisectsAngle(AM, BAC) ∧ BisectsAngle(CM, BCA)
+</figure>
+<figureCaption confidence="0.999936">
+Figure 5: Showing the two-stage learning with the intermediate representation that demonstrates implication.
+</figureCaption>
+<bodyText confidence="0.999714542857143">
+for ri being correct in t, ftext(ri, t) is a feature
+vector of t and ri, and 0 is a vector of parameters
+to be learned. We define the affinity score of ri
+by Atext(ri, t; 0) = log Pθ(yi|ri, t). The weight
+of the corresponding hyperedge is the relation’s
+affinity score. We learn 0 using the maximum like-
+lihood estimation of the training data (details in
+Section 8), with L2 regularization.
+We train two separate models for learning unary
+and binary relations. The training data consists
+of sentence-relation-label tuples (t, r, y); for in-
+stance, (“A tangent line is drawn to circle O”,
+IsTangent(line, O), 1) is a positive training
+example. All incorrect relations in the sen-
+tences of the training data are negative exam-
+ples (e.g. (“A tangent line is drawn to circle O”,
+IsCircle(line), 0)).
+The features for the unary and binary models
+are shown in Table 1 for the text t and the relation
+ri. We use two main feature categories. Structural
+features: these features capture the syntactic cues
+of the text in the form of text distance, dependency
+tree labels, and part of speech tags for the words
+associated with the concepts in the relation. Ge-
+ometry language features: these features capture
+the cues available in the geometry language Q in
+the form of the types and the truth values of the
+corresponding concepts in the relation.
+At inference, GEOS uses the learned models
+to calculate the affinity scores of all the literals
+derived from the text t. The affinity score of
+each literal lj is calculated from the edge (rela-
+tion) weights in the corresponding subgraph, i.e.
+Atext(lj, t) = Ei Atext(ri, t; 0) for all ri in the
+literal lj.
+</bodyText>
+<subsectionHeader confidence="0.985862">
+4.3 Relation Completion
+</subsectionHeader>
+<bodyText confidence="0.999963764705883">
+So far, we have explained how to score the affini-
+ties between explicit relations and the question
+text. Geometry questions usually include implicit
+concepts. For instance, “Circle O has a radius of
+5” implies the Equals relationship between “Ra-
+dius of circle O” and “5”. In addition, geometry
+questions include coordinating conjunctions be-
+tween entities. In “AM and CM bisect BAC and
+BCA”, “bisect” is shared by two lines and two an-
+gles (Figure 5 (b)). Also, consider two sentences:
+“AB and CD are perpendicular” and “AB is per-
+pendicular to CD”. Both have the same semantic
+annotation but very different syntactic structures.
+It is difficult to directly fit the syntactic struc-
+ture of question sentences into the formal language
+Q for implications and coordinating conjunctions,
+especially due to small training data. We, instead,
+adopt a two-stage learning inspired by recent work
+in semantic parsing (Kwiatkowski et al., 2013).
+Our solution assumes an intermediate representa-
+tion that is syntactically sound but possibly under-
+specified. The intermediate representation closely
+mirrors the linguistic structure of the sentences. In
+addition, it can easily be transferred to the formal
+representation in the geometry language Q.
+Figure 5 shows how implications and coordinat-
+ing conjunctions are modeled in the intermediate
+representation. Bridged in Figure 5 (a) indicates
+that there is a special relation (edge) between the
+two concepts (e.g., what and PerimeterOf), but
+the alignment to the geometry language L is not
+clear. CC in Figure 5 (b) indicates that there is a
+special relation between two concepts that are con-
+nected by “and” in the sentence. GEOS completes
+</bodyText>
+<page confidence="0.956883">
+1470
+</page>
+<bodyText confidence="0.99988969047619">
+the under-specified relations by mapping them to
+the corresponding well-defined relations in the for-
+mal language.
+Implication: We train a log-linear classifier to
+identify if a Bridged relation (implied concept)
+exists between two concepts. Intuitively, the clas-
+sification score indicates the likelihood that certain
+two concepts (e.g., What and PerimeterOf) are
+bridged. For training, positive examples are pairs
+of concepts whose underlying relation is under-
+specified, and negative examples are all other pairs
+of concepts that are not bridged. For instance,
+(what, PerimeterOf) is a positive training exam-
+ple for the bridged relation. We use the same fea-
+tures in Table 1 for the classifier.
+We then use a deterministic rule to map bridged
+relations in the intermediate representation to the
+correct completed relations in the final represen-
+tation. In particular, we map bridged to Equals
+if the two children concepts are of type number,
+and to IsA if the concepts are of type entity (e.g.
+point, line, circle).
+Coordinating Conjunctions: CC relations model
+coordinating conjunctions in the intermediate rep-
+resentation. For example, Figure 5 (b) shows the
+conjunction between the two angles BAC and BCA.
+We train a log-linear classifier for the CC relations,
+where the setup of the model is identical to that of
+the binary relation model in Section 4.2.
+After we obtain a list of CC(x,y) in the interme-
+diate representation, we use deterministic rules to
+coordinate the entities x and y in each CC relation
+(Figure 5 (b)). First, GEOS forms a set {x, y} for
+every two concepts x and y that appear in CC(x,y)
+and transforms every x and y in other literals to
+{x, y}. Second, GEOS transforms the relations
+with expansion and distribution rules (Figure 3
+Step 1 (iv)). For instance, Perpendicular({x,y})
+will be transferred to Perpendicular(x, y) (ex-
+pansion rule), and LengthOf{x,y}) will be trans-
+ferred to LengthOf(x) ∧ LengthOf(y) (distribu-
+tion rule).
+</bodyText>
+<sectionHeader confidence="0.993851" genericHeader="method">
+5 Diagram Parser
+</sectionHeader>
+<bodyText confidence="0.992715793103448">
+We use the publicly available diagram parser (Seo
+et al., 2014) to obtain the set of all visual elements
+(points, lines, circles, etc.), their coordinates, their
+relationships in the diagram, and their alignment
+with entity references in the text (e.g. “line AB”,
+“circle O”). The diagram parser serves two pur-
+poses: (a) computing the diagram score as a mea-
+sure of the affinity of each literal with the diagram;
+(b) obtaining high-confidence visual literals which
+cannot be obtained from the text.
+Diagram score: For each literal lj from
+the text parsing, we obtain its diagram score
+Adiagram(lj, d) H [−oc, 0]. GEOS grounds each
+literal derived from the text by replacing every
+variable (entity or numerical variable) in the re-
+lation to the corresponding variable from the dia-
+gram parse. The score function is the relaxed in-
+dicator function of whether a literal is true accord-
+ing to the diagram. For instance, in Figure 1 (a),
+consider the literal l = Perpendicular(AC, BD).
+In order to obtain its diagram score, we compute
+the angle between the lines AC and BD in the di-
+agram and compare it with π/2. The closer the
+two values, the higher the score (closer to 0), and
+the farther they are, the lower the score. Note that
+the variables AC and BD are grounded into the dia-
+gram before we obtain the score; that is, they are
+matched with the actual corresponding lines AC
+and BD in the diagram.
+The diagram parser is not able to evaluate
+the correctness of some literals, in which case
+their diagram scores are undefined. For instance,
+Equals(LengthOf(AB), 5) cannot be evaluated
+in the diagram because the scales in the diagram
+(pixel) and the text are different. For another ex-
+ample, Equals(what, RadiusOf(circle)) can-
+not be evaluated because it contains an un-
+grounded (query) variable, what. When the dia-
+gram score of a literal lj is undefined, GEOS lets
+Adiagram(lj) = Atext(lj).
+If the diagram score of a literal is very low,
+then it is highly likely that the literal is false. For
+example, in Figure 2, Parallel(AC, DB) has a
+very low diagram score, 0.02, and is apparently
+false in the diagram. Concretely, if for some lit-
+eral lj, Adiagram(li) &lt; c, then GEOS disregards
+the text score of li by replacing Atext(lj) with
+Adiagram(lj). On the other hand, even if the dia-
+gram score of a literal is very high, it is still possi-
+ble that the literal is false, because many diagrams
+are not drawn to scale. Hence, GEOS adds both
+text and diagram scores in order to score literals
+(Section 6).
+High-confidence visual literals: Diagrams often
+contain critical information that is not present in
+the text. For instance, to solve the question in Fig-
+ure 1, one has to know that the points A, E, and C
+are colinear. In addition, diagrams include numer-
+</bodyText>
+<page confidence="0.982191">
+1471
+</page>
+<bodyText confidence="0.999960333333333">
+ical labels (e.g. one of the labels in Figure 1(b) in-
+dicates the measure of the angle ABC = 40 degrees).
+This kind of information is confidently parsed with
+the diagram parser by Seo et al. (2014). We denote
+the set of the high-confidence literals by Lo that
+are passed to the solver (Section 7).
+</bodyText>
+<sectionHeader confidence="0.996901" genericHeader="method">
+6 Optimization
+</sectionHeader>
+<bodyText confidence="0.9997685">
+Here, we describe the details of the objective func-
+tion (Equation 1) and how to efficiently maximize
+it. The integrated affinity score of a set of literals
+L&apos; (the first term in Equation 1) is defined as:
+</bodyText>
+<equation confidence="0.7387835">
+A(L&apos;, t, d) = � [Atext(l&apos;j, t) + Adiagram(l&apos;j, d)]
+l&apos;jEL&apos;
+</equation>
+<bodyText confidence="0.98417548">
+where Atext and Adiagram are the text and dia-
+gram affinities of l&apos;j, respectively.
+To encourage GEOS to pick a subset of literals
+that cover the concepts in the question text and, at
+the same time, avoid redundancies, we define the
+coherence function as:
+H(L&apos;, t, d) = Ncovered(L&apos;) − Rredundant(L&apos;)
+where Ncovered is the number of the concept nodes
+used by the literals in L&apos;, and Nredundant is the num-
+ber of redundancies among the concept nodes of
+the literals. To account for the different scales be-
+tween A and H, we use the trade-off parameter A
+in Equation 1 learned on the validation dataset.
+Maximizing the objective function in Equation
+1 is an NP-hard combinatorial optimization prob-
+lem. However, we show that our objective func-
+tion is submodular (see Appendix (Section 11) for
+the proof of submodularity). This means that there
+exists a greedy method that can provide a reliable
+approximation. GEOS greedily maximizes Equa-
+tion 1 by starting from an empty set of literals and
+adding the next literal lj that maximizes the gain of
+the objective function until the gain becomes nega-
+tive (details of the algorithm and the gain function
+are explained in Figure 3 step 3).
+</bodyText>
+<sectionHeader confidence="0.997237" genericHeader="method">
+7 Solver
+</sectionHeader>
+<bodyText confidence="0.999101133333333">
+We now have the best set of literals L* from the
+optimization, and the high-confidence visual lit-
+erals Lo from the diagram parser. In this step,
+GEOS determines if an assignment exists to the
+variables X in L* U Lo that simultaneously satis-
+fies all of the literals. This is known as the problem
+of automated geometry theorem proving in com-
+putational geometry (Alvin et al., 2014).
+We use a numerical method to check the satis-
+fiablity of literals. For each literal lj in L* U Lo,
+we define a relaxed indicator function gj : 5 H
+zj E [−oc, 0]. The function zj = gj(5) indi-
+cates the relaxed satisfiability of lj given an as-
+signment 5 to the variables X. The literal lj
+is completely satisfied if gj(5) = 0. We for-
+mulate the problem of satisfiability of literals as
+the task of finding the assignment 5* to X such
+that sum of all indicator functions gj(5*) is maxi-
+mized, i.e. 5* = arg maxS Ej gj(5). We use the
+basing-hopping algorithm (Wales and Doye, 1997)
+with sequential least squares programming (Kraft,
+1988) to globally maximize the sum of the indica-
+tor functions. If there exists an assignment such
+that Ej gj(5) = 0, then GEOS finds an assign-
+ment to X that satisfies all literals. If such assign-
+ment does not exist, then GEOS concludes that the
+literals are not satisfiable simultaneously. GEOS
+chooses to answer a geometry question if the lit-
+erals of exactly one answer choice are simultane-
+ously satisfiable.
+</bodyText>
+<sectionHeader confidence="0.995647" genericHeader="method">
+8 Experimental Setup
+</sectionHeader>
+<bodyText confidence="0.996940173913043">
+Logical Language Q: Q consists of 13 types of
+entities and 94 function and predicates observed
+in our development set of geometry questions.
+Implementation details: Sentences in geometry
+questions often contain in-line mathematical ex-
+pressions, such as “If AB=x+5, what is x?”. These
+mathematical expressions cause general purpose
+parsers to fail. GEOS uses an equation analyzer
+and pre-processes question text by replacing “=”
+with “equals”, and replacing mathematical terms
+(e.g., “x+5”) with a dummy noun so that the de-
+pendency parser does not fail.
+GEOS uses Stanford dependency parser (Chen
+and Manning, 2014) to obtain syntactic informa-
+tion, which is used to compute features for rela-
+tion identification (Table 1). For diagram parsing,
+similar to Seo et al. (2014), we assume that GEOS
+has access to ground truth optical character recog-
+nition for labels in the diagrams. For optimization,
+we tune the parameters A to 0.5, based on the train-
+ing examples.4
+Dataset: We built a dataset of SAT plane ge-
+ometry questions where every question has a tex-
+</bodyText>
+<footnote confidence="0.9918725">
+4In our dataset, the number of all possible literals for each
+sentence is at most 1000.
+</footnote>
+<page confidence="0.947634">
+1472
+</page>
+<table confidence="0.999891428571429">
+Total Training Practice Official
+Questions 186 67 64 55
+Sentences 336 121 110 105
+Words 4343 1435 1310 1598
+Literals 577 176 189 212
+Binary relations 337 110 108 119
+Unary relations 437 141 150 146
+</table>
+<tableCaption confidence="0.998049">
+Table 2: Data and annotation statistics
+</tableCaption>
+<bodyText confidence="0.996427609756098">
+tual description in English accompanied by a dia-
+gram and multiple choices. Questions and answers
+are compiled from previous official SAT exams
+and practice exams offered by the College Board
+(Board, 2014). In addition, we use a portion of
+the publicly available high-school plane geometry
+questions (Seo et al., 2014) as our training set.
+We annotate ground-truth logical forms for all
+questions in the dataset. Table 2 shows details
+of the data and annotation statistics. For evaluat-
+ing dependency parsing, we annotate 50 questions
+with the ground truth dependency tree structures
+of all sentences in the questions. 5
+Baselines: Rule-based text parsing + GEOS dia-
+gram solves geometry questions using literals ex-
+tracted from a manually defined set of rules over
+the textual dependency parser, and scored by dia-
+gram. For this baseline, we manually designed 12
+high-precision rules based on the development set.
+Each rule compares the dependency tree of each
+sentence to pre-defined templates, and if a tem-
+plate pattern is matched, the rule outputs the re-
+lation or function structure corresponding to that
+template. For example, a rule assigns a relation
+parent(child-1, child-2) for a triplet of (parent,
+child-1, child-2) where child-1 is the subject of
+parent and child-2 is the object of the parent.
+GEOS without text parsing solves geometry
+questions using a simple heuristic. With simple
+textual processing, this baseline extracts numeri-
+cal relations from the question text and then com-
+putes the scale between the units in the question
+and the pixels in the diagram. This baseline rounds
+the number to the closest choice available in the
+multiple choices.
+GEOS without diagram parsing solves geom-
+etry questions only relying on the literals inter-
+preted from the text. It outputs all literals whose
+text scores are higher than a tuned threshold, 0.6
+on the training set.
+GEOS without relation completion solves ge-
+</bodyText>
+<footnote confidence="0.941563">
+5The source code, the dataset and the annotations are pub-
+licly available at geometry.allenai.org.
+</footnote>
+<bodyText confidence="0.924508666666667">
+ometry questions when text parsing does not use
+the intermediate representation and does not in-
+clude the relation completion step.
+</bodyText>
+<sectionHeader confidence="0.975975" genericHeader="evaluation">
+9 Experiments
+</sectionHeader>
+<bodyText confidence="0.999780727272727">
+We evaluate our method on three tasks: solving
+geometry question, interpreting geometry ques-
+tions, and dependency parsing.
+Solving Geometry Questions: Table 3 compares
+the score of GEOS in solving geometry questions
+in practice and official SAT questions with that
+of baselines. SAT’s grading scheme penalizes a
+wrong answer with a negative score of 0.25. We
+report the SAT score as the percentage of correctly
+answered questions penalized by the wrong an-
+swers. For official questions, GEOS answers 27
+questions correctly, 1 questions incorrectly, and
+leaves 27 un-answered, which gives it a score of
+26.75 out of 55, or 49%. Thus, GEOS’s preci-
+sion exceeds 96% on the 51% of questions that
+it chooses to answer. For practice SAT questions,
+GEOS scores 61%.6
+In order to understand the effect of individ-
+ual components of GEOS, we compare the full
+method with a few ablations. GEOS signifi-
+cantly outperforms the two baselines GEOS with-
+out text parsing and GEOS without diagram pars-
+ing, demonstrating that GEOS benefits from both
+text and diagram parsing. In order to understand
+the text parsing component, we compare GEOS
+with Rule-based text parsing + GEOS Diagram
+and GEOS without relation completion. The re-
+sults show that our method of learning to interpret
+literals from the text is substantially better than the
+rule-based baseline. In addition, the relation com-
+pletion step, which relies on the intermediate rep-
+resentation, helps to improve text interpretation.
+Error Analysis: In order to understand the errors
+made by GEOS, we use oracle text parsing and or-
+acle diagram parsing (Table 3). Roughly 38% of
+the errors are due to failures in text parsing, and
+about 46% of errors are due to failures in diagram
+parsing. Among them, about 15% of errors were
+due to failures in both diagram and text parsing.
+For an example of text parsing failure, the liter-
+als in Figure 6 (a) are not scored accurately due
+to missing coreference relations (Hajishirzi et al.,
+2013). The rest of errors are due to problems that
+require more complex reasoning (Figure 6 (b)).
+</bodyText>
+<footnote confidence="0.7032385">
+6Typically, 50th percentile (penalized) score in SAT math
+section is 27 out of 54 (50%).
+</footnote>
+<page confidence="0.879284">
+1473
+</page>
+<table confidence="0.9989596">
+SAT score (%)
+Method Practice Official
+GEOS w/o diagram parsing 7 5
+GEOS w/o text parsing 10 10
+Rule-based text parsing + GEOS diagram 31 24
+GEOS w/o relation completion 42 33
+GEOS 61 49
+Oracle text parsing + GEOS diagram parsing 78 75
+GEOS text parsing + oracle diagram parsing 81 79
+Oracle text parsing + oracle diagram parsing 88 84
+</table>
+<tableCaption confidence="0.987995">
+Table 3: SAT scores of solving geometry questions.
+</tableCaption>
+<table confidence="0.99994725">
+P R F1
+Rule-based text parsing 0.99 0.23 0.37
+GEOS w/o diagram 0.57 0.82 0.67
+GEOS 0.92 0.76 0.83
+</table>
+<tableCaption confidence="0.999807">
+Table 4: Precision and recall of text interpretation.
+</tableCaption>
+<bodyText confidence="0.999710081081081">
+Interpreting Question Texts: Table 4 details
+the precision and recall of GEOS in deriving lit-
+erals for geometry question texts for official SAT
+questions. The rule-based text parsing baseline
+achieves a high precision, but at the cost of lower
+recall. On the other hand, the baseline GEOS with-
+out diagram achieves a high recall, but at the cost
+of lower precision. Nevertheless, GEOS attains
+substantially higher F1 score compared to both
+baselines, which is the key factor in solving the
+questions. Direct application of a generic seman-
+tic parser (Berant et al., 2013) with full supervi-
+sion does not perform well in the geometry do-
+main, mainly due to lack of enough training data.
+Our initial investigations show the performance of
+33% F1 in the official set.
+Improving Dependency Parsing: Table 5 shows
+the results of different methods in dependency
+parsing. GEOS returns a dependency parse tree by
+selecting the dependency tree that maximizes the
+text score in the objective function from the top
+50 trees produced by a generic dependency parser,
+Stanford parser (Chen and Manning, 2014). Note
+that Stanford parser cannot handle mathematical
+symbols and equations. We report the results of
+a baseline that extends the Stanford dependency
+parser by adding a pre-processing step to separate
+the mathematical expressions from the plain sen-
+tences (Section 8).
+We evaluate the performance of GEOS against
+the best tree returned by Stanford parser by re-
+porting the fraction of the questions whose depen-
+dency parse structures match the ground truth an-
+notations. Our results show an improvement of
+16% over the Stanford dependency parser when
+equipped with the equation analyzer. For exam-
+ple, in “AB is perpendicular to CD at E”, the Stan-
+</bodyText>
+<table confidence="0.9903045">
+Accuracy
+Stanford dep parse 0.05
+Stanford dep parse + eq. analyzer 0.64
+GEOS 0.78
+</table>
+<tableCaption confidence="0.994576">
+Table 5: Accuracy of dependency parsing.
+</tableCaption>
+<figureCaption confidence="0.997338">
+Figure 6: Examples of Failure: reasons are in red.
+</figureCaption>
+<bodyText confidence="0.999866333333333">
+ford dependency parser predicts that “E” depends
+on “CD”, while GEOS predicts the correct parse
+in which “E” depends on “perpendicular”.
+</bodyText>
+<sectionHeader confidence="0.991685" genericHeader="conclusions">
+10 Conclusion
+</sectionHeader>
+<bodyText confidence="0.990043377777778">
+This paper introduced GEOS, an automated sys-
+tem that combines diagram and text interpretation
+to solve geometry problems. Solving geometry
+questions was inspired by two important trends in
+the current NLP literature. The first is in designing
+methods for grounded language acquisition to map
+text to a restricted formalism (instead of a full,
+domain independent representation). We demon-
+strate a new algorithm for learning to map text to
+a geometry language with a small amount of train-
+ing data. The second is designing methods in cou-
+pling language and vision and show how process-
+ing multimodal information help improve textual
+or visual interpretations.
+Our experiments on unseen SAT geometry
+problems achieve a score of 49% of official ques-
+tions and a score of 61% on practice questions,
+providing a baseline for future work. Future work
+includes expanding the geometry language and
+the reasoning to address a broader set of geom-
+etry questions, reducing the amount of supervi-
+sion, learning the relevant geometry knowledge,
+and scaling up the dataset.
+Acknowledgements. The research was sup-
+ported by the Allen Institute for AI, Allen Dis-
+tinguished Investigator Award, and NSF (IIS-
+1352249). We thank Dan Weld, Luke Zettlemoyer,
+Aria Haghighi, Mark Hopkins, Eunsol Choi, and
+the anonymous reviewers for helpful comments.
+Requires complex reasoning:
+Cannot understand that the polygon
+is “hidden”
+In the figure at the left, the smaller circles
+each have radius 3. They are tangent to the
+larger circle at points A and C, and are tangent
+to each other at point B, which is the center of
+the larger circle. What is the perimeter of the
+shaded region?
+(a) 6*pi (b) 8*pi (c) 9*pi (d) 8*pi (e) 15*pi
+Fails to resolve “they” to “each other”
+In the figure at the left, a shaded
+polygon which has equal angles is
+partially covered with a sheet of
+blank paper. Ifx+y=80, how many
+sides does the polygon have?
+</bodyText>
+<figure confidence="0.923107">
+(a) 10 (b) 9 (c) 8 (d) 7 (e) 6
+</figure>
+<page confidence="0.987191">
+1474
+</page>
+<sectionHeader confidence="0.982567" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.999898686868686">
+Chris Alvin, Sumit Gulwani, Rupak Majumdar, and
+Supratik Mukhopadhyay. 2014. Synthesis of ge-
+ometry proof problems. In AAAI.
+Gabor Angeli and Christopher D. Manning. 2014.
+Naturalli: Natural logic inference for common sense
+reasoning. In EMNLP.
+Yoav Artzi and Luke Zettlemoyer. 2013. Weakly su-
+pervised learning of semantic parsers for mapping
+instructions to actions. TACL, 1.
+J. Berant and P. Liang. 2014. Semantic parsing via
+paraphrasing. In ACL.
+Jonathan Berant, Andrew Chou, Roy Frostig, and Percy
+Liang. 2013. Semantic parsing on freebase from
+question-answer pairs. In EMNLP.
+College Board. 2014. The college board.
+Antoine Bordes, Nicolas Usunier, and Jason Weston.
+2010. Label ranking under ambiguous supervision
+for learning semantic correspondences. In ICML.
+SRK Branavan, Nate Kushman, Tao Lei, and Regina
+Barzilay. 2012. Learning high-level planning from
+text. In ACL.
+William C. Bulko. 1988. Understanding text with an
+accompanying diagram. In IEA/AIE.
+Danqi Chen and Christopher D Manning. 2014. A fast
+and accurate dependency parser using neural net-
+works. In EMNLP.
+David Chen, Joohyun Kim, and Raymond Mooney.
+2010. Training a multilingual sportscaster: Using
+perceptual context to learn language. JAIR, 37.
+Jim Cowie and Wendy Lehnert. 1996. Information
+extraction. Communications of the ACM, 39(1).
+Aron Culotta and Jeffrey Sorensen. 2004. Dependency
+tree kernels for relation extraction. In ACL.
+Jacob Eisenstein, James Clarke, Dan Goldwasser, and
+Dan Roth. 2009. Reading to learn: Constructing
+features from semantic abstracts. In EMNLP.
+Thomas G Evans. 1964. A heuristic program to solve
+geometric-analogy problems. In Proceedings of the
+April 21-23, 1964, spring joint computer confer-
+ence.
+Hao Fang, Saurabh Gupta, Forrest Iandola, Rupesh Sri-
+vastava, Li Deng, Piotr Doll´ar, Jianfeng Gao, Xi-
+aodong He, Margaret Mitchell, John Platt, et al.
+2014. From captions to visual concepts and back.
+In CVPR.
+Ali Farhadi, Mohsen Hejrati, Mohammad Amin
+Sadeghi, Peter Young, Cyrus Rashtchian, Julia
+Hockenmaier, and David Forsyth. 2010. Every pic-
+ture tells a story: Generating sentences from images.
+In ECCV.
+E.A. Feigenbaum and J. Feldman, editors. 1963. Com-
+puters and Thought. McGraw Hill, New York.
+Jeffrey Flanigan, Sam Thomson, Jaime Carbonell,
+Chris Dyer, and Noah A. Smith. 2014. A discrim-
+inative graph-based parser for the abstract meaning
+representation. In ACL.
+Ruifang Ge and Raymond J. Mooney. 2006. Discrimi-
+native reranking for semantic parsing. In ACL.
+Dan Goldwasser and Dan Roth. 2011. Learning from
+natural instructions. In IJCAI.
+Yunchao Gong, Liwei Wang, Micah Hodosh, Ju-
+lia Hockenmaier, and Svetlana Lazebnik. 2014.
+Improving image-sentence embeddings using large
+weakly annotated photo collections. In ECCV.
+Sonal Gupta and Raymond J. Mooney. 2010. Us-
+ing closed captions as supervision for video activity
+recognition. In AAAI.
+Hannaneh Hajishirzi, Julia Hockenmaier, Erik T.
+Mueller, and Eyal Amir. 2011. Reasoning about
+robocup soccer narratives. In UAI.
+Hannaneh Hajishirzi, Leila Zilles, Daniel S Weld, and
+Luke S Zettlemoyer. 2013. Joint coreference res-
+olution and named-entity linking with multi-pass
+sieves. In EMNLP.
+Mary Hegarty and Marcel Adam Just. 1989. 10 under-
+standing machines from text and diagrams. Knowl-
+edge acquisition from text and pictures.
+Ben Hixon, Peter Clark, and Hannaneh Hajishirzi.
+2015. Learning knowledge graphs for question an-
+swering through conversational dialog. In NAACL.
+Mohammad Javad Hosseini, Hannaneh Hajishirzi,
+Oren Etzioni, and Nate Kushman. 2014. Learning
+to solve arithmetic word problems with verb catego-
+rization. In EMNLP.
+Rohit J. Kate and Raymond J. Mooney. 2007. Learn-
+ing language semantics from ambiguous supervi-
+sion. In AAAI.
+Joohyun Kim and Raymond J. Mooney. 2013. Adapt-
+ing discriminative reranking to grounded language
+learning. In ACL.
+Dan Klein and Christopher D Manning. 2005. Parsing
+and hypergraphs. In New developments in parsing
+technology. Springer.
+R Koncel-Kedziorski, Hannaneh Hajishirzi, and Ali
+Farhadi. 2014. Multi-resolution language ground-
+ing with weak supervision. In EMNLP.
+Dieter et. al. Kraft. 1988. A software package for se-
+quential quadratic programming. DFVLR Obers-
+faffeuhofen, Germany.
+</reference>
+<page confidence="0.804553">
+1475
+</page>
+<reference confidence="0.974139786885246">
+Girish Kulkarni, Visruth Premraj, Sagnik Dhar, Sim-
+ing Li, Yejin Choi, Alexander C Berg, and Tamara L
+Berg. 2011. Baby talk: Understanding and generat-
+ing image descriptions. In CVPR.
+Nate Kushman, Yoav Artzi, Luke Zettlemoyer, and
+Regina Barzilay. 2014. Learning to automatically
+solve algebra word problems. In ACL.
+T Kwiatkowski, E Choi, Y Artzi, and L Zettlemoyer.
+2013. Scaling semantic parsers with on-the-fly on-
+tology matching. In EMNLP.
+Percy Liang, Michael I. Jordan, and Dan Klein. 2009.
+Learning semantic correspondences with less super-
+vision. In ACLAFNLP.
+Xinggang Lin, Shigeyoshi Shimotsuji, Michihiko Mi-
+noh, and Toshiyuki Sakai. 1985. Efficient diagram
+understanding with characteristic pattern detection.
+CVGIP, 30(1).
+A. Lovett and K. Forbus. 2012. Modeling multiple
+strategies for solving geometric analogy problems.
+In CCS.
+Gordon Novak. 1995. Diagrams for solving physical
+problems. Diagrammatic reasoning: Cognitive and
+computational perspectives.
+Lawrence O’Gorman and Rangachar Kasturi. 1995.
+Document image analysis, volume 39. Citeseer.
+Hoifung Poon and Pedro Domingos. 2009. Unsuper-
+vised semantic parsing. In EMNLP.
+Siva Reddy, Mirella Lapata, and Mark Steedman.
+2014. Large-scale semantic parsing without
+question-answer pairs. TACL, 2(Oct).
+S. Roy, T. Vieira, and D. Roth. 2015. Reasoning about
+quantities in natural language.
+Min Joon Seo, Hannaneh Hajishirzi, Ali Farhadi, and
+Oren Etzioni. 2014. Diagram understanding in ge-
+ometry questions. In AAAI.
+Rohini K Srihari. 1994. Computational models for
+integrating linguistic and visual information: A sur-
+vey. Artificial Intelligence Review, 8(5-6).
+Adam Vogel and Daniel Jurafsky. 2010. Learning to
+follow navigational directions. In ACL.
+David J Wales and Jonathan PK Doye. 1997. Global
+optimization by basin-hopping and the lowest en-
+ergy structures of lennard-jones clusters containing
+up to 110 atoms. The Journal of Physical Chemistry
+A, 101(28).
+Luke S. Zettlemoyer and Michael Collins. 2005.
+Learning to map sentences to logical form: Struc-
+tured classification with probabilistic categorial
+grammars. In UAI.
+11 Appendix: Proof of Submodularity of
+Equation 1
+We prove that the objective function in equation
+(1), AA(L0) + H(L0) is submodular by showing
+that A(L0) and H(L0) are submodular functions.
+Submodularity of A. Consider L0 ⊂ L, and
+a new literal to be added, lz ∈ L \ L0. By the
+definition of A, it is clear that A(L0 ∪ {lj}) =
+A(L0) + A({lj}). Hence, for all L00 ⊂ L0 ⊂ L,
+A(L00 ∪ {lj}) − A(L00) = A(L0 ∪ {lj}) − A(L0)
+. Thus A is submodular.
+Submodularity of H. We prove that the cover-
+</reference>
+<bodyText confidence="0.932361625">
+age function, Hcov, and the negation of the redun-
+dancy function, −Hred are submodular indepen-
+dently, and thus derive that their sum is submodu-
+lar. For both, consider we are given L00 ⊂ L0 ⊂ L,
+and a new literal lj ∈ L \ L0. Also, let K00 and
+K0 denote the the sets of concepts covered by L00
+and L0, respectively, and let Kj denote the set of
+concepts covered by lj.
+</bodyText>
+<equation confidence="0.9204765">
+Coverage: Since K00 ⊂ K0, |K00 ∪ Kj |− |K00 |≥
+|K0 ∪ Kj |− |K0|, which is equivalent to
+Hcov(L00 ∪ {lj}) − Hcov(L00)
+≥ Hcov(L0 ∪ {lj}) − Hcov(L0)
+Redundancy: Note that Hred(L00 ∪ {lj}) −
+Hred(L00) = |K00 ∩ Kj|, and similarly, Hred(L0 ∪
+{lj}) − Hred(L0) = |K0 ∩ Kj|. Since K00 ⊂ K0,
+thus |K00 ∩ Kj |≤ |K0 ∩ Kj|. Hence,
+Hred(L00 ∪ {lj}) − Hred(L00)
+≤ Hred(L0 ∪ {lj}) − Hred(L0),
+</equation>
+<bodyText confidence="0.999778">
+By negating both sides, we derive that the negation
+of the redundancy function is submodular.
+</bodyText>
+<page confidence="0.991457">
+1476
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.967295">
+<title confidence="0.9992305">Solving Geometry Combining Text and Diagram Interpretation</title>
+<author confidence="0.992141">Minjoon Seo</author>
+<author confidence="0.992141">Hannaneh Hajishirzi</author>
+<author confidence="0.992141">Ali Farhadi</author>
+<author confidence="0.992141">Oren Etzioni</author>
+<author confidence="0.992141">Clint</author>
+<affiliation confidence="0.986988">University of Washington, Allen Institute for Artificial Intelligence</affiliation>
+<abstract confidence="0.999321736842105">paper introduces the first automated system to solve unaltered SAT geometry questions by combining text understanding and diagram interpretation. We model the problem of understanding geometry questions as submodular optimization, and identify a formal problem description likely to be compatible with the question text and diagram. then feeds the description to a geometric solver that attempts to determine the coranswer. In our experiments, achieves a 49% score on official SAT questions, and a score of 61% on practice ques- Finally, we show that by integrattextual and visual information, boosts the accuracy of dependency and semantic parsing of the question text.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Chris Alvin</author>
+</authors>
+<title>Sumit Gulwani, Rupak Majumdar, and Supratik Mukhopadhyay.</title>
+<date>2014</date>
+<booktitle>In AAAI.</booktitle>
+<marker>Alvin, 2014</marker>
+<rawString>Chris Alvin, Sumit Gulwani, Rupak Majumdar, and Supratik Mukhopadhyay. 2014. Synthesis of geometry proof problems. In AAAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gabor Angeli</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Naturalli: Natural logic inference for common sense reasoning.</title>
+<date>2014</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="7109" citStr="Angeli and Manning, 2014" startWordPosition="1135" endWordPosition="1138">tions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the</context>
+</contexts>
+<marker>Angeli, Manning, 2014</marker>
+<rawString>Gabor Angeli and Christopher D. Manning. 2014. Naturalli: Natural logic inference for common sense reasoning. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+</authors>
+<title>Weakly supervised learning of semantic parsers for mapping instructions to actions.</title>
+<date>2013</date>
+<journal>TACL,</journal>
+<volume>1</volume>
+<contexts>
+<context position="7191" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1147" endWordPosition="1150">allenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al.</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Yoav Artzi and Luke Zettlemoyer. 2013. Weakly supervised learning of semantic parsers for mapping instructions to actions. TACL, 1.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Berant</author>
+<author>P Liang</author>
+</authors>
+<title>Semantic parsing via paraphrasing. In ACL.</title>
+<date>2014</date>
+<contexts>
+<context position="6287" citStr="Berant and Liang, 2014" startWordPosition="999" endWordPosition="1003">. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition </context>
+</contexts>
+<marker>Berant, Liang, 2014</marker>
+<rawString>J. Berant and P. Liang. 2014. Semantic parsing via paraphrasing. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jonathan Berant</author>
+<author>Andrew Chou</author>
+<author>Roy Frostig</author>
+<author>Percy Liang</author>
+</authors>
+<title>Semantic parsing on freebase from question-answer pairs.</title>
+<date>2013</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="37085" citStr="Berant et al., 2013" startWordPosition="6150" endWordPosition="6153">le 4: Precision and recall of text interpretation. Interpreting Question Texts: Table 4 details the precision and recall of GEOS in deriving literals for geometry question texts for official SAT questions. The rule-based text parsing baseline achieves a high precision, but at the cost of lower recall. On the other hand, the baseline GEOS without diagram achieves a high recall, but at the cost of lower precision. Nevertheless, GEOS attains substantially higher F1 score compared to both baselines, which is the key factor in solving the questions. Direct application of a generic semantic parser (Berant et al., 2013) with full supervision does not perform well in the geometry domain, mainly due to lack of enough training data. Our initial investigations show the performance of 33% F1 in the official set. Improving Dependency Parsing: Table 5 shows the results of different methods in dependency parsing. GEOS returns a dependency parse tree by selecting the dependency tree that maximizes the text score in the objective function from the top 50 trees produced by a generic dependency parser, Stanford parser (Chen and Manning, 2014). Note that Stanford parser cannot handle mathematical symbols and equations. W</context>
+</contexts>
+<marker>Berant, Chou, Frostig, Liang, 2013</marker>
+<rawString>Jonathan Berant, Andrew Chou, Roy Frostig, and Percy Liang. 2013. Semantic parsing on freebase from question-answer pairs. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>College Board</author>
+</authors>
+<date>2014</date>
+<contexts>
+<context position="31869" citStr="Board, 2014" startWordPosition="5294" endWordPosition="5295">uilt a dataset of SAT plane geometry questions where every question has a tex4In our dataset, the number of all possible literals for each sentence is at most 1000. 1472 Total Training Practice Official Questions 186 67 64 55 Sentences 336 121 110 105 Words 4343 1435 1310 1598 Literals 577 176 189 212 Binary relations 337 110 108 119 Unary relations 437 141 150 146 Table 2: Data and annotation statistics tual description in English accompanied by a diagram and multiple choices. Questions and answers are compiled from previous official SAT exams and practice exams offered by the College Board (Board, 2014). In addition, we use a portion of the publicly available high-school plane geometry questions (Seo et al., 2014) as our training set. We annotate ground-truth logical forms for all questions in the dataset. Table 2 shows details of the data and annotation statistics. For evaluating dependency parsing, we annotate 50 questions with the ground truth dependency tree structures of all sentences in the questions. 5 Baselines: Rule-based text parsing + GEOS diagram solves geometry questions using literals extracted from a manually defined set of rules over the textual dependency parser, and scored </context>
+</contexts>
+<marker>Board, 2014</marker>
+<rawString>College Board. 2014. The college board.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antoine Bordes</author>
+<author>Nicolas Usunier</author>
+<author>Jason Weston</author>
+</authors>
+<title>Label ranking under ambiguous supervision for learning semantic correspondences.</title>
+<date>2010</date>
+<booktitle>In ICML.</booktitle>
+<contexts>
+<context position="7061" citStr="Bordes et al., 2010" startWordPosition="1127" endWordPosition="1130">e overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as na</context>
+</contexts>
+<marker>Bordes, Usunier, Weston, 2010</marker>
+<rawString>Antoine Bordes, Nicolas Usunier, and Jason Weston. 2010. Label ranking under ambiguous supervision for learning semantic correspondences. In ICML.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>SRK Branavan</author>
+<author>Nate Kushman</author>
+<author>Tao Lei</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Learning high-level planning from text.</title>
+<date>2012</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="6918" citStr="Branavan et al., 2012" startWordPosition="1103" endWordPosition="1106">ski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Castin</context>
+</contexts>
+<marker>Branavan, Kushman, Lei, Barzilay, 2012</marker>
+<rawString>SRK Branavan, Nate Kushman, Tao Lei, and Regina Barzilay. 2012. Learning high-level planning from text. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>William C Bulko</author>
+</authors>
+<title>Understanding text with an accompanying diagram.</title>
+<date>1988</date>
+<booktitle>In IEA/AIE.</booktitle>
+<contexts>
+<context position="8239" citStr="Bulko, 1988" startWordPosition="1311" endWordPosition="1312">mantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question is a tuple (t, d, c) consisting of a text t in natural </context>
+</contexts>
+<marker>Bulko, 1988</marker>
+<rawString>William C. Bulko. 1988. Understanding text with an accompanying diagram. In IEA/AIE.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Danqi Chen</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>A fast and accurate dependency parser using neural networks.</title>
+<date>2014</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="30897" citStr="Chen and Manning, 2014" startWordPosition="5125" endWordPosition="5128">al Setup Logical Language Q: Q consists of 13 types of entities and 94 function and predicates observed in our development set of geometry questions. Implementation details: Sentences in geometry questions often contain in-line mathematical expressions, such as “If AB=x+5, what is x?”. These mathematical expressions cause general purpose parsers to fail. GEOS uses an equation analyzer and pre-processes question text by replacing “=” with “equals”, and replacing mathematical terms (e.g., “x+5”) with a dummy noun so that the dependency parser does not fail. GEOS uses Stanford dependency parser (Chen and Manning, 2014) to obtain syntactic information, which is used to compute features for relation identification (Table 1). For diagram parsing, similar to Seo et al. (2014), we assume that GEOS has access to ground truth optical character recognition for labels in the diagrams. For optimization, we tune the parameters A to 0.5, based on the training examples.4 Dataset: We built a dataset of SAT plane geometry questions where every question has a tex4In our dataset, the number of all possible literals for each sentence is at most 1000. 1472 Total Training Practice Official Questions 186 67 64 55 Sentences 336 </context>
+<context position="37606" citStr="Chen and Manning, 2014" startWordPosition="6235" endWordPosition="6238">factor in solving the questions. Direct application of a generic semantic parser (Berant et al., 2013) with full supervision does not perform well in the geometry domain, mainly due to lack of enough training data. Our initial investigations show the performance of 33% F1 in the official set. Improving Dependency Parsing: Table 5 shows the results of different methods in dependency parsing. GEOS returns a dependency parse tree by selecting the dependency tree that maximizes the text score in the objective function from the top 50 trees produced by a generic dependency parser, Stanford parser (Chen and Manning, 2014). Note that Stanford parser cannot handle mathematical symbols and equations. We report the results of a baseline that extends the Stanford dependency parser by adding a pre-processing step to separate the mathematical expressions from the plain sentences (Section 8). We evaluate the performance of GEOS against the best tree returned by Stanford parser by reporting the fraction of the questions whose dependency parse structures match the ground truth annotations. Our results show an improvement of 16% over the Stanford dependency parser when equipped with the equation analyzer. For example, in</context>
+</contexts>
+<marker>Chen, Manning, 2014</marker>
+<rawString>Danqi Chen and Christopher D Manning. 2014. A fast and accurate dependency parser using neural networks. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David Chen</author>
+<author>Joohyun Kim</author>
+<author>Raymond Mooney</author>
+</authors>
+<title>Training a multilingual sportscaster: Using perceptual context to learn language.</title>
+<date>2010</date>
+<journal>JAIR,</journal>
+<volume>37</volume>
+<contexts>
+<context position="6963" citStr="Chen et al., 2010" startWordPosition="1111" endWordPosition="1114">emantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the</context>
+</contexts>
+<marker>Chen, Kim, Mooney, 2010</marker>
+<rawString>David Chen, Joohyun Kim, and Raymond Mooney. 2010. Training a multilingual sportscaster: Using perceptual context to learn language. JAIR, 37.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jim Cowie</author>
+<author>Wendy Lehnert</author>
+</authors>
+<title>Information extraction.</title>
+<date>1996</date>
+<journal>Communications of the ACM,</journal>
+<volume>39</volume>
+<issue>1</issue>
+<contexts>
+<context position="6728" citStr="Cowie and Lehnert, 1996" startWordPosition="1071" endWordPosition="1074"> Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we </context>
+</contexts>
+<marker>Cowie, Lehnert, 1996</marker>
+<rawString>Jim Cowie and Wendy Lehnert. 1996. Information extraction. Communications of the ACM, 39(1).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Aron Culotta</author>
+<author>Jeffrey Sorensen</author>
+</authors>
+<title>Dependency tree kernels for relation extraction.</title>
+<date>2004</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="6757" citStr="Culotta and Sorensen, 2004" startWordPosition="1075" endWordPosition="1078">oney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., c</context>
+</contexts>
+<marker>Culotta, Sorensen, 2004</marker>
+<rawString>Aron Culotta and Jeffrey Sorensen. 2004. Dependency tree kernels for relation extraction. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jacob Eisenstein</author>
+<author>James Clarke</author>
+<author>Dan Goldwasser</author>
+<author>Dan Roth</author>
+</authors>
+<title>Reading to learn: Constructing features from semantic abstracts.</title>
+<date>2009</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="6188" citStr="Eisenstein et al., 2009" startWordPosition="983" endWordPosition="986">al SAT questions, and a score of 61% on practice questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and smal</context>
+</contexts>
+<marker>Eisenstein, Clarke, Goldwasser, Roth, 2009</marker>
+<rawString>Jacob Eisenstein, James Clarke, Dan Goldwasser, and Dan Roth. 2009. Reading to learn: Constructing features from semantic abstracts. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Thomas G Evans</author>
+</authors>
+<title>A heuristic program to solve geometric-analogy problems.</title>
+<date>1964</date>
+<booktitle>In Proceedings of the</booktitle>
+<contexts>
+<context position="1379" citStr="Evans, 1964" startWordPosition="203" endWordPosition="204">ieves a 49% score on official SAT questions, and a score of 61% on practice questions.1 Finally, we show that by integrating textual and visual information, GEOS boosts the accuracy of dependency and semantic parsing of the question text. 1 Introduction This paper introduces the first fully-automated system for solving unaletered SAT-level geometric word problems, each of which consists of text and the corresponding diagram (Figure 1). The geometry domain has a long history in AI, but previous work has focused on geometric theorem proving (Feigenbaum and Feldman, 1963) or geometric analogies (Evans, 1964). Arithmetic and algebraic word problems have attracted several NLP researchers (Kushman et al., 2014; Hosseini et al., 2014; Roy et al., 2015), but geometric word problems were first explored only last year by Seo et al. (2014). Still, this system merely aligned diagram elements with their textual mentions (e.g., “Circle O”)—it did not attempt to fully represent geometry problems or solve them. Answering geometry questions requires a method that interpert question text and diagrams in concert. 1The source code, the dataset and the annotations are publicly available at geometry.allenai.org. Qu</context>
+</contexts>
+<marker>Evans, 1964</marker>
+<rawString>Thomas G Evans. 1964. A heuristic program to solve geometric-analogy problems. In Proceedings of the April 21-23, 1964, spring joint computer conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hao Fang</author>
+<author>Saurabh Gupta</author>
+<author>Forrest Iandola</author>
+<author>Rupesh Srivastava</author>
+<author>Li Deng</author>
+<author>Piotr Doll´ar</author>
+</authors>
+<title>From captions to visual concepts and back.</title>
+<date>2014</date>
+<booktitle>In CVPR.</booktitle>
+<location>Jianfeng Gao, Xiaodong He, Margaret Mitchell, John</location>
+<marker>Fang, Gupta, Iandola, Srivastava, Deng, Doll´ar, 2014</marker>
+<rawString>Hao Fang, Saurabh Gupta, Forrest Iandola, Rupesh Srivastava, Li Deng, Piotr Doll´ar, Jianfeng Gao, Xiaodong He, Margaret Mitchell, John Platt, et al. 2014. From captions to visual concepts and back. In CVPR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ali Farhadi</author>
+<author>Mohsen Hejrati</author>
+<author>Mohammad Amin Sadeghi</author>
+<author>Peter Young</author>
+<author>Cyrus Rashtchian</author>
+<author>Julia Hockenmaier</author>
+<author>David Forsyth</author>
+</authors>
+<title>Every picture tells a story: Generating sentences from images.</title>
+<date>2010</date>
+<booktitle>In ECCV.</booktitle>
+<contexts>
+<context position="7797" citStr="Farhadi et al., 2010" startWordPosition="1238" endWordPosition="1241">lemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and</context>
+</contexts>
+<marker>Farhadi, Hejrati, Sadeghi, Young, Rashtchian, Hockenmaier, Forsyth, 2010</marker>
+<rawString>Ali Farhadi, Mohsen Hejrati, Mohammad Amin Sadeghi, Peter Young, Cyrus Rashtchian, Julia Hockenmaier, and David Forsyth. 2010. Every picture tells a story: Generating sentences from images. In ECCV.</rawString>
+</citation>
+<citation valid="true">
+<title>Computers and Thought.</title>
+<date>1963</date>
+<editor>E.A. Feigenbaum and J. Feldman, editors.</editor>
+<publisher>McGraw Hill,</publisher>
+<location>New York.</location>
+<marker>1963</marker>
+<rawString>E.A. Feigenbaum and J. Feldman, editors. 1963. Computers and Thought. McGraw Hill, New York.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Jeffrey Flanigan</author>
+<author>Sam Thomson</author>
+<author>Jaime Carbonell</author>
+<author>Chris Dyer</author>
+<author>Noah A Smith</author>
+</authors>
+<title>A discriminative graph-based parser for the abstract meaning representation.</title>
+<date>2014</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="6163" citStr="Flanigan et al., 2014" startWordPosition="979" endWordPosition="982">s a 49% score on official SAT questions, and a score of 61% on practice questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Agai</context>
+<context position="14943" citStr="Flanigan et al., 2014" startWordPosition="2430" endWordPosition="2433"> SOLVER (Section 7) Figure 3: Solving geometry questions with GEOS. Figure 4: Hypergraph representation of the sentence “A tangent line is drawn to circle O with radius of 5”. als L and the question text t. This score is the sum of the affinity scores of individual literals lj E L i.e., Atext(L, t) = Ej Atext(lj, t) where Atext(lj, t) H [−OO, 0].3 GEOS learns a discriminative model Atext(lj, t; θ) that scores the affinity of every literal lj E L and the question text t through supervised learning from training data. We represent literals using a hypergraph (Figure 4) (Klein and Manning, 2005; Flanigan et al., 2014). Each node in the graph corresponds to a concept in the geometry language (i.e. constants, variables, functions, or predicates). The edges capture the relations between concepts; concept nodes are connected if one concept is the argument of the other in the geometry language. In order to interpret the question text (Figure 3 step 1), GEOS first identifies concepts evoked by the words or phrases in the input text. Then, it learns the affinity scores which are the weights of edges in the hypergraph. It finally completes relations so that type matches are satistfied in the formal language. 4.1 C</context>
+</contexts>
+<marker>Flanigan, Thomson, Carbonell, Dyer, Smith, 2014</marker>
+<rawString>Jeffrey Flanigan, Sam Thomson, Jaime Carbonell, Chris Dyer, and Noah A. Smith. 2014. A discriminative graph-based parser for the abstract meaning representation. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ruifang Ge</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Discriminative reranking for semantic parsing.</title>
+<date>2006</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="6140" citStr="Ge and Mooney, 2006" startWordPosition="975" endWordPosition="978">ts where GEOS achieves a 49% score on official SAT questions, and a score of 61% on practice questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta an</context>
+</contexts>
+<marker>Ge, Mooney, 2006</marker>
+<rawString>Ruifang Ge and Raymond J. Mooney. 2006. Discriminative reranking for semantic parsing. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Goldwasser</author>
+<author>Dan Roth</author>
+</authors>
+<title>Learning from natural instructions.</title>
+<date>2011</date>
+<booktitle>In IJCAI.</booktitle>
+<contexts>
+<context position="6238" citStr="Goldwasser and Roth, 2011" startWordPosition="991" endWordPosition="994"> questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. O</context>
+</contexts>
+<marker>Goldwasser, Roth, 2011</marker>
+<rawString>Dan Goldwasser and Dan Roth. 2011. Learning from natural instructions. In IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yunchao Gong</author>
+<author>Liwei Wang</author>
+<author>Micah Hodosh</author>
+<author>Julia Hockenmaier</author>
+<author>Svetlana Lazebnik</author>
+</authors>
+<title>Improving image-sentence embeddings using large weakly annotated photo collections.</title>
+<date>2014</date>
+<booktitle>In ECCV.</booktitle>
+<contexts>
+<context position="7863" citStr="Gong et al., 2014" startWordPosition="1250" endWordPosition="1253">instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on m</context>
+</contexts>
+<marker>Gong, Wang, Hodosh, Hockenmaier, Lazebnik, 2014</marker>
+<rawString>Yunchao Gong, Liwei Wang, Micah Hodosh, Julia Hockenmaier, and Svetlana Lazebnik. 2014. Improving image-sentence embeddings using large weakly annotated photo collections. In ECCV.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Sonal Gupta</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Using closed captions as supervision for video activity recognition.</title>
+<date>2010</date>
+<booktitle>In AAAI.</booktitle>
+<contexts>
+<context position="7844" citStr="Gupta and Mooney, 2010" startWordPosition="1246" endWordPosition="1249">a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previo</context>
+</contexts>
+<marker>Gupta, Mooney, 2010</marker>
+<rawString>Sonal Gupta and Raymond J. Mooney. 2010. Using closed captions as supervision for video activity recognition. In AAAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hannaneh Hajishirzi</author>
+<author>Julia Hockenmaier</author>
+<author>Erik T Mueller</author>
+<author>Eyal Amir</author>
+</authors>
+<title>Reasoning about robocup soccer narratives.</title>
+<date>2011</date>
+<booktitle>In UAI.</booktitle>
+<contexts>
+<context position="6988" citStr="Hajishirzi et al., 2011" startWordPosition="1115" endWordPosition="1118">not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of li</context>
+</contexts>
+<marker>Hajishirzi, Hockenmaier, Mueller, Amir, 2011</marker>
+<rawString>Hannaneh Hajishirzi, Julia Hockenmaier, Erik T. Mueller, and Eyal Amir. 2011. Reasoning about robocup soccer narratives. In UAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hannaneh Hajishirzi</author>
+<author>Leila Zilles</author>
+<author>Daniel S Weld</author>
+<author>Luke S Zettlemoyer</author>
+</authors>
+<title>Joint coreference resolution and named-entity linking with multi-pass sieves.</title>
+<date>2013</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="35790" citStr="Hajishirzi et al., 2013" startWordPosition="5928" endWordPosition="5931">ition, the relation completion step, which relies on the intermediate representation, helps to improve text interpretation. Error Analysis: In order to understand the errors made by GEOS, we use oracle text parsing and oracle diagram parsing (Table 3). Roughly 38% of the errors are due to failures in text parsing, and about 46% of errors are due to failures in diagram parsing. Among them, about 15% of errors were due to failures in both diagram and text parsing. For an example of text parsing failure, the literals in Figure 6 (a) are not scored accurately due to missing coreference relations (Hajishirzi et al., 2013). The rest of errors are due to problems that require more complex reasoning (Figure 6 (b)). 6Typically, 50th percentile (penalized) score in SAT math section is 27 out of 54 (50%). 1473 SAT score (%) Method Practice Official GEOS w/o diagram parsing 7 5 GEOS w/o text parsing 10 10 Rule-based text parsing + GEOS diagram 31 24 GEOS w/o relation completion 42 33 GEOS 61 49 Oracle text parsing + GEOS diagram parsing 78 75 GEOS text parsing + oracle diagram parsing 81 79 Oracle text parsing + oracle diagram parsing 88 84 Table 3: SAT scores of solving geometry questions. P R F1 Rule-based text par</context>
+</contexts>
+<marker>Hajishirzi, Zilles, Weld, Zettlemoyer, 2013</marker>
+<rawString>Hannaneh Hajishirzi, Leila Zilles, Daniel S Weld, and Luke S Zettlemoyer. 2013. Joint coreference resolution and named-entity linking with multi-pass sieves. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mary Hegarty</author>
+<author>Marcel Adam Just</author>
+</authors>
+<title>10 understanding machines from text and diagrams. Knowledge acquisition from text and pictures.</title>
+<date>1989</date>
+<contexts>
+<context position="8185" citStr="Hegarty and Just, 1989" startWordPosition="1301" endWordPosition="1304"> most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question i</context>
+</contexts>
+<marker>Hegarty, Just, 1989</marker>
+<rawString>Mary Hegarty and Marcel Adam Just. 1989. 10 understanding machines from text and diagrams. Knowledge acquisition from text and pictures.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ben Hixon</author>
+<author>Peter Clark</author>
+<author>Hannaneh Hajishirzi</author>
+</authors>
+<title>Learning knowledge graphs for question answering through conversational dialog.</title>
+<date>2015</date>
+<booktitle>In NAACL.</booktitle>
+<contexts>
+<context position="7129" citStr="Hixon et al., 2015" startWordPosition="1139" endWordPosition="1142">red to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text </context>
+</contexts>
+<marker>Hixon, Clark, Hajishirzi, 2015</marker>
+<rawString>Ben Hixon, Peter Clark, and Hannaneh Hajishirzi. 2015. Learning knowledge graphs for question answering through conversational dialog. In NAACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mohammad Javad Hosseini</author>
+<author>Hannaneh Hajishirzi</author>
+<author>Oren Etzioni</author>
+<author>Nate Kushman</author>
+</authors>
+<title>Learning to solve arithmetic word problems with verb categorization.</title>
+<date>2014</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="1503" citStr="Hosseini et al., 2014" startWordPosition="220" endWordPosition="223">tegrating textual and visual information, GEOS boosts the accuracy of dependency and semantic parsing of the question text. 1 Introduction This paper introduces the first fully-automated system for solving unaletered SAT-level geometric word problems, each of which consists of text and the corresponding diagram (Figure 1). The geometry domain has a long history in AI, but previous work has focused on geometric theorem proving (Feigenbaum and Feldman, 1963) or geometric analogies (Evans, 1964). Arithmetic and algebraic word problems have attracted several NLP researchers (Kushman et al., 2014; Hosseini et al., 2014; Roy et al., 2015), but geometric word problems were first explored only last year by Seo et al. (2014). Still, this system merely aligned diagram elements with their textual mentions (e.g., “Circle O”)—it did not attempt to fully represent geometry problems or solve them. Answering geometry questions requires a method that interpert question text and diagrams in concert. 1The source code, the dataset and the annotations are publicly available at geometry.allenai.org. Questions Interpretations In the diagram at Equals(RadiusOf(O), 5) the left, circle O IsCircle(O) has a radius of 5, Equals(Le</context>
+</contexts>
+<marker>Hosseini, Hajishirzi, Etzioni, Kushman, 2014</marker>
+<rawString>Mohammad Javad Hosseini, Hannaneh Hajishirzi, Oren Etzioni, and Nate Kushman. 2014. Learning to solve arithmetic word problems with verb categorization. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rohit J Kate</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Learning language semantics from ambiguous supervision.</title>
+<date>2007</date>
+<booktitle>In AAAI.</booktitle>
+<contexts>
+<context position="6211" citStr="Kate and Mooney, 2007" startWordPosition="987" endWordPosition="990">core of 61% on practice questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problemat</context>
+</contexts>
+<marker>Kate, Mooney, 2007</marker>
+<rawString>Rohit J. Kate and Raymond J. Mooney. 2007. Learning language semantics from ambiguous supervision. In AAAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joohyun Kim</author>
+<author>Raymond J Mooney</author>
+</authors>
+<title>Adapting discriminative reranking to grounded language learning.</title>
+<date>2013</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="7083" citStr="Kim and Mooney, 2013" startWordPosition="1131" endWordPosition="1134">vailable geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instruction</context>
+</contexts>
+<marker>Kim, Mooney, 2013</marker>
+<rawString>Joohyun Kim and Raymond J. Mooney. 2013. Adapting discriminative reranking to grounded language learning. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dan Klein</author>
+<author>Christopher D Manning</author>
+</authors>
+<title>Parsing and hypergraphs. In New developments in parsing technology.</title>
+<date>2005</date>
+<publisher>Springer.</publisher>
+<contexts>
+<context position="14919" citStr="Klein and Manning, 2005" startWordPosition="2426" endWordPosition="2429"> satisfiable according to SOLVER (Section 7) Figure 3: Solving geometry questions with GEOS. Figure 4: Hypergraph representation of the sentence “A tangent line is drawn to circle O with radius of 5”. als L and the question text t. This score is the sum of the affinity scores of individual literals lj E L i.e., Atext(L, t) = Ej Atext(lj, t) where Atext(lj, t) H [−OO, 0].3 GEOS learns a discriminative model Atext(lj, t; θ) that scores the affinity of every literal lj E L and the question text t through supervised learning from training data. We represent literals using a hypergraph (Figure 4) (Klein and Manning, 2005; Flanigan et al., 2014). Each node in the graph corresponds to a concept in the geometry language (i.e. constants, variables, functions, or predicates). The edges capture the relations between concepts; concept nodes are connected if one concept is the argument of the other in the geometry language. In order to interpret the question text (Figure 3 step 1), GEOS first identifies concepts evoked by the words or phrases in the input text. Then, it learns the affinity scores which are the weights of edges in the hypergraph. It finally completes relations so that type matches are satistfied in th</context>
+</contexts>
+<marker>Klein, Manning, 2005</marker>
+<rawString>Dan Klein and Christopher D Manning. 2005. Parsing and hypergraphs. In New developments in parsing technology. Springer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Koncel-Kedziorski</author>
+<author>Hannaneh Hajishirzi</author>
+<author>Ali Farhadi</author>
+</authors>
+<title>Multi-resolution language grounding with weak supervision.</title>
+<date>2014</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="7040" citStr="Koncel-Kedziorski et al., 2014" startWordPosition="1123" endWordPosition="1126"> geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsi</context>
+</contexts>
+<marker>Koncel-Kedziorski, Hajishirzi, Farhadi, 2014</marker>
+<rawString>R Koncel-Kedziorski, Hannaneh Hajishirzi, and Ali Farhadi. 2014. Multi-resolution language grounding with weak supervision. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Dieter</author>
+</authors>
+<title>A software package for sequential quadratic programming. DFVLR Obersfaffeuhofen,</title>
+<date>1988</date>
+<marker>Dieter, 1988</marker>
+<rawString>Dieter et. al. Kraft. 1988. A software package for sequential quadratic programming. DFVLR Obersfaffeuhofen, Germany.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Girish Kulkarni</author>
+<author>Visruth Premraj</author>
+<author>Sagnik Dhar</author>
+<author>Siming Li</author>
+<author>Yejin Choi</author>
+<author>Alexander C Berg</author>
+<author>Tamara L Berg</author>
+</authors>
+<title>Baby talk: Understanding and generating image descriptions.</title>
+<date>2011</date>
+<booktitle>In CVPR.</booktitle>
+<contexts>
+<context position="7820" citStr="Kulkarni et al., 2011" startWordPosition="1242" endWordPosition="1245">volves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in </context>
+</contexts>
+<marker>Kulkarni, Premraj, Dhar, Li, Choi, Berg, Berg, 2011</marker>
+<rawString>Girish Kulkarni, Visruth Premraj, Sagnik Dhar, Siming Li, Yejin Choi, Alexander C Berg, and Tamara L Berg. 2011. Baby talk: Understanding and generating image descriptions. In CVPR.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Nate Kushman</author>
+<author>Yoav Artzi</author>
+<author>Luke Zettlemoyer</author>
+<author>Regina Barzilay</author>
+</authors>
+<title>Learning to automatically solve algebra word problems.</title>
+<date>2014</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="1480" citStr="Kushman et al., 2014" startWordPosition="216" endWordPosition="219">ly, we show that by integrating textual and visual information, GEOS boosts the accuracy of dependency and semantic parsing of the question text. 1 Introduction This paper introduces the first fully-automated system for solving unaletered SAT-level geometric word problems, each of which consists of text and the corresponding diagram (Figure 1). The geometry domain has a long history in AI, but previous work has focused on geometric theorem proving (Feigenbaum and Feldman, 1963) or geometric analogies (Evans, 1964). Arithmetic and algebraic word problems have attracted several NLP researchers (Kushman et al., 2014; Hosseini et al., 2014; Roy et al., 2015), but geometric word problems were first explored only last year by Seo et al. (2014). Still, this system merely aligned diagram elements with their textual mentions (e.g., “Circle O”)—it did not attempt to fully represent geometry problems or solve them. Answering geometry questions requires a method that interpert question text and diagrams in concert. 1The source code, the dataset and the annotations are publicly available at geometry.allenai.org. Questions Interpretations In the diagram at Equals(RadiusOf(O), 5) the left, circle O IsCircle(O) has a</context>
+</contexts>
+<marker>Kushman, Artzi, Zettlemoyer, Barzilay, 2014</marker>
+<rawString>Nate Kushman, Yoav Artzi, Luke Zettlemoyer, and Regina Barzilay. 2014. Learning to automatically solve algebra word problems. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Kwiatkowski</author>
+<author>E Choi</author>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Scaling semantic parsers with on-the-fly ontology matching.</title>
+<date>2013</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="6313" citStr="Kwiatkowski et al., 2013" startWordPosition="1004" endWordPosition="1007">ude: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al.,</context>
+<context position="21624" citStr="Kwiatkowski et al., 2013" startWordPosition="3554" endWordPosition="3557">include coordinating conjunctions between entities. In “AM and CM bisect BAC and BCA”, “bisect” is shared by two lines and two angles (Figure 5 (b)). Also, consider two sentences: “AB and CD are perpendicular” and “AB is perpendicular to CD”. Both have the same semantic annotation but very different syntactic structures. It is difficult to directly fit the syntactic structure of question sentences into the formal language Q for implications and coordinating conjunctions, especially due to small training data. We, instead, adopt a two-stage learning inspired by recent work in semantic parsing (Kwiatkowski et al., 2013). Our solution assumes an intermediate representation that is syntactically sound but possibly underspecified. The intermediate representation closely mirrors the linguistic structure of the sentences. In addition, it can easily be transferred to the formal representation in the geometry language Q. Figure 5 shows how implications and coordinating conjunctions are modeled in the intermediate representation. Bridged in Figure 5 (a) indicates that there is a special relation (edge) between the two concepts (e.g., what and PerimeterOf), but the alignment to the geometry language L is not clear. C</context>
+</contexts>
+<marker>Kwiatkowski, Choi, Artzi, Zettlemoyer, 2013</marker>
+<rawString>T Kwiatkowski, E Choi, Y Artzi, and L Zettlemoyer. 2013. Scaling semantic parsers with on-the-fly ontology matching. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Percy Liang</author>
+<author>Michael I Jordan</author>
+<author>Dan Klein</author>
+</authors>
+<title>Learning semantic correspondences with less supervision.</title>
+<date>2009</date>
+<booktitle>In ACLAFNLP.</booktitle>
+<contexts>
+<context position="7008" citStr="Liang et al., 2009" startWordPosition="1119" endWordPosition="1122">tical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation problem as selecting the most likely subset of literals can be genera</context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2009</marker>
+<rawString>Percy Liang, Michael I. Jordan, and Dan Klein. 2009. Learning semantic correspondences with less supervision. In ACLAFNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Xinggang Lin</author>
+<author>Shigeyoshi Shimotsuji</author>
+<author>Michihiko Minoh</author>
+<author>Toshiyuki Sakai</author>
+</authors>
+<title>Efficient diagram understanding with characteristic pattern detection.</title>
+<date>1985</date>
+<journal>CVGIP,</journal>
+<volume>30</volume>
+<issue>1</issue>
+<contexts>
+<context position="8161" citStr="Lin et al., 1985" startWordPosition="1297" endWordPosition="1300">m as selecting the most likely subset of literals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulati</context>
+</contexts>
+<marker>Lin, Shimotsuji, Minoh, Sakai, 1985</marker>
+<rawString>Xinggang Lin, Shigeyoshi Shimotsuji, Michihiko Minoh, and Toshiyuki Sakai. 1985. Efficient diagram understanding with characteristic pattern detection. CVGIP, 30(1).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Lovett</author>
+<author>K Forbus</author>
+</authors>
+<title>Modeling multiple strategies for solving geometric analogy problems.</title>
+<date>2012</date>
+<booktitle>In CCS.</booktitle>
+<contexts>
+<context position="8280" citStr="Lovett and Forbus, 2012" startWordPosition="1315" endWordPosition="1318">as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question is a tuple (t, d, c) consisting of a text t in natural language, a diagram d 1467 Solver Interpr</context>
+</contexts>
+<marker>Lovett, Forbus, 2012</marker>
+<rawString>A. Lovett and K. Forbus. 2012. Modeling multiple strategies for solving geometric analogy problems. In CCS.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gordon Novak</author>
+</authors>
+<title>Diagrams for solving physical problems. Diagrammatic reasoning: Cognitive and computational perspectives.</title>
+<date>1995</date>
+<contexts>
+<context position="8198" citStr="Novak, 1995" startWordPosition="1305" endWordPosition="1306">iterals can be generalized to grounded semantic parsing domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question is a tuple (t,</context>
+</contexts>
+<marker>Novak, 1995</marker>
+<rawString>Gordon Novak. 1995. Diagrams for solving physical problems. Diagrammatic reasoning: Cognitive and computational perspectives.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Lawrence O’Gorman</author>
+<author>Rangachar Kasturi</author>
+</authors>
+<title>Document image analysis, volume 39.</title>
+<date>1995</date>
+<publisher>Citeseer.</publisher>
+<marker>O’Gorman, Kasturi, 1995</marker>
+<rawString>Lawrence O’Gorman and Rangachar Kasturi. 1995. Document image analysis, volume 39. Citeseer.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hoifung Poon</author>
+<author>Pedro Domingos</author>
+</authors>
+<title>Unsupervised semantic parsing.</title>
+<date>2009</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="6263" citStr="Poon and Domingos, 2009" startWordPosition="995" endWordPosition="998">irst results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of ground</context>
+</contexts>
+<marker>Poon, Domingos, 2009</marker>
+<rawString>Hoifung Poon and Pedro Domingos. 2009. Unsupervised semantic parsing. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Siva Reddy</author>
+<author>Mirella Lapata</author>
+<author>Mark Steedman</author>
+</authors>
+<title>Large-scale semantic parsing without question-answer pairs.</title>
+<date>2014</date>
+<tech>TACL, 2(Oct).</tech>
+<contexts>
+<context position="6334" citStr="Reddy et al., 2014" startWordPosition="1008" endWordPosition="1011">lementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jura</context>
+</contexts>
+<marker>Reddy, Lapata, Steedman, 2014</marker>
+<rawString>Siva Reddy, Mirella Lapata, and Mark Steedman. 2014. Large-scale semantic parsing without question-answer pairs. TACL, 2(Oct).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Roy</author>
+<author>T Vieira</author>
+<author>D Roth</author>
+</authors>
+<title>Reasoning about quantities in natural language.</title>
+<date>2015</date>
+<contexts>
+<context position="1522" citStr="Roy et al., 2015" startWordPosition="224" endWordPosition="227">isual information, GEOS boosts the accuracy of dependency and semantic parsing of the question text. 1 Introduction This paper introduces the first fully-automated system for solving unaletered SAT-level geometric word problems, each of which consists of text and the corresponding diagram (Figure 1). The geometry domain has a long history in AI, but previous work has focused on geometric theorem proving (Feigenbaum and Feldman, 1963) or geometric analogies (Evans, 1964). Arithmetic and algebraic word problems have attracted several NLP researchers (Kushman et al., 2014; Hosseini et al., 2014; Roy et al., 2015), but geometric word problems were first explored only last year by Seo et al. (2014). Still, this system merely aligned diagram elements with their textual mentions (e.g., “Circle O”)—it did not attempt to fully represent geometry problems or solve them. Answering geometry questions requires a method that interpert question text and diagrams in concert. 1The source code, the dataset and the annotations are publicly available at geometry.allenai.org. Questions Interpretations In the diagram at Equals(RadiusOf(O), 5) the left, circle O IsCircle(O) has a radius of 5, Equals(LengthOf(CE), 2) and </context>
+</contexts>
+<marker>Roy, Vieira, Roth, 2015</marker>
+<rawString>S. Roy, T. Vieira, and D. Roth. 2015. Reasoning about quantities in natural language.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Min Joon Seo</author>
+<author>Hannaneh Hajishirzi</author>
+<author>Ali Farhadi</author>
+<author>Oren Etzioni</author>
+</authors>
+<title>Diagram understanding in geometry questions.</title>
+<date>2014</date>
+<booktitle>In AAAI.</booktitle>
+<contexts>
+<context position="1607" citStr="Seo et al. (2014)" startWordPosition="240" endWordPosition="243"> question text. 1 Introduction This paper introduces the first fully-automated system for solving unaletered SAT-level geometric word problems, each of which consists of text and the corresponding diagram (Figure 1). The geometry domain has a long history in AI, but previous work has focused on geometric theorem proving (Feigenbaum and Feldman, 1963) or geometric analogies (Evans, 1964). Arithmetic and algebraic word problems have attracted several NLP researchers (Kushman et al., 2014; Hosseini et al., 2014; Roy et al., 2015), but geometric word problems were first explored only last year by Seo et al. (2014). Still, this system merely aligned diagram elements with their textual mentions (e.g., “Circle O”)—it did not attempt to fully represent geometry problems or solve them. Answering geometry questions requires a method that interpert question text and diagrams in concert. 1The source code, the dataset and the annotations are publicly available at geometry.allenai.org. Questions Interpretations In the diagram at Equals(RadiusOf(O), 5) the left, circle O IsCircle(O) has a radius of 5, Equals(LengthOf(CE), 2) and CE = 2. IsDiameter(AC) Diameter AC is IsChord(BD) perpendicular to Perpendicular(AC),</context>
+<context position="8613" citStr="Seo et al. (2014)" startWordPosition="1367" endWordPosition="1370">ation help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question is a tuple (t, d, c) consisting of a text t in natural language, a diagram d 1467 Solver Interpretation GeoS input B In triangle ABC, line DE is parallel line AC, DB 4, AD is 8, D E with equals and DE is 5. Find AC. (a) 9 (b) 10 (c) 12.5 (d) 15 (e) 17 A C Text Parsing Diagram Parsing Sec. 4 Sec. 5 L, Atext LΔ+ Adiagram IsTriangle(ABC) 0.96 Colinear(A,D,B) 1.0 Parallel(AC, DE) 0.91 Colinear(B,E,C) 1.0 Parallel(AC, DB) 0.74 Par</context>
+<context position="24403" citStr="Seo et al., 2014" startWordPosition="3997" endWordPosition="4000">sentation, we use deterministic rules to coordinate the entities x and y in each CC relation (Figure 5 (b)). First, GEOS forms a set {x, y} for every two concepts x and y that appear in CC(x,y) and transforms every x and y in other literals to {x, y}. Second, GEOS transforms the relations with expansion and distribution rules (Figure 3 Step 1 (iv)). For instance, Perpendicular({x,y}) will be transferred to Perpendicular(x, y) (expansion rule), and LengthOf{x,y}) will be transferred to LengthOf(x) ∧ LengthOf(y) (distribution rule). 5 Diagram Parser We use the publicly available diagram parser (Seo et al., 2014) to obtain the set of all visual elements (points, lines, circles, etc.), their coordinates, their relationships in the diagram, and their alignment with entity references in the text (e.g. “line AB”, “circle O”). The diagram parser serves two purposes: (a) computing the diagram score as a measure of the affinity of each literal with the diagram; (b) obtaining high-confidence visual literals which cannot be obtained from the text. Diagram score: For each literal lj from the text parsing, we obtain its diagram score Adiagram(lj, d) H [−oc, 0]. GEOS grounds each literal derived from the text by </context>
+<context position="27283" citStr="Seo et al. (2014)" startWordPosition="4502" endWordPosition="4505">ible that the literal is false, because many diagrams are not drawn to scale. Hence, GEOS adds both text and diagram scores in order to score literals (Section 6). High-confidence visual literals: Diagrams often contain critical information that is not present in the text. For instance, to solve the question in Figure 1, one has to know that the points A, E, and C are colinear. In addition, diagrams include numer1471 ical labels (e.g. one of the labels in Figure 1(b) indicates the measure of the angle ABC = 40 degrees). This kind of information is confidently parsed with the diagram parser by Seo et al. (2014). We denote the set of the high-confidence literals by Lo that are passed to the solver (Section 7). 6 Optimization Here, we describe the details of the objective function (Equation 1) and how to efficiently maximize it. The integrated affinity score of a set of literals L&apos; (the first term in Equation 1) is defined as: A(L&apos;, t, d) = � [Atext(l&apos;j, t) + Adiagram(l&apos;j, d)] l&apos;jEL&apos; where Atext and Adiagram are the text and diagram affinities of l&apos;j, respectively. To encourage GEOS to pick a subset of literals that cover the concepts in the question text and, at the same time, avoid redundancies, we </context>
+<context position="31053" citStr="Seo et al. (2014)" startWordPosition="5151" endWordPosition="5154">on details: Sentences in geometry questions often contain in-line mathematical expressions, such as “If AB=x+5, what is x?”. These mathematical expressions cause general purpose parsers to fail. GEOS uses an equation analyzer and pre-processes question text by replacing “=” with “equals”, and replacing mathematical terms (e.g., “x+5”) with a dummy noun so that the dependency parser does not fail. GEOS uses Stanford dependency parser (Chen and Manning, 2014) to obtain syntactic information, which is used to compute features for relation identification (Table 1). For diagram parsing, similar to Seo et al. (2014), we assume that GEOS has access to ground truth optical character recognition for labels in the diagrams. For optimization, we tune the parameters A to 0.5, based on the training examples.4 Dataset: We built a dataset of SAT plane geometry questions where every question has a tex4In our dataset, the number of all possible literals for each sentence is at most 1000. 1472 Total Training Practice Official Questions 186 67 64 55 Sentences 336 121 110 105 Words 4343 1435 1310 1598 Literals 577 176 189 212 Binary relations 337 110 108 119 Unary relations 437 141 150 146 Table 2: Data and annotation</context>
+</contexts>
+<marker>Seo, Hajishirzi, Farhadi, Etzioni, 2014</marker>
+<rawString>Min Joon Seo, Hannaneh Hajishirzi, Ali Farhadi, and Oren Etzioni. 2014. Diagram understanding in geometry questions. In AAAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Rohini K Srihari</author>
+</authors>
+<title>Computational models for integrating linguistic and visual information: A survey.</title>
+<date>1994</date>
+<journal>Artificial Intelligence Review,</journal>
+<pages>8--5</pages>
+<contexts>
+<context position="8254" citStr="Srihari, 1994" startWordPosition="1313" endWordPosition="1314">g domains such as navigational instructions. Coupling images and the corresponding text has attracted attention in both vision and NLP (Farhadi et al., 2010; Kulkarni et al., 2011; Gupta and Mooney, 2010; Gong et al., 2014; Fang et al., 2014). We build on this powerful paradigm, but instead of generating captions we show how processing multimodal information help improve textual or visual interpretations for solving geometry questions. Diagram understanding has been explored since early days in AI (Lin et al., 1985; Hegarty and Just, 1989; Novak, 1995; O’Gorman and Kasturi, 1995; Bulko, 1988; Srihari, 1994; Lovett and Forbus, 2012). Most previous approaches differ from our method because they address the twin problems of diagram understanding and text understanding in isolation. Often, previous work relies on manual identification of visual primitives, or on rule-based system for text analysis. The closest work to ours is the recent work of Seo et al. (2014) that aligns geometric shapes with their textual mentions, but does not identify geometric relations or solve geometry problems. 3 Problem Formulation A geometry question is a tuple (t, d, c) consisting of a text t in natural language, a dia</context>
+</contexts>
+<marker>Srihari, 1994</marker>
+<rawString>Rohini K Srihari. 1994. Computational models for integrating linguistic and visual information: A survey. Artificial Intelligence Review, 8(5-6).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Adam Vogel</author>
+<author>Daniel Jurafsky</author>
+</authors>
+<title>Learning to follow navigational directions.</title>
+<date>2010</date>
+<booktitle>In ACL.</booktitle>
+<contexts>
+<context position="6944" citStr="Vogel and Jurafsky, 2010" startWordPosition="1107" endWordPosition="1110"> et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehnert, 1996; Culotta and Sorensen, 2004). Again, both diagrams and small corpora are problematic for this body of work. Our work is part of grounded language acquisition research (Branavan et al., 2012; Vogel and Jurafsky, 2010; Chen et al., 2010; Hajishirzi et al., 2011; Liang et al., 2009; Koncel-Kedziorski et al., 2014; Bordes et al., 2010; Kim and Mooney, 2013; Angeli and Manning, 2014; Hixon et al., 2015; Koncel-Kedziorski et al., 2014; Artzi and Zettlemoyer, 2013) that involves mapping text to a restricted formalism (instead of a full, domain independent representation). In the geometry domain, we recover the entities (e.g., circles) from diagrams, derive relations compatible with both text and diagram, and re-score relations derived from text parsing using diagram information. Casting the interpretation probl</context>
+</contexts>
+<marker>Vogel, Jurafsky, 2010</marker>
+<rawString>Adam Vogel and Daniel Jurafsky. 2010. Learning to follow navigational directions. In ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>David J Wales</author>
+<author>Jonathan PK Doye</author>
+</authors>
+<title>Global optimization by basin-hopping and the lowest energy structures of lennard-jones clusters containing up to 110 atoms.</title>
+<date>1997</date>
+<journal>The Journal of Physical Chemistry A,</journal>
+<volume>101</volume>
+<issue>28</issue>
+<contexts>
+<context position="29801" citStr="Wales and Doye, 1997" startWordPosition="4952" endWordPosition="4955">in computational geometry (Alvin et al., 2014). We use a numerical method to check the satisfiablity of literals. For each literal lj in L* U Lo, we define a relaxed indicator function gj : 5 H zj E [−oc, 0]. The function zj = gj(5) indicates the relaxed satisfiability of lj given an assignment 5 to the variables X. The literal lj is completely satisfied if gj(5) = 0. We formulate the problem of satisfiability of literals as the task of finding the assignment 5* to X such that sum of all indicator functions gj(5*) is maximized, i.e. 5* = arg maxS Ej gj(5). We use the basing-hopping algorithm (Wales and Doye, 1997) with sequential least squares programming (Kraft, 1988) to globally maximize the sum of the indicator functions. If there exists an assignment such that Ej gj(5) = 0, then GEOS finds an assignment to X that satisfies all literals. If such assignment does not exist, then GEOS concludes that the literals are not satisfiable simultaneously. GEOS chooses to answer a geometry question if the literals of exactly one answer choice are simultaneously satisfiable. 8 Experimental Setup Logical Language Q: Q consists of 13 types of entities and 94 function and predicates observed in our development set </context>
+</contexts>
+<marker>Wales, Doye, 1997</marker>
+<rawString>David J Wales and Jonathan PK Doye. 1997. Global optimization by basin-hopping and the lowest energy structures of lennard-jones clusters containing up to 110 atoms. The Journal of Physical Chemistry A, 101(28).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Luke S Zettlemoyer</author>
+<author>Michael Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In UAI.</booktitle>
+<contexts>
+<context position="6119" citStr="Zettlemoyer and Collins, 2005" startWordPosition="971" endWordPosition="974">estions. We report on experiments where GEOS achieves a 49% score on official SAT questions, and a score of 61% on practice questions, providing the first results of this kind. Our contributions include: (1) designing and implementing the first end-to-end system that solves SAT plane geometry problems; (2) formalizing the problem of interpreting geometry questions as a submodular optimization problem; and (3) providing the first empirical results on the geometry genre, making the data and software available for future work. 2 Related Work Semantic parsing is an important area of NLP research (Zettlemoyer and Collins, 2005; Ge and Mooney, 2006; Flanigan et al., 2014; Eisenstein et al., 2009; Kate and Mooney, 2007; Goldwasser and Roth, 2011; Poon and Domingos, 2009; Berant and Liang, 2014; Kwiatkowski et al., 2013; Reddy et al., 2014). However, semantic parsers do not tackle diagrams—a critical element of the geometry genre. In addition, the overall number of available geometry questions is quite small compared to the size of typical NLP corpora, making it challenging to learn semantic parsers directly from geometry questions. Relation extraction is another area of NLP that is related to our task (Cowie and Lehn</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Luke S. Zettlemoyer and Michael Collins. 2005. Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In UAI.</rawString>
+</citation>
+<citation valid="false">
+<title>11 Appendix: Proof of Submodularity of Equation 1 We prove that the objective function in equation (1), AA(L0) + H(L0) is submodular by showing that A(L0) and H(L0) are submodular functions. Submodularity of A. Consider L0 ⊂ L, and a new literal to be added,</title>
+<booktitle>lz ∈ L \ L0. By the definition of A, it is clear that A(L0 ∪ {lj}) = A(L0) + A({lj}). Hence, for all L00 ⊂ L0 ⊂ L, A(L00 ∪ {lj}) − A(L00) = A(L0 ∪ {lj}) − A(L0) . Thus A is submodular.</booktitle>
+<marker></marker>
+<rawString>11 Appendix: Proof of Submodularity of Equation 1 We prove that the objective function in equation (1), AA(L0) + H(L0) is submodular by showing that A(L0) and H(L0) are submodular functions. Submodularity of A. Consider L0 ⊂ L, and a new literal to be added, lz ∈ L \ L0. By the definition of A, it is clear that A(L0 ∪ {lj}) = A(L0) + A({lj}). Hence, for all L00 ⊂ L0 ⊂ L, A(L00 ∪ {lj}) − A(L00) = A(L0 ∪ {lj}) − A(L0) . Thus A is submodular.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Submodularity of H</author>
+</authors>
+<title>We prove that the cover-</title>
+<marker>H, </marker>
+<rawString>Submodularity of H. We prove that the cover-</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

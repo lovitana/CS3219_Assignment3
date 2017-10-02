@@ -1,0 +1,1983 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000000">
+<title confidence="0.9959375">
+Morpho-syntactic Lexical Generalization
+for CCG Semantic Parsing
+</title>
+<author confidence="0.747587">
+Tom Kwiatkowski
+</author>
+<affiliation confidence="0.539072">
+Allen Institute for AI
+</affiliation>
+<address confidence="0.571854">
+Seattle, WA
+</address>
+<email confidence="0.961955">
+tomk@allenai.org
+</email>
+<author confidence="0.995014">
+Adrienne Wang
+</author>
+<affiliation confidence="0.9965505">
+Computer Science &amp; Engineering
+University of Washington
+</affiliation>
+<address confidence="0.910255">
+Seattle, WA
+</address>
+<email confidence="0.999363">
+axwang@cs.washington.edu
+</email>
+<author confidence="0.992488">
+Luke Zettlemoyer
+</author>
+<affiliation confidence="0.9961995">
+Computer Science &amp; Engineering
+University of Washington
+</affiliation>
+<address confidence="0.91031">
+Seattle, WA
+</address>
+<email confidence="0.999552">
+lsz@cs.washington.edu
+</email>
+<sectionHeader confidence="0.995666" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.9999107">
+In this paper, we demonstrate that
+significant performance gains can be
+achieved in CCG semantic parsing
+by introducing a linguistically moti-
+vated grammar induction scheme. We
+present a new morpho-syntactic fac-
+tored lexicon that models systematic
+variations in morphology, syntax, and
+semantics across word classes. The
+grammar uses domain-independent
+facts about the English language to
+restrict the number of incorrect parses
+that must be considered, thereby
+enabling effective learning from less
+data. Experiments in benchmark
+domains match previous models with
+one quarter of the data and provide
+new state-of-the-art results with all
+available data, including up to 45%
+relative test-error reduction.
+</bodyText>
+<sectionHeader confidence="0.998521" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999939517241379">
+Semantic parsers map sentences to formal
+representations of their meaning (Zelle and
+Mooney, 1996; Zettlemoyer and Collins, 2005;
+Liang et al., 2011). One common approach is
+to induce a probabilistic CCG grammar, which
+defines the meanings of individual words and
+phrases and how to best combine them to an-
+alyze complete sentences. There has been re-
+cent work developing learning algorithms for
+CCG semantic parsers (Kwiatkowski et al.,
+2010; Artzi and Zettlemoyer, 2011) and using
+them for applications ranging from question
+answering (Cai and Yates, 2013b; Kwiatkowski
+et al., 2013) to robot control (Matuszek et al.,
+2012; Krishnamurthy and Kollar, 2013).
+One key learning challenge for this style
+of learning is to induce the CCG lexicon,
+which lists possible meanings for each phrase
+and defines a set of possible parses for
+each sentence. Previous approaches have
+either hand-engineered a small set of lexi-
+cal templates (Zettlemoyer and Collins, 2005,
+2007) or automatically learned such tem-
+plates (Kwiatkowski et al., 2010, 2011). These
+methods are designed to learn grammars that
+overgenerate; they produce spurious parses
+that can complicate parameter estimation.
+In this paper, we demonstrate that signif-
+icant gains can instead be achieved by using
+a more constrained, linguistically motivated
+grammar induction scheme. The grammar
+is restricted by introducing detailed syntac-
+tic modeling of a wider range of constructions
+than considered in previous work, for example
+introducing explicit treatments of relational
+nouns, Davidsonian events, and verb tense.
+We also introduce a new lexical generalization
+model that abstracts over systematic morpho-
+logical, syntactic, and semantic alternations
+within word classes. This includes, for exam-
+ple, the facts that verbs in relative clauses and
+nominal constructions (e.g., “flights departing
+NYC” and “departing flights”) should be in-
+finitival while verbs in phrases (e.g., “What
+flights depart at noon?”) should have tense.
+These grammar modeling techniques use uni-
+versal, domain-independent facts about the
+English language to restrict word usage to ap-
+propriate syntactic contexts, and as such are
+potentially applicable to any semantic parsing
+application.
+More specifically, we introduce a new
+morpho-syntactic, factored CCG lexicon that
+imposes our grammar restrictions during
+learning. Each lexical entry has (1) a word
+stem, automatically constructed from Wik-
+tionary, with part-of-speech and morpholog-
+ical attributes, (2) a lexeme that is learned
+</bodyText>
+<page confidence="0.932762">
+1284
+</page>
+<note confidence="0.9093885">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 1284–1295,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.99992912">
+and pairs the stem with semantic content that
+is invariant to syntactic usage, and (3) a lexi-
+cal template that specifies the remaining syn-
+tactic and semantic content. The full set of
+templates is defined in terms of a small set of
+base templates and template transformations
+that model morphological variants such as pas-
+sivization and nominalization of verbs. This
+approach allows us to efficiently encode a gen-
+eral grammar for semantic parsing while also
+eliminating large classes of incorrect analyses
+considered by previous work.
+We perform experiments in two benchmark
+semantic parsing datasets: GeoQuery (Zelle
+and Mooney, 1996) and ATIS (Dahl et al.,
+1994). In both cases, our approach
+achieves state-of-the-art performance, includ-
+ing a nearly 45% relative error reduction on
+the ATIS test set. We also show that the gains
+increase with less data, including matching
+previous model’s performance with less than
+25% of the training data. Such gains are par-
+ticularly practical for semantic parsers; they
+can greatly reduce the amount of data that is
+needed for each new application domain.
+</bodyText>
+<sectionHeader confidence="0.99962" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<bodyText confidence="0.999589464788732">
+Grammar induction methods for CCG seman-
+tic parsers have either used hand-engineered
+lexical templates, e.g. (Zettlemoyer and
+Collins, 2005, 2007; Artzi and Zettlemoyer,
+2011), or algorithms to learn such templates
+directly from data, e.g. (Kwiatkowski et al.,
+2010, 2011). Here, we extend the first ap-
+proach, and show that better lexical general-
+ization provides significant performance gains.
+Although CCG is a common choice
+for semantic parsers, many other for-
+malisms have been studied, including DCS
+trees (Liang et al., 2011), integer linear pro-
+grams (Clarke et al., 2010), and synchronous
+grammars (Wong and Mooney, 2007; Jones
+et al., 2012; Andreas et al., 2013). All of these
+approaches build complete meaning represen-
+tations for individual sentences, but the data
+we use has also been studied in related work on
+cross-sentence reasoning (Miller et al., 1996;
+Zettlemoyer and Collins, 2009) and model-
+ing semantic interpretation as a tagging prob-
+lem (Tur et al., 2013; Heck et al., 2013). Al-
+though we focus on full analysis with CCG,
+the general idea of using linguistic constraints
+to improve learning is broadly applicable.
+Semantic parsers are also commonly learned
+from a variety of different types of supervision,
+including logical forms (Kate and Mooney,
+2006; Wong and Mooney, 2007; Muresan,
+2011; Kwiatkowski et al., 2012), question-
+answer pairs (Clarke et al., 2010; Liang et al.,
+2011), conversational logs (Artzi and Zettle-
+moyer, 2011), distant supervision (Krishna-
+murthy and Mitchell, 2012; Cai and Yates,
+2013b), sentences paired with system behav-
+ior (Goldwasser and Roth, 2011; Chen and
+Mooney, 2011; Artzi and Zettlemoyer, 2013b),
+and even from database constraints with no
+explicit semantic supervision (Poon, 2013).
+We learn from logical forms, but CCG learn-
+ing algorithms have been developed for each
+case above, making our techniques applicable.
+There has been significant related work that
+influenced the design of our morpho-syntactic
+grammars. This includes linguistics stud-
+ies of relational nouns (Partee and Borschev,
+1998; de Bruin and Scha, 1988), Davidsonian
+events (Davidson, 1967), parsing as abduc-
+tion (Hobbs et al., 1988), and other more gen-
+eral theories for lexicons (Pustejovsky, 1991)
+and CCG (Steedman, 2011). It also includes
+work on using morphology in CCG syntac-
+tic parsing (Honnibal et al., 2010) and more
+broad-coverage semantics in CCG (Bos, 2008;
+Lewis and Steedman, 2013). However, our
+work is unique in studying the use of related
+ideas for semantic parsing.
+Finally, there has also been recent progress
+on semantic parsing against large, open do-
+main databases such as Freebase (Cai and
+Yates, 2013a; Kwiatkowski et al., 2013; Berant
+et al., 2013). Unfortuantely, existing Freebase
+datasets are not a good fit to test our approach
+because the sentences they include have rela-
+tively simple structure and can be interepreted
+accurately using only factoid lookups with no
+database joins (Yao and Van Durme, 2014).
+Our work focuses on learning more syntacti-
+cally rich models that support compositional
+reasoning.
+</bodyText>
+<sectionHeader confidence="0.978371" genericHeader="method">
+3 Background
+</sectionHeader>
+<bodyText confidence="0.504495">
+Lambda Calculus We represent the mean-
+ings of sentences, words and phrases with
+</bodyText>
+<page confidence="0.971725">
+1285
+</page>
+<table confidence="0.977961333333333">
+list one way flights from various cities
+S/N N/N N PP/NP NP/N N
+Af.f AfAx.oneway(x) ∧ f(x) Ax.flight(x) AxAy.from(y, x) AfAx.f(x) Ax.city(x)
+</table>
+<equation confidence="0.994042583333333">
+NP
+Ax.city(x)
+PP
+Ax.from(x, Ay.city(y))
+N\N
+Ax.from(x, Ay.city(y))
+N
+Ax.flight(x) ∧ from(x, Ay.city(y))
+N
+Ax.flight(x) ∧ from(x, Ay.city(y)) ∧ oneway(x)
+S
+Ax.flight(x) ∧ from(x, Ay.city(y)) ∧ oneway(x)
+</equation>
+<figureCaption confidence="0.907001">
+Figure 1: An example CCG parse.
+</figureCaption>
+<figure confidence="0.703872">
+&gt;
+&gt;
+&gt;T
+&lt;
+&gt;
+&gt;
+</figure>
+<bodyText confidence="0.999489125">
+lambda calculus logical expressions. We use a
+version of the typed lambda calculus (Carpen-
+ter, 1997), in which the basic types include en-
+tities, events, truth values and numbers. Func-
+tion types are assigned to lambda expressions.
+The expression Ax.flight(x) with type (e, t)
+takes an entity and returns a truth value, and
+represents a set of flights.
+</bodyText>
+<sectionHeader confidence="0.349888" genericHeader="method">
+Combinatory Categorial Grammar
+</sectionHeader>
+<bodyText confidence="0.929412666666667">
+CCG (Steedman, 1996, 2000) is a formalism
+that tightly couples syntax and semantics,
+and can be used to model a wide range of
+linguistic phenomena. A traditional CCG
+grammar includes a lexicon Λ with lexical
+entries like the following:
+</bodyText>
+<equation confidence="0.702266333333333">
+flights ` N : λx.flight(x)
+from ` PP/NP: λy.λx.from(x, y)
+cities ` N : λx.city(x)
+</equation>
+<bodyText confidence="0.950060857142857">
+where a lexical item w �- X : h has words w,
+syntactic category X, and logical expression h.
+CCG uses a small set of combinatory rules
+to jointly build syntactic parses and semantic
+representations. Two common combinatory
+rules are forward (&gt;) and backward (&lt;)
+application:
+</bodyText>
+<equation confidence="0.498497">
+X/Y : f Y : g ⇒ X : f(g) (&gt;)
+Y : g X\Y : f ⇒ X : f(g) (&lt;)
+CCG also includes combinatory rules of for-
+ward (&gt; B) and backward (&lt; B) composition:
+X/Y : f Y/Z : g ⇒ X/Z : λx.f(g(x)) (&gt; B)
+Y \Z : g X\Y : f ⇒ X\Z : λx.f(g(x)) (&lt; B)
+</equation>
+<bodyText confidence="0.976457166666667">
+These rules apply to build syntactic and se-
+mantic derivations concurrently.
+In this paper, we also implement type
+raising rules for compact representation of
+PP (prepositional phrase) and AP (adverbial
+phrase).
+</bodyText>
+<equation confidence="0.996837666666667">
+PP : g ⇒ N\N : λfλx.f(x) ∧ g(x) (T)
+AP : g ⇒ S\S : λfλe.f(e) ∧ g(e) (T)
+AP : g ⇒ S/S : λfλe.f(e) ∧ g(e) (T)
+</equation>
+<bodyText confidence="0.998405181818182">
+Figure 1 shows an example CCG
+parse (Steedman, 1996, 2000) where the
+lexical entries are listed across the top and
+the output lambda-calculus meaning repre-
+sentation is at the bottom. This meaning is a
+function (denoted by Ax...) that defines a set
+of flights with certain properties and includes
+a generalized Skolem constant (Steedman,
+2011) (Ay...) that performs existential quan-
+tification. Following recent work (Artzi and
+Zettlemoyer, 2013b), we use meaning repre-
+sentations that model a variety of linguistic
+constructions, for example including Skolem
+constants for plurals and Davidson quantifiers
+for events, which we will introduce briefly
+throughout this paper as they appear.
+Weighted CCGs A weighted CCG gram-
+mar is defined as G = (Λ, O), where Λ is a
+CCG lexicon and O E Rd is a d-dimensional
+parameter vector, which will be used to rank
+the parses allowed under Λ.
+For a sentence x, G produces a set of candi-
+</bodyText>
+<page confidence="0.947219">
+1286
+</page>
+<bodyText confidence="0.9998996">
+date parse trees Y = Y(x; G). Given a feature
+vector Φ E Rd, each parse tree y for sentence
+x is scored by S(y; O) = θ·O(x, y). The output
+logical form zˆ is then defined to be at the root
+of the highest-scoring parse ˆy:
+</bodyText>
+<equation confidence="0.9731395">
+yˆ = arg max S(y; O) (1)
+y∈Y(x;G)
+</equation>
+<bodyText confidence="0.994568892857143">
+We use existing CKY-style parsing algo-
+rithms for this computation, implemented
+with UW SPF (Artzi and Zettlemoyer, 2013a).
+Section 7 describes the set of features we use
+in the learned models.
+Learning with GENLEX We will also
+make use of an existing learning algo-
+rithm (Zettlemoyer and Collins, 2007) (ZC07).
+We first briefly review the ZC07 algorithm,
+and describe our modifications in Section 7.
+Given a set of training examples D =
+{(xi, zi) : i = 1...n}, xi being the ith sentence
+and zi being its annotated logical form, the al-
+gorithm learns a set of parameters O for the
+grammar, while also inducing the lexicon Λ.
+The ZC07 learning algorithm uses a function
+GENLEX(x,z) to define a set of lexical entries
+that could be used to parse the sentence x to
+construct the logical form z. For each training
+example (x, z), GENLEX(x, z) maps all sub-
+strings x to a set of potential lexical entries,
+generated by exhaustively pairing the logical
+constants in z using a set of hand-engineered
+templates. The example is then parsed with
+this much bigger lexicon and lexical entries
+from the highest scoring parses are added to Λ.
+The parameters O used to score parses are up-
+dated using a perceptron learning algorithm.
+</bodyText>
+<sectionHeader confidence="0.996877" genericHeader="method">
+4 Morpho-Syntactic Lexicon
+</sectionHeader>
+<bodyText confidence="0.999695333333333">
+This section defines our morpho-syntactic lex-
+ical formalism. Table 1 shows examples of how
+lexemes, templates, and morphological trans-
+formations are used to build lexical entries for
+example verbs. In this section, we formally de-
+fine each of these components and show how
+they are used to specify the space of possible
+lexical entries that can be built for each input
+word. In the following two sections, we will
+provide more discussion of the complete sets
+of templates (Section 5) and transformations
+(Section 6).
+</bodyText>
+<table confidence="0.960003333333333">
+Verb, Noun, Preposition, Pronoun, Adjective,
+Adverb, Conjunction, Numeral, Symbol,
+Proper Noun, Interjection, Expression
+</table>
+<tableCaption confidence="0.798384">
+Table 2: Part-of-Speech types
+</tableCaption>
+<table confidence="0.999799636363636">
+POS Attribute Values
+Noun Number singular, plural
+Verb Person first, second, third
+Verb Voice active, passive
+Verb Tense present, past
+Verb Aspect simple, progressive, perfect
+Verb Participle present participle,
+past participle
+Adj, Degree of comparative, superlative
+Adv, comparison
+Det
+</table>
+<tableCaption confidence="0.999669">
+Table 3: Morphological attributes and values.
+</tableCaption>
+<bodyText confidence="0.999871125">
+We build on the factored CCG lexicon in-
+troduced by Kwiatkowski et al. (2011) but (a)
+further generalize lexemes to represent word
+stems, (b) constrain the use of templates with
+widely available syntactic information, and (c)
+efficiently model common morphological vari-
+ations between related words.
+The first step, given an input word w, is
+to do morphological and part-of-speech analy-
+sis with the morpho-syntactic function F.
+F maps a word to a set of possible morpho-
+syntactic representations, each containing a
+triple (s, p, m) of word stem s, part-of-speech
+p and morphological category m. For exam-
+ple, F maps the word flies to two possible
+representations:
+</bodyText>
+<equation confidence="0.713916">
+F(flies) = {(fly, Noun, (plural)),
+(fly, Verb, (third, singular, simple, present))}
+</equation>
+<bodyText confidence="0.999883571428571">
+for the plural noun and present-tense verb
+senses of the word. F is defined based on the
+stems, part-of-speech types, and morpholog-
+ical attributes marked for each definition in
+Wiktionary. 1 The full sets of possible part-of-
+speech and morphological types required for
+our domains are shown in Table 2 and Table 3.
+Each morpho-syntactic analysis a E F(w)
+is then paired with lexemes based on stem
+match. A lexeme (s,61 pairs a word stem
+s with a list of logical constants c�= [c1 ... ck].
+Table 1 shows the words ‘depart’, ‘departing’,
+‘departure’, which are all assigned the lex-
+eme (depart, [depart]). In general, there can
+</bodyText>
+<footnote confidence="0.488331">
+lwww.wiktionary.com
+</footnote>
+<page confidence="0.944393">
+1287
+</page>
+<table confidence="0.967279666666667">
+Word Lexeme : Base Template Trans Lexical entry
+depart (depart, [depart]) : I depart S\NP : axae.depart(e, x)
+departing S\NP : axae.vl (e, x) I departing S\NP : axae.depart(e, x)
+departing fpres departing PP : axae.depart(e, x)
+departure fnom departure N : axae.depart(e, x)
+use (use [airline]) : I use S\NP/NP : axayae.airline(e, y, x)
+using , I using S\NP/NP : axayae.airline(e, y, x)
+using Z; S\NP/NP : axayae.v1 (e, y, x) fpres using PP/NP : axae.airline(e, y, x)
+use fnom use N/NP : axayae.airline(e, y, x)
+Trans Template Transformation
+fpres Z; S\NP/T : ax1..xnae.v(e, xn..x1) → Z; PP/T : ax1..xnae.v(e, xn..x1)
+fnom Z; S\NP/T : ax1..xnae.v(e, xn..x1) → Z; N/T : ax1..xnae.v(e, xn..x1)
+</table>
+<tableCaption confidence="0.996646">
+Table 1: Lexical entries constructed by combining a lexeme, base template, and transformation
+</tableCaption>
+<bodyText confidence="0.961305714285714">
+for the intransitive verb ‘depart’ and the transitive verb ‘use’.
+be many different lexemes for each stem, that
+vary in the selection of which logical constants
+are included.
+Given analysis (s, p, m) and lexeme (s,~c), we
+can use a lexical template to construct a
+lexical entry. Each template has the form:
+</bodyText>
+<equation confidence="0.915345">
+λ(ξ,~v).[ξ ` X : h;,]
+</equation>
+<bodyText confidence="0.995845583333334">
+where ξ and v~ are variables that abstract over
+the words and logical constants that will be
+used to define a lexical entry with syntax X
+and templated logical form h;,.
+To instantiate a template, ξ is filled with the
+original word w and the constants in c~ replace
+the variables ~v. For example, the template
+λ(ξ,~v).[ξ ` S\NP : λxλe.v1(e,x)] could be
+used with the word ‘departing’ and the lexeme
+(depart, [depart]) to produce the lexical entry
+departing ` S\NP : λxλe.depart(e, x). When
+clear from context, we will omit the function
+signature λp(ξ,~v). for all templates, as seen in
+Table 1.
+In general, there can be many applicable
+templates, which we organize as follows. Each
+final template is defined by applying a mor-
+phological transformation to one of a small
+set of possible base templates. The pairing
+is found based on the morphological analysis
+(s,p, m), where each base template is associ-
+ated with part-of-speech p and each transfor-
+mation is indexed by the morphology m. A
+transformation fm is a function:
+</bodyText>
+<equation confidence="0.705169">
+fm(λp(ξ,~v).[ξ ` X : h;,]) = λp(ξ,~v).[ξ ` X&apos; : h&apos; ;,]
+</equation>
+<bodyText confidence="0.9999863125">
+that takes the base template as input and pro-
+duces a new template to model the inflected
+form specified by m.
+For example, both base templates in Ta-
+ble 1 are for verbs. The template ξ `
+S\NP : λxλe.v1(e, x) can be translated into
+three other templates based on the transfor-
+mations I, fpres, and fnom, depending on the
+analysis of the original words. These transfor-
+mations generalize across word type; they can
+be used for the transitive verb ‘use’ as well as
+the intransitive ‘depart.’ Each resulting tem-
+plate, potentially including the original input
+if the identity transformation I is available,
+can then be used to make an output lexical
+entry, as we described above.
+</bodyText>
+<sectionHeader confidence="0.994397" genericHeader="method">
+5 Lexical Templates
+</sectionHeader>
+<bodyText confidence="0.999955913043478">
+The templates in our lexicon, as introduced
+in Section 4, model the syntactic and seman-
+tic aspects of lexical entries that are shared
+within each word class. Previous approaches
+have also used hand-engineered lexical tem-
+plates, as described in Section 2, but we dif-
+fer by (1) using more templates allowing for
+more fine grained analysis and (2) using word
+class information to restrict template use, for
+example ensuring that words which cannot be
+verbs are never paired with templates designed
+for verbs. This section describes the templates
+used during learning, first presenting those de-
+signed to model grammatical sentences and
+then a small second set designed for more el-
+liptical spoken utterances.
+Base Forms Table 4 lists the primary tem-
+plate set, where each row shows an example
+with a sentence illustrating its use. Templates
+are also grouped by the word classes, including
+adjectives, adverbs, prepositions, and several
+types of nouns and verbs. While there is not
+enough space to discuss each row, it is worth
+</bodyText>
+<page confidence="0.892237">
+1288
+</page>
+<table confidence="0.99990662962963">
+word class example usage base template
+Noun phrase Boston l; NP : v
+Noun (regular) What flight is provided by delta? l; N : Ax.v(x)
+Noun (relation) I need fares of flights l; N/PP : AxAy.v(x, y)
+Noun (function) delta schedule l; N\(N/N) : AfAx.v(Ay.f(Az.true, y), x)
+size of California l; NP/NP : Ax.v(x)
+Vintrans What flights depart from New York? l; S\NP : AxAe.v(e, x)
+Vtrans Which airlines serve Seattle (active verb) l; S\NP/NP : AxAyAe.v(e, y, x)
+What airlines have flights (passive verb) l; S\NP/NP : AxAyAe.v(e, x, y)
+Vditrans They give him a book l; S\NP/NP/NP : AxAyAzAe.v(e, z, y, x)
+Vimperson It costs $500 to fly to Boston l; S\NP/NP/NP : AxAyAzAe.v(e, y, x)
+Vaux The flights have arrived at Boston l; S\NP/(S\NP) : Af.f
+Does delta provide flights from Seattle? l; S/NP/(S/NP) : Af.f
+l; S/S : Af.f
+Vcopula The flights are from Boston l; S\NP/PP : AfAx.f(x)
+What flight is cheap? l; S\NP/(N/N) : AfAx.f(Ay.true, x)
+Alaska is the state with the most rivers l; S\NP/NP : AxAy.equals(y, x)
+Adjective I need a one way flight l; N/N : AfAx.f(x) n v(x)
+Boston flights round trip l; PP : Ax.v(x)
+How long is mississippi? l; DEG: Ax.v(x)
+Preposition List flights from Boston l; PP/NP: AxAy.v(y, x)
+List flights that go to Dallas l; AP/NP: AxAe.v(e, x)
+List flights between Dallas and Boston l; PP/NP/NP: AxAyAz.v1(z, x) n v2(z, y)
+What flights leave between 8am and 9am? l; AP/NP/NP: AxAyAe.v1(e, x) n v2(e, y)
+Adverb Which flight departs daily? l; AP : Ae.v(e)
+How early does the flight arrive? l; DEG: Ax.v(x)
+Determiner Which airline has a flight from Boston? l; NP/N : AfAx.f(x)
+</table>
+<tableCaption confidence="0.983102">
+Table 4: Base templates that define different syntactic roles.
+</tableCaption>
+<table confidence="0.963846142857143">
+type example usage base template
+telliptical flights Newark to Cleveland l; PP : Ax.P(x, v)
+flights arriving 2pm l; AP : Ae.P(e, v)
+american airline from Denver l; N : Ax.P(x, v)
+tmetonymy List airlines from Seattle l; N/PP : AfAx.v(x) n P(Ay.f(y), x))
+Shat airlines depart from Seattle? l; N/(S\NP) : AfAx.v(x) n P(Ay.f(y), x)
+fares from miami to New York l; N/PP : AfAx.v(Ay.f(y), x)
+</table>
+<tableCaption confidence="0.998311">
+Table 5: Base templates for ungrammatical linguistic phenomena
+</tableCaption>
+<bodyText confidence="0.963093333333333">
+considering nouns as an illustrative example.
+We model nouns as denoting a set of entities
+that satisfy a given property. Regular nouns
+are represented using unary predicates. Rela-
+tional nouns syntactically function as regular
+nouns but semantically describe sets of enti-
+ties that have some relationship with a comple-
+ment (Partee and Borschev, 1998). For exam-
+ple, the relational noun fare describes a binary
+relationship between flights and their price in-
+formation, as we see in this parse:
+fares of flights
+</bodyText>
+<equation confidence="0.98705275">
+PP
+Ax.flight(x)
+N
+Ax.fare(Ay.flight(y), x)
+</equation>
+<bodyText confidence="0.9995745">
+This analysis differs from previous ap-
+proaches (Zettlemoyer and Collins, 2007),
+where relational nouns were treated as regu-
+lar nouns and prepositions introduced the bi-
+nary relationship. The relational noun model
+reduces lexical ambiguity for the prepositions,
+which are otherwise highly polysemous.
+Adjectives are nominal modifiers that take
+a noun or a noun phrase as an argument and
+add properties through conjunction. Preposi-
+tions take nominal objects and function as ad-
+jectival modifiers for nouns or adverbial modi-
+fiers for verbs. Verbs can be subcategorized
+by their grammatical structures into transi-
+tive (Vtrans), intransitive (Vintrans), imper-
+sonal (Vimperson), auxiliary (Vaux) and copula
+(Vcopula). Adverbs are verb modifiers defin-
+ing aspects like time, rate and duration. The
+adoption of event semantics allows adverbial
+modifiers to be represented by predicates and
+</bodyText>
+<figure confidence="0.783087142857143">
+N/PP PP/NP N
+AxAy.fare(x, y) Ax.x Ax.flight(x)
+&gt;T
+NP
+Ax.flight(x)
+&gt;
+&gt;
+</figure>
+<page confidence="0.979998">
+1289
+</page>
+<bodyText confidence="0.999927897435897">
+linked by the shared events. Determiners pre-
+cede nouns or noun phrases and distinguish
+a reference of the noun. Following the gen-
+eralized Skolem terms, we model determiners,
+including indefinite and definite articles, as a
+((e, t), e) function that selects a unique indi-
+vidual from a (e, t)-typed function defining a
+singleton set.
+Missing Words The templates presented so
+far model grammatically correct input. How-
+ever, in dialogue domains such as ATIS, speak-
+ers often omit words. For example, speak-
+ers can drop the preposition “from” in “flights
+from Newark to Cleveland” to create the ellip-
+tical utterance “flights Newark to Cleveland”.
+We address this issue with the templates
+telliptical illustrated in Table 5. Each of these
+adds a binary relation P to a lexeme with a
+single entity typed constant. For our example,
+the word “Newark” could be assigned the lexi-
+cal item Newark �- PP : Ax.from(x, newark)
+by selecting the first template and P = from.
+Another common problem is the use of
+metonymy. In the utterance “What airlines
+depart from New York?”, the word “airlines”
+is used to reference flight services operated by
+a specific airline. This is problematic because
+the word “depart” needs to modify an event of
+type flight. We solve this with the tmetonymy
+templates in Table 5. These introduce a binary
+predicate P that would, in the case of our ex-
+ample, map airlines on to the flights that they
+operate.
+The templates in Table 5 handle the ma-
+jor cases of missing words seen in our data
+and are more efficient than the approach taken
+by (Zettlemoyer and Collins, 2007) who intro-
+duced complex type shifting rules and relaxed
+the grammar to allow every word order.
+</bodyText>
+<sectionHeader confidence="0.99021" genericHeader="method">
+6 Morphological Transformations
+</sectionHeader>
+<bodyText confidence="0.999939107142857">
+Finally, the morpho-syntactic lexicon intro-
+duces morphological transformations, which
+are functions from base lexical templates to
+lexical templates that model the syntactic and
+semantic variation as the word is inflected.
+These transformations allow us to compactly
+model, for example, the facts that argument
+order is reversed when moving from active to
+passive forms of the same verb, and that the
+subject can be omitted. To the best of our
+knowledge, we are the first to study such trans-
+formations for semantic parsing.
+Table 6 shows the transformations. Each
+row groups a set of transformations by linguis-
+tic category, including singular vs. plural num-
+ber, active vs. passive voice, and so on, and
+also includes example sentences where the out-
+put templates could be used. Again, for space,
+we do not detail the motivation for every class,
+but it is worth looking at some of the alterna-
+tions for verbs and nouns as our prototypical
+example.
+Some verbs can act as noun modifiers. For
+example, the present participle “using” mod-
+ifies “flights” in “flights using twa”. To
+model this variation, we use the transforma-
+tion fpresent part, a mapping that changes the
+root of the verb signature S\NP to PP:
+</bodyText>
+<equation confidence="0.600027">
+fpresent part : ξ `S\NP/T : λx1..xnλe.v(e, xn..x1)
+→ ξ ` PP/T : λx1..xnλe.v(e, xn..x1)
+</equation>
+<bodyText confidence="0.946182055555556">
+where T = [E, NP, NP/NP] instantiates this
+rule for verbs that take different sets of argu-
+ments, effectively allowing any verb that is in
+its finite or -ing form to behave syntactically
+like a prepositional phrase.
+Intransitive present participles can also act
+as prenominal adjectival modifiers as in “the
+departing flight”. We add a second mapping
+that maps the intransitive category S\NP to
+the noun modifier N/N.
+fpresent part : ξ ` S\NP : λxλe.v(e, x)
+→ ξ ` N/N : λfλxλe.f(x) ∧ v(e, x)
+Finally, verbal nouns have meanings derived
+from actions typically described by verbs but
+syntactically function as nouns. For example,
+landing in the phrase “landing from jfk” is the
+gerundive use of the verb land. We add the
+following mapping to fpresent part and fnominal:
+</bodyText>
+<equation confidence="0.8546565">
+ξ ` S\NP/T : λx1..xnλe.v(e, xn..x1) →
+ξ ` N/T : λx1..xnλe.v(e, xn..x1)
+</equation>
+<bodyText confidence="0.9987658">
+with T from above. This allows for reuse of the
+same meaning across quite different syntac-
+tic constructs, including for example “flights
+that depart from Boston” and “departure from
+Boston.”
+</bodyText>
+<page confidence="0.963826">
+1290
+</page>
+<table confidence="0.999395">
+Template transformations fm Example usage
+Plural Number (fplural) flight → early flights
+I city → flights to cities
+ξ ` N : Ax.v(x) → ξ ` NP : Ax.v(x) flight → flight
+Singular Number (fsingular)
+I
+Possessive (fpossess) delta → delta’s flights
+ξ `NP : v → ξ ` N/N : AfAx.f(x) ∧ P(x, v) airline → airline’s flights
+ξ `N : Ax.v(x) → ξ ` N/N : AfAx.f(x) ∧ P(x, Ay.v(y))
+Passive Voice (fpassive) serves →is served by
+ξ ` Y/NP : Ax1..xnAe.v(e, x1..xn) → ξ ` Y/PP : Ax1..xnAe.v(e, xn..x1) name →city named Austin
+ξ ` Y/NP : Ax1..xnAe.v(e, x1, .., xn) → ξ ` Y : Ax1..xn_1Ae.v(e, xn_1..x1)
+Present Participle (fpresent) use →flights using twa
+ξ ` S\NP/T : Ax1..xnAe.v(e, xn..x1) → ξ ` PP/T : Ax1..xnAe.v(e, xn..x1) arrive →arriving flights
+ξ ` S\NP : AxAe.v(e, x) → ξ ` N/N : AfAxAe.f(x) ∧ v(e, x) land → landings at jfk
+ξ ` S\NP/T : Ax1..xnAe.v(e, xn..x1) → ξ ` N/T : Ax1..xnAe.v(e, xn..x1) use → plane used by
+Past Participle (fpast)
+ξ ` S\NP/NP : Ax1..xnAe.v(e, xn..x1) → ξ ` PP/PP : Ax1..xnAe.v(e, x1..xn)
+Nominalization (fnominal) depart → departure
+ξ ` S\NP/T : Ax1..xnAe.v(e, xn..x1) → ξ ` N/T : Ax1..xnAe.v(e, xn..x1)
+Comparative (fcomp) short → shorter
+ξ `DEG: Ax.v(x) → ξ ` PP/PP: AxAy.v(y) &lt; v(x) long → longer
+ξ `DEG: Ax.v(x) → ξ ` PP/PP: AxAy.v(y) &gt; v(x)
+Superlative (fsuper) short → shortest
+ξ `DEG: Ax.v(x) → ξ ` NP/N : Af.argmin(Ax.f(x), Ax.v(x)) long → longest
+ξ `DEG: Ax.v(x) → ξ ` NP/N : Af.argmax(Ax.f(x), Ax.v(x))
+</table>
+<tableCaption confidence="0.930712">
+Table 6: Morphological transformations with examples. T = [E, NP, NP/NP] and Y =
+</tableCaption>
+<bodyText confidence="0.98743196969697">
+[S\NP, S\NP/NP] allow a single transformation to generalize across word type.
+Nouns can be inflected by number to de-
+note singular and plural forms or by adding
+an apostrophe to mark a possessive case. The
+transformation function fsingular is an identity
+transformation. Plurals may have different in-
+terpretations: one is the generic (e, t) set rep-
+resentation, which requires no transformation
+on the base, or plurals can occur without overt
+determiners (bare plurals), but semantically
+imply quantification. We create a plural to
+singular type shifting rule which implements
+the ((e, t), e) skolem function to select a unique
+individual from the set. The possessive trans-
+formation fpossess transfers the base template
+to a noun modifier, and adds a binary predi-
+cate P that encodes the relation.
+There are also a number of instances of the
+identity transformation function I, which does
+not change the base template. Because the se-
+mantics we are constructing was designed to
+answer questions against a static database, it
+does not need to represent certain phenomena
+to return the correct answer. This includes
+more advanced variants of person, tense, as-
+pect, and potentially many others. Ideally,
+these morphological attributes should add se-
+mantic modifiers to the base meaning, for ex-
+ample, tense can constrain the time at which
+an event occurs. However, none of our do-
+mains support such reasoning, so we assign the
+identity transformation, and leave the explo-
+ration of these issues to future work.
+</bodyText>
+<sectionHeader confidence="0.966307" genericHeader="method">
+7 Learning
+</sectionHeader>
+<bodyText confidence="0.999883666666667">
+One advantage of our morpho-syntactic, fac-
+tored lexicon is that it can be easily learned
+with small modifications to existing algo-
+rithms (Zettlemoyer and Collins, 2007). We
+only need to modify the GENLEX proce-
+dure that defines the space of possible lexi-
+cal entries. For each training example (x, z),
+GENLEX(x, z, F) first maps each substring in
+the sentence x into the morphological repre-
+sentation (s, p, c) using F introduced in Sec-
+tion 4. A candidate lexeme set L&apos; is then gen-
+erated by exhaustively pairing the word stems
+with all subsets of the logical constants from
+z. Lexical templates are applied to the lexemes
+in L&apos; to generate candidate lexical entries for
+x. Finally, the lexemes that participate in the
+top scoring correct parse of x are added to the
+permanent lexicon.
+Initialization Following standard practice,
+we compile an initial lexicon Λ0, which con-
+sists of a list of domain independent lexical
+</bodyText>
+<page confidence="0.977088">
+1291
+</page>
+<bodyText confidence="0.999905315789474">
+items for function words, such as interrogative
+words and conjunctions. These lexical items
+are mostly semantically vacuous and serve par-
+ticular syntactic functions that are not gener-
+alizable to other word classes. We also initial-
+ize the lexemes with a list of NP entities com-
+plied from the database, e.g., (Boston, [bos]).
+Features We use two types of features in
+the model for discriminating parses. Four lex-
+ical features are fired on each lexical item:
+0(s, for the lexeme, 0t, for the base tem-
+plate, 0t. for the morphologically modified
+template, and 0l for the complete lexical
+item. We also compute the standard logical
+expression features (Zettlemoyer and Collins,
+2007) on the root semantics to track the pair-
+wise predicate-argument relations and the co-
+occuring predicate-predicate relations in con-
+junctions and disjunctions.
+</bodyText>
+<sectionHeader confidence="0.997427" genericHeader="method">
+8 Experimental Setup
+</sectionHeader>
+<subsectionHeader confidence="0.521606">
+Data and Metrics We evaluate perfor-
+</subsectionHeader>
+<bodyText confidence="0.999698178571429">
+mance on two benchmark semantic pars-
+ing datasets, Geo880 and ATIS. We use
+the standard data splits, including 600/280
+train/test for Geo880 and 4460/480/450
+train/develop/test for ATIS. To support the
+new representations in Section 5, we sys-
+tematically convert annotations with existen-
+tial quantifiers, temporal events and relational
+nouns to new logical forms with equivalent
+meanings. All systems are evaluated with ex-
+act match accuracy, the percentage of fully
+correct logical forms.
+Initialization We assign positive initial
+weights to the indicator features for entries in
+the initial lexicon, as defined in Section 7, to
+encourage their use. The elliptical template
+and metonymy template features are initial-
+ized with negative weights to initially discour-
+age word skipping.
+Comparison Systems We compare perfor-
+mance with all recent CCG grammar induc-
+tion algorithms that work with our datasets.
+This includes methods that used a limited
+set of hand-engineered templates for inducing
+the lexicon, ZC05 (Zettlemoyer and Collins,
+2005) and ZC07 (Zettlemoyer and Collins,
+2007), and those that learned grammar struc-
+ture by automatically splitting the labeled log-
+</bodyText>
+<table confidence="0.99646025">
+System Test
+ZC05 79.3
+ZC07 86.1
+UBL 87.9
+FUBL 88.6
+DCS 87.9
+FULL 90.4
+DCS+ 91.1
+</table>
+<tableCaption confidence="0.956903">
+Table 7: Exact-match Geo880 test accuracy.
+</tableCaption>
+<table confidence="0.999814571428571">
+System Dev Test
+ZC07 74.4 84.6
+UBL 65.6 71.4
+FUBL 81.9 82.8
+GUSP - 83.5
+TEMP-ONLY 85.5 87.2
+FULL 87.5 91.3
+</table>
+<tableCaption confidence="0.9976625">
+Table 8: Exact-match accuracy on the ATIS
+development and test sets.
+</tableCaption>
+<bodyText confidence="0.999787631578947">
+ical forms, UBL (Kwiatkowski et al., 2010)
+and FUBL (Kwiatkowski et al., 2011). We
+also compare the state-of-the-art for Geo880
+(DCS (Liang et al., 2011) and DCS+ which in-
+cludes an engineered seed lexicon) and ATIS
+(which is ZC07). Finally, we include results
+for GUSP (Poon, 2013), a recent unsupervised
+approach for ATIS.
+System Variants We report results for a
+complete approach (Full), and variants which
+use different aspects of the morpho-syntactic
+lexicon. The TEMP-ONLY variant learned
+with the templates from Section 5 but, like
+ZC07, does not use any word class information
+to restrict their use. The TEMP-POS removes
+morphology from the lexemes, but includes the
+word class information from Wiktionary. Fi-
+nally, we also include DCS+, which initialize a
+set of words with POS tag JJ, NN, and NNS.
+</bodyText>
+<sectionHeader confidence="0.999171" genericHeader="evaluation">
+9 Results
+</sectionHeader>
+<bodyText confidence="0.999745375">
+Full Models Tables 7 and 8 report the
+main learning results. Our approach achieves
+state-of-the-art accuracies on both datasets,
+demonstrating that our new grammar induc-
+tion scheme provides a type of linguistically
+motivated regularization; restricting the algo-
+rithm to consider a much smaller hypothesis
+space allows to learn better models.
+</bodyText>
+<page confidence="0.995665">
+1292
+</page>
+<figureCaption confidence="0.999652">
+Figure 2: ATIS Learning Curve
+</figureCaption>
+<bodyText confidence="0.994619027777778">
+On Geo880 the full method edges out the
+best systems by 2% absolute on the test set,
+as compared to other systems with no domain-
+specific lexical initialization. Although DCS
+requires less supervision, it also uses external
+signals including a POS tagger.
+We see similarly strong results for ATIS,
+outperforming FUBL on the ATIS develop-
+ment set by 6.8%, and improving the accu-
+racy on the test set by 7.9% over the previous
+best system ZC07. Unlike FUBL, which excels
+at the development set but trails ZC07’s tem-
+plated grammar by almost 2 points on the test
+set, our approach demonstrates consistent im-
+provements on both. Additionally, although
+the unsupervised model (GUSP) rivals previ-
+ous approaches, we are able to show that more
+careful use of supervision open a much wider
+performance gap.
+Learning Curve with Ablations Figure 2
+presents a learning curve for the ATIS domain,
+demonstrating that the learning improvements
+become even more dramatic for smaller train-
+ing set sizes. Our model outperforms FUBL by
+wide margins, matching its final accuracy with
+only 22% of the total training examples. Our
+full model also consistently beats the variants
+with fewer word class restrictions, although
+by smaller margins. Again, these results fur-
+ther highlight the benefit of importing external
+syntactic resources and enforcing linguistically
+motivated constraints during learning.
+Learned Lexicon The learned lexicon is
+also more compact. Table 9 summarizes
+statistics on unique lexical entries required
+to parse the ATIS development set. The
+</bodyText>
+<table confidence="0.995735333333333">
+System Lexical Entries Lexemes
+FUBL 1019 721
+Our Approach 818 495
+</table>
+<tableCaption confidence="0.79324">
+Table 9: Lexicon size comparison on the ATIS
+dev set (460 unique tokens).
+</tableCaption>
+<bodyText confidence="0.999279461538462">
+morpho-syntactic model uses 80.3% of the lex-
+ical entries and 63.7% of the lexemes that
+FUBL needs, while increase performance by
+nearly 7 points. Upon inspection, our model
+achieves better lexical decomposition by learn-
+ing shorter lexical units, for example, the
+adoption of Davidsonian events allows us to
+learn unambiguous adverbial modifiers, and
+the formal modeling of nominalized nouns and
+relational nouns treats prepositions as syntac-
+tic modifiers, instead of being encoded in the
+semantics. Such restrictions generalize to a
+much wider variety of syntactic contexts.
+</bodyText>
+<sectionHeader confidence="0.926532" genericHeader="conclusions">
+10 Summary and future Work
+</sectionHeader>
+<bodyText confidence="0.999992947368421">
+We demonstrated that significant performance
+gains can be achieved in CCG semantic pars-
+ing by introducing a more constrained, linguis-
+tically motivated grammar induction scheme.
+We introduced a morpho-syntactic factored
+lexicon that uses domain-independent facts
+about the English language to restrict the
+number of incorrect parses that must be con-
+sidered and demonstrated empirically that it
+enables effective learning of complete parsers,
+achieving state-of-the-art performance.
+Because our methods are domain indepen-
+dent they should also benefit other semantic
+parsing applications and other learning algo-
+rithms that use different types of supervision,
+as we hope to verify in future work. We would
+also like to study how to generalize these gains
+to languages other than English, by inducing
+more of the syntactic structure.
+</bodyText>
+<sectionHeader confidence="0.994826" genericHeader="acknowledgments">
+Acknowledgements
+</sectionHeader>
+<bodyText confidence="0.9996595">
+The research was supported by the NSF (IIS-
+1115966, IIS-1252835) and the Intel Center
+for Pervasive Computing at the Univeristy
+of Washington. The authors thank Robert
+Gens, Xiao Ling, Xu Miao, Mark Yatskar and
+the UW NLP group for helpful discussions,
+and the anonymous reviewers for helpful com-
+ments.
+</bodyText>
+<figure confidence="0.997197538461538">
+100 500 1000 2000 4460
+Training samples
+Recall
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+TEMP_ONLY
+TEMP_POS
+FULL
+FUBL
+</figure>
+<page confidence="0.957538">
+1293
+</page>
+<sectionHeader confidence="0.98229" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.874518391304348">
+Andreas, J., Vlachos, A., and Clark, S. (2013).
+Semantic parsing as machine translation.
+Artzi, Y. and Zettlemoyer, L. (2011). Boot-
+strapping semantic parsers from conversa-
+tions. In Proceedings of the Conference
+on Empirical Methods in Natural Language
+Processing.
+Artzi, Y. and Zettlemoyer, L. (2013a). UW
+SPF: The University of Washington Seman-
+tic Parsing Framework.
+Artzi, Y. and Zettlemoyer, L. (2013b). Weakly
+supervised learning of semantic parsers for
+mapping instructions to actions. Transac-
+tions of the Association for Computational
+Linguistics, 1(1):49–62.
+Berant, J., Chou, A., Frostig, R., and Liang, P.
+(2013). Semantic parsing on freebase from
+question-answer pairs. In Proceedings of the
+Conference on Empirical Methods in Natu-
+ral Language Processing.
+Bos, J. (2008). Wide-coverage semantic anal-
+ysis with boxer. In Proceedings of the Con-
+ference on Semantics in Text Processing.
+</reference>
+<bodyText confidence="0.785088529411765">
+Cai, Q. and Yates, A. (2013a). Large-scale
+semantic parsing via schema matching and
+lexicon extension. In Proceedings of the An-
+nual Meeting of the Association for Compu-
+tational Linguistics.
+Cai, Q. and Yates, A. (2013b). Semantic pars-
+ing freebase: Towards open-domain seman-
+tic parsing. In Proceedings of the Joint Con-
+ference on Lexical and Computational Se-
+mantics.
+Carpenter, B. (1997). Type-Logical Semantics.
+The MITPress.
+Chen, D. and Mooney, R. (2011). Learning
+to interpret natural language navigation in-
+structions from observations. In Proceedings
+of the National Conference on Artificial In-
+telligence.
+</bodyText>
+<reference confidence="0.972825909090909">
+Clarke, J., Goldwasser, D., Chang, M., and
+Roth, D. (2010). Driving semantic parsing
+from the world’s response. In Proceedings
+of the Conference on Computational Natural
+Language Learning.
+Dahl, D. A., Bates, M., Brown, M., Fisher,
+W., Hunicke-Smith, K., Pallett, D., Pao, C.,
+Rudnicky, A., and Shriberg, E. (1994). Ex-
+panding the scope of the atis task: The atis-
+3 corpus. In Proceedings of the workshop on
+Human Language Technology.
+Davidson, D. (1967). The logical form of
+action sentences. Essays on actions and
+events, pages 105–148.
+de Bruin, J. and Scha, R. (1988). The interpre-
+tation of relational nouns. In Proceedings of
+the Conference of the Association of Com-
+putational Linguistics, pages 25–32. ACL.
+Goldwasser, D. and Roth, D. (2011). Learning
+from natural instructions. In Proceedings of
+the International Joint Conference on Arti-
+ficial Intelligence.
+Heck, L., Hakkani-T¨ur, D., and Tur, G.
+(2013). Leveraging knowledge graphs for
+web-scale unsupervised semantic parsing. In
+Proc. of the INTERSPEECH.
+Hobbs, J. R., Stickel, M., Martin, P., and Ed-
+wards, D. (1988). Interpretation as abduc-
+tion. In Proceedings of the Association for
+Computational Linguistics.
+Honnibal, M., Kummerfeld, J. K., and Cur-
+ran, J. R. (2010). Morphological analysis
+can improve a ccg parser for english. In Pro-
+ceedings of the International Conference on
+Computational Linguistics.
+Jones, B. K., Johnson, M., and Goldwater, S.
+(2012). Semantic parsing with bayesian tree
+transducers. In Proceedings of Association
+of Computational Linguistics.
+Kate, R. and Mooney, R. (2006). Using string-
+kernels for learning semantic parsers. In
+Proceedings of the Conference of the Asso-
+ciation for Computational Linguistics.
+Krishnamurthy, J. and Kollar, T. (2013).
+Jointly learning to parse and perceive: Con-
+necting natural language to the physical
+world. Transactions of the Association for
+Computational Linguistics, 1(2).
+Krishnamurthy, J. and Mitchell, T. (2012).
+Weakly supervised training of semantic
+parsers. In Proceedings of the Joint Confer-
+ence on Empirical Methods in Natural Lan-
+guage Processing and Computational Natu-
+ral Language Learning.
+Kwiatkowski, T., Choi, E., Artzi, Y., and
+</reference>
+<page confidence="0.847445">
+1294
+</page>
+<reference confidence="0.99479484375">
+Zettlemoyer, L. (2013). Scaling semantic
+parsers with on-the-fly ontology matching.
+Kwiatkowski, T., Goldwater, S., Zettlemoyer,
+L., and Steedman, M. (2012). A probabilis-
+tic model of syntactic and semantic acquisi-
+tion from child-directed utterances and their
+meanings. Proceedings of the Conference of
+the European Chapter of the Association of
+Computational Linguistics.
+Kwiatkowski, T., Zettlemoyer, L., Goldwa-
+ter, S., and Steedman, M. (2010). Induc-
+ing probabilistic CCG grammars from log-
+ical form with higher-order unification. In
+Proceedings of the Conference on Empirical
+Methods in Natural Language Processing.
+Kwiatkowski, T., Zettlemoyer, L., Goldwa-
+ter, S., and Steedman, M. (2011). Lexical
+generalization in CCG grammar induction
+for semantic parsing. In Proceedings of the
+Conference on Empirical Methods in Natu-
+ral Language Processing.
+Lewis, M. and Steedman, M. (2013). Com-
+bined distributional and logical semantics.
+Transactions of the Association for Compu-
+tational Linguistics, 1:179–192.
+Liang, P., Jordan, M., and Klein, D. (2011).
+Learning dependency-based compositional
+semantics. In Proceedings of the Conference
+of the Association for Computational Lin-
+guistics.
+Matuszek, C., FitzGerald, N., Zettlemoyer, L.,
+Bo, L., and Fox, D. (2012). A joint model
+of language and perception for grounded at-
+tribute learning. In Proceedings of the Inter-
+national Conference on Machine Learning.
+Miller, S., Stallard, D., Bobrow, R., and
+Schwartz, R. (1996). A fully statistical ap-
+proach to natural language interfaces. In
+Proceedings Association for Computational
+Linguistics.
+Muresan, S. (2011). Learning for deep lan-
+guage understanding. In Proceedings of the
+International Joint Conference on Artificial
+Intelligence.
+Partee, B. H. and Borschev, V. (1998). Inte-
+grating lexical and formal sematics: Gen-
+itives, relational nouns, and type-shifting.
+In Proceedings of the Second Tbilisi Sympo-
+sium on Language, Logic, and Computation.
+Poon, H. (2013). Grounded unsupervised se-
+mantic parsing. In Association for Compu-
+tational Linguistics (ACL).
+Pustejovsky, J. (1991). The generative lexicon.
+volume 17.
+Steedman, M. (1996). Surface Structure and
+Interpretation. The MIT Press.
+Steedman, M. (2000). The Syntactic Process.
+The MIT Press.
+Steedman, M. (2011). Taking Scope. The MIT
+Press.
+Tur, G., Deoras, A., and Hakkani-Tur, D.
+(2013). Semantic parsing using word con-
+fusion networks with conditional random
+fields. In Proc. of the INTERSPEECH.
+Wong, Y. and Mooney, R. (2007). Learning
+synchronous grammars for semantic parsing
+with lambda calculus. In Proceedings of the
+Conference of the Association for Computa-
+tional Linguistics.
+Yao, X. and Van Durme, B. (2014). Informa-
+tion extraction over structured data: Ques-
+tion answering with freebase. In Association
+for Computational Linguistics (ACL).
+Zelle, J. and Mooney, R. (1996). Learning to
+parse database queries using inductive logic
+programming. In Proceedings of the Na-
+tional Conference on Artificial Intelligence.
+Zettlemoyer, L. and Collins, M. (2005). Learn-
+ing to map sentences to logical form: Struc-
+tured classification with probabilistic cate-
+gorial grammars. In Proceedings of the Con-
+ference on Uncertainty in Artificial Intelli-
+gence.
+Zettlemoyer, L. and Collins, M. (2007). On-
+line learning of relaxed CCG grammars for
+parsing to logical form. In Proceedings of
+the Joint Conference on Empirical Methods
+in Natural Language Processing and Com-
+putational Natural Language Learning.
+Zettlemoyer, L. and Collins, M. (2009). Learn-
+ing context-dependent mappings from sen-
+tences to logical form. In Proceedings of
+the Joint Conference of the Association
+for Computational Linguistics and Interna-
+tional Joint Conference on Natural Lan-
+guage Processing.
+</reference>
+<page confidence="0.990612">
+1295
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.151191">
+<title confidence="0.999225">Morpho-syntactic Lexical for CCG Semantic Parsing</title>
+<author confidence="0.875932">Tom</author>
+<affiliation confidence="0.926007">Allen Institute for</affiliation>
+<address confidence="0.937762">Seattle,</address>
+<email confidence="0.996711">tomk@allenai.org</email>
+<author confidence="0.685047">Adrienne</author>
+<affiliation confidence="0.842605666666667">Computer Science &amp; University of Seattle,</affiliation>
+<email confidence="0.999861">axwang@cs.washington.edu</email>
+<author confidence="0.934525">Luke</author>
+<affiliation confidence="0.858049666666667">Computer Science &amp; University of Seattle,</affiliation>
+<email confidence="0.999949">lsz@cs.washington.edu</email>
+<abstract confidence="0.998380095238095">In this paper, we demonstrate that significant performance gains can be achieved in CCG semantic parsing by introducing a linguistically motivated grammar induction scheme. We present a new morpho-syntactic factored lexicon that models systematic variations in morphology, syntax, and semantics across word classes. The grammar uses domain-independent facts about the English language to restrict the number of incorrect parses that must be considered, thereby enabling effective learning from less data. Experiments in domains match previous models with one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>J Andreas</author>
+<author>A Vlachos</author>
+<author>S Clark</author>
+</authors>
+<title>Semantic parsing as machine translation.</title>
+<date>2013</date>
+<contexts>
+<context position="5561" citStr="Andreas et al., 2013" startWordPosition="817" endWordPosition="820">sers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2</context>
+</contexts>
+<marker>Andreas, Vlachos, Clark, 2013</marker>
+<rawString>Andreas, J., Vlachos, A., and Clark, S. (2013). Semantic parsing as machine translation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Bootstrapping semantic parsers from conversations.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="1547" citStr="Artzi and Zettlemoyer, 2011" startWordPosition="213" endWordPosition="216">h one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction. 1 Introduction Semantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the CCG lexicon, which lists possible meanings for each phrase and defines a set of possible parses for each sentence. Previous approaches have either hand-engineered a small set of lexical templates (Zettlemoyer and Collins, 2005, 2007) or automatically learned such templates (Kwiatkowski et al., 2010, 2011). These methods are designed to lea</context>
+<context position="5068" citStr="Artzi and Zettlemoyer, 2011" startWordPosition="738" endWordPosition="741">, 1994). In both cases, our approach achieves state-of-the-art performance, including a nearly 45% relative error reduction on the ATIS test set. We also show that the gains increase with less data, including matching previous model’s performance with less than 25% of the training data. Such gains are particularly practical for semantic parsers; they can greatly reduce the amount of data that is needed for each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we </context>
+<context position="6344" citStr="Artzi and Zettlemoyer, 2011" startWordPosition="940" endWordPosition="944">ss-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2011</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2011). Bootstrapping semantic parsers from conversations. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<date>2013</date>
+<institution>UW SPF: The University of Washington Semantic Parsing Framework.</institution>
+<contexts>
+<context position="6540" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="970" endWordPosition="973"> analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011</context>
+<context position="10398" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1618" endWordPosition="1621">pact representation of PP (prepositional phrase) and AP (adverbial phrase). PP : g ⇒ N\N : λfλx.f(x) ∧ g(x) (T) AP : g ⇒ S\S : λfλe.f(e) ∧ g(e) (T) AP : g ⇒ S/S : λfλe.f(e) ∧ g(e) (T) Figure 1 shows an example CCG parse (Steedman, 1996, 2000) where the lexical entries are listed across the top and the output lambda-calculus meaning representation is at the bottom. This meaning is a function (denoted by Ax...) that defines a set of flights with certain properties and includes a generalized Skolem constant (Steedman, 2011) (Ay...) that performs existential quantification. Following recent work (Artzi and Zettlemoyer, 2013b), we use meaning representations that model a variety of linguistic constructions, for example including Skolem constants for plurals and Davidson quantifiers for events, which we will introduce briefly throughout this paper as they appear. Weighted CCGs A weighted CCG grammar is defined as G = (Λ, O), where Λ is a CCG lexicon and O E Rd is a d-dimensional parameter vector, which will be used to rank the parses allowed under Λ. For a sentence x, G produces a set of candi1286 date parse trees Y = Y(x; G). Given a feature vector Φ E Rd, each parse tree y for sentence x is scored by S(y; O) = θ</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2013a). UW SPF: The University of Washington Semantic Parsing Framework.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Artzi</author>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Weakly supervised learning of semantic parsers for mapping instructions to actions.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>1</issue>
+<contexts>
+<context position="6540" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="970" endWordPosition="973"> analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011</context>
+<context position="10398" citStr="Artzi and Zettlemoyer, 2013" startWordPosition="1618" endWordPosition="1621">pact representation of PP (prepositional phrase) and AP (adverbial phrase). PP : g ⇒ N\N : λfλx.f(x) ∧ g(x) (T) AP : g ⇒ S\S : λfλe.f(e) ∧ g(e) (T) AP : g ⇒ S/S : λfλe.f(e) ∧ g(e) (T) Figure 1 shows an example CCG parse (Steedman, 1996, 2000) where the lexical entries are listed across the top and the output lambda-calculus meaning representation is at the bottom. This meaning is a function (denoted by Ax...) that defines a set of flights with certain properties and includes a generalized Skolem constant (Steedman, 2011) (Ay...) that performs existential quantification. Following recent work (Artzi and Zettlemoyer, 2013b), we use meaning representations that model a variety of linguistic constructions, for example including Skolem constants for plurals and Davidson quantifiers for events, which we will introduce briefly throughout this paper as they appear. Weighted CCGs A weighted CCG grammar is defined as G = (Λ, O), where Λ is a CCG lexicon and O E Rd is a d-dimensional parameter vector, which will be used to rank the parses allowed under Λ. For a sentence x, G produces a set of candi1286 date parse trees Y = Y(x; G). Given a feature vector Φ E Rd, each parse tree y for sentence x is scored by S(y; O) = θ</context>
+</contexts>
+<marker>Artzi, Zettlemoyer, 2013</marker>
+<rawString>Artzi, Y. and Zettlemoyer, L. (2013b). Weakly supervised learning of semantic parsers for mapping instructions to actions. Transactions of the Association for Computational Linguistics, 1(1):49–62.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Berant</author>
+<author>A Chou</author>
+<author>R Frostig</author>
+<author>P Liang</author>
+</authors>
+<title>Semantic parsing on freebase from question-answer pairs.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="7589" citStr="Berant et al., 2013" startWordPosition="1134" endWordPosition="1137">), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have relatively simple structure and can be interepreted accurately using only factoid lookups with no database joins (Yao and Van Durme, 2014). Our work focuses on learning more syntactically rich models that support compositional reasoning. 3 Background Lambda Calculus We represent the meanings of sentences, words and phrases with 1285 list one way flights from various cities S/N N/N N PP/NP NP/N N Af.f AfAx.oneway(x) ∧ f(x) Ax.flight(x) AxAy.from(y, x) AfAx.f(x) Ax.city(x) </context>
+</contexts>
+<marker>Berant, Chou, Frostig, Liang, 2013</marker>
+<rawString>Berant, J., Chou, A., Frostig, R., and Liang, P. (2013). Semantic parsing on freebase from question-answer pairs. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Bos</author>
+</authors>
+<title>Wide-coverage semantic analysis with boxer.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the Conference on Semantics in Text Processing.</booktitle>
+<contexts>
+<context position="7285" citStr="Bos, 2008" startWordPosition="1086" endWordPosition="1087"> algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have relatively simple structure and can be interepreted accurately using only factoid lookups with no database joins (Yao and Van Durme, 2014). Our work focuses on learning mor</context>
+</contexts>
+<marker>Bos, 2008</marker>
+<rawString>Bos, J. (2008). Wide-coverage semantic analysis with boxer. In Proceedings of the Conference on Semantics in Text Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Clarke</author>
+<author>D Goldwasser</author>
+<author>M Chang</author>
+<author>D Roth</author>
+</authors>
+<title>Driving semantic parsing from the world’s response.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Conference on Computational Natural Language Learning.</booktitle>
+<contexts>
+<context position="5469" citStr="Clarke et al., 2010" startWordPosition="802" endWordPosition="805"> each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned f</context>
+</contexts>
+<marker>Clarke, Goldwasser, Chang, Roth, 2010</marker>
+<rawString>Clarke, J., Goldwasser, D., Chang, M., and Roth, D. (2010). Driving semantic parsing from the world’s response. In Proceedings of the Conference on Computational Natural Language Learning.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>D A Dahl</author>
+<author>M Bates</author>
+<author>M Brown</author>
+<author>W Fisher</author>
+<author>K Hunicke-Smith</author>
+<author>D Pallett</author>
+<author>C Pao</author>
+</authors>
+<marker>Dahl, Bates, Brown, Fisher, Hunicke-Smith, Pallett, Pao, </marker>
+<rawString>Dahl, D. A., Bates, M., Brown, M., Fisher, W., Hunicke-Smith, K., Pallett, D., Pao, C.,</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Rudnicky</author>
+<author>E Shriberg</author>
+</authors>
+<title>Expanding the scope of the atis task: The atis3 corpus.</title>
+<date>1994</date>
+<booktitle>In Proceedings of the workshop on Human Language Technology.</booktitle>
+<marker>Rudnicky, Shriberg, 1994</marker>
+<rawString>Rudnicky, A., and Shriberg, E. (1994). Expanding the scope of the atis task: The atis3 corpus. In Proceedings of the workshop on Human Language Technology.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Davidson</author>
+</authors>
+<title>The logical form of action sentences. Essays on actions and events,</title>
+<date>1967</date>
+<pages>105--148</pages>
+<contexts>
+<context position="7007" citStr="Davidson, 1967" startWordPosition="1040" endWordPosition="1041">l, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, e</context>
+</contexts>
+<marker>Davidson, 1967</marker>
+<rawString>Davidson, D. (1967). The logical form of action sentences. Essays on actions and events, pages 105–148.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J de Bruin</author>
+<author>R Scha</author>
+</authors>
+<title>The interpretation of relational nouns.</title>
+<date>1988</date>
+<booktitle>In Proceedings of the Conference of the Association of Computational Linguistics,</booktitle>
+<pages>25--32</pages>
+<publisher>ACL.</publisher>
+<marker>de Bruin, Scha, 1988</marker>
+<rawString>de Bruin, J. and Scha, R. (1988). The interpretation of relational nouns. In Proceedings of the Conference of the Association of Computational Linguistics, pages 25–32. ACL.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Goldwasser</author>
+<author>D Roth</author>
+</authors>
+<title>Learning from natural instructions.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the International Joint Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="6488" citStr="Goldwasser and Roth, 2011" startWordPosition="962" endWordPosition="965">013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for </context>
+</contexts>
+<marker>Goldwasser, Roth, 2011</marker>
+<rawString>Goldwasser, D. and Roth, D. (2011). Learning from natural instructions. In Proceedings of the International Joint Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Heck</author>
+<author>D Hakkani-T¨ur</author>
+<author>G Tur</author>
+</authors>
+<title>Leveraging knowledge graphs for web-scale unsupervised semantic parsing.</title>
+<date>2013</date>
+<booktitle>In Proc. of the INTERSPEECH.</booktitle>
+<marker>Heck, Hakkani-T¨ur, Tur, 2013</marker>
+<rawString>Heck, L., Hakkani-T¨ur, D., and Tur, G. (2013). Leveraging knowledge graphs for web-scale unsupervised semantic parsing. In Proc. of the INTERSPEECH.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J R Hobbs</author>
+<author>M Stickel</author>
+<author>P Martin</author>
+<author>D Edwards</author>
+</authors>
+<title>Interpretation as abduction.</title>
+<date>1988</date>
+<booktitle>In Proceedings of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="7050" citStr="Hobbs et al., 1988" startWordPosition="1046" endWordPosition="1049">es paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fi</context>
+</contexts>
+<marker>Hobbs, Stickel, Martin, Edwards, 1988</marker>
+<rawString>Hobbs, J. R., Stickel, M., Martin, P., and Edwards, D. (1988). Interpretation as abduction. In Proceedings of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Honnibal</author>
+<author>J K Kummerfeld</author>
+<author>J R Curran</author>
+</authors>
+<title>Morphological analysis can improve a ccg parser for english.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the International Conference on Computational Linguistics.</booktitle>
+<contexts>
+<context position="7233" citStr="Honnibal et al., 2010" startWordPosition="1076" endWordPosition="1079">ision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have relatively simple structure and can be interepreted accurately using only factoid lookups with no database joins (Yao an</context>
+</contexts>
+<marker>Honnibal, Kummerfeld, Curran, 2010</marker>
+<rawString>Honnibal, M., Kummerfeld, J. K., and Curran, J. R. (2010). Morphological analysis can improve a ccg parser for english. In Proceedings of the International Conference on Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B K Jones</author>
+<author>M Johnson</author>
+<author>S Goldwater</author>
+</authors>
+<title>Semantic parsing with bayesian tree transducers.</title>
+<date>2012</date>
+<booktitle>In Proceedings of Association of Computational Linguistics.</booktitle>
+<contexts>
+<context position="5538" citStr="Jones et al., 2012" startWordPosition="813" endWordPosition="816">for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical fo</context>
+</contexts>
+<marker>Jones, Johnson, Goldwater, 2012</marker>
+<rawString>Jones, B. K., Johnson, M., and Goldwater, S. (2012). Semantic parsing with bayesian tree transducers. In Proceedings of Association of Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Kate</author>
+<author>R Mooney</author>
+</authors>
+<title>Using stringkernels for learning semantic parsers.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the Conference of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="6164" citStr="Kate and Mooney, 2006" startWordPosition="913" endWordPosition="916">reas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. T</context>
+</contexts>
+<marker>Kate, Mooney, 2006</marker>
+<rawString>Kate, R. and Mooney, R. (2006). Using stringkernels for learning semantic parsers. In Proceedings of the Conference of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Krishnamurthy</author>
+<author>T Kollar</author>
+</authors>
+<title>Jointly learning to parse and perceive: Connecting natural language to the physical world.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<volume>1</volume>
+<issue>2</issue>
+<contexts>
+<context position="1733" citStr="Krishnamurthy and Kollar, 2013" startWordPosition="241" endWordPosition="244">ences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the CCG lexicon, which lists possible meanings for each phrase and defines a set of possible parses for each sentence. Previous approaches have either hand-engineered a small set of lexical templates (Zettlemoyer and Collins, 2005, 2007) or automatically learned such templates (Kwiatkowski et al., 2010, 2011). These methods are designed to learn grammars that overgenerate; they produce spurious parses that can complicate parameter estimation. In this paper, we demonstrate that significant gains can instead be achieved by usin</context>
+</contexts>
+<marker>Krishnamurthy, Kollar, 2013</marker>
+<rawString>Krishnamurthy, J. and Kollar, T. (2013). Jointly learning to parse and perceive: Connecting natural language to the physical world. Transactions of the Association for Computational Linguistics, 1(2).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Krishnamurthy</author>
+<author>T Mitchell</author>
+</authors>
+<title>Weakly supervised training of semantic parsers.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</booktitle>
+<contexts>
+<context position="6399" citStr="Krishnamurthy and Mitchell, 2012" startWordPosition="947" endWordPosition="951">oyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidso</context>
+</contexts>
+<marker>Krishnamurthy, Mitchell, 2012</marker>
+<rawString>Krishnamurthy, J. and Mitchell, T. (2012). Weakly supervised training of semantic parsers. In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Kwiatkowski</author>
+<author>E Choi</author>
+<author>Y Artzi</author>
+</authors>
+<date></date>
+<marker>Kwiatkowski, Choi, Artzi, </marker>
+<rawString>Kwiatkowski, T., Choi, E., Artzi, Y., and</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+</authors>
+<title>Scaling semantic parsers with on-the-fly ontology matching.</title>
+<date>2013</date>
+<contexts>
+<context position="6540" citStr="Zettlemoyer, 2013" startWordPosition="972" endWordPosition="973">with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011</context>
+<context position="10398" citStr="Zettlemoyer, 2013" startWordPosition="1620" endWordPosition="1621">sentation of PP (prepositional phrase) and AP (adverbial phrase). PP : g ⇒ N\N : λfλx.f(x) ∧ g(x) (T) AP : g ⇒ S\S : λfλe.f(e) ∧ g(e) (T) AP : g ⇒ S/S : λfλe.f(e) ∧ g(e) (T) Figure 1 shows an example CCG parse (Steedman, 1996, 2000) where the lexical entries are listed across the top and the output lambda-calculus meaning representation is at the bottom. This meaning is a function (denoted by Ax...) that defines a set of flights with certain properties and includes a generalized Skolem constant (Steedman, 2011) (Ay...) that performs existential quantification. Following recent work (Artzi and Zettlemoyer, 2013b), we use meaning representations that model a variety of linguistic constructions, for example including Skolem constants for plurals and Davidson quantifiers for events, which we will introduce briefly throughout this paper as they appear. Weighted CCGs A weighted CCG grammar is defined as G = (Λ, O), where Λ is a CCG lexicon and O E Rd is a d-dimensional parameter vector, which will be used to rank the parses allowed under Λ. For a sentence x, G produces a set of candi1286 date parse trees Y = Y(x; G). Given a feature vector Φ E Rd, each parse tree y for sentence x is scored by S(y; O) = θ</context>
+</contexts>
+<marker>Zettlemoyer, 2013</marker>
+<rawString>Zettlemoyer, L. (2013). Scaling semantic parsers with on-the-fly ontology matching.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Kwiatkowski</author>
+<author>S Goldwater</author>
+<author>L Zettlemoyer</author>
+<author>M Steedman</author>
+</authors>
+<title>A probabilistic model of syntactic and semantic acquisition from child-directed utterances and their meanings.</title>
+<date>2012</date>
+<booktitle>Proceedings of the Conference of the European Chapter of the Association of Computational Linguistics.</booktitle>
+<contexts>
+<context position="6229" citStr="Kwiatkowski et al., 2012" startWordPosition="923" endWordPosition="926">aning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design</context>
+</contexts>
+<marker>Kwiatkowski, Goldwater, Zettlemoyer, Steedman, 2012</marker>
+<rawString>Kwiatkowski, T., Goldwater, S., Zettlemoyer, L., and Steedman, M. (2012). A probabilistic model of syntactic and semantic acquisition from child-directed utterances and their meanings. Proceedings of the Conference of the European Chapter of the Association of Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Kwiatkowski</author>
+<author>L Zettlemoyer</author>
+<author>S Goldwater</author>
+<author>M Steedman</author>
+</authors>
+<title>Inducing probabilistic CCG grammars from logical form with higher-order unification.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="1517" citStr="Kwiatkowski et al., 2010" startWordPosition="209" endWordPosition="212"> match previous models with one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction. 1 Introduction Semantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the CCG lexicon, which lists possible meanings for each phrase and defines a set of possible parses for each sentence. Previous approaches have either hand-engineered a small set of lexical templates (Zettlemoyer and Collins, 2005, 2007) or automatically learned such templates (Kwiatkowski et al., 2010, 2011). The</context>
+<context position="5158" citStr="Kwiatkowski et al., 2010" startWordPosition="752" endWordPosition="755"> 45% relative error reduction on the ATIS test set. We also show that the gains increase with less data, including matching previous model’s performance with less than 25% of the training data. Such gains are particularly practical for semantic parsers; they can greatly reduce the amount of data that is needed for each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996</context>
+<context position="32644" citStr="Kwiatkowski et al., 2010" startWordPosition="5322" endWordPosition="5325">k with our datasets. This includes methods that used a limited set of hand-engineered templates for inducing the lexicon, ZC05 (Zettlemoyer and Collins, 2005) and ZC07 (Zettlemoyer and Collins, 2007), and those that learned grammar structure by automatically splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includes an engineered seed lexicon) and ATIS (which is ZC07). Finally, we include results for GUSP (Poon, 2013), a recent unsupervised approach for ATIS. System Variants We report results for a complete approach (Full), and variants which use different aspects of the morpho-syntactic lexicon. The TEMP-ONLY variant learned with the templates from Section 5 but, like ZC07, does not use any word class information to restrict their use. The TEMP-POS removes morphology fro</context>
+</contexts>
+<marker>Kwiatkowski, Zettlemoyer, Goldwater, Steedman, 2010</marker>
+<rawString>Kwiatkowski, T., Zettlemoyer, L., Goldwater, S., and Steedman, M. (2010). Inducing probabilistic CCG grammars from logical form with higher-order unification. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Kwiatkowski</author>
+<author>L Zettlemoyer</author>
+<author>S Goldwater</author>
+<author>M Steedman</author>
+</authors>
+<title>Lexical generalization in CCG grammar induction for semantic parsing.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</booktitle>
+<contexts>
+<context position="13454" citStr="Kwiatkowski et al. (2011)" startWordPosition="2132" endWordPosition="2135"> sets of templates (Section 5) and transformations (Section 6). Verb, Noun, Preposition, Pronoun, Adjective, Adverb, Conjunction, Numeral, Symbol, Proper Noun, Interjection, Expression Table 2: Part-of-Speech types POS Attribute Values Noun Number singular, plural Verb Person first, second, third Verb Voice active, passive Verb Tense present, past Verb Aspect simple, progressive, perfect Verb Participle present participle, past participle Adj, Degree of comparative, superlative Adv, comparison Det Table 3: Morphological attributes and values. We build on the factored CCG lexicon introduced by Kwiatkowski et al. (2011) but (a) further generalize lexemes to represent word stems, (b) constrain the use of templates with widely available syntactic information, and (c) efficiently model common morphological variations between related words. The first step, given an input word w, is to do morphological and part-of-speech analysis with the morpho-syntactic function F. F maps a word to a set of possible morphosyntactic representations, each containing a triple (s, p, m) of word stem s, part-of-speech p and morphological category m. For example, F maps the word flies to two possible representations: F(flies) = {(fly</context>
+<context position="32680" citStr="Kwiatkowski et al., 2011" startWordPosition="5328" endWordPosition="5331">ethods that used a limited set of hand-engineered templates for inducing the lexicon, ZC05 (Zettlemoyer and Collins, 2005) and ZC07 (Zettlemoyer and Collins, 2007), and those that learned grammar structure by automatically splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includes an engineered seed lexicon) and ATIS (which is ZC07). Finally, we include results for GUSP (Poon, 2013), a recent unsupervised approach for ATIS. System Variants We report results for a complete approach (Full), and variants which use different aspects of the morpho-syntactic lexicon. The TEMP-ONLY variant learned with the templates from Section 5 but, like ZC07, does not use any word class information to restrict their use. The TEMP-POS removes morphology from the lexemes, but includes the word</context>
+</contexts>
+<marker>Kwiatkowski, Zettlemoyer, Goldwater, Steedman, 2011</marker>
+<rawString>Kwiatkowski, T., Zettlemoyer, L., Goldwater, S., and Steedman, M. (2011). Lexical generalization in CCG grammar induction for semantic parsing. In Proceedings of the Conference on Empirical Methods in Natural Language Processing.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Lewis</author>
+<author>M Steedman</author>
+</authors>
+<title>Combined distributional and logical semantics.</title>
+<date>2013</date>
+<journal>Transactions of the Association for Computational Linguistics,</journal>
+<pages>1--179</pages>
+<contexts>
+<context position="7312" citStr="Lewis and Steedman, 2013" startWordPosition="1088" endWordPosition="1091"> have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have relatively simple structure and can be interepreted accurately using only factoid lookups with no database joins (Yao and Van Durme, 2014). Our work focuses on learning more syntactically rich models</context>
+</contexts>
+<marker>Lewis, Steedman, 2013</marker>
+<rawString>Lewis, M. and Steedman, M. (2013). Combined distributional and logical semantics. Transactions of the Association for Computational Linguistics, 1:179–192.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Liang</author>
+<author>M Jordan</author>
+<author>D Klein</author>
+</authors>
+<title>Learning dependency-based compositional semantics.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Conference of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="1226" citStr="Liang et al., 2011" startWordPosition="162" endWordPosition="165">ations in morphology, syntax, and semantics across word classes. The grammar uses domain-independent facts about the English language to restrict the number of incorrect parses that must be considered, thereby enabling effective learning from less data. Experiments in benchmark domains match previous models with one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction. 1 Introduction Semantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the CCG lexicon, which l</context>
+<context position="5422" citStr="Liang et al., 2011" startWordPosition="794" endWordPosition="797">y reduce the amount of data that is needed for each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicabl</context>
+<context position="32755" citStr="Liang et al., 2011" startWordPosition="5340" endWordPosition="5343">con, ZC05 (Zettlemoyer and Collins, 2005) and ZC07 (Zettlemoyer and Collins, 2007), and those that learned grammar structure by automatically splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includes an engineered seed lexicon) and ATIS (which is ZC07). Finally, we include results for GUSP (Poon, 2013), a recent unsupervised approach for ATIS. System Variants We report results for a complete approach (Full), and variants which use different aspects of the morpho-syntactic lexicon. The TEMP-ONLY variant learned with the templates from Section 5 but, like ZC07, does not use any word class information to restrict their use. The TEMP-POS removes morphology from the lexemes, but includes the word class information from Wiktionary. Finally, we also include DCS+, which in</context>
+</contexts>
+<marker>Liang, Jordan, Klein, 2011</marker>
+<rawString>Liang, P., Jordan, M., and Klein, D. (2011). Learning dependency-based compositional semantics. In Proceedings of the Conference of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Matuszek</author>
+<author>N FitzGerald</author>
+<author>L Zettlemoyer</author>
+<author>L Bo</author>
+<author>D Fox</author>
+</authors>
+<title>A joint model of language and perception for grounded attribute learning.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the International Conference on Machine Learning.</booktitle>
+<contexts>
+<context position="1700" citStr="Matuszek et al., 2012" startWordPosition="237" endWordPosition="240">mantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the CCG lexicon, which lists possible meanings for each phrase and defines a set of possible parses for each sentence. Previous approaches have either hand-engineered a small set of lexical templates (Zettlemoyer and Collins, 2005, 2007) or automatically learned such templates (Kwiatkowski et al., 2010, 2011). These methods are designed to learn grammars that overgenerate; they produce spurious parses that can complicate parameter estimation. In this paper, we demonstrate that significant gain</context>
+</contexts>
+<marker>Matuszek, FitzGerald, Zettlemoyer, Bo, Fox, 2012</marker>
+<rawString>Matuszek, C., FitzGerald, N., Zettlemoyer, L., Bo, L., and Fox, D. (2012). A joint model of language and perception for grounded attribute learning. In Proceedings of the International Conference on Machine Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Miller</author>
+<author>D Stallard</author>
+<author>R Bobrow</author>
+<author>R Schwartz</author>
+</authors>
+<title>A fully statistical approach to natural language interfaces.</title>
+<date>1996</date>
+<booktitle>In Proceedings Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="5758" citStr="Miller et al., 1996" startWordPosition="848" endWordPosition="851">kowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supe</context>
+</contexts>
+<marker>Miller, Stallard, Bobrow, Schwartz, 1996</marker>
+<rawString>Miller, S., Stallard, D., Bobrow, R., and Schwartz, R. (1996). A fully statistical approach to natural language interfaces. In Proceedings Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Muresan</author>
+</authors>
+<title>Learning for deep language understanding.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the International Joint Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="6202" citStr="Muresan, 2011" startWordPosition="921" endWordPosition="922">ild complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work</context>
+</contexts>
+<marker>Muresan, 2011</marker>
+<rawString>Muresan, S. (2011). Learning for deep language understanding. In Proceedings of the International Joint Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B H Partee</author>
+<author>V Borschev</author>
+</authors>
+<title>Integrating lexical and formal sematics: Genitives, relational nouns, and type-shifting.</title>
+<date>1998</date>
+<booktitle>In Proceedings of the Second Tbilisi Symposium on Language, Logic, and Computation.</booktitle>
+<contexts>
+<context position="6944" citStr="Partee and Borschev, 1998" startWordPosition="1029" endWordPosition="1032">zi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; K</context>
+<context position="21127" citStr="Partee and Borschev, 1998" startWordPosition="3420" endWordPosition="3423">(x, v) tmetonymy List airlines from Seattle l; N/PP : AfAx.v(x) n P(Ay.f(y), x)) Shat airlines depart from Seattle? l; N/(S\NP) : AfAx.v(x) n P(Ay.f(y), x) fares from miami to New York l; N/PP : AfAx.v(Ay.f(y), x) Table 5: Base templates for ungrammatical linguistic phenomena considering nouns as an illustrative example. We model nouns as denoting a set of entities that satisfy a given property. Regular nouns are represented using unary predicates. Relational nouns syntactically function as regular nouns but semantically describe sets of entities that have some relationship with a complement (Partee and Borschev, 1998). For example, the relational noun fare describes a binary relationship between flights and their price information, as we see in this parse: fares of flights PP Ax.flight(x) N Ax.fare(Ay.flight(y), x) This analysis differs from previous approaches (Zettlemoyer and Collins, 2007), where relational nouns were treated as regular nouns and prepositions introduced the binary relationship. The relational noun model reduces lexical ambiguity for the prepositions, which are otherwise highly polysemous. Adjectives are nominal modifiers that take a noun or a noun phrase as an argument and add propertie</context>
+</contexts>
+<marker>Partee, Borschev, 1998</marker>
+<rawString>Partee, B. H. and Borschev, V. (1998). Integrating lexical and formal sematics: Genitives, relational nouns, and type-shifting. In Proceedings of the Second Tbilisi Symposium on Language, Logic, and Computation.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H Poon</author>
+</authors>
+<title>Grounded unsupervised semantic parsing.</title>
+<date>2013</date>
+<booktitle>In Association for Computational Linguistics (ACL).</booktitle>
+<contexts>
+<context position="6629" citStr="Poon, 2013" startWordPosition="984" endWordPosition="985">cable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Goldwasser and Roth, 2011; Chen and Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2</context>
+<context position="32883" citStr="Poon, 2013" startWordPosition="5364" endWordPosition="5365">cally splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includes an engineered seed lexicon) and ATIS (which is ZC07). Finally, we include results for GUSP (Poon, 2013), a recent unsupervised approach for ATIS. System Variants We report results for a complete approach (Full), and variants which use different aspects of the morpho-syntactic lexicon. The TEMP-ONLY variant learned with the templates from Section 5 but, like ZC07, does not use any word class information to restrict their use. The TEMP-POS removes morphology from the lexemes, but includes the word class information from Wiktionary. Finally, we also include DCS+, which initialize a set of words with POS tag JJ, NN, and NNS. 9 Results Full Models Tables 7 and 8 report the main learning results. Our</context>
+</contexts>
+<marker>Poon, 2013</marker>
+<rawString>Poon, H. (2013). Grounded unsupervised semantic parsing. In Association for Computational Linguistics (ACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Pustejovsky</author>
+</authors>
+<title>The generative lexicon.</title>
+<date>1991</date>
+<volume>17</volume>
+<contexts>
+<context position="7116" citStr="Pustejovsky, 1991" startWordPosition="1058" endWordPosition="1059"> Mooney, 2011; Artzi and Zettlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have rel</context>
+</contexts>
+<marker>Pustejovsky, 1991</marker>
+<rawString>Pustejovsky, J. (1991). The generative lexicon. volume 17.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Steedman</author>
+</authors>
+<title>Surface Structure and Interpretation.</title>
+<date>1996</date>
+<publisher>The MIT Press.</publisher>
+<contexts>
+<context position="8837" citStr="Steedman, 1996" startWordPosition="1332" endWordPosition="1333">y(y)) N\N Ax.from(x, Ay.city(y)) N Ax.flight(x) ∧ from(x, Ay.city(y)) N Ax.flight(x) ∧ from(x, Ay.city(y)) ∧ oneway(x) S Ax.flight(x) ∧ from(x, Ay.city(y)) ∧ oneway(x) Figure 1: An example CCG parse. &gt; &gt; &gt;T &lt; &gt; &gt; lambda calculus logical expressions. We use a version of the typed lambda calculus (Carpenter, 1997), in which the basic types include entities, events, truth values and numbers. Function types are assigned to lambda expressions. The expression Ax.flight(x) with type (e, t) takes an entity and returns a truth value, and represents a set of flights. Combinatory Categorial Grammar CCG (Steedman, 1996, 2000) is a formalism that tightly couples syntax and semantics, and can be used to model a wide range of linguistic phenomena. A traditional CCG grammar includes a lexicon Λ with lexical entries like the following: flights ` N : λx.flight(x) from ` PP/NP: λy.λx.from(x, y) cities ` N : λx.city(x) where a lexical item w �- X : h has words w, syntactic category X, and logical expression h. CCG uses a small set of combinatory rules to jointly build syntactic parses and semantic representations. Two common combinatory rules are forward (&gt;) and backward (&lt;) application: X/Y : f Y : g ⇒ X : f(g) (&gt;</context>
+</contexts>
+<marker>Steedman, 1996</marker>
+<rawString>Steedman, M. (1996). Surface Structure and Interpretation. The MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Steedman</author>
+</authors>
+<title>The Syntactic Process.</title>
+<date>2000</date>
+<publisher>The MIT Press.</publisher>
+<marker>Steedman, 2000</marker>
+<rawString>Steedman, M. (2000). The Syntactic Process. The MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Steedman</author>
+</authors>
+<title>Taking Scope.</title>
+<date>2011</date>
+<publisher>The MIT Press.</publisher>
+<contexts>
+<context position="7141" citStr="Steedman, 2011" startWordPosition="1062" endWordPosition="1063">tlemoyer, 2013b), and even from database constraints with no explicit semantic supervision (Poon, 2013). We learn from logical forms, but CCG learning algorithms have been developed for each case above, making our techniques applicable. There has been significant related work that influenced the design of our morpho-syntactic grammars. This includes linguistics studies of relational nouns (Partee and Borschev, 1998; de Bruin and Scha, 1988), Davidsonian events (Davidson, 1967), parsing as abduction (Hobbs et al., 1988), and other more general theories for lexicons (Pustejovsky, 1991) and CCG (Steedman, 2011). It also includes work on using morphology in CCG syntactic parsing (Honnibal et al., 2010) and more broad-coverage semantics in CCG (Bos, 2008; Lewis and Steedman, 2013). However, our work is unique in studying the use of related ideas for semantic parsing. Finally, there has also been recent progress on semantic parsing against large, open domain databases such as Freebase (Cai and Yates, 2013a; Kwiatkowski et al., 2013; Berant et al., 2013). Unfortuantely, existing Freebase datasets are not a good fit to test our approach because the sentences they include have relatively simple structure </context>
+<context position="10297" citStr="Steedman, 2011" startWordPosition="1607" endWordPosition="1608">tic derivations concurrently. In this paper, we also implement type raising rules for compact representation of PP (prepositional phrase) and AP (adverbial phrase). PP : g ⇒ N\N : λfλx.f(x) ∧ g(x) (T) AP : g ⇒ S\S : λfλe.f(e) ∧ g(e) (T) AP : g ⇒ S/S : λfλe.f(e) ∧ g(e) (T) Figure 1 shows an example CCG parse (Steedman, 1996, 2000) where the lexical entries are listed across the top and the output lambda-calculus meaning representation is at the bottom. This meaning is a function (denoted by Ax...) that defines a set of flights with certain properties and includes a generalized Skolem constant (Steedman, 2011) (Ay...) that performs existential quantification. Following recent work (Artzi and Zettlemoyer, 2013b), we use meaning representations that model a variety of linguistic constructions, for example including Skolem constants for plurals and Davidson quantifiers for events, which we will introduce briefly throughout this paper as they appear. Weighted CCGs A weighted CCG grammar is defined as G = (Λ, O), where Λ is a CCG lexicon and O E Rd is a d-dimensional parameter vector, which will be used to rank the parses allowed under Λ. For a sentence x, G produces a set of candi1286 date parse trees </context>
+</contexts>
+<marker>Steedman, 2011</marker>
+<rawString>Steedman, M. (2011). Taking Scope. The MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Tur</author>
+<author>A Deoras</author>
+<author>D Hakkani-Tur</author>
+</authors>
+<title>Semantic parsing using word confusion networks with conditional random fields.</title>
+<date>2013</date>
+<booktitle>In Proc. of the INTERSPEECH.</booktitle>
+<contexts>
+<context position="5866" citStr="Tur et al., 2013" startWordPosition="866" endWordPosition="869">vides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitchell, 2012; Cai and Yates, 2013b), sentences paired with system behavior (Gol</context>
+</contexts>
+<marker>Tur, Deoras, Hakkani-Tur, 2013</marker>
+<rawString>Tur, G., Deoras, A., and Hakkani-Tur, D. (2013). Semantic parsing using word confusion networks with conditional random fields. In Proc. of the INTERSPEECH.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Wong</author>
+<author>R Mooney</author>
+</authors>
+<title>Learning synchronous grammars for semantic parsing with lambda calculus.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Conference of the Association for Computational Linguistics.</booktitle>
+<contexts>
+<context position="5518" citStr="Wong and Mooney, 2007" startWordPosition="809" endWordPosition="812">mmar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, </context>
+</contexts>
+<marker>Wong, Mooney, 2007</marker>
+<rawString>Wong, Y. and Mooney, R. (2007). Learning synchronous grammars for semantic parsing with lambda calculus. In Proceedings of the Conference of the Association for Computational Linguistics.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>X Yao</author>
+<author>B Van Durme</author>
+</authors>
+<title>Information extraction over structured data: Question answering with freebase.</title>
+<date>2014</date>
+<booktitle>In Association for Computational Linguistics (ACL).</booktitle>
+<marker>Yao, Van Durme, 2014</marker>
+<rawString>Yao, X. and Van Durme, B. (2014). Information extraction over structured data: Question answering with freebase. In Association for Computational Linguistics (ACL).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Zelle</author>
+<author>R Mooney</author>
+</authors>
+<title>Learning to parse database queries using inductive logic programming.</title>
+<date>1996</date>
+<booktitle>In Proceedings of the National Conference on Artificial Intelligence.</booktitle>
+<contexts>
+<context position="1174" citStr="Zelle and Mooney, 1996" startWordPosition="154" endWordPosition="157">-syntactic factored lexicon that models systematic variations in morphology, syntax, and semantics across word classes. The grammar uses domain-independent facts about the English language to restrict the number of incorrect parses that must be considered, thereby enabling effective learning from less data. Experiments in benchmark domains match previous models with one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction. 1 Introduction Semantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this sty</context>
+<context position="4418" citStr="Zelle and Mooney, 1996" startWordPosition="636" endWordPosition="639">the stem with semantic content that is invariant to syntactic usage, and (3) a lexical template that specifies the remaining syntactic and semantic content. The full set of templates is defined in terms of a small set of base templates and template transformations that model morphological variants such as passivization and nominalization of verbs. This approach allows us to efficiently encode a general grammar for semantic parsing while also eliminating large classes of incorrect analyses considered by previous work. We perform experiments in two benchmark semantic parsing datasets: GeoQuery (Zelle and Mooney, 1996) and ATIS (Dahl et al., 1994). In both cases, our approach achieves state-of-the-art performance, including a nearly 45% relative error reduction on the ATIS test set. We also show that the gains increase with less data, including matching previous model’s performance with less than 25% of the training data. Such gains are particularly practical for semantic parsers; they can greatly reduce the amount of data that is needed for each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and</context>
+</contexts>
+<marker>Zelle, Mooney, 1996</marker>
+<rawString>Zelle, J. and Mooney, R. (1996). Learning to parse database queries using inductive logic programming. In Proceedings of the National Conference on Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+<author>M Collins</author>
+</authors>
+<title>Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the Conference on Uncertainty in Artificial Intelligence.</booktitle>
+<contexts>
+<context position="1205" citStr="Zettlemoyer and Collins, 2005" startWordPosition="158" endWordPosition="161">con that models systematic variations in morphology, syntax, and semantics across word classes. The grammar uses domain-independent facts about the English language to restrict the number of incorrect parses that must be considered, thereby enabling effective learning from less data. Experiments in benchmark domains match previous models with one quarter of the data and provide new state-of-the-art results with all available data, including up to 45% relative test-error reduction. 1 Introduction Semantic parsers map sentences to formal representations of their meaning (Zelle and Mooney, 1996; Zettlemoyer and Collins, 2005; Liang et al., 2011). One common approach is to induce a probabilistic CCG grammar, which defines the meanings of individual words and phrases and how to best combine them to analyze complete sentences. There has been recent work developing learning algorithms for CCG semantic parsers (Kwiatkowski et al., 2010; Artzi and Zettlemoyer, 2011) and using them for applications ranging from question answering (Cai and Yates, 2013b; Kwiatkowski et al., 2013) to robot control (Matuszek et al., 2012; Krishnamurthy and Kollar, 2013). One key learning challenge for this style of learning is to induce the</context>
+<context position="5032" citStr="Zettlemoyer and Collins, 2005" startWordPosition="733" endWordPosition="736">d Mooney, 1996) and ATIS (Dahl et al., 1994). In both cases, our approach achieves state-of-the-art performance, including a nearly 45% relative error reduction on the ATIS test set. We also show that the gains increase with less data, including matching previous model’s performance with less than 25% of the training data. Such gains are particularly practical for semantic parsers; they can greatly reduce the amount of data that is needed for each new application domain. 2 Related Work Grammar induction methods for CCG semantic parsers have either used hand-engineered lexical templates, e.g. (Zettlemoyer and Collins, 2005, 2007; Artzi and Zettlemoyer, 2011), or algorithms to learn such templates directly from data, e.g. (Kwiatkowski et al., 2010, 2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for in</context>
+<context position="32177" citStr="Zettlemoyer and Collins, 2005" startWordPosition="5242" endWordPosition="5245">uated with exact match accuracy, the percentage of fully correct logical forms. Initialization We assign positive initial weights to the indicator features for entries in the initial lexicon, as defined in Section 7, to encourage their use. The elliptical template and metonymy template features are initialized with negative weights to initially discourage word skipping. Comparison Systems We compare performance with all recent CCG grammar induction algorithms that work with our datasets. This includes methods that used a limited set of hand-engineered templates for inducing the lexicon, ZC05 (Zettlemoyer and Collins, 2005) and ZC07 (Zettlemoyer and Collins, 2007), and those that learned grammar structure by automatically splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includ</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2005</marker>
+<rawString>Zettlemoyer, L. and Collins, M. (2005). Learning to map sentences to logical form: Structured classification with probabilistic categorial grammars. In Proceedings of the Conference on Uncertainty in Artificial Intelligence.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+<author>M Collins</author>
+</authors>
+<title>Online learning of relaxed CCG grammars for parsing to logical form.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</booktitle>
+<contexts>
+<context position="11437" citStr="Zettlemoyer and Collins, 2007" startWordPosition="1808" endWordPosition="1811"> parses allowed under Λ. For a sentence x, G produces a set of candi1286 date parse trees Y = Y(x; G). Given a feature vector Φ E Rd, each parse tree y for sentence x is scored by S(y; O) = θ·O(x, y). The output logical form zˆ is then defined to be at the root of the highest-scoring parse ˆy: yˆ = arg max S(y; O) (1) y∈Y(x;G) We use existing CKY-style parsing algorithms for this computation, implemented with UW SPF (Artzi and Zettlemoyer, 2013a). Section 7 describes the set of features we use in the learned models. Learning with GENLEX We will also make use of an existing learning algorithm (Zettlemoyer and Collins, 2007) (ZC07). We first briefly review the ZC07 algorithm, and describe our modifications in Section 7. Given a set of training examples D = {(xi, zi) : i = 1...n}, xi being the ith sentence and zi being its annotated logical form, the algorithm learns a set of parameters O for the grammar, while also inducing the lexicon Λ. The ZC07 learning algorithm uses a function GENLEX(x,z) to define a set of lexical entries that could be used to parse the sentence x to construct the logical form z. For each training example (x, z), GENLEX(x, z) maps all substrings x to a set of potential lexical entries, gene</context>
+<context position="21407" citStr="Zettlemoyer and Collins, 2007" startWordPosition="3463" endWordPosition="3466"> considering nouns as an illustrative example. We model nouns as denoting a set of entities that satisfy a given property. Regular nouns are represented using unary predicates. Relational nouns syntactically function as regular nouns but semantically describe sets of entities that have some relationship with a complement (Partee and Borschev, 1998). For example, the relational noun fare describes a binary relationship between flights and their price information, as we see in this parse: fares of flights PP Ax.flight(x) N Ax.fare(Ay.flight(y), x) This analysis differs from previous approaches (Zettlemoyer and Collins, 2007), where relational nouns were treated as regular nouns and prepositions introduced the binary relationship. The relational noun model reduces lexical ambiguity for the prepositions, which are otherwise highly polysemous. Adjectives are nominal modifiers that take a noun or a noun phrase as an argument and add properties through conjunction. Prepositions take nominal objects and function as adjectival modifiers for nouns or adverbial modifiers for verbs. Verbs can be subcategorized by their grammatical structures into transitive (Vtrans), intransitive (Vintrans), impersonal (Vimperson), auxilia</context>
+<context position="23862" citStr="Zettlemoyer and Collins, 2007" startWordPosition="3864" endWordPosition="3867">from. Another common problem is the use of metonymy. In the utterance “What airlines depart from New York?”, the word “airlines” is used to reference flight services operated by a specific airline. This is problematic because the word “depart” needs to modify an event of type flight. We solve this with the tmetonymy templates in Table 5. These introduce a binary predicate P that would, in the case of our example, map airlines on to the flights that they operate. The templates in Table 5 handle the major cases of missing words seen in our data and are more efficient than the approach taken by (Zettlemoyer and Collins, 2007) who introduced complex type shifting rules and relaxed the grammar to allow every word order. 6 Morphological Transformations Finally, the morpho-syntactic lexicon introduces morphological transformations, which are functions from base lexical templates to lexical templates that model the syntactic and semantic variation as the word is inflected. These transformations allow us to compactly model, for example, the facts that argument order is reversed when moving from active to passive forms of the same verb, and that the subject can be omitted. To the best of our knowledge, we are the first t</context>
+<context position="29498" citStr="Zettlemoyer and Collins, 2007" startWordPosition="4816" endWordPosition="4819">ertain phenomena to return the correct answer. This includes more advanced variants of person, tense, aspect, and potentially many others. Ideally, these morphological attributes should add semantic modifiers to the base meaning, for example, tense can constrain the time at which an event occurs. However, none of our domains support such reasoning, so we assign the identity transformation, and leave the exploration of these issues to future work. 7 Learning One advantage of our morpho-syntactic, factored lexicon is that it can be easily learned with small modifications to existing algorithms (Zettlemoyer and Collins, 2007). We only need to modify the GENLEX procedure that defines the space of possible lexical entries. For each training example (x, z), GENLEX(x, z, F) first maps each substring in the sentence x into the morphological representation (s, p, c) using F introduced in Section 4. A candidate lexeme set L&apos; is then generated by exhaustively pairing the word stems with all subsets of the logical constants from z. Lexical templates are applied to the lexemes in L&apos; to generate candidate lexical entries for x. Finally, the lexemes that participate in the top scoring correct parse of x are added to the perma</context>
+<context position="30927" citStr="Zettlemoyer and Collins, 2007" startWordPosition="5056" endWordPosition="5059"> words and conjunctions. These lexical items are mostly semantically vacuous and serve particular syntactic functions that are not generalizable to other word classes. We also initialize the lexemes with a list of NP entities complied from the database, e.g., (Boston, [bos]). Features We use two types of features in the model for discriminating parses. Four lexical features are fired on each lexical item: 0(s, for the lexeme, 0t, for the base template, 0t. for the morphologically modified template, and 0l for the complete lexical item. We also compute the standard logical expression features (Zettlemoyer and Collins, 2007) on the root semantics to track the pairwise predicate-argument relations and the cooccuring predicate-predicate relations in conjunctions and disjunctions. 8 Experimental Setup Data and Metrics We evaluate performance on two benchmark semantic parsing datasets, Geo880 and ATIS. We use the standard data splits, including 600/280 train/test for Geo880 and 4460/480/450 train/develop/test for ATIS. To support the new representations in Section 5, we systematically convert annotations with existential quantifiers, temporal events and relational nouns to new logical forms with equivalent meanings. </context>
+<context position="32218" citStr="Zettlemoyer and Collins, 2007" startWordPosition="5248" endWordPosition="5251">entage of fully correct logical forms. Initialization We assign positive initial weights to the indicator features for entries in the initial lexicon, as defined in Section 7, to encourage their use. The elliptical template and metonymy template features are initialized with negative weights to initially discourage word skipping. Comparison Systems We compare performance with all recent CCG grammar induction algorithms that work with our datasets. This includes methods that used a limited set of hand-engineered templates for inducing the lexicon, ZC05 (Zettlemoyer and Collins, 2005) and ZC07 (Zettlemoyer and Collins, 2007), and those that learned grammar structure by automatically splitting the labeled logSystem Test ZC05 79.3 ZC07 86.1 UBL 87.9 FUBL 88.6 DCS 87.9 FULL 90.4 DCS+ 91.1 Table 7: Exact-match Geo880 test accuracy. System Dev Test ZC07 74.4 84.6 UBL 65.6 71.4 FUBL 81.9 82.8 GUSP - 83.5 TEMP-ONLY 85.5 87.2 FULL 87.5 91.3 Table 8: Exact-match accuracy on the ATIS development and test sets. ical forms, UBL (Kwiatkowski et al., 2010) and FUBL (Kwiatkowski et al., 2011). We also compare the state-of-the-art for Geo880 (DCS (Liang et al., 2011) and DCS+ which includes an engineered seed lexicon) and ATIS (</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2007</marker>
+<rawString>Zettlemoyer, L. and Collins, M. (2007). Online learning of relaxed CCG grammars for parsing to logical form. In Proceedings of the Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Zettlemoyer</author>
+<author>M Collins</author>
+</authors>
+<title>Learning context-dependent mappings from sentences to logical form.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Joint Conference of the Association for Computational Linguistics and International Joint Conference on Natural Language Processing.</booktitle>
+<contexts>
+<context position="5790" citStr="Zettlemoyer and Collins, 2009" startWordPosition="852" endWordPosition="855">2011). Here, we extend the first approach, and show that better lexical generalization provides significant performance gains. Although CCG is a common choice for semantic parsers, many other formalisms have been studied, including DCS trees (Liang et al., 2011), integer linear programs (Clarke et al., 2010), and synchronous grammars (Wong and Mooney, 2007; Jones et al., 2012; Andreas et al., 2013). All of these approaches build complete meaning representations for individual sentences, but the data we use has also been studied in related work on cross-sentence reasoning (Miller et al., 1996; Zettlemoyer and Collins, 2009) and modeling semantic interpretation as a tagging problem (Tur et al., 2013; Heck et al., 2013). Although we focus on full analysis with CCG, the general idea of using linguistic constraints to improve learning is broadly applicable. Semantic parsers are also commonly learned from a variety of different types of supervision, including logical forms (Kate and Mooney, 2006; Wong and Mooney, 2007; Muresan, 2011; Kwiatkowski et al., 2012), questionanswer pairs (Clarke et al., 2010; Liang et al., 2011), conversational logs (Artzi and Zettlemoyer, 2011), distant supervision (Krishnamurthy and Mitch</context>
+</contexts>
+<marker>Zettlemoyer, Collins, 2009</marker>
+<rawString>Zettlemoyer, L. and Collins, M. (2009). Learning context-dependent mappings from sentences to logical form. In Proceedings of the Joint Conference of the Association for Computational Linguistics and International Joint Conference on Natural Language Processing.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

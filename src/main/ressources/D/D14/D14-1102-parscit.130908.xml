@@ -1,0 +1,2526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.001102">
+<title confidence="0.961724">
+System Combination for Grammatical Error Correction
+</title>
+<author confidence="0.996689">
+Raymond Hendy Susanto Peter Phandi Hwee Tou Ng
+</author>
+<affiliation confidence="0.9995225">
+Department of Computer Science
+National University of Singapore
+</affiliation>
+<address confidence="0.841147">
+13 Computing Drive, Singapore 117417
+</address>
+<email confidence="0.999207">
+{raymondhs,peter-p,nght}@comp.nus.edu.sg
+</email>
+<sectionHeader confidence="0.994804" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999900866666667">
+Different approaches to high-quality
+grammatical error correction have been
+proposed recently, many of which have
+their own strengths and weaknesses. Most
+of these approaches are based on classi-
+fication or statistical machine translation
+(SMT). In this paper, we propose to com-
+bine the output from a classification-based
+system and an SMT-based system to
+improve the correction quality. We adopt
+the system combination technique of
+Heafield and Lavie (2010). We achieve an
+F0.5 score of 39.39% on the test set of the
+CoNLL-2014 shared task, outperforming
+the best system in the shared task.
+</bodyText>
+<sectionHeader confidence="0.998781" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<bodyText confidence="0.999876206349207">
+Grammatical error correction (GEC) refers to the
+task of detecting and correcting grammatical er-
+rors present in a text written by a second language
+learner. For example, a GEC system to correct
+English promises to benefit millions of learners
+around the world, since it functions as a learning
+aid by providing instantaneous feedback on ESL
+writing.
+Research in this area has attracted much interest
+recently, with four shared tasks organized in the
+past several years: Helping Our Own (HOO) 2011
+and 2012 (Dale and Kilgarriff, 2010; Dale et al.,
+2012), and the CoNLL 2013 and 2014 shared tasks
+(Ng et al., 2013; Ng et al., 2014). Each shared task
+comes with an annotated corpus of learner texts
+and a benchmark test set, facilitating further re-
+search in GEC.
+Many approaches have been proposed to de-
+tect and correct grammatical errors. The most
+dominant approaches are based on classification
+(a set of classifier modules where each module ad-
+dresses a specific error type) and statistical ma-
+chine translation (SMT) (formulated as a transla-
+tion task from “bad” to “good” English). Other ap-
+proaches combine the classification and SMT ap-
+proaches, and often have some rule-based compo-
+nents.
+Each approach has its own strengths and weak-
+nesses. Since the classification approach is able to
+focus on each individual error type using a sep-
+arate classifier, it may perform better on an er-
+ror type where it can build a custom-made classi-
+fier tailored to the error type, such as subject-verb
+agreement errors. The drawback of the classifica-
+tion approach is that one classifier must be built
+for each error type, so a comprehensive GEC sys-
+tem will need to build many classifiers which com-
+plicates its design. Furthermore, the classification
+approach does not address multiple error types that
+may interact.
+The SMT approach, on the other hand, natu-
+rally takes care of interaction among words in a
+sentence as it attempts to find the best overall cor-
+rected sentence. It usually has a better coverage
+of different error types. The drawback of this ap-
+proach is its reliance on error-annotated learner
+data, which is expensive to produce. It is not pos-
+sible to build a competitive SMT system without a
+sufficiently large parallel training corpus, consist-
+ing of texts written by ESL learners and the corre-
+sponding corrected texts.
+In this work, we aim to take advantage of both
+the classification and the SMT approaches. By
+combining the outputs of both systems, we hope
+that the strengths of one approach will offset the
+weaknesses of the other approach. We adopt the
+system combination technique of (Heafield and
+Lavie, 2010), which starts by creating word-level
+alignments among multiple outputs. By perform-
+ing beam search over these alignments, it tries
+to find the best corrected sentence that combines
+parts of multiple system outputs.
+The main contributions of this paper are as fol-
+</bodyText>
+<page confidence="0.968037">
+951
+</page>
+<note confidence="0.9278105">
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 951–962,
+October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.261715">
+lows:
+</bodyText>
+<listItem confidence="0.9986962">
+• It is the first work that makes use of a system
+combination strategy to improve grammatical
+error correction;
+• It gives a detailed description of methods
+and experimental setup for building compo-
+nent systems using two state-of-the-art ap-
+proaches; and
+• It provides a detailed analysis of how one ap-
+proach can benefit from the other approach
+through system combination.
+</listItem>
+<bodyText confidence="0.999373153846154">
+We evaluate our system combination approach
+on the CoNLL-2014 shared task. The approach
+achieves an F0.5 score of 39.39%, outperforming
+the best participating team in the shared task.
+The remainder of this paper is organized as fol-
+lows. Section 2 gives the related work. Section 3
+describes the individual systems. Section 4 ex-
+plains the system combination method. Section 5
+presents experimental setup and results. Section 6
+provides a discussion and analysis of the results.
+Section 7 describes further experiments on system
+combination. Finally, Section 8 concludes the pa-
+per.
+</bodyText>
+<sectionHeader confidence="0.999915" genericHeader="introduction">
+2 Related Work
+</sectionHeader>
+<subsectionHeader confidence="0.995645">
+2.1 Grammatical Error Correction
+</subsectionHeader>
+<bodyText confidence="0.999933265306122">
+Early research in grammatical error correction fo-
+cused on a single error type in isolation. For ex-
+ample, Knight and Chander (1994) built an article
+correction system for post-editing machine trans-
+lation output.
+The classification approach has been used to
+deal with the most common grammatical mistakes
+made by ESL learners, such as article and prepo-
+sition errors (Han et al., 2006; Chodorow et al.,
+2007; Tetreault and Chodorow, 2008; Gamon,
+2010; Dahlmeier and Ng, 2011; Rozovskaya and
+Roth, 2011; Wu and Ng, 2013), and more recently,
+verb errors (Rozovskaya et al., 2014b). Statis-
+tical classifiers are trained either from learner or
+non-learner texts. Features are extracted from the
+sentence context. Typically, these are shallow fea-
+tures, such as surrounding n-grams, part-of-speech
+(POS) tags, chunks, etc. Different sets of fea-
+tures are employed depending on the error type
+addressed.
+The statistical machine translation (SMT) ap-
+proach has gained more interest recently. Earlier
+work was done by Brockett et al. (2006), where
+they used SMT to correct mass noun errors. The
+major impediment in using the SMT approach for
+GEC is the lack of error-annotated learner (“par-
+allel”) corpora. Mizumoto et al. (2011) mined a
+learner corpus from the social learning platform
+Lang-8 and built an SMT system for correcting
+grammatical errors in Japanese. They further tried
+their method for English (Mizumoto et al., 2012).
+Other approaches combine the advantages of
+classification and SMT (Dahlmeier and Ng,
+2012a) and sometimes also include rule-based
+components. Note that in the hybrid approaches
+proposed previously, the output of each compo-
+nent system might be only partially corrected for
+some subset of error types. This is different from
+our system combination approach, where the out-
+put of each component system is a complete cor-
+rection of the input sentence where all error types
+are dealt with.
+State-of-the-art performance is achieved by
+both the classification (Dahlmeier et al., 2012;
+Rozovskaya et al., 2013; Rozovskaya et al.,
+2014a) and the SMT approach (Felice et al., 2014;
+Junczys-Dowmunt and Grundkiewicz, 2014),
+which motivates us to attempt system output com-
+bination from both approaches.
+</bodyText>
+<subsectionHeader confidence="0.991811">
+2.2 System Combination
+</subsectionHeader>
+<bodyText confidence="0.999352772727273">
+System combination is the task of combining the
+outputs of multiple systems to produce an out-
+put better than each of its individual component
+systems. In machine translation (MT), combin-
+ing multiple MT outputs has been attempted in
+the Workshop on Statistical Machine Translation
+(Callison-Burch et al., 2009; Bojar et al., 2011).
+One of the common approaches in system com-
+bination is the confusion network approach (Rosti
+et al., 2007b). In this approach, a confusion net-
+work is created by aligning the outputs of multi-
+ple systems. The combined output is generated by
+choosing the output of one single system as the
+“backbone”, and aligning the outputs of all other
+systems to this backbone. The word order of the
+combined output will then follow the word order
+of the backbone. The alignment step is critical in
+system combination. If there is an alignment er-
+ror, the resulting combined output sentence may
+be ungrammatical.
+Rosti et al. (2007a) evaluated three system com-
+bination methods in their work:
+</bodyText>
+<page confidence="0.988876">
+952
+</page>
+<listItem confidence="0.914667">
+• Sentence level This method looks at the com-
+bined N-best list of the systems and selects
+the best output.
+• Phrase level This method creates new hy-
+potheses using a new phrase translation ta-
+ble, built according to the phrase alignments
+of the systems.
+• Word level This method creates a graph by
+aligning the hypotheses of the systems. The
+confidence score of each aligned word is then
+calculated according to the votes from the hy-
+potheses.
+</listItem>
+<bodyText confidence="0.999601315789474">
+Combining different component sub-systems
+was attempted by CUUI (Rozovskaya et al.,
+2014a) and CAMB (Felice et al., 2014) in the
+CoNLL-2014 shared task. The CUUI system em-
+ploys different classifiers to correct various error
+types and then merges the results. The CAMB
+system uses a pipeline of systems to combine the
+outputs of their rule based system and their SMT
+system. The combination methods used in those
+systems are different from our approach, because
+they combine individual sub-system components,
+by piping the output from one sub-system to an-
+other, whereas we combine the outputs of whole
+systems. Moreover, our approach is able to com-
+bine the advantages of both the classification and
+SMT approaches. In the field of grammatical error
+correction, our work is novel as it is the first that
+uses system combination to improve grammatical
+error correction.
+</bodyText>
+<sectionHeader confidence="0.98193" genericHeader="method">
+3 The Component Systems
+</sectionHeader>
+<bodyText confidence="0.999975">
+We build four individual error correction systems.
+Two systems are pipeline systems based on the
+classification approach, whereas the other two are
+phrase-based SMT systems. In this section, we
+describe how we build each system.
+</bodyText>
+<subsectionHeader confidence="0.983143">
+3.1 Pipeline
+</subsectionHeader>
+<bodyText confidence="0.991387">
+We build two different pipeline systems. Each sys-
+tem consists of a sequence of classifier-based cor-
+rection steps. We use two different sequences of
+correction steps as shown in Table 1. As shown
+by the table, the only difference between the two
+pipeline systems is that we swap the noun number
+and the article correction step. We do this because
+there is an interaction between noun number and
+article correction. Swapping them generates sys-
+tem outputs that are quite different.
+</bodyText>
+<table confidence="0.986089428571429">
+Step Pipeline 1 (P1) Pipeline 2 (P2)
+1 Spelling Spelling
+2 Noun number Article
+3 Preposition Preposition
+4 Punctuation Punctuation
+5 Article Noun number
+6 Verb form, SVA Verb form, SVA
+</table>
+<tableCaption confidence="0.999857">
+Table 1: The two pipeline systems.
+</tableCaption>
+<bodyText confidence="0.999936525">
+We model each of the article, preposition, and
+noun number correction task as a multi-class clas-
+sification problem. A separate multi-class confi-
+dence weighted classifier (Crammer et al., 2009)
+is used for correcting each of these error types. A
+correction is only made if the difference between
+the scores of the original class and the proposed
+class is larger than a threshold tuned on the devel-
+opment set. The features of the article and prepo-
+sition classifiers follow the features used by the
+NUS system from HOO 2012 (Dahlmeier et al.,
+2012). For the noun number error type, we use
+lexical n-grams, ngram counts, dependency rela-
+tions, noun lemma, and countability features.
+For article correction, the classes are the arti-
+cles a, the, and the null article. The article an
+is considered to be the same class as a. A sub-
+sequent post-processing step chooses between a
+and an based on the following word. For prepo-
+sition correction, we choose 36 common English
+prepositions as used in (Dahlmeier et al., 2012).
+We only deal with preposition replacement but not
+preposition insertion or deletion. For noun number
+correction, the classes are singular and plural.
+Punctuation, subject-verb agreement (SVA),
+and verb form errors are corrected using rule-
+based classifiers. For SVA errors, we assume that
+noun number errors have already been corrected
+by classifiers earlier in the pipeline. Hence, only
+the verb is corrected when an SVA error is de-
+tected. For verb form errors, we change a verb into
+its base form if it is preceded by a modal verb, and
+we change it into the past participle form if it is
+preceded by has, have, or had.
+The spelling corrector uses Jazzy, an open
+source Java spell-checker1. We filter the sugges-
+tions given by Jazzy using a language model. We
+accept a suggestion from Jazzy only if the sugges-
+tion increases the language model score of the sen-
+tence.
+</bodyText>
+<footnote confidence="0.993755">
+1http://jazzy.sourceforge.net/
+</footnote>
+<page confidence="0.997572">
+953
+</page>
+<subsectionHeader confidence="0.998931">
+3.2 Statistical Machine Translation
+</subsectionHeader>
+<bodyText confidence="0.9808628">
+The other two component systems are based
+on phrase-based statistical machine translation
+(Koehn et al., 2003). It follows the well-
+known log-linear model formulation (Och and
+Ney, 2002):
+</bodyText>
+<equation confidence="0.999371666666667">
+eˆ = arg max
+e
+�λmhm(e, f) (1)
+</equation>
+<bodyText confidence="0.999880785714286">
+where f is the input sentence, e is the corrected
+output sentence, hm is a feature function, and λm
+is its weight. The feature functions include a trans-
+lation model learned from a sentence-aligned par-
+allel corpus and a language model learned from a
+large English corpus. More feature functions can
+be integrated into the log-linear model. A decoder
+finds the best correction eˆ that maximizes Equa-
+tion 1 above.
+The parallel corpora that we use to train
+the translation model come from two different
+sources. The first corpus is NUCLE (Dahlmeier et
+al., 2013), containing essays written by students at
+the National University of Singapore (NUS) which
+have been manually corrected by English instruc-
+tors at NUS. The other corpus is collected from
+the language exchange social networking website
+Lang-8. We develop two versions of SMT sys-
+tems: one with two phrase tables trained on NU-
+CLE and Lang-8 separately (S1), and the other
+with a single phrase table trained on the concate-
+nation of NUCLE and Lang-8 data (S2). Multiple
+phrase tables are used with alternative decoding
+paths (Birch et al., 2007). We add a word-level
+Levenshtein distance feature in the phrase table
+used by S2, similar to (Felice et al., 2014; Junczys-
+Dowmunt and Grundkiewicz, 2014). This feature
+is not included in S1.
+</bodyText>
+<sectionHeader confidence="0.985591" genericHeader="method">
+4 System Combination
+</sectionHeader>
+<bodyText confidence="0.992641297297297">
+We use MEMT (Heafield and Lavie, 2010) to
+combine the outputs of our systems. MEMT uses
+METEOR (Banerjee and Lavie, 2005) to perform
+alignment of each pair of outputs from the compo-
+nent systems. The METEOR matcher can identify
+exact matches, words with identical stems, syn-
+onyms, and unigram paraphrases.
+MEMT uses an approach similar to the confu-
+sion network approach in SMT system combina-
+tion. The difference is that it performs alignment
+on the outputs of every pair of component systems,
+so it does not need to choose a single backbone.
+As MEMT does not choose any single system out-
+put as its backbone, it can consider the output of
+each component system in a symmetrical manner.
+This increases word order flexibility, as choosing
+a single hypothesis as the backbone will limit the
+number of possible word order permutations.
+After creating pairwise alignments using ME-
+TEOR, the alignments form a confusion network.
+MEMT will then perform a beam search over this
+graph to find the one-best hypothesis. The search
+is carried out from left to right, one word at a time,
+creating a partial hypothesis. During beam search,
+it can freely switch among the component sys-
+tems, combining the outputs together into a sen-
+tence. When it adds a word to its hypothesis, all
+the words aligned to it in the other systems are also
+marked as “used”. If it switches to another input
+sentence, it has to use the first “unused” word in
+that sentence. This is done to make sure that ev-
+ery aligned word in the sentences is used. In some
+cases, a heuristic could be used to allow skipping
+over some words (Heafield et al., 2009).
+During beam search, MEMT uses a few features
+to score the hypotheses (both partial hypotheses
+and full hypotheses):
+</bodyText>
+<listItem confidence="0.912167166666667">
+• Length The number of tokens in a hypoth-
+esis. It is useful to normalize the impact of
+sentence length.
+• Language model Log probability from a lan-
+guage model. It is especially useful in main-
+taining sentence fluency.
+• Backoff The average n-gram length found in
+the language model.
+• Match The number of n-gram matches be-
+tween the outputs of the component systems
+and the hypothesis, counted for small order
+n-grams.
+</listItem>
+<bodyText confidence="0.999890555555556">
+The weights of these features are tuned using Z-
+MERT (Zaidan, 2009) on a development set.
+This system combination approach has a few
+advantages in grammatical error correction. ME-
+TEOR not only can match words with exact
+matches, but also words with identical stems, syn-
+onyms, and unigram paraphrases. This means that
+it can deal with word form, noun number, and verb
+form corrections that share identical stems, as well
+</bodyText>
+<equation confidence="0.982581833333333">
+= arg max
+e
+P(e|f)
+M
+exp
+m=1
+</equation>
+<page confidence="0.996726">
+954
+</page>
+<table confidence="0.999749285714286">
+Data set # sentences # source tokens
+NUCLE 57,151 1,161,567
+Lang-8 1,114,139 12,945,666
+CoNLL-2013 1,381 29,207
+CoNLL-2014 1,312 30,144
+English 86,992,889 1,778,849,655
+Wikipedia
+</table>
+<tableCaption confidence="0.99956">
+Table 2: Statistics of the data sets.
+</tableCaption>
+<bodyText confidence="0.9998448">
+as word choice corrections (with synonyms and
+unigram paraphrases). Also, MEMT uses a lan-
+guage model feature to maintain sentence fluency,
+favoring grammatical output sentences.
+In this paper, we combine the pipeline system
+P1 (Table 1) with the SMT system 51, and also
+combine P2 with 52. The two component sys-
+tems in each pair have comparable performance.
+For our final system, we also combine all four sys-
+tems together.
+</bodyText>
+<sectionHeader confidence="0.999187" genericHeader="method">
+5 Experiments
+</sectionHeader>
+<bodyText confidence="0.999985833333333">
+Our approach is evaluated in the context of the
+CoNLL-2014 shared task on grammatical error
+correction. Specific details of the shared task can
+be found in the overview paper (Ng et al., 2014),
+but we summarize the most important details rele-
+vant to our study here.
+</bodyText>
+<subsectionHeader confidence="0.988853">
+5.1 Data
+</subsectionHeader>
+<bodyText confidence="0.999951461538461">
+We use NUCLE version 3.2 (Dahlmeier et al.,
+2013), the official training data of the CoNLL-
+2014 shared task, to train our component systems.
+The grammatical errors in this corpus are catego-
+rized into 28 different error types. We also use the
+“Lang-8 Corpus of Learner English v1.0”2 (Tajiri
+et al., 2012) to obtain additional learner data. En-
+glish Wikipedia3 is used for language modeling
+and collecting n-gram counts. All systems are
+tuned on the CoNLL-2013 test data (which serves
+as the development data set) and tested on the
+CoNLL-2014 test data. The statistics of the data
+sets can be found in Table 2.
+</bodyText>
+<subsectionHeader confidence="0.996311">
+5.2 Evaluation
+</subsectionHeader>
+<bodyText confidence="0.99997625">
+System performance is evaluated based on pre-
+cision, recall, and F0.5 (which weights precision
+twice as much as recall). Given a set of n sen-
+tences, where gi is the set of gold-standard edits
+</bodyText>
+<footnote confidence="0.835307666666667">
+2http://cl.naist.jp/nldata/lang-8/
+3http://dumps.wikimedia.org/enwiki/20140102/enwiki-
+20140102-pages-articles.xml.bz2
+</footnote>
+<bodyText confidence="0.997372333333333">
+for sentence i, and ei is the set of system edits for
+sentence i, precision, recall, and F0.5 are defined
+as follows:
+</bodyText>
+<equation confidence="0.999910875">
+P = EZ 1  |gi n ei  |(2)
+EZ 1 |ei|
+En (3)
+i=1 |gi|
+(1 + 0.52) x R x P
+F0.5 =
+(4)
+R + 0.52 x P
+</equation>
+<bodyText confidence="0.973552666666667">
+where the intersection between gi and ei for sen-
+tence i is defined as
+gi n ei = {e E ei|]g E gi, match(g, e)} (5)
+The official scorer for the shared task was
+the MaxMatch (M2) scorer4 (Dahlmeier and Ng,
+2012b). The scorer computes the sequence of sys-
+tem edits between a source sentence and a system
+hypothesis that achieves the maximal overlap with
+the gold-standard edits. Like CoNLL-2014, F0.5
+is used instead of F1 to emphasize precision. For
+statistical significance testing, we use the sign test
+with bootstrap re-sampling on 100 samples.
+</bodyText>
+<subsectionHeader confidence="0.996213">
+5.3 Pipeline System
+</subsectionHeader>
+<bodyText confidence="0.999990416666667">
+We use ClearNLP5 for POS tagging and depen-
+dency parsing, and OpenNLP for chunking6. We
+use the WordNet (Fellbaum, 1998) morphology
+software to generate singular and plural word sur-
+face forms.
+The article, preposition, and noun number cor-
+rectors use the classifier approach to correct errors.
+Each classifier is trained using multi-class confi-
+dence weighted learning on the NUCLE and Lang-
+8 corpora. The classifier threshold is tuned using a
+simple grid search on the development data set for
+each class of a classifier.
+</bodyText>
+<subsectionHeader confidence="0.998384">
+5.4 SMT System
+</subsectionHeader>
+<bodyText confidence="0.999970875">
+The system is trained using Moses (Koehn et al.,
+2007), with Giza++ (Och and Ney, 2003) for word
+alignment. The translation table is trained using
+the “parallel” corpora of NUCLE and Lang-8. The
+table contains phrase pairs of maximum length
+seven. We include five standard parameters in the
+translation table: forward and reverse phrase trans-
+lations, forward and reverse lexical translations,
+</bodyText>
+<footnote confidence="0.999599666666667">
+4http://www.comp.nus.edu.sg/∼nlp/sw/m2scorer.tar.gz
+5https://code.google.com/p/clearnlp/
+6http://opennlp.apache.org/
+</footnote>
+<equation confidence="0.9932265">
+En i=1 |gi n ei|
+R =
+</equation>
+<page confidence="0.983851">
+955
+</page>
+<bodyText confidence="0.9998191">
+and phrase penalty. We further add a word-level
+Levenshtein distance feature for S2.
+We do not use any reordering model in our sys-
+tem. The intuition is that most error types do not
+involve long-range reordering and local reorder-
+ing can be easily captured in the phrase translation
+table. The distortion limit is set to 0 to prohibit
+reordering during hypothesis generation.
+We build two 5-gram language models using the
+corrected side of NUCLE and English Wikipedia.
+The language models are estimated using the
+KenLM toolkit (Heafield et al., 2013) with mod-
+ified Kneser-Ney smoothing. These two language
+models are used as separate feature functions in
+the log-linear model. Finally, they are binarized
+into a probing data structure (Heafield, 2011).
+Tuning is done on the development data set with
+MERT (Och, 2003). We use BLEU (Papineni et
+al., 2002) as the tuning metric, which turns out to
+work well in our experiment.
+</bodyText>
+<subsectionHeader confidence="0.988968">
+5.5 Combined System
+</subsectionHeader>
+<bodyText confidence="0.999928565217391">
+We use an open source MEMT implementation
+by Heafield and Lavie (2010) to combine the out-
+puts of our systems. Parameters are set to the val-
+ues recommended by (Heafield and Lavie, 2010):
+a beam size of 500, word skipping using length
+heuristic with radius 5, and with the length nor-
+malization option turned off. We use five match-
+ing features for each system: the number of exact
+unigram and bigram matches between hypotheses
+and the number of matches in terms of stems, syn-
+onyms, or paraphrases for unigrams, bigrams, and
+trigrams. We use the Wikipedia 5-gram language
+model in this experiment.
+We tune the combined system on the develop-
+ment data set. The test data is input into both
+the pipeline and SMT system respectively and the
+output from each system is then matched using
+METEOR (Banerjee and Lavie, 2005). Feature
+weights, based on BLEU, are then tuned using Z-
+MERT (Zaidan, 2009). We repeat this process five
+times and use the weights that achieve the best
+score on the development data set in our final com-
+bined system.
+</bodyText>
+<sectionHeader confidence="0.595691" genericHeader="method">
+5.6 Results
+</sectionHeader>
+<bodyText confidence="0.9995452">
+Our experimental results using the CoNLL-2014
+test data as the test set are shown in Table 3. Each
+system is evaluated against the same gold standard
+human annotations. As recommended in Ng et al.
+(2014), we do not use the revised gold standard to
+</bodyText>
+<table confidence="0.99991975">
+System P R F0.5
+Pipeline
+P1 40.24 23.99 35.44
+P2 39.93 22.77 34.70
+SMT
+S1 57.90 14.16 35.80
+S2 62.11 12.54 34.69
+Combined
+P1+S1 53.85 17.65 38.19
+P2+S2 56.92 16.22 37.90
+P1+P2+S1+S2 53.55 19.14 39.39
+Top 4 Systems in CoNLL-2014
+CAMB 39.71 30.10 37.33
+CUUI 41.78 24.88 36.79
+AMU 41.62 21.40 35.01
+POST 34.51 21.73 30.88
+</table>
+<tableCaption confidence="0.99706">
+Table 3: Performance of the pipeline, SMT,
+</tableCaption>
+<bodyText confidence="0.9988154375">
+and combined systems on the CoNLL-2014 test
+set. All improvements of combined systems over
+their component systems are statistically signifi-
+cant (p &lt; 0.01). The differences between P1 and
+S1 and between P2 and S2 are not statistically sig-
+nificant.
+ensure a fairer evaluation (i.e., without using alter-
+native answers).
+First, we can see that both the pipeline and
+SMT systems individually achieve relatively good
+results that are comparable with the third high-
+est ranking participant in the CoNLL-2014 shared
+task. It is worth noting that the pipeline systems
+only target the seven most common error types,
+yet still perform well in an all-error-type setting.
+In general, the pipeline systems have higher recall
+but lower precision than the SMT systems.
+The pipeline system is also sensitive to the or-
+der in which corrections are applied; for example
+applying noun number corrections before article
+corrections results in a better score. This means
+that there is definitely some interaction between
+grammatical errors and, for instance, the phrase a
+houses can be corrected to a house or houses de-
+pending on the order of correction.
+We noticed that the performance of the SMT
+system could be improved by using multiple trans-
+lation models. This is most likely due to domain
+differences between the NUCLE and Lang-8 cor-
+pus, e.g., text genres, writing style, topics, etc.
+Note also that the Lang-8 corpus is more than
+10 times larger than the NUCLE corpus, so there
+</bodyText>
+<page confidence="0.992914">
+956
+</page>
+<bodyText confidence="0.999460454545455">
+is some benefit from training and weighting two
+translation tables separately.
+The performance of the pipeline system P1 is
+comparable to that of the SMT system S1, and
+likewise the performance of P2 is comparable to
+that of S2. The differences between them are not
+statistically significant, making it appropriate to
+combine their respective outputs.
+Every combined system achieves a better result
+than its component systems. In every combina-
+tion, there is some improvement in precision over
+the pipeline systems, and some improvement in re-
+call over the SMT systems. The combination of
+the better component systems (P1+S1) is also sta-
+tistically significantly better than the combination
+of the other component systems (P2+S2). Com-
+bining all four component systems yields an even
+better result of 39.39% F0.5, which is even better
+than the CoNLL-2014 shared task winner. This is
+significant because the individual component sys-
+tems barely reached the score of the third highest
+ranking participant before they were combined.
+</bodyText>
+<sectionHeader confidence="0.999466" genericHeader="method">
+6 Discussion
+</sectionHeader>
+<bodyText confidence="0.999970240740741">
+In this section, we discuss the strengths and weak-
+nesses of the pipeline and SMT systems, and show
+how system output combination improves perfor-
+mance. Specifically, we compare P1, S1, and
+P1+S1, although the discussion also applies to P2,
+S2, and P2+S2.
+Type performance. We start by computing the
+recall for each of the 28 error types achieved by
+each system. This computation is straightforward
+as each gold standard edit is also annotated with
+error type. On the other hand, precision, as men-
+tioned in the overview paper (Ng et al., 2014), is
+much harder to compute because systems typically
+do not categorize their corrections by error type.
+Although it may be possible to compute the pre-
+cision for each error type in the pipeline system
+(since we know which correction was proposed by
+which classifier), this is more difficult to do in the
+SMT and combined system, where we would need
+to rely on heuristics which are more prone to er-
+rors. As a result, we decided to analyze a sample
+of 200 sentences by hand for a comparatively more
+robust comparison. The results can be seen in Ta-
+ble 4.
+We observe that the pipeline system has a higher
+recall than the SMT system for the following er-
+ror types: ArtOrDet, Mec, Nn, Prep, SVA, Vform,
+and Vt. Conversely, the SMT system generally has
+a higher precision than the pipeline system. The
+combined system usually has slightly lower pre-
+cision than the SMT system, but higher than the
+pipeline system, and slightly higher recall than the
+SMT system but lower than the pipeline system.
+In some cases however, like for Vform correction,
+both precision and recall increase.
+The combined system can also make use of cor-
+rections which are only corrected in one of the
+systems. For example, it corrects both Wform
+and Pform errors, which are only corrected by the
+SMT system, and SVA errors, which are only cor-
+rected by the pipeline system.
+Error analysis. For illustration on how sys-
+tem combination helps, we provide example out-
+put from the pipeline system P1, SMT system
+S1, and the combined system P1+S1 in Table 5.
+We illustrate three common scenarios where sys-
+tem combination helps: the first is when P1 per-
+forms better than S1, and the combined system
+chooses the corrections made by P1, the second is
+the opposite where S1 performs better than P1 and
+the combined system chooses S1, and the last is
+when the combined system combines the correc-
+tions made by P1 and S1 to produce output better
+than both P1 and S1.
+</bodyText>
+<sectionHeader confidence="0.9887125" genericHeader="method">
+7 Additional System Combination
+Experiments
+</sectionHeader>
+<bodyText confidence="0.999990789473684">
+We further evaluate our system combination ap-
+proach by making use of the corrected system out-
+puts of 12 participating teams in the CoNLL-2014
+shared task, which are publicly available on the
+shared task website.7 Specifically, we combined
+the system outputs of the top 2, 3, ... ,12 CoNLL-
+2014 shared task teams and computed the results.
+In our earlier experiments, the CoNLL-2013
+test data was used as the development set. How-
+ever, the participants’ outputs for this 2013 data
+are not available. Therefore, we split the CoNLL-
+2014 test data into two parts: the first 500 sen-
+tences for the development set and the remaining
+812 sentences for the test set. We then tried com-
+bining the n best performing systems, for n =
+2, 3, ... ,12. Other than the data, the experimen-
+tal setup is the same as that described in Sec-
+tion 5.5. Table 6 shows the ranking of the par-
+ticipants on the 812 test sentences (without alter-
+</bodyText>
+<footnote confidence="0.998929">
+7http://www.comp.nus.edu.sg/∼nlp/conll14st/
+official submissions.tar.gz
+</footnote>
+<page confidence="0.991005">
+957
+</page>
+<tableCaption confidence="0.834646">
+Table 4: True positives (TP), false negatives (FN), false positives (FP), precision (P), recall (R), and F0.5 (in %) for each error type without alternative answers,
+indicating how well each system performs against a particular error type.
+</tableCaption>
+<figure confidence="0.997954521660649">
+41.24
+0.00
+0.00
+0.00
+50.00
+0.00
+33.90
+0.00
+0.00
+0.00
+0.00
+0.00
+26.32
+0.00
+0.00
+0.00
+55.56
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+53.48
+52.88
+20.27
+F0.5
+23.81
+35.71
+R
+0.00
+0.00
+0.00
+0.00
+12.90
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+34.78
+34.38
+16.67
+7.69
+6.67
+5.17
+16.67
+29.85
+29.41
+Combined
+P
+43.24
+0.00
+0.00
+0.00
+100.00
+0.00
+57.14
+0.00
+0.00
+0.00
+0.00
+0.00
+50.00
+100.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+75.00
+50.00
+0.00
+0.00
+0.00
+66.67
+71.43
+61.11
+FP
+0
+10
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+2
+0
+0
+0
+2
+0
+0
+0
+7
+3
+3
+21
+1
+1
+FN
+30
+0
+16
+0
+0
+2
+12
+14
+12
+6
+0
+10
+4
+2
+47
+9
+9
+27
+17
+3
+5
+15
+5
+3
+55
+21
+1
+1
+TP
+16
+0
+20
+0
+0
+0
+4
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+2
+0
+0
+0
+5
+3
+11
+1
+1
+1
+0.00
+0.00
+0.00
+50.00
+0.00
+40.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+41.67
+41.67
+53.25
+21.13
+83.33
+F0.5
+46.61
+23.81
+35.71
+R
+0.00
+17.86
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+50.00
+0.00
+0.00
+27.69
+16.67
+7.69
+16.67
+13.33
+18.75
+5.45
+23.91
+P
+0.00
+62.50
+0.00
+0.00
+100.00
+0.00
+80.00
+0.00
+0.00
+0.00
+0.00
+0.00
+50.00
+0.00
+0.00
+0.00
+0.00
+60.00
+0.00
+0.00
+0.00
+75.00
+50.00
+100.00
+0.00
+0.00
+69.23
+61.11
+SMT
+FP
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+2
+0
+0
+0
+2
+0
+0
+7
+8
+3
+3
+1
+1
+1
+1
+FN
+0
+26
+16
+0
+0
+12
+14
+0
+52
+10
+4
+2
+47
+9
+9
+17
+35
+23
+3
+5
+3
+15
+5
+3
+13
+5
+1
+1
+TP
+0
+0
+0
+0
+4
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+2
+0
+0
+18
+5
+3
+3
+11
+1
+1
+1
+0.00
+0.00
+0.00
+0.00
+50.00
+0.00
+0.00
+0.00
+0.00
+0.00
+36.36
+25.00
+55.56
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+20.38
+39.47
+42.99
+8.47
+28.17
+41.67
+7.69
+33.33
+F0.5
+R
+0.00
+0.00
+0.00
+0.00
+20.00
+0.00
+0.00
+0.00
+0.00
+0.00
+20.00
+0.00
+25.00
+0.00
+0.00
+1.64
+0.00
+0.00
+0.00
+0.00
+25.49
+64.29
+9.09
+26.67
+43.55
+32.43
+6.25
+11.11
+Pipeline
+P
+19.40
+0.00
+0.00
+0.00
+0.00
+80.00
+0.00
+0.00
+0.00
+0.00
+0.00
+40.00
+100.00
+100.00
+0.00
+50.00
+0.00
+0.00
+100.00
+0.00
+0.00
+0.00
+0.00
+38.57
+27.27
+66.67
+8.33
+39.71
+FP
+54
+0
+0
+0
+0
+32
+0
+0
+0
+0
+0
+6
+0
+0
+0
+4
+0
+0
+0
+0
+0
+0
+0
+43
+41
+11
+1
+1
+FN
+0
+10
+10
+0
+2
+12
+4
+12
+2
+0
+60
+0
+7
+16
+16
+6
+38
+35
+15
+25
+15
+3
+5
+1
+1
+1
+11
+11
+TP
+0
+0
+0
+0
+12
+4
+0
+0
+0
+0
+0
+4
+0
+4
+0
+2
+0
+0
+0
+0
+0
+27
+27
+13
+1
+1
+1
+1
+ArtOrDet
+WOadv
+Wform
+WOinc
+Vform
+Wtone
+Others
+Rloc−
+Pform
+Smod
+Trans
+Sfrag
+Type
+Npos
+Ssub
+Srun
+SVA
+Spar
+Prep
+Mec
+Pref
+Wci
+Um
+Vm
+Wa
+Cit
+Nn
+V0
+Vt
+</figure>
+<page confidence="0.98243">
+958
+</page>
+<table confidence="0.9997699375">
+System Example sentence
+Source Nowadays , the use of the sociall media platforms is a commonplace in our lives .
+P1 Nowadays , the use of social media platforms is a commonplace in our lives .
+S1 Nowadays , the use of the sociall media platforms is a commonplace in our lives .
+P1+S1 Nowadays , the use of social media platforms is a commonplace in our lives .
+Gold Nowadays , the use of social media platforms is commonplace in our lives .
+Source Human has their own rights and privacy.
+P1 Human has their own rights and privacy.
+S1 Humans have their own rights and privacy.
+P1+S1 Humans have their own rights and privacy.
+Gold Humans have their own rights and privacy.
+Source People that living in the modern world really can not live without the social media sites .
+P1 People that living in the modern world really can not live without social media sites .
+S1 People living in the modern world really can not live without the social media sites .
+P1+S1 People living in the modern world really can not live without social media sites .
+Gold People living in the modern world really can not live without social media sites .
+</table>
+<tableCaption confidence="0.993442">
+Table 5: Example output from three systems.
+</tableCaption>
+<table confidence="0.999983615384615">
+System P R F0.5
+CUUI 44.62 27.54 39.69
+CAMB 39.93 31.02 37.76
+AMU 40.77 21.31 34.47
+POST 38.88 23.06 34.19
+NTHU 36.30 20.50 31.45
+RAC 32.38 13.62 25.39
+PKU 30.14 13.12 23.93
+UMC 29.03 12.88 23.21
+SJTU 32.04 5.43 16.18
+UFC 76.92 2.49 11.04
+IPN 11.99 2.88 7.34
+IITB 28.12 1.53 6.28
+</table>
+<tableCaption confidence="0.878516333333333">
+Table 6: Performance of each participant when
+evaluated on 812 sentences from CoNLL-2014
+test data.
+</tableCaption>
+<bodyText confidence="0.999267714285714">
+native answers). Note that since we use a subset of
+the original CoNLL-2014 test data for testing, the
+ranking is different from the official CoNLL-2014
+ranking.
+Table 7 shows the results of system combina-
+tion in terms of increasing numbers of top sys-
+tems. We observe consistent improvements in F0.5
+when we combine more system outputs, up to 5
+best performing systems. When combining 6 or
+more systems, the performance starts to fluctu-
+ate and degrade. An important observation is that
+when we perform system combination, it is more
+effective, in terms of F0.5, to combine a handful
+of high-quality system outputs than many outputs
+</bodyText>
+<table confidence="0.820981916666667">
+# systems P R F0.5
+2 44.72 29.78 40.64
+3 56.24 25.04 45.02
+4 59.16 23.63 45.48
+5 63.41 24.09 47.80
+6 65.02 19.54 44.37
+7 64.95 18.13 42.83
+8 66.09 14.70 38.90
+9 70.22 14.81 40.16
+10 69.72 13.67 38.31
+11 70.23 14.23 39.30
+12 69.72 11.82 35.22
+</table>
+<tableCaption confidence="0.9487525">
+Table 7: Performance with different numbers of
+combined top systems.
+</tableCaption>
+<bodyText confidence="0.999697777777778">
+of variable quality. Precision tends to increase as
+more systems are combined although recall tends
+to decrease. This indicates that combining multi-
+ple systems can produce a grammatical error cor-
+rection system with high precision, which is useful
+in a practical application setting where high preci-
+sion is desirable. Figure 1 shows how the perfor-
+mance varies as the number of combined systems
+increases.
+</bodyText>
+<sectionHeader confidence="0.998274" genericHeader="conclusions">
+8 Conclusion
+</sectionHeader>
+<bodyText confidence="0.999982">
+We have presented a system combination ap-
+proach for grammatical error correction using
+MEMT. Our approach combines the outputs from
+two of the most common paradigms in GEC: the
+pipeline and statistical machine translation ap-
+</bodyText>
+<page confidence="0.987001">
+959
+</page>
+<figure confidence="0.999033857142857">
+Performance
+60
+40
+P R F0.5
+20
+2 4 6 8 10 12
+Number of combined systems
+</figure>
+<figureCaption confidence="0.988833666666667">
+Figure 1: Performance in terms of precision (P),
+recall (R), and F0.5 versus the number of com-
+bined top systems.
+</figureCaption>
+<bodyText confidence="0.9992595">
+proach. We created two variants of the pipeline
+and statistical machine translation approaches and
+showed that system combination can be used to
+combine their outputs together to yield a superior
+system.
+Our best combined system achieves an F0.5
+score of 39.39% on the official CoNLL 2014 test
+set without alternative answers, higher than the top
+participating team in CoNLL 2014 on this data
+set. We achieved this by using component systems
+which were individually weaker than the top three
+systems that participated in the shared task.
+</bodyText>
+<sectionHeader confidence="0.997575" genericHeader="acknowledgments">
+Acknowledgments
+</sectionHeader>
+<bodyText confidence="0.992238">
+This research is supported by Singapore Min-
+istry of Education Academic Research Fund Tier
+2 grant MOE2013-T2-1-150. We would like to
+thank Christopher Bryant for his comments on this
+paper.
+</bodyText>
+<sectionHeader confidence="0.992453" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.988130567164179">
+Satanjeev Banerjee and Alon Lavie. 2005. METEOR:
+An automatic metric for MT evaluation with im-
+proved correlation with human judgments. In Pro-
+ceedings of the ACL Workshop on Intrinsic and Ex-
+trinsic Evaluation Measures for Machine Transla-
+tion and/or Summarization, pages 65–72.
+Alexandra Birch, Miles Osborne, and Philipp Koehn.
+2007. CCG supertags in factored statistical machine
+translation. In Proceedings of the Second Workshop
+on Statistical Machine Translation, pages 9–16.
+Ond&amp;quot;rej Bojar, Milo&amp;quot;s Ercegov&amp;quot;cevi´c, Martin Popel, and
+Omar Zaidan. 2011. A grain of salt for the WMT
+manual evaluation. In Proceedings of the Sixth
+Workshop on Statistical Machine Translation, pages
+1–11.
+Chris Brockett, William B Dolan, and Michael Ga-
+mon. 2006. Correcting ESL errors using phrasal
+SMT techniques. In Proceedings of the 21st Inter-
+national Conference on Computational Linguistics
+and the 44th Annual Meeting of the Association for
+Computational Linguistics, pages 249–256.
+Chris Callison-Burch, Philipp Koehn, Christof Monz,
+and Josh Schroeder. 2009. Findings of the 2009
+Workshop on Statistical Machine Translation. In
+Proceedings of the Fourth Workshop on Statistical
+Machine Translation, pages 1–28.
+Martin Chodorow, Joel R Tetreault, and Na-Rae Han.
+2007. Detection of grammatical errors involving
+prepositions. In Proceedings of the Fourth ACL-
+SIGSEM Workshop on Prepositions, pages 25–30.
+Koby Crammer, Mark Dredze, and Alex Kulesza.
+2009. Multi-class confidence weighted algorithms.
+In Proceedings of the 2009 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+496–504.
+Daniel Dahlmeier and Hwee Tou Ng. 2011. Grammat-
+ical error correction with alternating structure opti-
+mization. In Proceedings of the 49th Annual Meet-
+ing of the Association for Computational Linguis-
+tics, pages 915–923.
+Daniel Dahlmeier and Hwee Tou Ng. 2012a. A beam-
+search decoder for grammatical error correction. In
+Proceedings of the 2012 Joint Conference on Empir-
+ical Methods in Natural Language Processing and
+Computational Natural Language Learning, pages
+568–578.
+Daniel Dahlmeier and Hwee Tou Ng. 2012b. Better
+evaluation for grammatical error correction. In Pro-
+ceedings of the 2012 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics, pages 568–572.
+Daniel Dahlmeier, Hwee Tou Ng, and Eric Jun Feng
+Ng. 2012. NUS at the HOO 2012 shared task. In
+Proceedings of the Seventh Workshop on the Inno-
+vative Use of NLP for Building Educational Appli-
+cations, pages 216–224.
+Daniel Dahlmeier, Hwee Tou Ng, and Siew Mei Wu.
+2013. Building a large annotated corpus of learner
+English: The NUS Corpus of Learner English. In
+Proceedings of the Eighth Workshop on Innovative
+Use of NLP for Building Educational Applications,
+pages 22–31.
+Robert Dale and Adam Kilgarriff. 2010. Helping Our
+Own: Text massaging for computational linguistics
+as a new shared task. In Proceedings of the 6th Inter-
+national Natural Language Generation Conference,
+pages 263–267.
+</reference>
+<page confidence="0.970316">
+960
+</page>
+<reference confidence="0.999938917431192">
+Robert Dale, Ilya Anisimoff, and George Narroway.
+2012. HOO 2012: A report on the preposition and
+determiner error correction shared task. In Pro-
+ceedings of the Seventh Workshop on the Innovative
+Use of NLP for Building Educational Applications,
+pages 54–62.
+Mariano Felice, Zheng Yuan, Øistein E. Andersen, He-
+len Yannakoudakis, and Ekaterina Kochmar. 2014.
+Grammatical error correction using hybrid systems
+and type filtering. In Proceedings of the Eigh-
+teenth Conference on Computational Natural Lan-
+guage Learning: Shared Task, pages 15–24.
+Christiane Fellbaum. 1998. WordNet: An Electronic
+Lexical Database. MIT Press.
+Michael Gamon. 2010. Using mostly native data to
+correct errors in learners’ writing: A meta-classifier
+approach. In Proceedings of the 2010 Annual Con-
+ference of the North American Chapter of the Asso-
+ciation for Computational Linguistics, pages 163–
+171.
+Na-Rae Han, Martin Chodorow, and Claudia Leacock.
+2006. Detecting errors in English article usage by
+non-native speakers. Natural Language Engineer-
+ing, 12(2):115–129.
+Kenneth Heafield and Alon Lavie. 2010. Combining
+machine translation output with open source: The
+Carnegie Mellon multi-engine machine translation
+scheme. The Prague Bulletin of Mathematical Lin-
+guistics, 93:27–36.
+Kenneth Heafield, Greg Hanneman, and Alon Lavie.
+2009. Machine translation system combination with
+flexible word ordering. In Proceedings of the Fourth
+Workshop on Statistical Machine Translation, pages
+56–60.
+Kenneth Heafield, Ivan Pouzyrevsky, Jonathan H.
+Clark, and Philipp Koehn. 2013. Scalable modi-
+fied Kneser-Ney language model estimation. In Pro-
+ceedings of the 51st Annual Meeting of the Associa-
+tion for Computational Linguistics, pages 690–696.
+Kenneth Heafield. 2011. KenLM: faster and smaller
+language model queries. In Proceedings of the Sixth
+Workshop on Statistical Machine Translation, pages
+187–197.
+Marcin Junczys-Dowmunt and Roman Grundkiewicz.
+2014. The AMU system in the CoNLL-2014
+shared task: Grammatical error correction by data-
+intensive and feature-rich statistical machine trans-
+lation. In Proceedings of the Eighteenth Confer-
+ence on Computational Natural Language Learn-
+ing: Shared Task, pages 25–33.
+Kevin Knight and Ishwar Chander. 1994. Auto-
+mated postediting of documents. In Proceedings of
+the Twelfth National Conference on Artificial Intel-
+ligence, pages 779–784.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Pro-
+ceedings of the 2003 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics, pages 48–54.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: Open
+source toolkit for statistical machine translation. In
+Proceedings of the ACL 2007 Demo and Poster Ses-
+sions, pages 177–180.
+Tomoya Mizumoto, Mamoru Komachi, Masaaki Na-
+gata, and Yuji Matsumoto. 2011. Mining revi-
+sion log of language learning SNS for automated
+Japanese error correction of second language learn-
+ers. In Proceedings of the Fifth International Joint
+Conference on Natural Language Processing, pages
+147–155.
+Tomoya Mizumoto, Yuta Hayashibe, Mamoru Ko-
+machi, Masaaki Nagata, and Yuji Matsumoto. 2012.
+The effect of learner corpus size in grammatical er-
+ror correction of ESL writings. In Proceedings of
+the 24th International Conference on Computational
+Linguistics, pages 863–872.
+Hwee Tou Ng, Siew Mei Wu, Yuanbin Wu, Christian
+Hadiwinoto, and Joel Tetreault. 2013. The CoNLL-
+2013 shared task on grammatical error correction.
+In Proceedings of the Seventeenth Conference on
+Computational Natural Language Learning: Shared
+Task, pages 1–12.
+Hwee Tou Ng, Siew Mei Wu, Ted Briscoe, Christian
+Hadiwinoto, Raymond Hendy Susanto, and Christo-
+pher Bryant. 2014. The CoNLL-2014 shared task
+on grammatical error correction. In Proceedings of
+the Eighteenth Conference on Computational Natu-
+ral Language Learning: Shared Task, pages 1–14.
+Franz Josef Och and Hermann Ney. 2002. Discrimina-
+tive training and maximum entropy models for sta-
+tistical machine translation. In Proceedings of the
+40th Annual Meeting of the Association for Compu-
+tational Linguistics, pages 295–302.
+Franz Josef Och and Hermann Ney. 2003. A sys-
+tematic comparison of various statistical alignment
+models. Computational Linguistics, 29(1):19–51.
+Franz Josef Och. 2003. Minimum error rate training
+in statistical machine translation. In Proceedings of
+the 41st Annual Meeting of the Association for Com-
+putational Linguistics, pages 160–167.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. BLEU: a method for automatic
+evaluation of machine translation. In Proceedings
+of the 40th Annual Meeting of the Association for
+Computational Linguistics, pages 311–318.
+</reference>
+<page confidence="0.977332">
+961
+</page>
+<reference confidence="0.999895703703704">
+Antti-Veikko I. Rosti, Necip Fazil Ayan, Bing Xiang,
+Spyros Matsoukas, Richard Schwartz, and Bonnie J.
+Dorr. 2007a. Combining outputs from multiple ma-
+chine translation systems. In Proceedings of the
+2007 Conference of the North American Chapter
+of the Association for Computational Linguistics,
+pages 228–235.
+Antti-Veikko I. Rosti, Spyros Matsoukas, and Richard
+Schwartz. 2007b. Improved word-level system
+combination for machine translation. In Proceed-
+ings of the 45th Annual Meeting of the Association
+for Computational Linguistics, pages 312–319.
+Alla Rozovskaya and Dan Roth. 2011. Algorithm
+selection and model adaptation for ESL correction
+tasks. In Proceedings of the 49th Annual Meet-
+ing of the Association for Computational Linguis-
+tics, pages 924–933.
+Alla Rozovskaya, Kai-Wei Chang, Mark Sammons,
+and Dan Roth. 2013. The University of Illinois
+system in the CoNLL-2013 shared task. In Pro-
+ceedings of the Seventeenth Conference on Compu-
+tational Natural Language Learning: Shared Task,
+pages 13–19.
+Alla Rozovskaya, Kai-Wei Chang, Mark Sammons,
+Dan Roth, and Nizar Habash. 2014a. The Illinois-
+Columbia system in the CoNLL-2014 shared task.
+In Proceedings of the Eighteenth Conference on
+Computational Natural Language Learning: Shared
+Task, pages 34–42.
+Alla Rozovskaya, Dan Roth, and Vivek Srikumar.
+2014b. Correcting grammatical verb errors. In Pro-
+ceedings of the 14th Conference of the European
+Chapter of the Association for Computational Lin-
+guistics, pages 358–367.
+Toshikazu Tajiri, Mamoru Komachi, and Yuji Mat-
+sumoto. 2012. Tense and aspect error correction
+for ESL learners using global context. In Proceed-
+ings of the 50th Annual Meeting of the Association
+for Computational Linguistics: Short Papers, pages
+198–202.
+Joel R Tetreault and Martin Chodorow. 2008. The
+ups and downs of preposition error detection in
+ESL writing. In Proceedings of the 22nd Inter-
+national Conference on Computational Linguistics,
+pages 865–872.
+Yuanbin Wu and Hwee Tou Ng. 2013. Grammat-
+ical error correction using integer linear program-
+ming. In Proceedings of the 51tst Annual Meet-
+ing of the Association for Computational Linguis-
+tics, pages 1456–1465.
+Omar Zaidan. 2009. Z-MERT: A fully configurable
+open source tool for minimum error rate training of
+machine translation systems. The Prague Bulletin of
+Mathematical Linguistics, 91:79–88.
+</reference>
+<page confidence="0.997409">
+962
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.864491">
+<title confidence="0.999953">System Combination for Grammatical Error Correction</title>
+<author confidence="0.999869">Raymond Hendy Susanto Peter Phandi Hwee Tou Ng</author>
+<affiliation confidence="0.9999">Department of Computer National University of</affiliation>
+<address confidence="0.97584">13 Computing Drive, Singapore</address>
+<abstract confidence="0.9806895">Different approaches to high-quality grammatical error correction have been proposed recently, many of which have their own strengths and weaknesses. Most of these approaches are based on classification or statistical machine translation (SMT). In this paper, we propose to combine the output from a classification-based system and an SMT-based system to improve the correction quality. We adopt the system combination technique of Heafield and Lavie (2010). We achieve an of 39.39% on the test set of the CoNLL-2014 shared task, outperforming the best system in the shared task.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>Satanjeev Banerjee</author>
+<author>Alon Lavie</author>
+</authors>
+<title>METEOR: An automatic metric for MT evaluation with improved correlation with human judgments.</title>
+<date>2005</date>
+<booktitle>In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization,</booktitle>
+<pages>65--72</pages>
+<contexts>
+<context position="14044" citStr="Banerjee and Lavie, 2005" startWordPosition="2273" endWordPosition="2276">elop two versions of SMT systems: one with two phrase tables trained on NUCLE and Lang-8 separately (S1), and the other with a single phrase table trained on the concatenation of NUCLE and Lang-8 data (S2). Multiple phrase tables are used with alternative decoding paths (Birch et al., 2007). We add a word-level Levenshtein distance feature in the phrase table used by S2, similar to (Felice et al., 2014; JunczysDowmunt and Grundkiewicz, 2014). This feature is not included in S1. 4 System Combination We use MEMT (Heafield and Lavie, 2010) to combine the outputs of our systems. MEMT uses METEOR (Banerjee and Lavie, 2005) to perform alignment of each pair of outputs from the component systems. The METEOR matcher can identify exact matches, words with identical stems, synonyms, and unigram paraphrases. MEMT uses an approach similar to the confusion network approach in SMT system combination. The difference is that it performs alignment on the outputs of every pair of component systems, so it does not need to choose a single backbone. As MEMT does not choose any single system output as its backbone, it can consider the output of each component system in a symmetrical manner. This increases word order flexibility</context>
+<context position="21976" citStr="Banerjee and Lavie, 2005" startWordPosition="3600" endWordPosition="3603"> beam size of 500, word skipping using length heuristic with radius 5, and with the length normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches between hypotheses and the number of matches in terms of stems, synonyms, or paraphrases for unigrams, bigrams, and trigrams. We use the Wikipedia 5-gram language model in this experiment. We tune the combined system on the development data set. The test data is input into both the pipeline and SMT system respectively and the output from each system is then matched using METEOR (Banerjee and Lavie, 2005). Feature weights, based on BLEU, are then tuned using ZMERT (Zaidan, 2009). We repeat this process five times and use the weights that achieve the best score on the development data set in our final combined system. 5.6 Results Our experimental results using the CoNLL-2014 test data as the test set are shown in Table 3. Each system is evaluated against the same gold standard human annotations. As recommended in Ng et al. (2014), we do not use the revised gold standard to System P R F0.5 Pipeline P1 40.24 23.99 35.44 P2 39.93 22.77 34.70 SMT S1 57.90 14.16 35.80 S2 62.11 12.54 34.69 Combined P</context>
+</contexts>
+<marker>Banerjee, Lavie, 2005</marker>
+<rawString>Satanjeev Banerjee and Alon Lavie. 2005. METEOR: An automatic metric for MT evaluation with improved correlation with human judgments. In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization, pages 65–72.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alexandra Birch</author>
+<author>Miles Osborne</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>CCG supertags in factored statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Second Workshop on Statistical Machine Translation,</booktitle>
+<pages>9--16</pages>
+<contexts>
+<context position="13710" citStr="Birch et al., 2007" startWordPosition="2217" endWordPosition="2220"> from two different sources. The first corpus is NUCLE (Dahlmeier et al., 2013), containing essays written by students at the National University of Singapore (NUS) which have been manually corrected by English instructors at NUS. The other corpus is collected from the language exchange social networking website Lang-8. We develop two versions of SMT systems: one with two phrase tables trained on NUCLE and Lang-8 separately (S1), and the other with a single phrase table trained on the concatenation of NUCLE and Lang-8 data (S2). Multiple phrase tables are used with alternative decoding paths (Birch et al., 2007). We add a word-level Levenshtein distance feature in the phrase table used by S2, similar to (Felice et al., 2014; JunczysDowmunt and Grundkiewicz, 2014). This feature is not included in S1. 4 System Combination We use MEMT (Heafield and Lavie, 2010) to combine the outputs of our systems. MEMT uses METEOR (Banerjee and Lavie, 2005) to perform alignment of each pair of outputs from the component systems. The METEOR matcher can identify exact matches, words with identical stems, synonyms, and unigram paraphrases. MEMT uses an approach similar to the confusion network approach in SMT system comb</context>
+</contexts>
+<marker>Birch, Osborne, Koehn, 2007</marker>
+<rawString>Alexandra Birch, Miles Osborne, and Philipp Koehn. 2007. CCG supertags in factored statistical machine translation. In Proceedings of the Second Workshop on Statistical Machine Translation, pages 9–16.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Ondrej Bojar</author>
+<author>Milos Ercegovcevi´c</author>
+<author>Martin Popel</author>
+<author>Omar Zaidan</author>
+</authors>
+<title>A grain of salt for the WMT manual evaluation.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</booktitle>
+<pages>1--11</pages>
+<marker>Bojar, Ercegovcevi´c, Popel, Zaidan, 2011</marker>
+<rawString>Ond&amp;quot;rej Bojar, Milo&amp;quot;s Ercegov&amp;quot;cevi´c, Martin Popel, and Omar Zaidan. 2011. A grain of salt for the WMT manual evaluation. In Proceedings of the Sixth Workshop on Statistical Machine Translation, pages 1–11.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Brockett</author>
+<author>William B Dolan</author>
+<author>Michael Gamon</author>
+</authors>
+<title>Correcting ESL errors using phrasal SMT techniques.</title>
+<date>2006</date>
+<booktitle>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>249--256</pages>
+<contexts>
+<context position="5958" citStr="Brockett et al. (2006)" startWordPosition="942" endWordPosition="945">7; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“parallel”) corpora. Mizumoto et al. (2011) mined a learner corpus from the social learning platform Lang-8 and built an SMT system for correcting grammatical errors in Japanese. They further tried their method for English (Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the outp</context>
+</contexts>
+<marker>Brockett, Dolan, Gamon, 2006</marker>
+<rawString>Chris Brockett, William B Dolan, and Michael Gamon. 2006. Correcting ESL errors using phrasal SMT techniques. In Proceedings of the 21st International Conference on Computational Linguistics and the 44th Annual Meeting of the Association for Computational Linguistics, pages 249–256.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Chris Callison-Burch</author>
+<author>Philipp Koehn</author>
+<author>Christof Monz</author>
+<author>Josh Schroeder</author>
+</authors>
+<date>2009</date>
+<booktitle>Findings of the 2009 Workshop on Statistical Machine Translation. In Proceedings of the Fourth Workshop on Statistical Machine Translation,</booktitle>
+<pages>1--28</pages>
+<contexts>
+<context position="7472" citStr="Callison-Burch et al., 2009" startWordPosition="1178" endWordPosition="1181">he-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network approach (Rosti et al., 2007b). In this approach, a confusion network is created by aligning the outputs of multiple systems. The combined output is generated by choosing the output of one single system as the “backbone”, and aligning the outputs of all other systems to this backbone. The word order of the combined output will then follow the word order of the backbone. The alignment step is critical in system combination. If there is an alignment error, the resulting combined output sentence may</context>
+</contexts>
+<marker>Callison-Burch, Koehn, Monz, Schroeder, 2009</marker>
+<rawString>Chris Callison-Burch, Philipp Koehn, Christof Monz, and Josh Schroeder. 2009. Findings of the 2009 Workshop on Statistical Machine Translation. In Proceedings of the Fourth Workshop on Statistical Machine Translation, pages 1–28.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Martin Chodorow</author>
+<author>Joel R Tetreault</author>
+<author>Na-Rae Han</author>
+</authors>
+<title>Detection of grammatical errors involving prepositions.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the Fourth ACLSIGSEM Workshop on Prepositions,</booktitle>
+<pages>25--30</pages>
+<contexts>
+<context position="5337" citStr="Chodorow et al., 2007" startWordPosition="848" endWordPosition="851">lts. Section 6 provides a discussion and analysis of the results. Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by B</context>
+</contexts>
+<marker>Chodorow, Tetreault, Han, 2007</marker>
+<rawString>Martin Chodorow, Joel R Tetreault, and Na-Rae Han. 2007. Detection of grammatical errors involving prepositions. In Proceedings of the Fourth ACLSIGSEM Workshop on Prepositions, pages 25–30.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Koby Crammer</author>
+<author>Mark Dredze</author>
+<author>Alex Kulesza</author>
+</authors>
+<title>Multi-class confidence weighted algorithms.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing,</booktitle>
+<pages>496--504</pages>
+<contexts>
+<context position="10639" citStr="Crammer et al., 2009" startWordPosition="1701" endWordPosition="1704">we swap the noun number and the article correction step. We do this because there is an interaction between noun number and article correction. Swapping them generates system outputs that are quite different. Step Pipeline 1 (P1) Pipeline 2 (P2) 1 Spelling Spelling 2 Noun number Article 3 Preposition Preposition 4 Punctuation Punctuation 5 Article Noun number 6 Verb form, SVA Verb form, SVA Table 1: The two pipeline systems. We model each of the article, preposition, and noun number correction task as a multi-class classification problem. A separate multi-class confidence weighted classifier (Crammer et al., 2009) is used for correcting each of these error types. A correction is only made if the difference between the scores of the original class and the proposed class is larger than a threshold tuned on the development set. The features of the article and preposition classifiers follow the features used by the NUS system from HOO 2012 (Dahlmeier et al., 2012). For the noun number error type, we use lexical n-grams, ngram counts, dependency relations, noun lemma, and countability features. For article correction, the classes are the articles a, the, and the null article. The article an is considered to</context>
+</contexts>
+<marker>Crammer, Dredze, Kulesza, 2009</marker>
+<rawString>Koby Crammer, Mark Dredze, and Alex Kulesza. 2009. Multi-class confidence weighted algorithms. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing, pages 496–504.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Dahlmeier</author>
+<author>Hwee Tou Ng</author>
+</authors>
+<title>Grammatical error correction with alternating structure optimization.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>915--923</pages>
+<contexts>
+<context position="5404" citStr="Dahlmeier and Ng, 2011" startWordPosition="858" endWordPosition="861">Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun err</context>
+</contexts>
+<marker>Dahlmeier, Ng, 2011</marker>
+<rawString>Daniel Dahlmeier and Hwee Tou Ng. 2011. Grammatical error correction with alternating structure optimization. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics, pages 915–923.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Dahlmeier</author>
+<author>Hwee Tou Ng</author>
+</authors>
+<title>A beamsearch decoder for grammatical error correction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</booktitle>
+<pages>568--578</pages>
+<contexts>
+<context position="6441" citStr="Dahlmeier and Ng, 2012" startWordPosition="1019" endWordPosition="1022">ssed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“parallel”) corpora. Mizumoto et al. (2011) mined a learner corpus from the social learning platform Lang-8 and built an SMT system for correcting grammatical errors in Japanese. They further tried their method for English (Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and</context>
+<context position="18795" citStr="Dahlmeier and Ng, 2012" startWordPosition="3090" endWordPosition="3093">much as recall). Given a set of n sentences, where gi is the set of gold-standard edits 2http://cl.naist.jp/nldata/lang-8/ 3http://dumps.wikimedia.org/enwiki/20140102/enwiki20140102-pages-articles.xml.bz2 for sentence i, and ei is the set of system edits for sentence i, precision, recall, and F0.5 are defined as follows: P = EZ 1 |gi n ei |(2) EZ 1 |ei| En (3) i=1 |gi| (1 + 0.52) x R x P F0.5 = (4) R + 0.52 x P where the intersection between gi and ei for sentence i is defined as gi n ei = {e E ei|]g E gi, match(g, e)} (5) The official scorer for the shared task was the MaxMatch (M2) scorer4 (Dahlmeier and Ng, 2012b). The scorer computes the sequence of system edits between a source sentence and a system hypothesis that achieves the maximal overlap with the gold-standard edits. Like CoNLL-2014, F0.5 is used instead of F1 to emphasize precision. For statistical significance testing, we use the sign test with bootstrap re-sampling on 100 samples. 5.3 Pipeline System We use ClearNLP5 for POS tagging and dependency parsing, and OpenNLP for chunking6. We use the WordNet (Fellbaum, 1998) morphology software to generate singular and plural word surface forms. The article, preposition, and noun number corrector</context>
+</contexts>
+<marker>Dahlmeier, Ng, 2012</marker>
+<rawString>Daniel Dahlmeier and Hwee Tou Ng. 2012a. A beamsearch decoder for grammatical error correction. In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 568–578.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Dahlmeier</author>
+<author>Hwee Tou Ng</author>
+</authors>
+<title>Better evaluation for grammatical error correction.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>568--572</pages>
+<contexts>
+<context position="6441" citStr="Dahlmeier and Ng, 2012" startWordPosition="1019" endWordPosition="1022">ssed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“parallel”) corpora. Mizumoto et al. (2011) mined a learner corpus from the social learning platform Lang-8 and built an SMT system for correcting grammatical errors in Japanese. They further tried their method for English (Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and</context>
+<context position="18795" citStr="Dahlmeier and Ng, 2012" startWordPosition="3090" endWordPosition="3093">much as recall). Given a set of n sentences, where gi is the set of gold-standard edits 2http://cl.naist.jp/nldata/lang-8/ 3http://dumps.wikimedia.org/enwiki/20140102/enwiki20140102-pages-articles.xml.bz2 for sentence i, and ei is the set of system edits for sentence i, precision, recall, and F0.5 are defined as follows: P = EZ 1 |gi n ei |(2) EZ 1 |ei| En (3) i=1 |gi| (1 + 0.52) x R x P F0.5 = (4) R + 0.52 x P where the intersection between gi and ei for sentence i is defined as gi n ei = {e E ei|]g E gi, match(g, e)} (5) The official scorer for the shared task was the MaxMatch (M2) scorer4 (Dahlmeier and Ng, 2012b). The scorer computes the sequence of system edits between a source sentence and a system hypothesis that achieves the maximal overlap with the gold-standard edits. Like CoNLL-2014, F0.5 is used instead of F1 to emphasize precision. For statistical significance testing, we use the sign test with bootstrap re-sampling on 100 samples. 5.3 Pipeline System We use ClearNLP5 for POS tagging and dependency parsing, and OpenNLP for chunking6. We use the WordNet (Fellbaum, 1998) morphology software to generate singular and plural word surface forms. The article, preposition, and noun number corrector</context>
+</contexts>
+<marker>Dahlmeier, Ng, 2012</marker>
+<rawString>Daniel Dahlmeier and Hwee Tou Ng. 2012b. Better evaluation for grammatical error correction. In Proceedings of the 2012 Conference of the North American Chapter of the Association for Computational Linguistics, pages 568–572.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Dahlmeier</author>
+</authors>
+<title>Hwee Tou Ng, and Eric Jun Feng Ng.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Seventh Workshop on the Innovative Use of NLP for Building Educational Applications,</booktitle>
+<pages>216--224</pages>
+<marker>Dahlmeier, 2012</marker>
+<rawString>Daniel Dahlmeier, Hwee Tou Ng, and Eric Jun Feng Ng. 2012. NUS at the HOO 2012 shared task. In Proceedings of the Seventh Workshop on the Innovative Use of NLP for Building Educational Applications, pages 216–224.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Daniel Dahlmeier</author>
+<author>Hwee Tou Ng</author>
+<author>Siew Mei Wu</author>
+</authors>
+<title>Building a large annotated corpus of learner English: The NUS Corpus of Learner English.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Eighth Workshop on Innovative Use of NLP for Building Educational Applications,</booktitle>
+<pages>22--31</pages>
+<contexts>
+<context position="13170" citStr="Dahlmeier et al., 2013" startWordPosition="2128" endWordPosition="2131"> formulation (Och and Ney, 2002): eˆ = arg max e �λmhm(e, f) (1) where f is the input sentence, e is the corrected output sentence, hm is a feature function, and λm is its weight. The feature functions include a translation model learned from a sentence-aligned parallel corpus and a language model learned from a large English corpus. More feature functions can be integrated into the log-linear model. A decoder finds the best correction eˆ that maximizes Equation 1 above. The parallel corpora that we use to train the translation model come from two different sources. The first corpus is NUCLE (Dahlmeier et al., 2013), containing essays written by students at the National University of Singapore (NUS) which have been manually corrected by English instructors at NUS. The other corpus is collected from the language exchange social networking website Lang-8. We develop two versions of SMT systems: one with two phrase tables trained on NUCLE and Lang-8 separately (S1), and the other with a single phrase table trained on the concatenation of NUCLE and Lang-8 data (S2). Multiple phrase tables are used with alternative decoding paths (Birch et al., 2007). We add a word-level Levenshtein distance feature in the ph</context>
+<context position="17496" citStr="Dahlmeier et al., 2013" startWordPosition="2862" endWordPosition="2865"> favoring grammatical output sentences. In this paper, we combine the pipeline system P1 (Table 1) with the SMT system 51, and also combine P2 with 52. The two component systems in each pair have comparable performance. For our final system, we also combine all four systems together. 5 Experiments Our approach is evaluated in the context of the CoNLL-2014 shared task on grammatical error correction. Specific details of the shared task can be found in the overview paper (Ng et al., 2014), but we summarize the most important details relevant to our study here. 5.1 Data We use NUCLE version 3.2 (Dahlmeier et al., 2013), the official training data of the CoNLL2014 shared task, to train our component systems. The grammatical errors in this corpus are categorized into 28 different error types. We also use the “Lang-8 Corpus of Learner English v1.0”2 (Tajiri et al., 2012) to obtain additional learner data. English Wikipedia3 is used for language modeling and collecting n-gram counts. All systems are tuned on the CoNLL-2013 test data (which serves as the development data set) and tested on the CoNLL-2014 test data. The statistics of the data sets can be found in Table 2. 5.2 Evaluation System performance is eval</context>
+</contexts>
+<marker>Dahlmeier, Ng, Wu, 2013</marker>
+<rawString>Daniel Dahlmeier, Hwee Tou Ng, and Siew Mei Wu. 2013. Building a large annotated corpus of learner English: The NUS Corpus of Learner English. In Proceedings of the Eighth Workshop on Innovative Use of NLP for Building Educational Applications, pages 22–31.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert Dale</author>
+<author>Adam Kilgarriff</author>
+</authors>
+<title>Helping Our Own: Text massaging for computational linguistics as a new shared task.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 6th International Natural Language Generation Conference,</booktitle>
+<pages>263--267</pages>
+<contexts>
+<context position="1388" citStr="Dale and Kilgarriff, 2010" startWordPosition="205" endWordPosition="208">the CoNLL-2014 shared task, outperforming the best system in the shared task. 1 Introduction Grammatical error correction (GEC) refers to the task of detecting and correcting grammatical errors present in a text written by a second language learner. For example, a GEC system to correct English promises to benefit millions of learners around the world, since it functions as a learning aid by providing instantaneous feedback on ESL writing. Research in this area has attracted much interest recently, with four shared tasks organized in the past several years: Helping Our Own (HOO) 2011 and 2012 (Dale and Kilgarriff, 2010; Dale et al., 2012), and the CoNLL 2013 and 2014 shared tasks (Ng et al., 2013; Ng et al., 2014). Each shared task comes with an annotated corpus of learner texts and a benchmark test set, facilitating further research in GEC. Many approaches have been proposed to detect and correct grammatical errors. The most dominant approaches are based on classification (a set of classifier modules where each module addresses a specific error type) and statistical machine translation (SMT) (formulated as a translation task from “bad” to “good” English). Other approaches combine the classification and SMT</context>
+</contexts>
+<marker>Dale, Kilgarriff, 2010</marker>
+<rawString>Robert Dale and Adam Kilgarriff. 2010. Helping Our Own: Text massaging for computational linguistics as a new shared task. In Proceedings of the 6th International Natural Language Generation Conference, pages 263–267.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Robert Dale</author>
+<author>Ilya Anisimoff</author>
+<author>George Narroway</author>
+</authors>
+<title>HOO 2012: A report on the preposition and determiner error correction shared task.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the Seventh Workshop on the Innovative Use of NLP for Building Educational Applications,</booktitle>
+<pages>54--62</pages>
+<contexts>
+<context position="1408" citStr="Dale et al., 2012" startWordPosition="209" endWordPosition="212"> outperforming the best system in the shared task. 1 Introduction Grammatical error correction (GEC) refers to the task of detecting and correcting grammatical errors present in a text written by a second language learner. For example, a GEC system to correct English promises to benefit millions of learners around the world, since it functions as a learning aid by providing instantaneous feedback on ESL writing. Research in this area has attracted much interest recently, with four shared tasks organized in the past several years: Helping Our Own (HOO) 2011 and 2012 (Dale and Kilgarriff, 2010; Dale et al., 2012), and the CoNLL 2013 and 2014 shared tasks (Ng et al., 2013; Ng et al., 2014). Each shared task comes with an annotated corpus of learner texts and a benchmark test set, facilitating further research in GEC. Many approaches have been proposed to detect and correct grammatical errors. The most dominant approaches are based on classification (a set of classifier modules where each module addresses a specific error type) and statistical machine translation (SMT) (formulated as a translation task from “bad” to “good” English). Other approaches combine the classification and SMT approaches, and oft</context>
+</contexts>
+<marker>Dale, Anisimoff, Narroway, 2012</marker>
+<rawString>Robert Dale, Ilya Anisimoff, and George Narroway. 2012. HOO 2012: A report on the preposition and determiner error correction shared task. In Proceedings of the Seventh Workshop on the Innovative Use of NLP for Building Educational Applications, pages 54–62.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Mariano Felice</author>
+<author>Zheng Yuan</author>
+<author>Øistein E Andersen</author>
+<author>Helen Yannakoudakis</author>
+<author>Ekaterina Kochmar</author>
+</authors>
+<title>Grammatical error correction using hybrid systems and type filtering.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>15--24</pages>
+<contexts>
+<context position="7020" citStr="Felice et al., 2014" startWordPosition="1111" endWordPosition="1114">fication and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network approach (Rosti et al., 2007b). In this approach,</context>
+<context position="8736" citStr="Felice et al., 2014" startWordPosition="1393" endWordPosition="1396">uated three system combination methods in their work: 952 • Sentence level This method looks at the combined N-best list of the systems and selects the best output. • Phrase level This method creates new hypotheses using a new phrase translation table, built according to the phrase alignments of the systems. • Word level This method creates a graph by aligning the hypotheses of the systems. The confidence score of each aligned word is then calculated according to the votes from the hypotheses. Combining different component sub-systems was attempted by CUUI (Rozovskaya et al., 2014a) and CAMB (Felice et al., 2014) in the CoNLL-2014 shared task. The CUUI system employs different classifiers to correct various error types and then merges the results. The CAMB system uses a pipeline of systems to combine the outputs of their rule based system and their SMT system. The combination methods used in those systems are different from our approach, because they combine individual sub-system components, by piping the output from one sub-system to another, whereas we combine the outputs of whole systems. Moreover, our approach is able to combine the advantages of both the classification and SMT approaches. In the </context>
+<context position="13824" citStr="Felice et al., 2014" startWordPosition="2237" endWordPosition="2240">ents at the National University of Singapore (NUS) which have been manually corrected by English instructors at NUS. The other corpus is collected from the language exchange social networking website Lang-8. We develop two versions of SMT systems: one with two phrase tables trained on NUCLE and Lang-8 separately (S1), and the other with a single phrase table trained on the concatenation of NUCLE and Lang-8 data (S2). Multiple phrase tables are used with alternative decoding paths (Birch et al., 2007). We add a word-level Levenshtein distance feature in the phrase table used by S2, similar to (Felice et al., 2014; JunczysDowmunt and Grundkiewicz, 2014). This feature is not included in S1. 4 System Combination We use MEMT (Heafield and Lavie, 2010) to combine the outputs of our systems. MEMT uses METEOR (Banerjee and Lavie, 2005) to perform alignment of each pair of outputs from the component systems. The METEOR matcher can identify exact matches, words with identical stems, synonyms, and unigram paraphrases. MEMT uses an approach similar to the confusion network approach in SMT system combination. The difference is that it performs alignment on the outputs of every pair of component systems, so it doe</context>
+</contexts>
+<marker>Felice, Yuan, Andersen, Yannakoudakis, Kochmar, 2014</marker>
+<rawString>Mariano Felice, Zheng Yuan, Øistein E. Andersen, Helen Yannakoudakis, and Ekaterina Kochmar. 2014. Grammatical error correction using hybrid systems and type filtering. In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task, pages 15–24.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Christiane Fellbaum</author>
+</authors>
+<title>WordNet: An Electronic Lexical Database.</title>
+<date>1998</date>
+<publisher>MIT Press.</publisher>
+<contexts>
+<context position="19271" citStr="Fellbaum, 1998" startWordPosition="3167" endWordPosition="3168">s gi n ei = {e E ei|]g E gi, match(g, e)} (5) The official scorer for the shared task was the MaxMatch (M2) scorer4 (Dahlmeier and Ng, 2012b). The scorer computes the sequence of system edits between a source sentence and a system hypothesis that achieves the maximal overlap with the gold-standard edits. Like CoNLL-2014, F0.5 is used instead of F1 to emphasize precision. For statistical significance testing, we use the sign test with bootstrap re-sampling on 100 samples. 5.3 Pipeline System We use ClearNLP5 for POS tagging and dependency parsing, and OpenNLP for chunking6. We use the WordNet (Fellbaum, 1998) morphology software to generate singular and plural word surface forms. The article, preposition, and noun number correctors use the classifier approach to correct errors. Each classifier is trained using multi-class confidence weighted learning on the NUCLE and Lang8 corpora. The classifier threshold is tuned using a simple grid search on the development data set for each class of a classifier. 5.4 SMT System The system is trained using Moses (Koehn et al., 2007), with Giza++ (Och and Ney, 2003) for word alignment. The translation table is trained using the “parallel” corpora of NUCLE and La</context>
+</contexts>
+<marker>Fellbaum, 1998</marker>
+<rawString>Christiane Fellbaum. 1998. WordNet: An Electronic Lexical Database. MIT Press.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Michael Gamon</author>
+</authors>
+<title>Using mostly native data to correct errors in learners’ writing: A meta-classifier approach.</title>
+<date>2010</date>
+<booktitle>In Proceedings of the 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>163--171</pages>
+<contexts>
+<context position="5380" citStr="Gamon, 2010" startWordPosition="856" endWordPosition="857">the results. Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT </context>
+</contexts>
+<marker>Gamon, 2010</marker>
+<rawString>Michael Gamon. 2010. Using mostly native data to correct errors in learners’ writing: A meta-classifier approach. In Proceedings of the 2010 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 163– 171.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Na-Rae Han</author>
+<author>Martin Chodorow</author>
+<author>Claudia Leacock</author>
+</authors>
+<title>Detecting errors in English article usage by non-native speakers.</title>
+<date>2006</date>
+<journal>Natural Language Engineering,</journal>
+<volume>12</volume>
+<issue>2</issue>
+<contexts>
+<context position="5314" citStr="Han et al., 2006" startWordPosition="844" endWordPosition="847">tal setup and results. Section 6 provides a discussion and analysis of the results. Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Ear</context>
+</contexts>
+<marker>Han, Chodorow, Leacock, 2006</marker>
+<rawString>Na-Rae Han, Martin Chodorow, and Claudia Leacock. 2006. Detecting errors in English article usage by non-native speakers. Natural Language Engineering, 12(2):115–129.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Alon Lavie</author>
+</authors>
+<title>Combining machine translation output with open source: The Carnegie Mellon multi-engine machine translation scheme.</title>
+<date>2010</date>
+<booktitle>The Prague Bulletin of Mathematical Linguistics,</booktitle>
+<pages>93--27</pages>
+<contexts>
+<context position="707" citStr="Heafield and Lavie (2010)" startWordPosition="93" endWordPosition="96">andi Hwee Tou Ng Department of Computer Science National University of Singapore 13 Computing Drive, Singapore 117417 {raymondhs,peter-p,nght}@comp.nus.edu.sg Abstract Different approaches to high-quality grammatical error correction have been proposed recently, many of which have their own strengths and weaknesses. Most of these approaches are based on classification or statistical machine translation (SMT). In this paper, we propose to combine the output from a classification-based system and an SMT-based system to improve the correction quality. We adopt the system combination technique of Heafield and Lavie (2010). We achieve an F0.5 score of 39.39% on the test set of the CoNLL-2014 shared task, outperforming the best system in the shared task. 1 Introduction Grammatical error correction (GEC) refers to the task of detecting and correcting grammatical errors present in a text written by a second language learner. For example, a GEC system to correct English promises to benefit millions of learners around the world, since it functions as a learning aid by providing instantaneous feedback on ESL writing. Research in this area has attracted much interest recently, with four shared tasks organized in the p</context>
+<context position="3467" citStr="Heafield and Lavie, 2010" startWordPosition="556" endWordPosition="559">e of different error types. The drawback of this approach is its reliance on error-annotated learner data, which is expensive to produce. It is not possible to build a competitive SMT system without a sufficiently large parallel training corpus, consisting of texts written by ESL learners and the corresponding corrected texts. In this work, we aim to take advantage of both the classification and the SMT approaches. By combining the outputs of both systems, we hope that the strengths of one approach will offset the weaknesses of the other approach. We adopt the system combination technique of (Heafield and Lavie, 2010), which starts by creating word-level alignments among multiple outputs. By performing beam search over these alignments, it tries to find the best corrected sentence that combines parts of multiple system outputs. The main contributions of this paper are as fol951 Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 951–962, October 25-29, 2014, Doha, Qatar. c�2014 Association for Computational Linguistics lows: • It is the first work that makes use of a system combination strategy to improve grammatical error correction; • It gives a detailed </context>
+<context position="13961" citStr="Heafield and Lavie, 2010" startWordPosition="2259" endWordPosition="2262">us is collected from the language exchange social networking website Lang-8. We develop two versions of SMT systems: one with two phrase tables trained on NUCLE and Lang-8 separately (S1), and the other with a single phrase table trained on the concatenation of NUCLE and Lang-8 data (S2). Multiple phrase tables are used with alternative decoding paths (Birch et al., 2007). We add a word-level Levenshtein distance feature in the phrase table used by S2, similar to (Felice et al., 2014; JunczysDowmunt and Grundkiewicz, 2014). This feature is not included in S1. 4 System Combination We use MEMT (Heafield and Lavie, 2010) to combine the outputs of our systems. MEMT uses METEOR (Banerjee and Lavie, 2005) to perform alignment of each pair of outputs from the component systems. The METEOR matcher can identify exact matches, words with identical stems, synonyms, and unigram paraphrases. MEMT uses an approach similar to the confusion network approach in SMT system combination. The difference is that it performs alignment on the outputs of every pair of component systems, so it does not need to choose a single backbone. As MEMT does not choose any single system output as its backbone, it can consider the output of e</context>
+<context position="21234" citStr="Heafield and Lavie (2010)" startWordPosition="3471" endWordPosition="3474">-gram language models using the corrected side of NUCLE and English Wikipedia. The language models are estimated using the KenLM toolkit (Heafield et al., 2013) with modified Kneser-Ney smoothing. These two language models are used as separate feature functions in the log-linear model. Finally, they are binarized into a probing data structure (Heafield, 2011). Tuning is done on the development data set with MERT (Och, 2003). We use BLEU (Papineni et al., 2002) as the tuning metric, which turns out to work well in our experiment. 5.5 Combined System We use an open source MEMT implementation by Heafield and Lavie (2010) to combine the outputs of our systems. Parameters are set to the values recommended by (Heafield and Lavie, 2010): a beam size of 500, word skipping using length heuristic with radius 5, and with the length normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches between hypotheses and the number of matches in terms of stems, synonyms, or paraphrases for unigrams, bigrams, and trigrams. We use the Wikipedia 5-gram language model in this experiment. We tune the combined system on the development data set. The test data is in</context>
+</contexts>
+<marker>Heafield, Lavie, 2010</marker>
+<rawString>Kenneth Heafield and Alon Lavie. 2010. Combining machine translation output with open source: The Carnegie Mellon multi-engine machine translation scheme. The Prague Bulletin of Mathematical Linguistics, 93:27–36.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Greg Hanneman</author>
+<author>Alon Lavie</author>
+</authors>
+<title>Machine translation system combination with flexible word ordering.</title>
+<date>2009</date>
+<booktitle>In Proceedings of the Fourth Workshop on Statistical Machine Translation,</booktitle>
+<pages>56--60</pages>
+<contexts>
+<context position="15531" citStr="Heafield et al., 2009" startWordPosition="2533" endWordPosition="2536">ne-best hypothesis. The search is carried out from left to right, one word at a time, creating a partial hypothesis. During beam search, it can freely switch among the component systems, combining the outputs together into a sentence. When it adds a word to its hypothesis, all the words aligned to it in the other systems are also marked as “used”. If it switches to another input sentence, it has to use the first “unused” word in that sentence. This is done to make sure that every aligned word in the sentences is used. In some cases, a heuristic could be used to allow skipping over some words (Heafield et al., 2009). During beam search, MEMT uses a few features to score the hypotheses (both partial hypotheses and full hypotheses): • Length The number of tokens in a hypothesis. It is useful to normalize the impact of sentence length. • Language model Log probability from a language model. It is especially useful in maintaining sentence fluency. • Backoff The average n-gram length found in the language model. • Match The number of n-gram matches between the outputs of the component systems and the hypothesis, counted for small order n-grams. The weights of these features are tuned using ZMERT (Zaidan, 2009</context>
+</contexts>
+<marker>Heafield, Hanneman, Lavie, 2009</marker>
+<rawString>Kenneth Heafield, Greg Hanneman, and Alon Lavie. 2009. Machine translation system combination with flexible word ordering. In Proceedings of the Fourth Workshop on Statistical Machine Translation, pages 56–60.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+<author>Ivan Pouzyrevsky</author>
+<author>Jonathan H Clark</author>
+<author>Philipp Koehn</author>
+</authors>
+<title>Scalable modified Kneser-Ney language model estimation.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>690--696</pages>
+<contexts>
+<context position="20769" citStr="Heafield et al., 2013" startWordPosition="3394" endWordPosition="3397">ogle.com/p/clearnlp/ 6http://opennlp.apache.org/ En i=1 |gi n ei| R = 955 and phrase penalty. We further add a word-level Levenshtein distance feature for S2. We do not use any reordering model in our system. The intuition is that most error types do not involve long-range reordering and local reordering can be easily captured in the phrase translation table. The distortion limit is set to 0 to prohibit reordering during hypothesis generation. We build two 5-gram language models using the corrected side of NUCLE and English Wikipedia. The language models are estimated using the KenLM toolkit (Heafield et al., 2013) with modified Kneser-Ney smoothing. These two language models are used as separate feature functions in the log-linear model. Finally, they are binarized into a probing data structure (Heafield, 2011). Tuning is done on the development data set with MERT (Och, 2003). We use BLEU (Papineni et al., 2002) as the tuning metric, which turns out to work well in our experiment. 5.5 Combined System We use an open source MEMT implementation by Heafield and Lavie (2010) to combine the outputs of our systems. Parameters are set to the values recommended by (Heafield and Lavie, 2010): a beam size of 500,</context>
+</contexts>
+<marker>Heafield, Pouzyrevsky, Clark, Koehn, 2013</marker>
+<rawString>Kenneth Heafield, Ivan Pouzyrevsky, Jonathan H. Clark, and Philipp Koehn. 2013. Scalable modified Kneser-Ney language model estimation. In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics, pages 690–696.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kenneth Heafield</author>
+</authors>
+<title>KenLM: faster and smaller language model queries.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</booktitle>
+<pages>187--197</pages>
+<contexts>
+<context position="20970" citStr="Heafield, 2011" startWordPosition="3426" endWordPosition="3427"> The intuition is that most error types do not involve long-range reordering and local reordering can be easily captured in the phrase translation table. The distortion limit is set to 0 to prohibit reordering during hypothesis generation. We build two 5-gram language models using the corrected side of NUCLE and English Wikipedia. The language models are estimated using the KenLM toolkit (Heafield et al., 2013) with modified Kneser-Ney smoothing. These two language models are used as separate feature functions in the log-linear model. Finally, they are binarized into a probing data structure (Heafield, 2011). Tuning is done on the development data set with MERT (Och, 2003). We use BLEU (Papineni et al., 2002) as the tuning metric, which turns out to work well in our experiment. 5.5 Combined System We use an open source MEMT implementation by Heafield and Lavie (2010) to combine the outputs of our systems. Parameters are set to the values recommended by (Heafield and Lavie, 2010): a beam size of 500, word skipping using length heuristic with radius 5, and with the length normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches b</context>
+</contexts>
+<marker>Heafield, 2011</marker>
+<rawString>Kenneth Heafield. 2011. KenLM: faster and smaller language model queries. In Proceedings of the Sixth Workshop on Statistical Machine Translation, pages 187–197.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Marcin Junczys-Dowmunt</author>
+<author>Roman Grundkiewicz</author>
+</authors>
+<title>The AMU system in the CoNLL-2014 shared task: Grammatical error correction by dataintensive and feature-rich statistical machine translation.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>25--33</pages>
+<contexts>
+<context position="7061" citStr="Junczys-Dowmunt and Grundkiewicz, 2014" startWordPosition="1115" endWordPosition="1118">lmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network approach (Rosti et al., 2007b). In this approach, a confusion network is created by aligni</context>
+</contexts>
+<marker>Junczys-Dowmunt, Grundkiewicz, 2014</marker>
+<rawString>Marcin Junczys-Dowmunt and Roman Grundkiewicz. 2014. The AMU system in the CoNLL-2014 shared task: Grammatical error correction by dataintensive and feature-rich statistical machine translation. In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task, pages 25–33.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kevin Knight</author>
+<author>Ishwar Chander</author>
+</authors>
+<title>Automated postediting of documents.</title>
+<date>1994</date>
+<booktitle>In Proceedings of the Twelfth National Conference on Artificial Intelligence,</booktitle>
+<pages>779--784</pages>
+<contexts>
+<context position="5063" citStr="Knight and Chander (1994)" startWordPosition="804" endWordPosition="807">ng the best participating team in the shared task. The remainder of this paper is organized as follows. Section 2 gives the related work. Section 3 describes the individual systems. Section 4 explains the system combination method. Section 5 presents experimental setup and results. Section 6 provides a discussion and analysis of the results. Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shal</context>
+</contexts>
+<marker>Knight, Chander, 1994</marker>
+<rawString>Kevin Knight and Ishwar Chander. 1994. Automated postediting of documents. In Proceedings of the Twelfth National Conference on Artificial Intelligence, pages 779–784.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Franz Josef Och</author>
+<author>Daniel Marcu</author>
+</authors>
+<title>Statistical phrase-based translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>48--54</pages>
+<contexts>
+<context position="12504" citStr="Koehn et al., 2003" startWordPosition="2013" endWordPosition="2016">is detected. For verb form errors, we change a verb into its base form if it is preceded by a modal verb, and we change it into the past participle form if it is preceded by has, have, or had. The spelling corrector uses Jazzy, an open source Java spell-checker1. We filter the suggestions given by Jazzy using a language model. We accept a suggestion from Jazzy only if the suggestion increases the language model score of the sentence. 1http://jazzy.sourceforge.net/ 953 3.2 Statistical Machine Translation The other two component systems are based on phrase-based statistical machine translation (Koehn et al., 2003). It follows the wellknown log-linear model formulation (Och and Ney, 2002): eˆ = arg max e �λmhm(e, f) (1) where f is the input sentence, e is the corrected output sentence, hm is a feature function, and λm is its weight. The feature functions include a translation model learned from a sentence-aligned parallel corpus and a language model learned from a large English corpus. More feature functions can be integrated into the log-linear model. A decoder finds the best correction eˆ that maximizes Equation 1 above. The parallel corpora that we use to train the translation model come from two dif</context>
+</contexts>
+<marker>Koehn, Och, Marcu, 2003</marker>
+<rawString>Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Statistical phrase-based translation. In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics, pages 48–54.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Philipp Koehn</author>
+<author>Hieu Hoang</author>
+<author>Alexandra Birch</author>
+<author>Chris Callison-Burch</author>
+<author>Marcello Federico</author>
+<author>Nicola Bertoldi</author>
+<author>Brooke Cowan</author>
+<author>Wade Shen</author>
+</authors>
+<title>Moses: Open source toolkit for statistical machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the ACL</booktitle>
+<pages>177--180</pages>
+<location>Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra</location>
+<contexts>
+<context position="19740" citStr="Koehn et al., 2007" startWordPosition="3242" endWordPosition="3245">0 samples. 5.3 Pipeline System We use ClearNLP5 for POS tagging and dependency parsing, and OpenNLP for chunking6. We use the WordNet (Fellbaum, 1998) morphology software to generate singular and plural word surface forms. The article, preposition, and noun number correctors use the classifier approach to correct errors. Each classifier is trained using multi-class confidence weighted learning on the NUCLE and Lang8 corpora. The classifier threshold is tuned using a simple grid search on the development data set for each class of a classifier. 5.4 SMT System The system is trained using Moses (Koehn et al., 2007), with Giza++ (Och and Ney, 2003) for word alignment. The translation table is trained using the “parallel” corpora of NUCLE and Lang-8. The table contains phrase pairs of maximum length seven. We include five standard parameters in the translation table: forward and reverse phrase translations, forward and reverse lexical translations, 4http://www.comp.nus.edu.sg/∼nlp/sw/m2scorer.tar.gz 5https://code.google.com/p/clearnlp/ 6http://opennlp.apache.org/ En i=1 |gi n ei| R = 955 and phrase penalty. We further add a word-level Levenshtein distance feature for S2. We do not use any reordering model</context>
+</contexts>
+<marker>Koehn, Hoang, Birch, Callison-Burch, Federico, Bertoldi, Cowan, Shen, 2007</marker>
+<rawString>Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra Constantin, and Evan Herbst. 2007. Moses: Open source toolkit for statistical machine translation. In Proceedings of the ACL 2007 Demo and Poster Sessions, pages 177–180.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomoya Mizumoto</author>
+<author>Mamoru Komachi</author>
+<author>Masaaki Nagata</author>
+<author>Yuji Matsumoto</author>
+</authors>
+<title>Mining revision log of language learning SNS for automated Japanese error correction of second language learners.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the Fifth International Joint Conference on Natural Language Processing,</booktitle>
+<pages>147--155</pages>
+<contexts>
+<context position="6147" citStr="Mizumoto et al. (2011)" startWordPosition="974" endWordPosition="977">ssifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“parallel”) corpora. Mizumoto et al. (2011) mined a learner corpus from the social learning platform Lang-8 and built an SMT system for correcting grammatical errors in Japanese. They further tried their method for English (Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component syst</context>
+</contexts>
+<marker>Mizumoto, Komachi, Nagata, Matsumoto, 2011</marker>
+<rawString>Tomoya Mizumoto, Mamoru Komachi, Masaaki Nagata, and Yuji Matsumoto. 2011. Mining revision log of language learning SNS for automated Japanese error correction of second language learners. In Proceedings of the Fifth International Joint Conference on Natural Language Processing, pages 147–155.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Tomoya Mizumoto</author>
+<author>Yuta Hayashibe</author>
+<author>Mamoru Komachi</author>
+<author>Masaaki Nagata</author>
+<author>Yuji Matsumoto</author>
+</authors>
+<title>The effect of learner corpus size in grammatical error correction of ESL writings.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 24th International Conference on Computational Linguistics,</booktitle>
+<pages>863--872</pages>
+<contexts>
+<context position="6350" citStr="Mizumoto et al., 2012" startWordPosition="1006" endWordPosition="1009">ags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“parallel”) corpora. Mizumoto et al. (2011) mined a learner corpus from the social learning platform Lang-8 and built an SMT system for correcting grammatical errors in Japanese. They further tried their method for English (Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 201</context>
+</contexts>
+<marker>Mizumoto, Hayashibe, Komachi, Nagata, Matsumoto, 2012</marker>
+<rawString>Tomoya Mizumoto, Yuta Hayashibe, Mamoru Komachi, Masaaki Nagata, and Yuji Matsumoto. 2012. The effect of learner corpus size in grammatical error correction of ESL writings. In Proceedings of the 24th International Conference on Computational Linguistics, pages 863–872.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hwee Tou Ng</author>
+<author>Siew Mei Wu</author>
+<author>Yuanbin Wu</author>
+<author>Christian Hadiwinoto</author>
+<author>Joel Tetreault</author>
+</authors>
+<title>The CoNLL2013 shared task on grammatical error correction.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Seventeenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>1--12</pages>
+<contexts>
+<context position="1467" citStr="Ng et al., 2013" startWordPosition="221" endWordPosition="224">ion Grammatical error correction (GEC) refers to the task of detecting and correcting grammatical errors present in a text written by a second language learner. For example, a GEC system to correct English promises to benefit millions of learners around the world, since it functions as a learning aid by providing instantaneous feedback on ESL writing. Research in this area has attracted much interest recently, with four shared tasks organized in the past several years: Helping Our Own (HOO) 2011 and 2012 (Dale and Kilgarriff, 2010; Dale et al., 2012), and the CoNLL 2013 and 2014 shared tasks (Ng et al., 2013; Ng et al., 2014). Each shared task comes with an annotated corpus of learner texts and a benchmark test set, facilitating further research in GEC. Many approaches have been proposed to detect and correct grammatical errors. The most dominant approaches are based on classification (a set of classifier modules where each module addresses a specific error type) and statistical machine translation (SMT) (formulated as a translation task from “bad” to “good” English). Other approaches combine the classification and SMT approaches, and often have some rule-based components. Each approach has its o</context>
+</contexts>
+<marker>Ng, Wu, Wu, Hadiwinoto, Tetreault, 2013</marker>
+<rawString>Hwee Tou Ng, Siew Mei Wu, Yuanbin Wu, Christian Hadiwinoto, and Joel Tetreault. 2013. The CoNLL2013 shared task on grammatical error correction. In Proceedings of the Seventeenth Conference on Computational Natural Language Learning: Shared Task, pages 1–12.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Hwee Tou Ng</author>
+<author>Siew Mei Wu</author>
+<author>Ted Briscoe</author>
+<author>Christian Hadiwinoto</author>
+<author>Raymond Hendy Susanto</author>
+<author>Christopher Bryant</author>
+</authors>
+<title>The CoNLL-2014 shared task on grammatical error correction.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>1--14</pages>
+<contexts>
+<context position="1485" citStr="Ng et al., 2014" startWordPosition="225" endWordPosition="228">rror correction (GEC) refers to the task of detecting and correcting grammatical errors present in a text written by a second language learner. For example, a GEC system to correct English promises to benefit millions of learners around the world, since it functions as a learning aid by providing instantaneous feedback on ESL writing. Research in this area has attracted much interest recently, with four shared tasks organized in the past several years: Helping Our Own (HOO) 2011 and 2012 (Dale and Kilgarriff, 2010; Dale et al., 2012), and the CoNLL 2013 and 2014 shared tasks (Ng et al., 2013; Ng et al., 2014). Each shared task comes with an annotated corpus of learner texts and a benchmark test set, facilitating further research in GEC. Many approaches have been proposed to detect and correct grammatical errors. The most dominant approaches are based on classification (a set of classifier modules where each module addresses a specific error type) and statistical machine translation (SMT) (formulated as a translation task from “bad” to “good” English). Other approaches combine the classification and SMT approaches, and often have some rule-based components. Each approach has its own strengths and w</context>
+<context position="17364" citStr="Ng et al., 2014" startWordPosition="2838" endWordPosition="2841">e corrections (with synonyms and unigram paraphrases). Also, MEMT uses a language model feature to maintain sentence fluency, favoring grammatical output sentences. In this paper, we combine the pipeline system P1 (Table 1) with the SMT system 51, and also combine P2 with 52. The two component systems in each pair have comparable performance. For our final system, we also combine all four systems together. 5 Experiments Our approach is evaluated in the context of the CoNLL-2014 shared task on grammatical error correction. Specific details of the shared task can be found in the overview paper (Ng et al., 2014), but we summarize the most important details relevant to our study here. 5.1 Data We use NUCLE version 3.2 (Dahlmeier et al., 2013), the official training data of the CoNLL2014 shared task, to train our component systems. The grammatical errors in this corpus are categorized into 28 different error types. We also use the “Lang-8 Corpus of Learner English v1.0”2 (Tajiri et al., 2012) to obtain additional learner data. English Wikipedia3 is used for language modeling and collecting n-gram counts. All systems are tuned on the CoNLL-2013 test data (which serves as the development data set) and te</context>
+<context position="22408" citStr="Ng et al. (2014)" startWordPosition="3676" endWordPosition="3679"> development data set. The test data is input into both the pipeline and SMT system respectively and the output from each system is then matched using METEOR (Banerjee and Lavie, 2005). Feature weights, based on BLEU, are then tuned using ZMERT (Zaidan, 2009). We repeat this process five times and use the weights that achieve the best score on the development data set in our final combined system. 5.6 Results Our experimental results using the CoNLL-2014 test data as the test set are shown in Table 3. Each system is evaluated against the same gold standard human annotations. As recommended in Ng et al. (2014), we do not use the revised gold standard to System P R F0.5 Pipeline P1 40.24 23.99 35.44 P2 39.93 22.77 34.70 SMT S1 57.90 14.16 35.80 S2 62.11 12.54 34.69 Combined P1+S1 53.85 17.65 38.19 P2+S2 56.92 16.22 37.90 P1+P2+S1+S2 53.55 19.14 39.39 Top 4 Systems in CoNLL-2014 CAMB 39.71 30.10 37.33 CUUI 41.78 24.88 36.79 AMU 41.62 21.40 35.01 POST 34.51 21.73 30.88 Table 3: Performance of the pipeline, SMT, and combined systems on the CoNLL-2014 test set. All improvements of combined systems over their component systems are statistically significant (p &lt; 0.01). The differences between P1 and S1 an</context>
+<context position="25860" citStr="Ng et al., 2014" startWordPosition="4243" endWordPosition="4246"> third highest ranking participant before they were combined. 6 Discussion In this section, we discuss the strengths and weaknesses of the pipeline and SMT systems, and show how system output combination improves performance. Specifically, we compare P1, S1, and P1+S1, although the discussion also applies to P2, S2, and P2+S2. Type performance. We start by computing the recall for each of the 28 error types achieved by each system. This computation is straightforward as each gold standard edit is also annotated with error type. On the other hand, precision, as mentioned in the overview paper (Ng et al., 2014), is much harder to compute because systems typically do not categorize their corrections by error type. Although it may be possible to compute the precision for each error type in the pipeline system (since we know which correction was proposed by which classifier), this is more difficult to do in the SMT and combined system, where we would need to rely on heuristics which are more prone to errors. As a result, we decided to analyze a sample of 200 sentences by hand for a comparatively more robust comparison. The results can be seen in Table 4. We observe that the pipeline system has a higher</context>
+</contexts>
+<marker>Ng, Wu, Briscoe, Hadiwinoto, Susanto, Bryant, 2014</marker>
+<rawString>Hwee Tou Ng, Siew Mei Wu, Ted Briscoe, Christian Hadiwinoto, Raymond Hendy Susanto, and Christopher Bryant. 2014. The CoNLL-2014 shared task on grammatical error correction. In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task, pages 1–14.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Hermann Ney</author>
+</authors>
+<title>Discriminative training and maximum entropy models for statistical machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>295--302</pages>
+<contexts>
+<context position="12579" citStr="Och and Ney, 2002" startWordPosition="2025" endWordPosition="2028"> is preceded by a modal verb, and we change it into the past participle form if it is preceded by has, have, or had. The spelling corrector uses Jazzy, an open source Java spell-checker1. We filter the suggestions given by Jazzy using a language model. We accept a suggestion from Jazzy only if the suggestion increases the language model score of the sentence. 1http://jazzy.sourceforge.net/ 953 3.2 Statistical Machine Translation The other two component systems are based on phrase-based statistical machine translation (Koehn et al., 2003). It follows the wellknown log-linear model formulation (Och and Ney, 2002): eˆ = arg max e �λmhm(e, f) (1) where f is the input sentence, e is the corrected output sentence, hm is a feature function, and λm is its weight. The feature functions include a translation model learned from a sentence-aligned parallel corpus and a language model learned from a large English corpus. More feature functions can be integrated into the log-linear model. A decoder finds the best correction eˆ that maximizes Equation 1 above. The parallel corpora that we use to train the translation model come from two different sources. The first corpus is NUCLE (Dahlmeier et al., 2013), contain</context>
+</contexts>
+<marker>Och, Ney, 2002</marker>
+<rawString>Franz Josef Och and Hermann Ney. 2002. Discriminative training and maximum entropy models for statistical machine translation. In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics, pages 295–302.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+<author>Hermann Ney</author>
+</authors>
+<title>A systematic comparison of various statistical alignment models.</title>
+<date>2003</date>
+<journal>Computational Linguistics,</journal>
+<volume>29</volume>
+<issue>1</issue>
+<contexts>
+<context position="19773" citStr="Och and Ney, 2003" startWordPosition="3248" endWordPosition="3251">use ClearNLP5 for POS tagging and dependency parsing, and OpenNLP for chunking6. We use the WordNet (Fellbaum, 1998) morphology software to generate singular and plural word surface forms. The article, preposition, and noun number correctors use the classifier approach to correct errors. Each classifier is trained using multi-class confidence weighted learning on the NUCLE and Lang8 corpora. The classifier threshold is tuned using a simple grid search on the development data set for each class of a classifier. 5.4 SMT System The system is trained using Moses (Koehn et al., 2007), with Giza++ (Och and Ney, 2003) for word alignment. The translation table is trained using the “parallel” corpora of NUCLE and Lang-8. The table contains phrase pairs of maximum length seven. We include five standard parameters in the translation table: forward and reverse phrase translations, forward and reverse lexical translations, 4http://www.comp.nus.edu.sg/∼nlp/sw/m2scorer.tar.gz 5https://code.google.com/p/clearnlp/ 6http://opennlp.apache.org/ En i=1 |gi n ei| R = 955 and phrase penalty. We further add a word-level Levenshtein distance feature for S2. We do not use any reordering model in our system. The intuition is </context>
+</contexts>
+<marker>Och, Ney, 2003</marker>
+<rawString>Franz Josef Och and Hermann Ney. 2003. A systematic comparison of various statistical alignment models. Computational Linguistics, 29(1):19–51.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Franz Josef Och</author>
+</authors>
+<title>Minimum error rate training in statistical machine translation.</title>
+<date>2003</date>
+<booktitle>In Proceedings of the 41st Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>160--167</pages>
+<contexts>
+<context position="21036" citStr="Och, 2003" startWordPosition="3438" endWordPosition="3439">ering and local reordering can be easily captured in the phrase translation table. The distortion limit is set to 0 to prohibit reordering during hypothesis generation. We build two 5-gram language models using the corrected side of NUCLE and English Wikipedia. The language models are estimated using the KenLM toolkit (Heafield et al., 2013) with modified Kneser-Ney smoothing. These two language models are used as separate feature functions in the log-linear model. Finally, they are binarized into a probing data structure (Heafield, 2011). Tuning is done on the development data set with MERT (Och, 2003). We use BLEU (Papineni et al., 2002) as the tuning metric, which turns out to work well in our experiment. 5.5 Combined System We use an open source MEMT implementation by Heafield and Lavie (2010) to combine the outputs of our systems. Parameters are set to the values recommended by (Heafield and Lavie, 2010): a beam size of 500, word skipping using length heuristic with radius 5, and with the length normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches between hypotheses and the number of matches in terms of stems, syn</context>
+</contexts>
+<marker>Och, 2003</marker>
+<rawString>Franz Josef Och. 2003. Minimum error rate training in statistical machine translation. In Proceedings of the 41st Annual Meeting of the Association for Computational Linguistics, pages 160–167.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Kishore Papineni</author>
+<author>Salim Roukos</author>
+<author>Todd Ward</author>
+<author>WeiJing Zhu</author>
+</authors>
+<title>BLEU: a method for automatic evaluation of machine translation.</title>
+<date>2002</date>
+<booktitle>In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>311--318</pages>
+<contexts>
+<context position="21073" citStr="Papineni et al., 2002" startWordPosition="3443" endWordPosition="3446">g can be easily captured in the phrase translation table. The distortion limit is set to 0 to prohibit reordering during hypothesis generation. We build two 5-gram language models using the corrected side of NUCLE and English Wikipedia. The language models are estimated using the KenLM toolkit (Heafield et al., 2013) with modified Kneser-Ney smoothing. These two language models are used as separate feature functions in the log-linear model. Finally, they are binarized into a probing data structure (Heafield, 2011). Tuning is done on the development data set with MERT (Och, 2003). We use BLEU (Papineni et al., 2002) as the tuning metric, which turns out to work well in our experiment. 5.5 Combined System We use an open source MEMT implementation by Heafield and Lavie (2010) to combine the outputs of our systems. Parameters are set to the values recommended by (Heafield and Lavie, 2010): a beam size of 500, word skipping using length heuristic with radius 5, and with the length normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches between hypotheses and the number of matches in terms of stems, synonyms, or paraphrases for unigrams, b</context>
+</contexts>
+<marker>Papineni, Roukos, Ward, Zhu, 2002</marker>
+<rawString>Kishore Papineni, Salim Roukos, Todd Ward, and WeiJing Zhu. 2002. BLEU: a method for automatic evaluation of machine translation. In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics, pages 311–318.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antti-Veikko I Rosti</author>
+<author>Necip Fazil Ayan</author>
+<author>Bing Xiang</author>
+<author>Spyros Matsoukas</author>
+<author>Richard Schwartz</author>
+<author>Bonnie J Dorr</author>
+</authors>
+<title>Combining outputs from multiple machine translation systems.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 2007 Conference of the North American Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>228--235</pages>
+<contexts>
+<context position="7599" citStr="Rosti et al., 2007" startWordPosition="1200" endWordPosition="1203">d the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network approach (Rosti et al., 2007b). In this approach, a confusion network is created by aligning the outputs of multiple systems. The combined output is generated by choosing the output of one single system as the “backbone”, and aligning the outputs of all other systems to this backbone. The word order of the combined output will then follow the word order of the backbone. The alignment step is critical in system combination. If there is an alignment error, the resulting combined output sentence may be ungrammatical. Rosti et al. (2007a) evaluated three system combination methods in their work: 952 • Sentence level This met</context>
+</contexts>
+<marker>Rosti, Ayan, Xiang, Matsoukas, Schwartz, Dorr, 2007</marker>
+<rawString>Antti-Veikko I. Rosti, Necip Fazil Ayan, Bing Xiang, Spyros Matsoukas, Richard Schwartz, and Bonnie J. Dorr. 2007a. Combining outputs from multiple machine translation systems. In Proceedings of the 2007 Conference of the North American Chapter of the Association for Computational Linguistics, pages 228–235.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Antti-Veikko I Rosti</author>
+<author>Spyros Matsoukas</author>
+<author>Richard Schwartz</author>
+</authors>
+<title>Improved word-level system combination for machine translation.</title>
+<date>2007</date>
+<booktitle>In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>312--319</pages>
+<contexts>
+<context position="7599" citStr="Rosti et al., 2007" startWordPosition="1200" endWordPosition="1203">d the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network approach (Rosti et al., 2007b). In this approach, a confusion network is created by aligning the outputs of multiple systems. The combined output is generated by choosing the output of one single system as the “backbone”, and aligning the outputs of all other systems to this backbone. The word order of the combined output will then follow the word order of the backbone. The alignment step is critical in system combination. If there is an alignment error, the resulting combined output sentence may be ungrammatical. Rosti et al. (2007a) evaluated three system combination methods in their work: 952 • Sentence level This met</context>
+</contexts>
+<marker>Rosti, Matsoukas, Schwartz, 2007</marker>
+<rawString>Antti-Veikko I. Rosti, Spyros Matsoukas, and Richard Schwartz. 2007b. Improved word-level system combination for machine translation. In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics, pages 312–319.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alla Rozovskaya</author>
+<author>Dan Roth</author>
+</authors>
+<title>Algorithm selection and model adaptation for ESL correction tasks.</title>
+<date>2011</date>
+<booktitle>In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>924--933</pages>
+<contexts>
+<context position="5431" citStr="Rozovskaya and Roth, 2011" startWordPosition="862" endWordPosition="865">her experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment i</context>
+</contexts>
+<marker>Rozovskaya, Roth, 2011</marker>
+<rawString>Alla Rozovskaya and Dan Roth. 2011. Algorithm selection and model adaptation for ESL correction tasks. In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics, pages 924–933.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alla Rozovskaya</author>
+<author>Kai-Wei Chang</author>
+<author>Mark Sammons</author>
+<author>Dan Roth</author>
+</authors>
+<title>The University of Illinois system in the CoNLL-2013 shared task.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the Seventeenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>13--19</pages>
+<contexts>
+<context position="6951" citStr="Rozovskaya et al., 2013" startWordPosition="1099" endWordPosition="1102">Mizumoto et al., 2012). Other approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is th</context>
+</contexts>
+<marker>Rozovskaya, Chang, Sammons, Roth, 2013</marker>
+<rawString>Alla Rozovskaya, Kai-Wei Chang, Mark Sammons, and Dan Roth. 2013. The University of Illinois system in the CoNLL-2013 shared task. In Proceedings of the Seventeenth Conference on Computational Natural Language Learning: Shared Task, pages 13–19.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alla Rozovskaya</author>
+<author>Kai-Wei Chang</author>
+<author>Mark Sammons</author>
+<author>Dan Roth</author>
+<author>Nizar Habash</author>
+</authors>
+<title>The IllinoisColumbia system in the CoNLL-2014 shared task.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task,</booktitle>
+<pages>34--42</pages>
+<contexts>
+<context position="5506" citStr="Rozovskaya et al., 2014" startWordPosition="875" endWordPosition="878">. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“p</context>
+<context position="6976" citStr="Rozovskaya et al., 2014" startWordPosition="1103" endWordPosition="1106">ther approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network appro</context>
+<context position="8703" citStr="Rozovskaya et al., 2014" startWordPosition="1387" endWordPosition="1390">ammatical. Rosti et al. (2007a) evaluated three system combination methods in their work: 952 • Sentence level This method looks at the combined N-best list of the systems and selects the best output. • Phrase level This method creates new hypotheses using a new phrase translation table, built according to the phrase alignments of the systems. • Word level This method creates a graph by aligning the hypotheses of the systems. The confidence score of each aligned word is then calculated according to the votes from the hypotheses. Combining different component sub-systems was attempted by CUUI (Rozovskaya et al., 2014a) and CAMB (Felice et al., 2014) in the CoNLL-2014 shared task. The CUUI system employs different classifiers to correct various error types and then merges the results. The CAMB system uses a pipeline of systems to combine the outputs of their rule based system and their SMT system. The combination methods used in those systems are different from our approach, because they combine individual sub-system components, by piping the output from one sub-system to another, whereas we combine the outputs of whole systems. Moreover, our approach is able to combine the advantages of both the classific</context>
+</contexts>
+<marker>Rozovskaya, Chang, Sammons, Roth, Habash, 2014</marker>
+<rawString>Alla Rozovskaya, Kai-Wei Chang, Mark Sammons, Dan Roth, and Nizar Habash. 2014a. The IllinoisColumbia system in the CoNLL-2014 shared task. In Proceedings of the Eighteenth Conference on Computational Natural Language Learning: Shared Task, pages 34–42.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Alla Rozovskaya</author>
+<author>Dan Roth</author>
+<author>Vivek Srikumar</author>
+</authors>
+<title>Correcting grammatical verb errors.</title>
+<date>2014</date>
+<booktitle>In Proceedings of the 14th Conference of the European Chapter of the Association for Computational Linguistics,</booktitle>
+<pages>358--367</pages>
+<contexts>
+<context position="5506" citStr="Rozovskaya et al., 2014" startWordPosition="875" endWordPosition="878">. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT approach for GEC is the lack of error-annotated learner (“p</context>
+<context position="6976" citStr="Rozovskaya et al., 2014" startWordPosition="1103" endWordPosition="1106">ther approaches combine the advantages of classification and SMT (Dahlmeier and Ng, 2012a) and sometimes also include rule-based components. Note that in the hybrid approaches proposed previously, the output of each component system might be only partially corrected for some subset of error types. This is different from our system combination approach, where the output of each component system is a complete correction of the input sentence where all error types are dealt with. State-of-the-art performance is achieved by both the classification (Dahlmeier et al., 2012; Rozovskaya et al., 2013; Rozovskaya et al., 2014a) and the SMT approach (Felice et al., 2014; Junczys-Dowmunt and Grundkiewicz, 2014), which motivates us to attempt system output combination from both approaches. 2.2 System Combination System combination is the task of combining the outputs of multiple systems to produce an output better than each of its individual component systems. In machine translation (MT), combining multiple MT outputs has been attempted in the Workshop on Statistical Machine Translation (Callison-Burch et al., 2009; Bojar et al., 2011). One of the common approaches in system combination is the confusion network appro</context>
+<context position="8703" citStr="Rozovskaya et al., 2014" startWordPosition="1387" endWordPosition="1390">ammatical. Rosti et al. (2007a) evaluated three system combination methods in their work: 952 • Sentence level This method looks at the combined N-best list of the systems and selects the best output. • Phrase level This method creates new hypotheses using a new phrase translation table, built according to the phrase alignments of the systems. • Word level This method creates a graph by aligning the hypotheses of the systems. The confidence score of each aligned word is then calculated according to the votes from the hypotheses. Combining different component sub-systems was attempted by CUUI (Rozovskaya et al., 2014a) and CAMB (Felice et al., 2014) in the CoNLL-2014 shared task. The CUUI system employs different classifiers to correct various error types and then merges the results. The CAMB system uses a pipeline of systems to combine the outputs of their rule based system and their SMT system. The combination methods used in those systems are different from our approach, because they combine individual sub-system components, by piping the output from one sub-system to another, whereas we combine the outputs of whole systems. Moreover, our approach is able to combine the advantages of both the classific</context>
+</contexts>
+<marker>Rozovskaya, Roth, Srikumar, 2014</marker>
+<rawString>Alla Rozovskaya, Dan Roth, and Vivek Srikumar. 2014b. Correcting grammatical verb errors. In Proceedings of the 14th Conference of the European Chapter of the Association for Computational Linguistics, pages 358–367.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Toshikazu Tajiri</author>
+<author>Mamoru Komachi</author>
+<author>Yuji Matsumoto</author>
+</authors>
+<title>Tense and aspect error correction for ESL learners using global context.</title>
+<date>2012</date>
+<booktitle>In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Short Papers,</booktitle>
+<pages>198--202</pages>
+<contexts>
+<context position="17750" citStr="Tajiri et al., 2012" startWordPosition="2905" endWordPosition="2908"> all four systems together. 5 Experiments Our approach is evaluated in the context of the CoNLL-2014 shared task on grammatical error correction. Specific details of the shared task can be found in the overview paper (Ng et al., 2014), but we summarize the most important details relevant to our study here. 5.1 Data We use NUCLE version 3.2 (Dahlmeier et al., 2013), the official training data of the CoNLL2014 shared task, to train our component systems. The grammatical errors in this corpus are categorized into 28 different error types. We also use the “Lang-8 Corpus of Learner English v1.0”2 (Tajiri et al., 2012) to obtain additional learner data. English Wikipedia3 is used for language modeling and collecting n-gram counts. All systems are tuned on the CoNLL-2013 test data (which serves as the development data set) and tested on the CoNLL-2014 test data. The statistics of the data sets can be found in Table 2. 5.2 Evaluation System performance is evaluated based on precision, recall, and F0.5 (which weights precision twice as much as recall). Given a set of n sentences, where gi is the set of gold-standard edits 2http://cl.naist.jp/nldata/lang-8/ 3http://dumps.wikimedia.org/enwiki/20140102/enwiki2014</context>
+</contexts>
+<marker>Tajiri, Komachi, Matsumoto, 2012</marker>
+<rawString>Toshikazu Tajiri, Mamoru Komachi, and Yuji Matsumoto. 2012. Tense and aspect error correction for ESL learners using global context. In Proceedings of the 50th Annual Meeting of the Association for Computational Linguistics: Short Papers, pages 198–202.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Joel R Tetreault</author>
+<author>Martin Chodorow</author>
+</authors>
+<title>The ups and downs of preposition error detection in ESL writing.</title>
+<date>2008</date>
+<booktitle>In Proceedings of the 22nd International Conference on Computational Linguistics,</booktitle>
+<pages>865--872</pages>
+<contexts>
+<context position="5367" citStr="Tetreault and Chodorow, 2008" startWordPosition="852" endWordPosition="855"> a discussion and analysis of the results. Section 7 describes further experiments on system combination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where t</context>
+</contexts>
+<marker>Tetreault, Chodorow, 2008</marker>
+<rawString>Joel R Tetreault and Martin Chodorow. 2008. The ups and downs of preposition error detection in ESL writing. In Proceedings of the 22nd International Conference on Computational Linguistics, pages 865–872.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Yuanbin Wu</author>
+<author>Hwee Tou Ng</author>
+</authors>
+<title>Grammatical error correction using integer linear programming.</title>
+<date>2013</date>
+<booktitle>In Proceedings of the 51tst Annual Meeting of the Association for Computational Linguistics,</booktitle>
+<pages>1456--1465</pages>
+<contexts>
+<context position="5449" citStr="Wu and Ng, 2013" startWordPosition="866" endWordPosition="869">ombination. Finally, Section 8 concludes the paper. 2 Related Work 2.1 Grammatical Error Correction Early research in grammatical error correction focused on a single error type in isolation. For example, Knight and Chander (1994) built an article correction system for post-editing machine translation output. The classification approach has been used to deal with the most common grammatical mistakes made by ESL learners, such as article and preposition errors (Han et al., 2006; Chodorow et al., 2007; Tetreault and Chodorow, 2008; Gamon, 2010; Dahlmeier and Ng, 2011; Rozovskaya and Roth, 2011; Wu and Ng, 2013), and more recently, verb errors (Rozovskaya et al., 2014b). Statistical classifiers are trained either from learner or non-learner texts. Features are extracted from the sentence context. Typically, these are shallow features, such as surrounding n-grams, part-of-speech (POS) tags, chunks, etc. Different sets of features are employed depending on the error type addressed. The statistical machine translation (SMT) approach has gained more interest recently. Earlier work was done by Brockett et al. (2006), where they used SMT to correct mass noun errors. The major impediment in using the SMT ap</context>
+</contexts>
+<marker>Wu, Ng, 2013</marker>
+<rawString>Yuanbin Wu and Hwee Tou Ng. 2013. Grammatical error correction using integer linear programming. In Proceedings of the 51tst Annual Meeting of the Association for Computational Linguistics, pages 1456–1465.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Omar Zaidan</author>
+</authors>
+<title>Z-MERT: A fully configurable open source tool for minimum error rate training of machine translation systems.</title>
+<date>2009</date>
+<booktitle>The Prague Bulletin of Mathematical Linguistics,</booktitle>
+<pages>91--79</pages>
+<contexts>
+<context position="16132" citStr="Zaidan, 2009" startWordPosition="2638" endWordPosition="2639">t al., 2009). During beam search, MEMT uses a few features to score the hypotheses (both partial hypotheses and full hypotheses): • Length The number of tokens in a hypothesis. It is useful to normalize the impact of sentence length. • Language model Log probability from a language model. It is especially useful in maintaining sentence fluency. • Backoff The average n-gram length found in the language model. • Match The number of n-gram matches between the outputs of the component systems and the hypothesis, counted for small order n-grams. The weights of these features are tuned using ZMERT (Zaidan, 2009) on a development set. This system combination approach has a few advantages in grammatical error correction. METEOR not only can match words with exact matches, but also words with identical stems, synonyms, and unigram paraphrases. This means that it can deal with word form, noun number, and verb form corrections that share identical stems, as well = arg max e P(e|f) M exp m=1 954 Data set # sentences # source tokens NUCLE 57,151 1,161,567 Lang-8 1,114,139 12,945,666 CoNLL-2013 1,381 29,207 CoNLL-2014 1,312 30,144 English 86,992,889 1,778,849,655 Wikipedia Table 2: Statistics of the data set</context>
+<context position="22051" citStr="Zaidan, 2009" startWordPosition="3615" endWordPosition="3616">gth normalization option turned off. We use five matching features for each system: the number of exact unigram and bigram matches between hypotheses and the number of matches in terms of stems, synonyms, or paraphrases for unigrams, bigrams, and trigrams. We use the Wikipedia 5-gram language model in this experiment. We tune the combined system on the development data set. The test data is input into both the pipeline and SMT system respectively and the output from each system is then matched using METEOR (Banerjee and Lavie, 2005). Feature weights, based on BLEU, are then tuned using ZMERT (Zaidan, 2009). We repeat this process five times and use the weights that achieve the best score on the development data set in our final combined system. 5.6 Results Our experimental results using the CoNLL-2014 test data as the test set are shown in Table 3. Each system is evaluated against the same gold standard human annotations. As recommended in Ng et al. (2014), we do not use the revised gold standard to System P R F0.5 Pipeline P1 40.24 23.99 35.44 P2 39.93 22.77 34.70 SMT S1 57.90 14.16 35.80 S2 62.11 12.54 34.69 Combined P1+S1 53.85 17.65 38.19 P2+S2 56.92 16.22 37.90 P1+P2+S1+S2 53.55 19.14 39.3</context>
+</contexts>
+<marker>Zaidan, 2009</marker>
+<rawString>Omar Zaidan. 2009. Z-MERT: A fully configurable open source tool for minimum error rate training of machine translation systems. The Prague Bulletin of Mathematical Linguistics, 91:79–88.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>

@@ -1,0 +1,1861 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<algorithms version="110505">
+<algorithm name="SectLabel" version="110505">
+<variant no="0" confidence="0.000001">
+<title confidence="0.968212">
+Natural Language Questions for the Web of Data
+</title>
+<author confidence="0.9902165">
+Mohamed Yahya1, Klaus Berberich1, Shady Elbassuoni2
+Maya Ramanath3, Volker Tresp4, Gerhard Weikum1
+</author>
+<affiliation confidence="0.78668125">
+1 Max Planck Institute for Informatics, Germany
+2 Qatar Computing Research Institute
+3 Dept. of CSE, IIT-Delhi, India 4 Siemens AG, Corporate Technology, Munich, Germany
+{myahya,kberberi,weikum}@mpi-inf.mpg.de
+</affiliation>
+<email confidence="0.9531645">
+selbassuoni@qf.org.qa
+ramanath@cse.iitd.ac.in volker.tresp@siemens.com
+</email>
+<sectionHeader confidence="0.998536" genericHeader="abstract">
+Abstract
+</sectionHeader>
+<bodyText confidence="0.999501380952381">
+The Linked Data initiative comprises struc-
+tured databases in the Semantic-Web data
+model RDF. Exploring this heterogeneous
+data by structured query languages is tedious
+and error-prone even for skilled users. To ease
+the task, this paper presents a methodology
+for translating natural language questions into
+structured SPARQL queries over linked-data
+sources.
+Our method is based on an integer linear pro-
+gram to solve several disambiguation tasks
+jointly: the segmentation of questions into
+phrases; the mapping of phrases to semantic
+entities, classes, and relations; and the con-
+struction of SPARQL triple patterns. Our so-
+lution harnesses the rich type system provided
+by knowledge bases in the web of linked data,
+to constrain our semantic-coherence objective
+function. We present experiments on both the
+question translation and the resulting query
+answering.
+</bodyText>
+<sectionHeader confidence="0.999184" genericHeader="keywords">
+1 Introduction
+</sectionHeader>
+<subsectionHeader confidence="0.990892">
+1.1 Motivation
+</subsectionHeader>
+<bodyText confidence="0.999916068181818">
+Recently, very large, structured, and semantically
+rich knowledge bases have become available. Ex-
+amples are Yago (Suchanek et al., 2007), DBpe-
+dia (Auer et al., 2007), and Freebase (Bollacker et
+al., 2008). DBpedia forms the nucleus of the Web of
+Linked Data (Heath and Bizer, 2011), which inter-
+connects hundreds of RDF data sources with a total
+of 30 billion subject-property-object (SPO) triples.
+The diversity of linked-data sources and their high
+heterogeneity make it difficult for humans to search
+and discover relevant information. As linked data
+is in RDF format, the standard approach would be
+to run structured queries in triple-pattern-based lan-
+guages like SPARQL, but only expert programmers
+are able to precisely specify their information needs
+and cope with the high heterogeneity of the data
+(and absence or very high complexity of schema in-
+formation). For less initiated users the only option
+to query this rich data is by keyword search (e.g.,
+via services like sig.ma (Tummarello et al., 2010)).
+None of these approaches is satisfactory. Instead, the
+by far most convenient approach would be to search
+in knowledge bases and the Web of linked data by
+means of natural-language questions.
+As an example, consider a quiz question like
+“Which female actor played in Casablanca and is
+married to a writer who was born in Rome?”.
+The answer could be found by querying sev-
+eral linked data sources together, like the IMDB-
+style LinkedMDB movie database and the DB-
+pedia knowledge base, exploiting that there are
+entity-level sameAs links between these collections.
+One can think of different formulations of the
+example question, such as “Which actress from
+Casablanca is married to a writer from Rome?”. A
+possible SPARQL formulation, assuming a user fa-
+miliar with the schema of the underlying knowl-
+edge base(s), could consist of the following six
+triple patterns (joined by shared-variable bind-
+ings): ?x hasGender female, ?x isa actor, ?x
+actedIn Casablanca (film), ?x marriedTo ?w,
+?w isa writer, ?w bornIn Rome. This complex
+query, which involves multiple joins, would yield
+good results, but it is difficult for the user to come
+</bodyText>
+<page confidence="0.986375">
+379
+</page>
+<note confidence="0.760258">
+Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural
+Language Learning, pages 379–390, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics
+</note>
+<bodyText confidence="0.999968">
+up with the precise choices for relations, classes, and
+entities. This would require familiarity with the con-
+tents of the knowledge base, which no average user
+is expected to have. Our goal is to automatically cre-
+ate such structured queries by mapping the user’s
+question into this representation. Keyword search is
+usually not a viable alternative when the information
+need involves joining multiple triples to construct
+the final result, notwithstanding good attempts like
+that of Pound et al. (2010). In the example, the obvi-
+ous keyword query “female actress Casablanca mar-
+ried writer born Rome” lacks a clear specification of
+the relations among the different entities.
+</bodyText>
+<subsectionHeader confidence="0.879694">
+1.2 Problem
+</subsectionHeader>
+<bodyText confidence="0.999980928571429">
+Given a natural language question qNL and a knowl-
+edge base KB, our goal is to translate qNL into a
+formal query qFL that captures the information need
+expressed by qNL.
+We focus on input questions that put the em-
+phasis on entities, classes, and relations between
+them. We do not consider aggregations (counting,
+max/min, etc.) and negations. As a result, we gener-
+ate structured queries of the form known as conjunc-
+tive queries or select-project-join queries in database
+terminology. Our target language is SPARQL 1.0,
+where the above focus leads to queries that consist of
+multiple triple patterns, that is, conjunctions of SPO
+search conditions. We do not use any pre-existing
+query templates, but generate queries from scratch
+as they involve a variable number of joins with a-
+priori unknown join structure.
+A major challenge is in the ambiguity of
+the phrases occurring in a natural-language ques-
+tion. Phrases can denote entities (e.g., the city
+of Casablanca or the movie Casablanca), classes
+(e.g., actresses, movies, married people), or rela-
+tions/properties (e.g., marriedTo between people,
+played between people and movies). A priori, we do
+not know if a phrase should be mapped to an entity,
+a class, or a relation. In fact, some phrases may de-
+note any of these three kinds of targets. For example,
+a phrase like “wrote score for” in a question about
+film music composers, could map to the composer-
+film relation wroteSoundtrackForFilm, to the class
+of movieSoundtracks (a subclass of music pieces),
+or to an entity like the movie “The Score”. Depend-
+ing on the choice, we may arrive at a structurally
+good query (with triple patterns that can actually
+be joined) or at a meaningless and non-executable
+query (with disconnected triple patterns). This gen-
+eralized disambiguation problem is much more chal-
+lenging than the more focused task of named entity
+disambiguation (NED). It is also different from gen-
+eral word sense disambiguation (WSD), which fo-
+cuses on the meaning of individual words (e.g., map-
+ping them to WordNet synsets).
+</bodyText>
+<subsectionHeader confidence="0.996997">
+1.3 Contribution
+</subsectionHeader>
+<bodyText confidence="0.999989783783784">
+In our approach, we introduce new elements towards
+making translation of questions into SPARQL triple
+patterns more expressive and robust. Most impor-
+tantly, we solve the disambiguation and mapping
+tasks jointly, by encoding them into a comprehen-
+sive integer linear program (ILP): the segmentation
+of questions into meaningful phrases, the mapping
+of phrases to semantic entities, classes, and rela-
+tions, and the construction of SPARQL triple pat-
+terns. The ILP harnesses the richness of large knowl-
+edge bases like Yago2 (Hoffart et al., 2011b), which
+has information not only about entities and relations,
+but also about surface names and textual patterns
+by which web sources refer to them. For example,
+Yago2 knows that “Casablanca” can refer to the city
+or the film, and “played in” is a pattern that can de-
+note the actedIn relation. In addition, we can lever-
+age the rich type system of semantic classes. For ex-
+ample, knowing that Casablanca is a film, for trans-
+lating “played in” we can focus on relations with a
+type signature whose range includes films, as op-
+posed to sports teams, for example. Such informa-
+tion is encoded in judiciously designed constraints
+for the ILP. Although we intensively harness Yago2,
+our approach does not depend on a specific choice of
+knowledge base or language resource for type infor-
+mation and phrase/name dictionaries. Other knowl-
+edge bases such as DBpedia can be easily plugged
+in.
+Based on these ideas, we have developed a frame-
+work and system, called DEANNA (DEep Answers
+for maNy Naturally Asked questions), that com-
+prises a full suite of components for question de-
+composition, mapping constituents into the seman-
+tic concept space, generating alternative candidate
+mappings, and computing a coherent mapping of all
+constituents into a set of SPARQL triple patterns that
+</bodyText>
+<page confidence="0.995171">
+380
+</page>
+<bodyText confidence="0.998889">
+can be directly executed on one or more linked data
+sources.
+</bodyText>
+<sectionHeader confidence="0.981116" genericHeader="introduction">
+2 Background
+</sectionHeader>
+<bodyText confidence="0.999338888888889">
+We use the Yago2 knowledge base, with its rich
+type system, as a semantic backbone. Yago2 is com-
+posed of instances of binary relations derived from
+Wikipedia and WordNet. The instances, called facts,
+provide both ontological information and instance
+data. Figure 1 shows sample facts from Yago2. Each
+fact is composed of semantic items that can be di-
+vided into relations, entities, and classes. Entities
+and classes together are referred to as concepts.
+</bodyText>
+<table confidence="0.970202333333333">
+Subject Predicate Object
+film subclassOf production
+Casablanca (film)type film
+“Casablanca” means Casablanca (film)
+“Casablanca” means Casablanca, Morocco
+Ingrid Bergman actedIn Casablanca (film)
+</table>
+<figureCaption confidence="0.996785">
+Figure 1: Sample knowledge base
+</figureCaption>
+<bodyText confidence="0.999515571428571">
+Examples of relations are type, subclassOf, and
+actedIn. Each relation has a type signature: classes
+for the relation’s domain and range. Classes, such as
+person and film group entities. Entities are repre-
+sented in canonical form such as Ingrid Bergman
+and Casablanca (film). A special type of entities
+are literals, such as strings, numbers, and dates.
+</bodyText>
+<sectionHeader confidence="0.99837" genericHeader="method">
+3 Framework
+</sectionHeader>
+<bodyText confidence="0.988204941176471">
+Given a natural language question, Figure 2 shows
+the tasks DEANNA performs to translate a ques-
+tion into a structured query. The first three steps
+prepare the input for constructing a disambiguation
+graph for mapping the phrases in a question onto
+entities, classes, and relations, in a coherent man-
+ner. The fourth step formulates this generalized dis-
+ambiguation problem as an ILP with complex con-
+straints and computes the best solution using an
+ILP solver. Finally, the fifth and sixth step together
+use the disambiguated mapping to construct an exe-
+cutable SPARQL query.
+A question sentence is a sequence of tokens,
+qNL = (t0, t1, ..., tr,,). A phrase is a contiguous sub-
+sequence of tokens (ti, ti+1, ..., ti+l) C qNL, 0 &lt;
+i, 0 &lt; l &lt; n. The input question is fed into the fol-
+lowing pipeline of six steps:
+</bodyText>
+<listItem confidence="0.998760833333333">
+1. Phrase detection. Phrases are detected that
+potentially correspond to semantic items such as
+‘Who’, ‘played in’, ‘movie’ and ‘Casablanca’.
+2. Phrase mapping to semantic items. This in-
+cludes finding that the phrase ‘played in’ can ei-
+ther refer to the semantic relation actedIn or to
+playedForTeam and that the phrase ‘Casablanca’
+can potentially refer to Casablanca (film) or
+Casablanca, Morocco. This step merely constructs
+a candidate space for the mapping. The actual dis-
+ambiguation is addressed by step 4, discussed below.
+3. Q-unit generation. Intuitively, a q-unit is a triple
+composed of phrases. Their generation and role will
+be discussed in detail in the next section.
+4. Joint disambiguation, where the ambiguities in
+the phrase-to-semantic-item mapping are resolved.
+This entails resolving the ambiguity in phrase bor-
+ders, and above all, choosing the best fitting can-
+didates from the semantic space of entities, classes,
+and relations. Here, we determine for our running
+example that ‘played in’ refers to the semantic re-
+lation actedIn and not to playedForTeam and the
+phrase ‘Casablanca’ refers to Casablanca (film)
+and not Casablanca, Morocco.
+5. Semantic items grouping to form semantic
+triples. For example, we determine that the relation
+marriedTo connects person referred to by ‘Who’
+and writer to form the semantic triple person
+marriedTo writer. This is done via q-units.
+6. Query generation. For SPARQL queries, seman-
+</listItem>
+<bodyText confidence="0.6193292">
+tic triples such as person marriedTo writer have
+to be mapped to suitable triple patterns with appro-
+priate join conditions expressed through common
+variables: ?x type person, ?x marriedTo ?w, and
+?w type writer for the example.
+</bodyText>
+<subsectionHeader confidence="0.999303">
+3.1 Phrase Detection
+</subsectionHeader>
+<bodyText confidence="0.999973615384615">
+A detected phrase p is a pair &lt; Toks, l &gt; where
+Toks is a phrase and l is a label, l E
+{concept, relation}, indicating whether a phrase is
+a relation phrase or a concept phrase. Pr is the set of
+all detected relation phrases and P, is the set of all
+detected concept phrases.
+One special type of detected relation phrase is
+the null phrase, where no relation is explicitly men-
+tioned, but can be induced. The most prominent ex-
+ample of this is the case of adjectives, such as ‘Aus-
+tralian movie’, where we know there is a relation
+being expressed between ‘Australia’ and ‘movie’.
+We use multiple detectors for detecting phrases of
+</bodyText>
+<page confidence="0.979977">
+381
+</page>
+<figure confidence="0.999669740740741">
+Concept
+&amp;Relation
+Phrase
+Detection
+1 2 3 4 5
+entities &amp; names
+classes &amp; subclasses
+relations &amp; pattterns
+incl. dictionaries &amp; statistics
+Concept
+&amp;Relation
+Phrase
+Mapping
+Knowledge Base
+Q-unit
+Genera-
+tion
+Joint
+Disambi-
+guation
+Semantic
+Items
+Grouping
+Query
+Gene-
+ration
+6
+</figure>
+<figureCaption confidence="0.999963">
+Figure 2: Architecture of DEANNA.
+</figureCaption>
+<bodyText confidence="0.970695235294118">
+different types. For concept detection, we use a de-
+tector that works against a phrase-concept dictionary
+which looks as follows:
+{‘Rome’,‘eternal city’} → Rome
+{‘Casablanca’} → Casablanca (film)
+We experimented with using third-party named en-
+tity recognizers but the results were not satisfactory.
+This dictionary was mostly constructed as part of
+the knowledge base, independently of the question-
+to-query translation task in the form of instances of
+the means relation in Yago2, an example of which is
+shown in Figure 1
+For relation detection, we experimented with var-
+ious approaches. We mainly rely on a relation detec-
+tor based on ReVerb (Fader et al., 2011) with addi-
+tional POS tag patterns, in addition to our own which
+looks for patterns in dependency parses.
+</bodyText>
+<subsectionHeader confidence="0.999653">
+3.2 Phrase Mapping
+</subsectionHeader>
+<bodyText confidence="0.942661083333333">
+After phrases are detected, each phrase is mapped
+to a set of semantic items. The mapping of concept
+phrases also relies on the phrase-concept dictionary.
+To map relation phrases, we rely on a corpus of
+textual patterns to relation mappings of the form:
+{‘play’,‘star in’,‘act’,‘leading role’} → actedIn
+{‘married’, ‘spouse’,‘wife’} → marriedTo
+Distinct phrase occurrences will map to different
+semantic item instances. We discuss why this is im-
+portant when we discuss the construction of the dis-
+ambiguation graph and variable assignment in the
+structured query.
+</bodyText>
+<subsectionHeader confidence="0.99291">
+3.3 Dependency Parsing &amp; Q-Unit Generation
+</subsectionHeader>
+<bodyText confidence="0.999957666666666">
+Dependency parsing identifies triples of to-
+kens, or triploids, htrel, targ1, targ2i, where
+trel, targ1, targ2 ∈ qNL are seeds for phrases, with
+the triploid acting as a seed for a potential SPARQL
+triple pattern. Here, trel is the seed for the relation
+phrase, while targ1 and targ2 are seeds for the two
+arguments. At this point, there is no attempt to
+assign subject/object roles to the arguments.
+Triploids are collected by looking for specific de-
+pendency patterns in dependency graphs (de Marn-
+effe et al., 2006). The most prominent pattern we
+look for is a verb and its arguments. Other patterns
+include adjectives and their arguments, preposition-
+ally modified tokens and objects of prepositions.
+By combining triploids with detected phrases, we
+obtain q-units. A q-unit is a triple of sets of phrases,
+h{prel ∈ Pr}, {parg1 ∈ P*, {parg2 ∈ Pe}i, where
+trel ∈ prel and similarly for arg1 and arg2. Concep-
+tually, one can view a q-unit as a placeholder node
+with three sets of edges, each connecting the same
+q-node to a phrase that corresponds to a relation or
+concept phrase in the same q-unit. This notion of
+nodes and edges will be made more concrete when
+we present our disambiguation graph construction.
+</bodyText>
+<subsectionHeader confidence="0.99919">
+3.4 Disambiguation of Phrase Mappings
+</subsectionHeader>
+<bodyText confidence="0.999872">
+The core contribution of this paper is a framework
+for disambiguating phrases into semantic items –
+covering relations, classes, and entities in a unified
+manner. This can be seen as a joint task combining
+</bodyText>
+<page confidence="0.991644">
+382
+</page>
+<bodyText confidence="0.99954">
+named entity disambiguation for entities, word sense
+disambiguation for classes (common nouns), and re-
+lation extraction. The next section presents the dis-
+ambiguation framework in detail.
+</bodyText>
+<subsectionHeader confidence="0.989195">
+3.5 Query Generation
+</subsectionHeader>
+<bodyText confidence="0.9999769">
+Once phrases are mapped to unique semantic items,
+we proceed to generate queries in two steps. First,
+semantic items are grouped into triples. This is done
+using the triploids generated earlier. The power of
+using a knowledge base is that we have a rich type
+system that allows us to tell if two semantic items
+are compatible or not. Each relation has a type sig-
+nature and we check whether the candidate items are
+compatible with the signature.
+We did not assign subject/object roles in triploids
+and q-units because a natural language relation
+phrase might express the inverse of a semantic rela-
+tion, e.g., the natural language expression ‘directed
+by’ and the relation isDirectorOf with respect to
+the movies domain are inverses of each other. There-
+fore, we check which assignment of arg1 and arg2
+is compatible with the semantic relation. If both ar-
+rangements are compatible, then we give preference
+to the assignment given by the dependency parsers.
+Once semantic items are grouped into triples, it
+is an easy task to expand them to SPARQL triple
+patterns. This is done by replacing each seman-
+tic class with a distinct type-constrained variable.
+Note that this is the reason why each distinct phrase
+maps to a distinct instance of a semantic class, to
+ensure correct variable assignment. This becomes
+clear when we consider the question “Which singer
+is married to a singer?”, which requires two distinct
+variables each constrained to bind to an entity of
+type singer.
+</bodyText>
+<sectionHeader confidence="0.997318" genericHeader="method">
+4 Joint Disambiguation
+</sectionHeader>
+<bodyText confidence="0.99900708">
+The goal of the disambiguation step is to compute
+a partial mapping of phrases onto semantic items,
+such that each phrase is assigned to at most one
+semantic item. This step also resolves the phrase-
+boundary ambiguity, by enforcing that only non-
+overlapping phrases are mapped. As the result of
+disambiguating one phrase can influence the map-
+ping of other phrases, we consider all phrases jointly
+in one big disambiguation task.
+In the following, we construct a disambiguation
+graph that encodes all possible mappings. We im-
+pose a variety of complex constraints (mutual ex-
+clusion among overlapping phrases, type constraints
+among the selected semantic items, etc.), and define
+an objective function that aims to maximize the joint
+quality of the mapping. The graph construction it-
+self may resemble similar models used in NED (e.g.,
+(Milne and Witten, 2008; Kulkarni et al., 2009; Hof-
+fart et al., 2011a)). Recall, however, that our task is
+more complex because we jointly consider entities,
+classes, and relations in the candidate space of pos-
+sible mappings. Because of this complication and
+to capture our complex constraints, we do not em-
+ploy graph algorithms, but model the general disam-
+biguation problem as an ILP.
+</bodyText>
+<subsectionHeader confidence="0.980649">
+4.1 Disambiguation Graph
+</subsectionHeader>
+<bodyText confidence="0.867318333333333">
+Joint disambiguation takes place over a disambigua-
+tion graph DG = (V, E), where V = Vs U Vp U Vq
+and E = EsimU E h U Eq, where:
+</bodyText>
+<listItem confidence="0.97631925">
+• Vs is the set ofosemantic items, vs E Vs is an
+s-node.
+• Vp is the set of phrases, vp E Vp is called a p-
+node. We denote the set of p-nodes correspond-
+ing to relation phrases by Vr, and the set of p-
+nodes corresponding to concept phrases by Vr,
+• Vq is a set of placeholder nodes for q–units,
+called q-nodes. They represent phrase triples.
+• Esim C Vp x Vs is a set of weighted similarity
+edges that capture the strength of the mapping
+of a phrase to a semantic item.
+• Ecoh C Vs x Vs is a set of weighted coherence
+</listItem>
+<bodyText confidence="0.825780666666667">
+edges that capture the semantic coherence be-
+tween two semantic items. Semantic coherence
+is discussed in more detail later in this section.
+</bodyText>
+<listItem confidence="0.993128">
+• Eq C Vq xVp xd, where d E {rel, arg1, arg21
+</listItem>
+<bodyText confidence="0.88271775">
+is a q-edge. Each such edge connects a place-
+holder q-node to a p-node with a specific role
+as a relation, or one of the two arguments. A
+q-unit, as presented earlier, can be seen as a q-
+node along with its outgoing q-edges.
+Figure 3 shows the disambiguation graph for our
+running example (excluding coherence edges be-
+tween s-nodes).
+</bodyText>
+<subsectionHeader confidence="0.982792">
+4.2 Edge Weights
+</subsectionHeader>
+<bodyText confidence="0.9987945">
+We next describe how the weights on similarity
+edges and semantic coherence edges are defined.
+</bodyText>
+<page confidence="0.998199">
+383
+</page>
+<figureCaption confidence="0.998955">
+Figure 3: Disambiguation graph for the running example.
+</figureCaption>
+<subsubsectionHeader confidence="0.656495">
+4.2.1 Semantic Coherence
+</subsubsectionHeader>
+<bodyText confidence="0.999795882352941">
+Semantic coherence, Cohsem, captures to what
+extent two semantic items occur in the same context.
+This is different from semantic similarity (Simsem),
+which is usually evaluated using the distance be-
+tween nodes in a taxonomy (Resnik, 1995). While
+we expect Simsem(George Bush, Woody Allen) to
+be higher than Simsem(Woody Allen, Terminator)
+we would like Cohsem(Woody Allen, Terminator),
+both of which are from the entertainment domain, to
+be higher than Cohsem(George Bush, Woody Allen).
+For Yago2, we characterize an entity e by its in-
+links InLinks(e): the set of Yago2 entities whose
+corresponding Wikipedia pages link to the entity.
+To be able to compare semantic items of different
+semantic types (entities, relations, and classes), we
+need to extend this to classes and relations. For class
+c with entities e, its inlinks are defined as follows:
+</bodyText>
+<equation confidence="0.838717">
+InLinks(c) = UeC. Inlinks(e)
+</equation>
+<bodyText confidence="0.99962">
+For relations, we only consider those that map en-
+tities to entities (e.g. actedIn, produced), for which
+we define the set of inlinks as follows:
+</bodyText>
+<equation confidence="0.971005">
+InLinks(r) = U(e,,e2)C,(InLinks(e1) n InLinks(e2))
+</equation>
+<bodyText confidence="0.9998785">
+The intuition behind this is that when the two argu-
+ments of an instance of the relation co-occur, then
+the relation is being expressed.
+We define the semantic coherence (Cohsem) be-
+tween two semantic items s1 and s2 as the Jaccard
+coefficient of their sets of inlinks.
+</bodyText>
+<subsubsectionHeader confidence="0.760044">
+4.2.2 Similarity Weights
+</subsubsectionHeader>
+<bodyText confidence="0.99992">
+Similarity weights are computed differently for
+entities, classes, and relations. For entities, we use a
+normalized prior score based on how often a phrase
+refers to a certain entity in Wikipedia. For classes,
+we use a normalized prior that reflects the number
+of members in a class. Finally, for relations, similar-
+ity reflects the maximum n-gram similarity between
+the phrase and any of the relation’s surface forms.
+We use Lucene for indexing and searching the rela-
+tion surface forms.
+</bodyText>
+<subsectionHeader confidence="0.997755">
+4.3 Disambiguation Graph Processing
+</subsectionHeader>
+<bodyText confidence="0.9984658">
+The result of disambiguation is a subgraph of the
+disambiguation graph, yielding the most coherent
+mappings. We employ an ILP to this end. Before
+describing our ILP, we state some necessary defini-
+tions:
+</bodyText>
+<listItem confidence="0.997236578947369">
+• Triple dimensions: d E {rel, arg1, arg2}
+• Tokens: T = {t0, t1, ..., tn}.
+• Phrases: P = {p0, p1,...,pk}.
+• Semantic items: S = {s0, s1,..., sl}.
+• Token occurrences: P(t) = {p E P I t E p}.
+• Xi E {0, 1} indicates if p-node i is selected.
+• Yij E {0, 1} indicates if p-node i maps to s-
+node j.
+• Zkl E {0, 1} indicates if s-nodes k, l are both
+selected so that their coherence edge matters.
+• Qmnd E {0, 1} indicates if the q-edge between
+q-node m and p-node n for d is selected.
+• Cj, Ej and Rj are {0, 1} constants indicating
+if s-node j is a class, entity, or relation, resp.
+• wij is the weight for a p–s similarity edge.
+• vkl is the weight for an s–s semantic coherence
+edge.
+• trc E {0, 1} indicates if the relation s-node r is
+type-compatible with the concept s-node c.
+</listItem>
+<bodyText confidence="0.977405">
+Given the above definitions, our objective func-
+tion is
+</bodyText>
+<figure confidence="0.966725361111111">
+maximize a Ei,j wijYij + Q Ek,l vklZkl+
+7 &amp;,,n,d Qmnd
+q-nodes p-nodes s-nodes
+q1
+q2
+q3
+rel
+arg1 arg2
+a writer
+Casablanca
+played
+played in
+Who
+married
+married to
+is married to
+was born
+Rome
+born
+e:Casablanca_(film)
+e:Married_(series)
+c: married person
+r:hasMusicalRole
+e:White_House
+e:Sydne_Rome
+e:Played_(film)
+e:Casablanca
+r:bornOnDate
+e:Born_(film)
+e:Max_Born
+r:marriedTo
+r:actedIn
+c:person
+r:bornIn
+r:Rome
+c:writer
+</figure>
+<page confidence="0.993835">
+384
+</page>
+<bodyText confidence="0.891984">
+subject to the following constraints:
+</bodyText>
+<listItem confidence="0.963942">
+1. A p-node can be assigned to one s-node at most:
+Ej Yij ≤ 1, ∀i
+2. If a p-s similarity edge is chosen, then the respec-
+tive p-node must be chosen:
+Yij ≤ Xi, ∀j
+3. If s-nodes k and l are chosen (Zkl = 1), then there
+are p-nodes mapping to each of the s-nodes k and l
+( Yik = 1 for some i and Yjl = 1 for some j):
+</listItem>
+<figure confidence="0.498189333333333">
+Zkl ≤ Ei Yik and Zkl ≤ Ej Yjl
+4. No token can appear as part of two phrases:
+E
+iEP(t) Xi ≤ 1, ∀t ∈ T
+5. At most one q-edge is selected for a dimension:
+E
+n Qmnd ≤ 1, ∀m, d
+6. If the q-edge mnd is chosen (Qmnd = 1) then
+p-node n must be selected:
+Qmnd ≤ Xn, ∀m, d
+7. Each semantic triple should include a relation:
+Er ≥ Qmn0d + Xn0 + Yn0r − 2 ∀m, n&apos;, r, d = rel
+8. Each triple should have at least one class:
+Cc1 + Cc2 ≥ Qmn00d1 + Xn00 + Yn000c1+
+Qmn000d2 + Xn000 + Yn000c2 − 5,
+</figure>
+<bodyText confidence="0.918283666666667">
+∀m, n&apos;&apos;, n&apos;&apos;&apos;, r, c1, c2, d1 = arg1, d2 = arg2
+This is not invoked for existential questions that
+return Boolean answers and are translated to ASK
+queries in SPARQL. An example is the question
+“Did Tom Cruise act in Top Gun?”, which can be
+translated to ASK {Tom Cruise actedIn Top Gun}.
+</bodyText>
+<listItem confidence="0.599651">
+9. Type constraints are respected (through q-edges):
+</listItem>
+<equation confidence="0.9997515">
+trc1 + trc2 ≥ Qmn0d1 + Xn0 + Yn0r+
+Qmn00d2 + Xn00 + Yn000c1+
+Qmn000d3 + Xn000 + Yn000c2 − 7
+&amp;quot;
+∀m,n&apos;,n ,n&apos;&apos;&apos; ,r,c1,c2,
+d1 = rel, d2 = arg1, d3 = arg2
+</equation>
+<bodyText confidence="0.9975992">
+The above is a sophisticated ILP, and most likely
+NP-hard. However, even with ten thousands of vari-
+ables it is within the regime of modern ILP solvers.
+In our experiments, we used Gurobi (Gur, 2011), and
+achieved run-times – typically of a few seconds.
+</bodyText>
+<figure confidence="0.549288">
+q-nodes p-nodes s-nodes
+</figure>
+<figureCaption confidence="0.9932125">
+Figure 4: Computed subgraph for the running example.
+Figure 4 shows the resulting subgraph for the dis-
+ambiguation graph of Figure 3. Note how common
+p-nodes between q-units capture joins.
+</figureCaption>
+<sectionHeader confidence="0.997224" genericHeader="evaluation">
+5 Evaluation
+</sectionHeader>
+<subsectionHeader confidence="0.816181">
+5.1 Datasets
+</subsectionHeader>
+<bodyText confidence="0.999688448275862">
+Our experiments are based on two collections of
+questions: the QALD-1 task for question answer-
+ing over linked data (QAL, 2011) and a collection
+of questions used in (Elbassuoni et al., 2011; El-
+bassuoni et al., 2009) in the context of the NAGA
+project, for informative ranking of SPARQL query
+answers (Elbassuoni et al. (2009) evaluated the
+SPARQL queries, but the underlying questions are
+formulated in natural language.) The NAGA collec-
+tion is based on linking data from IMDB with the
+Yago2 knowledge base. This is an interesting linked-
+data case: IMDB provides data about movies, actors,
+directors, and movie plots (in the form of descrip-
+tive keywords and phrases); Yago2 adds semantic
+types and relational facts for the participating enti-
+ties. Yago2 provides nearly 3 million concepts and
+100 relations, of which 41 lie within the scope of
+our framework.
+Typical example questions for these two col-
+lections are: “Which software has been published
+by Mean Hamster Software?” for QALD-1, and
+“Which director has won the Academy Award for
+Best director and is married to an actress that has
+won the Academy Award for Best Actress?” for
+NAGA. For both collections, some questions are
+out-of-scope for our setting, because they mention
+entities or relations that are not available in the un-
+derlying datasets, contain date or time comparisons,
+or involve aggregation such as counting. After re-
+</bodyText>
+<figure confidence="0.994581823529412">
+q1
+q2
+q3
+a writer
+Casablanca
+played in
+Who
+is married to
+was born
+Rome
+r:Rome
+r:bornIn
+c:writer
+e:Casablanca
+r:actedIn
+c:person
+r:marriedTo
+</figure>
+<page confidence="0.997436">
+385
+</page>
+<bodyText confidence="0.999851833333333">
+moving these questions, our test set consists of 27
+QALD-1 training questions out of a total of 50 and
+44 NAGA questions, out of a total of 87. We used
+the 19 questions from the QALD-1 test set that are
+within the scope of our method for tuning the hyper-
+parameters (α, Q, &apos;y) in the ILP objective function.
+</bodyText>
+<subsectionHeader confidence="0.999229">
+5.2 Evaluation Metrics
+</subsectionHeader>
+<bodyText confidence="0.999989632653061">
+We evaluated the output of DEANNA at three
+stages in the processing pipeline: a) after the dis-
+ambiguation of phrases, b) after the generation of
+the SPARQL query, and c) after obtaining answers
+from the underlying linked-data sources. This way,
+we could obtain insights into our building blocks,
+in addition to assessing the end-to-end performance.
+In particular, we could assess the goodness of the
+question-to-query translation independently of the
+actual answer quality which may depend on partic-
+ularities of the underlying datasets (e.g., slight mis-
+matches between query terminology and the names
+in the data.)
+At each of the three stages, the output was shown
+to two human assessors who judged whether an out-
+put item was good or not. If the two were in dis-
+agreement, then a third person resolved the judg-
+ment.
+For the disambiguation stage, the judges looked
+at each q-node/s-node pair, in the context of the
+question and the underlying data schemas, and de-
+termined whether the mapping was correct or not
+and whether any expected mappings were missing.
+For the query-generation stage, the judges looked
+at each triple pattern and determined whether the
+pattern was meaningful for the question or not and
+whether any expected triple pattern was missing.
+Note that, because our approach does not use any
+query templates, the same question may generate se-
+mantically equivalent queries that differ widely in
+terms of their structure. Hence, we rely on our eval-
+uation metrics that are based on triple patterns, as
+there is no gold-standard query for a given ques-
+tion. For the query-answering stage, the judges were
+asked to identify if the result sets for the generated
+queries are satisfactory.
+With these assessments, we computed over-
+all quality measures by both micro-averaging and
+macro-averaging. Micro-averaging aggregates over
+all assessed items (e.g., q-node/s-node pairs or triple
+patterns) regardless of the questions to which they
+belong. Macro-averaging first aggregates the items
+for the same question, and then averages the quality
+measure over all questions.
+For a question q and item set s in one of the stages
+of evaluation, let correct(q, s) be the number of cor-
+rect items in s, ideal(q) be the size of the ideal item
+set and retrieved(q, s) be the number of retrieved
+items, we define coverage and precision as follows:
+</bodyText>
+<equation confidence="0.9880665">
+cov(q,s) = correct(q,s)/ideal(q)
+prec(q, s) = correct(q, s)/retrieved(q, s).
+</equation>
+<subsectionHeader confidence="0.953098">
+5.3 Results &amp; Discussion
+5.3.1 Disambiguation
+</subsectionHeader>
+<bodyText confidence="0.999969666666667">
+Table 1 shows the results for disambiguation in
+terms of macro and micro coverage and precision.
+For both datasets, coverage is high as few mappings
+are missing. We obtain perfect precision for QALD-
+1 as no mapping that we generate is incorrect, while
+for NAGA we generate few incorrect mappings.
+</bodyText>
+<subsectionHeader confidence="0.817837">
+5.3.2 Query Generation
+</subsectionHeader>
+<bodyText confidence="0.999857">
+Table 2 shows the same metrics for the generated
+triple patterns. The results are similar to those for
+disambiguation. Missing or incorrect triple patterns
+can be attributed to (i) incorrect mappings in the dis-
+ambiguation stage or (ii) incorrect detection of de-
+pendencies between phrases despite having the cor-
+rect mappings.
+</bodyText>
+<subsubsectionHeader confidence="0.515995">
+5.3.3 Question Answering
+</subsubsectionHeader>
+<bodyText confidence="0.99996905882353">
+Table 3 shows the results for query answering.
+Here, we attempt to generate answers to questions
+by executing the generated queries over the datasets.
+The table shows the number of questions for which
+the system successfully generated SPARQL queries
+(#queries), and among those, how many resulted
+in satisfactory answers as judged by our evalua-
+tors (#satisfactory). Answers were considered un-
+satisfactory when: 1) the generated SPARQL query
+was wrong, 2) the result set was empty due to the
+incompleteness of the underlying knowledge base,
+or 3) a small fraction of the result set was relevant
+to the question. For both sets of questions, most of
+the queries that were perceived unsatisfactory were
+ones that returned no answers. Table 4 shows a
+set of example QALD questions, the corresponding
+SPARQL queries and sample answers.
+</bodyText>
+<page confidence="0.99619">
+386
+</page>
+<table confidence="0.9992662">
+Benchmark QALD-1 NAGA
+covmacro 0.973 0.934
+precmacro 1.000 0.934
+covmicro 0.963 0.945
+precmicro 1.000 0.941
+</table>
+<tableCaption confidence="0.962792">
+Table 1: Disambiguation
+</tableCaption>
+<table confidence="0.9998002">
+Benchmark QALD-1 NAGA
+covmacro 0.975 0.894
+precmacro 1.000 0.941
+covmicro 0.956 0.847
+precmicro 1.000 0.906
+</table>
+<tableCaption confidence="0.766086">
+Table 2: Query generation
+</tableCaption>
+<table confidence="0.9996362">
+Benchmark QALD-1 NAGA
+#questions 27 44
+#queries 20 41
+#satisfactory 10 15
+#relaxed +3 +3
+</table>
+<tableCaption confidence="0.967398">
+Table 3: Query answering
+</tableCaption>
+<table confidence="0.999771285714286">
+Question Generated Query Sample Answers
+1. Who was the wife of President ?x marriedTo Abraham Lincoln . Mary Todd Lincoln
+Lincoln? ?x type person
+2. In which films did Julia Roberts ?x type movie . Richard Gere actedIn ?x . Runaway Bride
+as well as Richard Gere play? Julia Roberts actedIn ?x Pretty Woman
+3. Which actors were born in ?x type actor . ?x bornIn Germany NONE
+Germany?
+</table>
+<tableCaption confidence="0.999883">
+Table 4: Example questions, the generated SPARQL queries and their answers
+</tableCaption>
+<bodyText confidence="0.999655294117647">
+Queries that produced no answers, such as the
+third query in Table 4 were further relaxed using an
+incarnation of the techniques described in (Elbas-
+suoni et al., 2009), by retaining the triple patterns
+expressing type constraints and relaxing all other
+triple patterns. Relaxing a triple pattern was done
+by replacing all entities with variables and casting
+entity mentions into keywords that are attached to
+the relaxed triple pattern. For example, the QALD
+question “Which actors were born in Germany?”
+was translated into the following SPARQL query:
+?x type actor . ?x bornIn Germany which pro-
+duced no answers when run over the Yago2 knowl-
+edge base since the relation bornIn relates peo-
+ple to cities and not countries in Yago2. The
+query was then relaxed into: ?x type actor . ?x
+bornIn ?z[Germany]. This relaxed (and keyword-
+augmented) triple-pattern query was then processed
+the same way as triple-pattern queries without any
+keywords. The results of such query were then
+ranked based on how well they match the keyword
+conditions specified in the relaxed query using the
+ranking model in (Elbassuoni et al., 2009). Using
+this technique, the top ranked results for the relaxed
+query were all actors born in German cities as shown
+in Table 5.
+After relaxation, the judges again assessed the re-
+sults of the relaxed queries and determined whether
+they were satisfactory or not. The number of addi-
+tional queries that obtained satisfactory answers af-
+ter relaxation are shown under #relaxed in Table 3.
+The evaluation data, in addition to a demonstra-
+tion of our system (Yahya et al., 2012), can be found
+at http://mpi-inf.mpg.de/yago-naga/deanna/.
+</bodyText>
+<sectionHeader confidence="0.999989" genericHeader="related work">
+6 Related Work
+</sectionHeader>
+<bodyText confidence="0.999968848484849">
+Question answering has a long history in NLP and
+IR research. The Web and Wikipedia have proved to
+be a valuable resource for answering fact-oriented
+questions. State-of-the-art methods (Hirschman and
+Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002;
+Katz et al., 2007; Dang et al., 2007; Voorhees, 2003)
+cast the user’s question into a keyword query to a
+Web search engine (perhaps with phrases for loca-
+tion and person names or other proper nouns). Key
+to finding good results is to retrieve and rank sen-
+tences or short passages that contain all or most key-
+words and are likely to yield good answers. Together
+with trained classifiers for the question type (and
+thus the desired answer type), this methodology per-
+forms fairly well for both factoid and list questions.
+IBM’s Watson project (Ferrucci et al., 2010)
+demonstrated a new kind of deep QA. A key ele-
+ment in Watson’s approach is to decompose com-
+plex questions into several cues and sub-cues,
+with the aim of generating answers from matches
+for the various cues (tapping into the Web and
+Wikipedia). Knowledge bases like DBpedia (Auer
+et al., 2007), Freebase (Bollacker et al., 2008), and
+Yago (Suchanek et al., 2007)) are used for both an-
+swering parts of questions that can be translated to
+structured form (Chu-Carroll et al., 2012) and type-
+checking possible answer candidates and thus filter-
+ing out spurious results (Kalyanpur et al., 2011).
+The recent QALD-1 initiative (QAL, 2011) pro-
+posed a benchmark task to translate questions into
+SPARQL queries over linked-data sources like DB-
+pedia and MusicBrainz. FREyA (Damljanovic et
+al., 2011), the best performing system, relies on
+</bodyText>
+<page confidence="0.994237">
+387
+</page>
+<table confidence="0.9608216">
+Q: ?x type actor.?x wasBornIn ?z[Germany]
+Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main
+Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart
+Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne
+Jerry Zaks type actor. Jerry Zaks wasBornIn Stuttgart
+</table>
+<tableCaption confidence="0.995065">
+Table 5: Top-4 results for the QALD question “Which actors were born in Germany?” after relaxation
+</tableCaption>
+<bodyText confidence="0.999964763636364">
+interaction with the user to interpret the question.
+Earlier work on mapping questions into structured
+queries includes the work by Frank et al. (2007) and
+Unger and Cimiano (2011). Frank et al. (2007) used
+lexical-conceptual templates for query generation.
+However, this work did not address the crucial issue
+of disambiguating the constituents of the question.
+In Pythia, Unger and Cimiano (2011) relied on an
+ontology-driven grammar for the question language
+so that questions could be directly mapped onto the
+vocabulary of the underlying ontology. Such gram-
+mars are obviously hard to craft for very large, com-
+plex, and evolving knowledge bases. Nalix is an at-
+tempt to bring question answering to XML data (Li,
+Yang, and Jagadish, 2007) by mapping questions to
+XQuery expressions, relying on human interaction
+to resolve possible ambiguity.
+Very recently, Unger et al. (2012) developed a
+template-based approach based on Pythia, where
+questions are automatically mapped to structured
+queries in a two step process. First, a set of query
+templates are generated for a question, independent
+of the knowledge base, determining the structure of
+the query. After that, each template is instantiated
+with semantic items from the knowledge base. This
+performs reasonably well for the QALD-1 bench-
+mark: out of 50 test questions, 34 could be mapped,
+and 19 were correctly answered.
+Efforts on user-friendly exploration of struc-
+tured data include keyword search over relational
+databases (Bhalotia et al., 2002) and structured key-
+word search (Pound et al., 2010). The latter is a com-
+promise between full natural language and struc-
+tured queries, where the user provides the structure
+and the system takes care of the disambiguation of
+keyword phrases.
+Our joint disambiguation method was inspired
+by recent work on NED (Milne and Witten, 2008;
+Kulkarni et al., 2009; Hoffart et al., 2011a) and
+WSD (Navigli, 2009). In contrast to this prior work
+on related problems, our graph construction and
+constraints are more complex, as we address the
+joint mapping of arbitrary phrases onto entities,
+classes, or relations. Moreover, instead of graph al-
+gorithms or factor-graph learning, we use an ILP for
+solving the ambiguity problem. This way, we can ac-
+commodate expressive constraints, while being able
+to disambiguate all phrases in a few seconds.
+DEANNA uses dictionaries of names and phrases
+for entities, classes, and relations. Spitkovsky and
+Chang (2012) recently released a huge dictionary of
+pairs of phrases and Wikipedia links, derived from
+Google’s Web index. For relations, Nakashole et al.
+(2012) released PATTY, a large taxonomy of pat-
+terns with semantic types.
+</bodyText>
+<sectionHeader confidence="0.998" genericHeader="conclusions">
+7 Conclusions and Future Work
+</sectionHeader>
+<bodyText confidence="0.999972826086957">
+We presented a method for translating natural-
+language questions into structured queries. The nov-
+elty of this method lies in modeling several map-
+ping stages as a joint ILP problem. We harness type
+signatures and other information from large-scale
+knowledge bases. Although our model, in princi-
+ple, leads to high combinatorial complexity, we ob-
+served that the Gurobi solver could handle our ju-
+diciously designed ILP very efficiently. Our experi-
+mental studies showed very high precision and good
+coverage of the query translation, and good results
+in the actual question answers.
+Future work includes relaxing some of the limita-
+tions that our current approach still has. First, ques-
+tions with aggregations cannot be handled at this
+point. Second, queries sometimes return empty an-
+swers although they perfectly capture the original
+question, but the underlying data sources are incom-
+plete or represent the relevant information in an un-
+expected manner. We plan to extend our approach of
+combining structured data with textual descriptions,
+and generate queries that combine structured search
+predicates with keyword or phrase matching.
+</bodyText>
+<page confidence="0.998208">
+388
+</page>
+<sectionHeader confidence="0.998345" genericHeader="references">
+References
+</sectionHeader>
+<reference confidence="0.99995039047619">
+Auer, S.; Bizer, C.; Kobilarov, G.; Lehmann, J.; Cyga-
+niak, R.; and Ives, Z. G. 2007. DBpedia: A Nucleus
+for a Web of Open Data. In ISWC/ASWC.
+Bhalotia, G.; Hulgeri, A.; Nakhe, C.; Chakrabarti, S.; and
+Sudarshan, S. 2002. Keyword Searching and Brows-
+ing in Databases using BANKS. In ICDE.
+Bollacker, K. D.; Evans, C.; Paritosh, P.; Sturge, T.; and
+Taylor, J. 2008. Freebase: a Collaboratively Created
+Graph Database for Structuring Human Knowledge.
+In SIGMOD.
+Chu-Carroll, J.; Fan, J.; Boguraev, B. K.; Carmel, D.; and
+Sheinwald, D.; Welty, C. 2012. Finding needles in the
+haystack: Search and candidate generation. In IBM J.
+Res. &amp; Dev., vol 56, no.3/4.
+Damljanovic, D.; Agatonovic, M.; and Cunningham, H.
+2011. FREyA: an Interactive Way of Querying Linked
+Data using Natural Language.
+Dang, H. T.; Kelly, D.; and Lin, J. J. 2007. Overview of
+the trec 2007 question answering track. In TREC.
+de Marneffe, M. C.; Maccartney, B.; and Manning, C. D.
+2006. Generating typed dependency parses from
+phrase structure parses. In LREC.
+Elbassuoni, S.; Ramanath, M.; Schenkel, R.; Sydow, M.;
+and Weikum, G. 2009. Language-model-based rank-
+ing for queries on rdf-graphs. In CIKM.
+Elbassuoni, S.; Ramanath, M.; and Weikum, G. 2011.
+Query relaxation for entity-relationship search. In
+ESWC.
+Fader, A.; Soderland, S.; and Etzioni, O. 2011. Iden-
+tifying relations for open information extraction. In
+EMNLP.
+Ferrucci, D. A.; Brown, E. W.; Chu-Carroll, J.; Fan, J.;
+Gondek, D.; Kalyanpur, A.; Lally, A.; Murdock, J. W.;
+Nyberg, E.; Prager, J. M.; Schlaefer, N.; and Welty,
+C. A. 2010. Building Watson: An Overview of the
+DeepQA Project. AI Magazine 31(3).
+Frank, A.; Krieger, H.-U.; Xu, F.; Uszkoreit, H.; Crys-
+mann, B.; J¨org, B.; and Sch¨afer, U. 2007. Question
+Answering from Structured Knowledge Sources. J.
+Applied Logic 5(1).
+Gurobi Optimization, Inc. 2012. Gurobi Optimizer Ref-
+erence Manual. http://www.gurobi.com/.
+Heath, T., and Bizer, C. 2011. Linked Data: Evolving
+the Web into a Global Data Space. San Rafael, CA:
+Morgan &amp; Claypool, 1 edition.
+Hirschman, L., and Gaizauskas, R. 2001. Natural Lan-
+guage Question Answering: The View from Here. Nat.
+Lang. Eng. 7.
+Hoffart, J.; Mohamed, A. Y.; Bordino, I.; F¨urstenau, H.;
+Pinkal, M.; Spaniol, M.; Taneva, B.; Thaterm S.; and
+Weikum, G. 2011. Robust Disambiguation of Named
+Entities in Text. In EMNLP.
+Hoffart, J.; Suchanek, F. M.; Berberich, K.; Lewis-
+Kelham, E.; de Melo, G.; and Weikum, G. 2011.
+Yago2: exploring and querying world knowledge in
+time, space, context, and many languages. In WWW
+(Companion Volume).
+Kalyanpur, A.; Murdock, J. W.; Fan, J.; and Welty, C. A.
+2011. Leveraging community-built knowledge for
+type coercion in question answering. In International
+Semantic Web Conference.
+Katz, B.; Felshin, S.; Marton, G.; Mora, F.; Shen, Y. K.;
+Zaccak, G.; Ammar, A.; Eisner, E.; Turgut, A.; and
+Westrick, L. B. 2007. CSAIL at TREC 2007 Ques-
+tion Answering. In TREC.
+Kulkarni, S.; Singh, A.; Ramakrishnan, G.; and
+Chakrabarti, S. 2009. Collective annotation of
+wikipedia entities in web text. In KDD.
+Kwok, C. C. T.; Etzioni, O.; and Weld, D. S. 2001. Scal-
+ing Question Answering to the Web. In WWW.
+Li, Y.; Yang, H.; and Jagadish, H. V. 2007. NaLIX:
+A Generic Natural Language Search Environment for
+XML Data. ACM Trans. Database Syst. 32(4).
+Milne, D. N., and Witten, I. H. 2008. Learning to link
+with wikipedia. In CIKM.
+Ndapandula Nakashole, Gerhard Weikum and Fabian
+Suchanek 2012. PATTY: A Taxonomy of Relational
+Patterns with Semantic Types. In EMNLP.
+Navigli, R. 2009. Word sense disambiguation: A survey.
+ACM Comput. Surv. 41(2).
+Pound, J.; Ilyas, I. F.; and Weddell, G. E. 2010. Ex-
+pressive and Flexible Access to Web-extracted Data: A
+Keyword-based Structured Query Language. In SIG-
+MOD.
+2011. 1st Workshop on Question Answering over
+Linked Data (QALD-1). http://www.sc.cit-ec.uni-
+bielefeld.de/qald-1.
+Resnik, P. 1995. Using Information Content to Evaluate
+Semantic Similarity in a Taxonomy. In IJCAI.
+Spitkovsky, V. I. Spitkovsky; Chang, A. X. ; 2012. A
+Cross-Lingual Dictionary for English Wikipedia Con-
+cepts. In LREC.
+Suchanek, F. M.; Kasneci, G.; and Weikum, G. 2007.
+Yago: a core of semantic knowledge. In WWW.
+Tummarello, G.; Cyganiak, R.; Catasta, M.; Danielczyk,
+S.; Delbru, R.; and Decker, S. 2010. Sig.ma: Live
+views on the web of data. J. Web Sem. 8(4).
+Unger, C.; and Cimiano, P. 2011. Pythia: Compositional
+Meaning Construction for Ontology-Based Question
+Answering on the Semantic Web. In NLDB.
+Unger, C.; B¨uhmann, L.; Lehmann, J.; Ngonga Ngomo,
+A.-C.; Gerber, D.; and Cimiano, P. 2012. Template-
+based question answering over RDF data. In WWW.
+Voorhees, E. M. 2003. Overview of the trec 2003 ques-
+tion answering track. In TREC.
+</reference>
+<page confidence="0.988422">
+389
+</page>
+<reference confidence="0.995488833333333">
+Yahya, M.; Berberich, K.; Elbassuoni, S.; Ramanath, M.;
+Tresp, V.; and Weikum, G. 2012. Deep answers
+for naturally asked questions on the web of data. In
+WWW.
+Zheng, Z. 2002. AnswerBus Question Answering Sys-
+tem. In HLT.
+</reference>
+<page confidence="0.998275">
+390
+</page>
+</variant>
+</algorithm>
+<algorithm name="ParsHed" version="110505">
+<variant no="0" confidence="0.734385">
+<title confidence="0.999889">Natural Language Questions for the Web of Data</title>
+<author confidence="0.969264">Klaus Shady Volker Gerhard</author>
+<affiliation confidence="0.933194">1Max Planck Institute for Informatics, 2Qatar Computing Research 3Dept. of CSE, IIT-Delhi, India 4Siemens AG, Corporate Technology, Munich,</affiliation>
+<email confidence="0.989781">ramanath@cse.iitd.ac.involker.tresp@siemens.com</email>
+<abstract confidence="0.997558681818182">The Linked Data initiative comprises structured databases in the Semantic-Web data model RDF. Exploring this heterogeneous data by structured query languages is tedious and error-prone even for skilled users. To ease the task, this paper presents a methodology for translating natural language questions into structured SPARQL queries over linked-data sources. Our method is based on an integer linear program to solve several disambiguation tasks jointly: the segmentation of questions into phrases; the mapping of phrases to semantic entities, classes, and relations; and the construction of SPARQL triple patterns. Our solution harnesses the rich type system provided by knowledge bases in the web of linked data, to constrain our semantic-coherence objective function. We present experiments on both the question translation and the resulting query answering.</abstract>
+</variant>
+</algorithm>
+<algorithm name="ParsCit" version="110505">
+<citationList>
+<citation valid="true">
+<authors>
+<author>S Auer</author>
+<author>C Bizer</author>
+<author>G Kobilarov</author>
+<author>J Lehmann</author>
+<author>R Cyganiak</author>
+<author>Z G Ives</author>
+</authors>
+<title>DBpedia: A Nucleus for a Web of Open Data.</title>
+<date>2007</date>
+<booktitle>In ISWC/ASWC.</booktitle>
+<contexts>
+<context position="1495" citStr="Auer et al., 2007" startWordPosition="204" endWordPosition="207"> tasks jointly: the segmentation of questions into phrases; the mapping of phrases to semantic entities, classes, and relations; and the construction of SPARQL triple patterns. Our solution harnesses the rich type system provided by knowledge bases in the web of linked data, to constrain our semantic-coherence objective function. We present experiments on both the question translation and the resulting query answering. 1 Introduction 1.1 Motivation Recently, very large, structured, and semantically rich knowledge bases have become available. Examples are Yago (Suchanek et al., 2007), DBpedia (Auer et al., 2007), and Freebase (Bollacker et al., 2008). DBpedia forms the nucleus of the Web of Linked Data (Heath and Bizer, 2011), which interconnects hundreds of RDF data sources with a total of 30 billion subject-property-object (SPO) triples. The diversity of linked-data sources and their high heterogeneity make it difficult for humans to search and discover relevant information. As linked data is in RDF format, the standard approach would be to run structured queries in triple-pattern-based languages like SPARQL, but only expert programmers are able to precisely specify their information needs and cope</context>
+<context position="34566" citStr="Auer et al., 2007" startWordPosition="5719" endWordPosition="5722">ieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type</context>
+</contexts>
+<marker>Auer, Bizer, Kobilarov, Lehmann, Cyganiak, Ives, 2007</marker>
+<rawString>Auer, S.; Bizer, C.; Kobilarov, G.; Lehmann, J.; Cyganiak, R.; and Ives, Z. G. 2007. DBpedia: A Nucleus for a Web of Open Data. In ISWC/ASWC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Bhalotia</author>
+<author>A Hulgeri</author>
+<author>C Nakhe</author>
+<author>S Chakrabarti</author>
+<author>S Sudarshan</author>
+</authors>
+<title>Keyword Searching and Browsing in Databases using BANKS.</title>
+<date>2002</date>
+<booktitle>In ICDE.</booktitle>
+<contexts>
+<context position="37008" citStr="Bhalotia et al., 2002" startWordPosition="6094" endWordPosition="6097">eloped a template-based approach based on Pythia, where questions are automatically mapped to structured queries in a two step process. First, a set of query templates are generated for a question, independent of the knowledge base, determining the structure of the query. After that, each template is instantiated with semantic items from the knowledge base. This performs reasonably well for the QALD-1 benchmark: out of 50 test questions, 34 could be mapped, and 19 were correctly answered. Efforts on user-friendly exploration of structured data include keyword search over relational databases (Bhalotia et al., 2002) and structured keyword search (Pound et al., 2010). The latter is a compromise between full natural language and structured queries, where the user provides the structure and the system takes care of the disambiguation of keyword phrases. Our joint disambiguation method was inspired by recent work on NED (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relation</context>
+</contexts>
+<marker>Bhalotia, Hulgeri, Nakhe, Chakrabarti, Sudarshan, 2002</marker>
+<rawString>Bhalotia, G.; Hulgeri, A.; Nakhe, C.; Chakrabarti, S.; and Sudarshan, S. 2002. Keyword Searching and Browsing in Databases using BANKS. In ICDE.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>K D Bollacker</author>
+<author>C Evans</author>
+<author>P Paritosh</author>
+<author>T Sturge</author>
+<author>J Taylor</author>
+</authors>
+<title>Freebase: a Collaboratively Created Graph Database for Structuring Human Knowledge.</title>
+<date>2008</date>
+<booktitle>In SIGMOD.</booktitle>
+<contexts>
+<context position="1534" citStr="Bollacker et al., 2008" startWordPosition="210" endWordPosition="213">f questions into phrases; the mapping of phrases to semantic entities, classes, and relations; and the construction of SPARQL triple patterns. Our solution harnesses the rich type system provided by knowledge bases in the web of linked data, to constrain our semantic-coherence objective function. We present experiments on both the question translation and the resulting query answering. 1 Introduction 1.1 Motivation Recently, very large, structured, and semantically rich knowledge bases have become available. Examples are Yago (Suchanek et al., 2007), DBpedia (Auer et al., 2007), and Freebase (Bollacker et al., 2008). DBpedia forms the nucleus of the Web of Linked Data (Heath and Bizer, 2011), which interconnects hundreds of RDF data sources with a total of 30 billion subject-property-object (SPO) triples. The diversity of linked-data sources and their high heterogeneity make it difficult for humans to search and discover relevant information. As linked data is in RDF format, the standard approach would be to run structured queries in triple-pattern-based languages like SPARQL, but only expert programmers are able to precisely specify their information needs and cope with the high heterogeneity of the dat</context>
+<context position="34601" citStr="Bollacker et al., 2008" startWordPosition="5724" endWordPosition="5727">rt passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn F</context>
+</contexts>
+<marker>Bollacker, Evans, Paritosh, Sturge, Taylor, 2008</marker>
+<rawString>Bollacker, K. D.; Evans, C.; Paritosh, P.; Sturge, T.; and Taylor, J. 2008. Freebase: a Collaboratively Created Graph Database for Structuring Human Knowledge. In SIGMOD.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Chu-Carroll</author>
+<author>J Fan</author>
+<author>B K Boguraev</author>
+<author>D Carmel</author>
+<author>D Sheinwald</author>
+<author>C Welty</author>
+</authors>
+<title>Finding needles in the haystack: Search and candidate generation.</title>
+<date>2012</date>
+<journal>In IBM J. Res. &amp; Dev.,</journal>
+<volume>56</volume>
+<pages>3--4</pages>
+<contexts>
+<context position="34752" citStr="Chu-Carroll et al., 2012" startWordPosition="5750" endWordPosition="5753"> the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne Je</context>
+</contexts>
+<marker>Chu-Carroll, Fan, Boguraev, Carmel, Sheinwald, Welty, 2012</marker>
+<rawString>Chu-Carroll, J.; Fan, J.; Boguraev, B. K.; Carmel, D.; and Sheinwald, D.; Welty, C. 2012. Finding needles in the haystack: Search and candidate generation. In IBM J. Res. &amp; Dev., vol 56, no.3/4.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D Damljanovic</author>
+<author>M Agatonovic</author>
+<author>H Cunningham</author>
+</authors>
+<title>FREyA: an Interactive Way of Querying Linked Data using Natural Language.</title>
+<date>2011</date>
+<contexts>
+<context position="35060" citStr="Damljanovic et al., 2011" startWordPosition="5797" endWordPosition="5800">ng answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne Jerry Zaks type actor. Jerry Zaks wasBornIn Stuttgart Table 5: Top-4 results for the QALD question “Which actors were born in Germany?” after relaxation interaction with the user to interpret the question. Earlier work on mapping questions into structured queries includes the work by Frank et al. (2007) and U</context>
+</contexts>
+<marker>Damljanovic, Agatonovic, Cunningham, 2011</marker>
+<rawString>Damljanovic, D.; Agatonovic, M.; and Cunningham, H. 2011. FREyA: an Interactive Way of Querying Linked Data using Natural Language.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>H T Dang</author>
+<author>D Kelly</author>
+<author>J J Lin</author>
+</authors>
+<title>Overview of the trec</title>
+<date>2007</date>
+<booktitle>In TREC.</booktitle>
+<contexts>
+<context position="33747" citStr="Dang et al., 2007" startWordPosition="5578" endWordPosition="5581">termined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is</context>
+</contexts>
+<marker>Dang, Kelly, Lin, 2007</marker>
+<rawString>Dang, H. T.; Kelly, D.; and Lin, J. J. 2007. Overview of the trec 2007 question answering track. In TREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M C de Marneffe</author>
+<author>B Maccartney</author>
+<author>C D Manning</author>
+</authors>
+<title>Generating typed dependency parses from phrase structure parses.</title>
+<date>2006</date>
+<booktitle>In LREC.</booktitle>
+<marker>de Marneffe, Maccartney, Manning, 2006</marker>
+<rawString>de Marneffe, M. C.; Maccartney, B.; and Manning, C. D. 2006. Generating typed dependency parses from phrase structure parses. In LREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Elbassuoni</author>
+<author>M Ramanath</author>
+<author>R Schenkel</author>
+<author>M Sydow</author>
+<author>G Weikum</author>
+</authors>
+<title>Language-model-based ranking for queries on rdf-graphs.</title>
+<date>2009</date>
+<booktitle>In CIKM.</booktitle>
+<contexts>
+<context position="25349" citStr="Elbassuoni et al., 2009" startWordPosition="4210" endWordPosition="4214">thousands of variables it is within the regime of modern ILP solvers. In our experiments, we used Gurobi (Gur, 2011), and achieved run-times – typically of a few seconds. q-nodes p-nodes s-nodes Figure 4: Computed subgraph for the running example. Figure 4 shows the resulting subgraph for the disambiguation graph of Figure 3. Note how common p-nodes between q-units capture joins. 5 Evaluation 5.1 Datasets Our experiments are based on two collections of questions: the QALD-1 task for question answering over linked data (QAL, 2011) and a collection of questions used in (Elbassuoni et al., 2011; Elbassuoni et al., 2009) in the context of the NAGA project, for informative ranking of SPARQL query answers (Elbassuoni et al. (2009) evaluated the SPARQL queries, but the underlying questions are formulated in natural language.) The NAGA collection is based on linking data from IMDB with the Yago2 knowledge base. This is an interesting linkeddata case: IMDB provides data about movies, actors, directors, and movie plots (in the form of descriptive keywords and phrases); Yago2 adds semantic types and relational facts for the participating entities. Yago2 provides nearly 3 million concepts and 100 relations, of which </context>
+<context position="31966" citStr="Elbassuoni et al., 2009" startWordPosition="5288" endWordPosition="5292">uestion Generated Query Sample Answers 1. Who was the wife of President ?x marriedTo Abraham Lincoln . Mary Todd Lincoln Lincoln? ?x type person 2. In which films did Julia Roberts ?x type movie . Richard Gere actedIn ?x . Runaway Bride as well as Richard Gere play? Julia Roberts actedIn ?x Pretty Woman 3. Which actors were born in ?x type actor . ?x bornIn Germany NONE Germany? Table 4: Example questions, the generated SPARQL queries and their answers Queries that produced no answers, such as the third query in Table 4 were further relaxed using an incarnation of the techniques described in (Elbassuoni et al., 2009), by retaining the triple patterns expressing type constraints and relaxing all other triple patterns. Relaxing a triple pattern was done by replacing all entities with variables and casting entity mentions into keywords that are attached to the relaxed triple pattern. For example, the QALD question “Which actors were born in Germany?” was translated into the following SPARQL query: ?x type actor . ?x bornIn Germany which produced no answers when run over the Yago2 knowledge base since the relation bornIn relates people to cities and not countries in Yago2. The query was then relaxed into: ?x </context>
+</contexts>
+<marker>Elbassuoni, Ramanath, Schenkel, Sydow, Weikum, 2009</marker>
+<rawString>Elbassuoni, S.; Ramanath, M.; Schenkel, R.; Sydow, M.; and Weikum, G. 2009. Language-model-based ranking for queries on rdf-graphs. In CIKM.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Elbassuoni</author>
+<author>M Ramanath</author>
+<author>G Weikum</author>
+</authors>
+<title>Query relaxation for entity-relationship search.</title>
+<date>2011</date>
+<booktitle>In ESWC.</booktitle>
+<contexts>
+<context position="25323" citStr="Elbassuoni et al., 2011" startWordPosition="4206" endWordPosition="4209">. However, even with ten thousands of variables it is within the regime of modern ILP solvers. In our experiments, we used Gurobi (Gur, 2011), and achieved run-times – typically of a few seconds. q-nodes p-nodes s-nodes Figure 4: Computed subgraph for the running example. Figure 4 shows the resulting subgraph for the disambiguation graph of Figure 3. Note how common p-nodes between q-units capture joins. 5 Evaluation 5.1 Datasets Our experiments are based on two collections of questions: the QALD-1 task for question answering over linked data (QAL, 2011) and a collection of questions used in (Elbassuoni et al., 2011; Elbassuoni et al., 2009) in the context of the NAGA project, for informative ranking of SPARQL query answers (Elbassuoni et al. (2009) evaluated the SPARQL queries, but the underlying questions are formulated in natural language.) The NAGA collection is based on linking data from IMDB with the Yago2 knowledge base. This is an interesting linkeddata case: IMDB provides data about movies, actors, directors, and movie plots (in the form of descriptive keywords and phrases); Yago2 adds semantic types and relational facts for the participating entities. Yago2 provides nearly 3 million concepts an</context>
+</contexts>
+<marker>Elbassuoni, Ramanath, Weikum, 2011</marker>
+<rawString>Elbassuoni, S.; Ramanath, M.; and Weikum, G. 2011. Query relaxation for entity-relationship search. In ESWC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Fader</author>
+<author>S Soderland</author>
+<author>O Etzioni</author>
+</authors>
+<title>Identifying relations for open information extraction.</title>
+<date>2011</date>
+<booktitle>In EMNLP.</booktitle>
+<contexts>
+<context position="13481" citStr="Fader et al., 2011" startWordPosition="2142" endWordPosition="2145">e use a detector that works against a phrase-concept dictionary which looks as follows: {‘Rome’,‘eternal city’} → Rome {‘Casablanca’} → Casablanca (film) We experimented with using third-party named entity recognizers but the results were not satisfactory. This dictionary was mostly constructed as part of the knowledge base, independently of the questionto-query translation task in the form of instances of the means relation in Yago2, an example of which is shown in Figure 1 For relation detection, we experimented with various approaches. We mainly rely on a relation detector based on ReVerb (Fader et al., 2011) with additional POS tag patterns, in addition to our own which looks for patterns in dependency parses. 3.2 Phrase Mapping After phrases are detected, each phrase is mapped to a set of semantic items. The mapping of concept phrases also relies on the phrase-concept dictionary. To map relation phrases, we rely on a corpus of textual patterns to relation mappings of the form: {‘play’,‘star in’,‘act’,‘leading role’} → actedIn {‘married’, ‘spouse’,‘wife’} → marriedTo Distinct phrase occurrences will map to different semantic item instances. We discuss why this is important when we discuss the con</context>
+</contexts>
+<marker>Fader, Soderland, Etzioni, 2011</marker>
+<rawString>Fader, A.; Soderland, S.; and Etzioni, O. 2011. Identifying relations for open information extraction. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D A Ferrucci</author>
+<author>E W Brown</author>
+<author>J Chu-Carroll</author>
+<author>J Fan</author>
+<author>D Gondek</author>
+<author>A Kalyanpur</author>
+<author>A Lally</author>
+<author>J W Murdock</author>
+<author>E Nyberg</author>
+<author>J M Prager</author>
+<author>N Schlaefer</author>
+<author>C A Welty</author>
+</authors>
+<title>Building Watson: An Overview of the DeepQA Project.</title>
+<date>2010</date>
+<journal>AI Magazine</journal>
+<volume>31</volume>
+<issue>3</issue>
+<contexts>
+<context position="34273" citStr="Ferrucci et al., 2010" startWordPosition="5668" endWordPosition="5671">chman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent</context>
+</contexts>
+<marker>Ferrucci, Brown, Chu-Carroll, Fan, Gondek, Kalyanpur, Lally, Murdock, Nyberg, Prager, Schlaefer, Welty, 2010</marker>
+<rawString>Ferrucci, D. A.; Brown, E. W.; Chu-Carroll, J.; Fan, J.; Gondek, D.; Kalyanpur, A.; Lally, A.; Murdock, J. W.; Nyberg, E.; Prager, J. M.; Schlaefer, N.; and Welty, C. A. 2010. Building Watson: An Overview of the DeepQA Project. AI Magazine 31(3).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Frank</author>
+<author>H-U Krieger</author>
+<author>F Xu</author>
+<author>H Uszkoreit</author>
+<author>B Crysmann</author>
+<author>B J¨org</author>
+<author>U Sch¨afer</author>
+</authors>
+<title>Question Answering from Structured Knowledge Sources.</title>
+<date>2007</date>
+<journal>J. Applied Logic</journal>
+<volume>5</volume>
+<issue>1</issue>
+<marker>Frank, Krieger, Xu, Uszkoreit, Crysmann, J¨org, Sch¨afer, 2007</marker>
+<rawString>Frank, A.; Krieger, H.-U.; Xu, F.; Uszkoreit, H.; Crysmann, B.; J¨org, B.; and Sch¨afer, U. 2007. Question Answering from Structured Knowledge Sources. J. Applied Logic 5(1).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Gurobi Optimization</author>
+<author>Inc</author>
+</authors>
+<date>2012</date>
+<journal>Gurobi Optimizer Reference Manual. http://www.gurobi.com/.</journal>
+<marker>Optimization, Inc, 2012</marker>
+<rawString>Gurobi Optimization, Inc. 2012. Gurobi Optimizer Reference Manual. http://www.gurobi.com/.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>T Heath</author>
+<author>C Bizer</author>
+</authors>
+<title>Linked Data: Evolving the Web into a Global Data Space.</title>
+<date>2011</date>
+<journal>Claypool,</journal>
+<volume>1</volume>
+<pages>edition.</pages>
+<publisher>Morgan &amp;</publisher>
+<location>San Rafael, CA:</location>
+<contexts>
+<context position="1611" citStr="Heath and Bizer, 2011" startWordPosition="224" endWordPosition="227">, and relations; and the construction of SPARQL triple patterns. Our solution harnesses the rich type system provided by knowledge bases in the web of linked data, to constrain our semantic-coherence objective function. We present experiments on both the question translation and the resulting query answering. 1 Introduction 1.1 Motivation Recently, very large, structured, and semantically rich knowledge bases have become available. Examples are Yago (Suchanek et al., 2007), DBpedia (Auer et al., 2007), and Freebase (Bollacker et al., 2008). DBpedia forms the nucleus of the Web of Linked Data (Heath and Bizer, 2011), which interconnects hundreds of RDF data sources with a total of 30 billion subject-property-object (SPO) triples. The diversity of linked-data sources and their high heterogeneity make it difficult for humans to search and discover relevant information. As linked data is in RDF format, the standard approach would be to run structured queries in triple-pattern-based languages like SPARQL, but only expert programmers are able to precisely specify their information needs and cope with the high heterogeneity of the data (and absence or very high complexity of schema information). For less initi</context>
+</contexts>
+<marker>Heath, Bizer, 2011</marker>
+<rawString>Heath, T., and Bizer, C. 2011. Linked Data: Evolving the Web into a Global Data Space. San Rafael, CA: Morgan &amp; Claypool, 1 edition.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>L Hirschman</author>
+<author>R Gaizauskas</author>
+</authors>
+<title>Natural Language Question Answering: The View from Here.</title>
+<date>2001</date>
+<journal>Nat. Lang. Eng.</journal>
+<volume>7</volume>
+<contexts>
+<context position="33677" citStr="Hirschman and Gaizauskas, 2001" startWordPosition="5564" endWordPosition="5567">ter relaxation, the judges again assessed the results of the relaxed queries and determined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) dem</context>
+</contexts>
+<marker>Hirschman, Gaizauskas, 2001</marker>
+<rawString>Hirschman, L., and Gaizauskas, R. 2001. Natural Language Question Answering: The View from Here. Nat. Lang. Eng. 7.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Hoffart</author>
+<author>A Y Mohamed</author>
+<author>I Bordino</author>
+<author>H F¨urstenau</author>
+<author>M Pinkal</author>
+<author>M Spaniol</author>
+<author>B Taneva</author>
+<author>S Thaterm</author>
+<author>G Weikum</author>
+</authors>
+<title>Robust Disambiguation of Named Entities in Text.</title>
+<date>2011</date>
+<booktitle>In EMNLP.</booktitle>
+<marker>Hoffart, Mohamed, Bordino, F¨urstenau, Pinkal, Spaniol, Taneva, Thaterm, Weikum, 2011</marker>
+<rawString>Hoffart, J.; Mohamed, A. Y.; Bordino, I.; F¨urstenau, H.; Pinkal, M.; Spaniol, M.; Taneva, B.; Thaterm S.; and Weikum, G. 2011. Robust Disambiguation of Named Entities in Text. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Hoffart</author>
+<author>F M Suchanek</author>
+<author>K Berberich</author>
+<author>E LewisKelham</author>
+<author>G de Melo</author>
+<author>G Weikum</author>
+</authors>
+<title>Yago2: exploring and querying world knowledge in time, space, context, and many languages.</title>
+<date>2011</date>
+<booktitle>In WWW (Companion Volume).</booktitle>
+<marker>Hoffart, Suchanek, Berberich, LewisKelham, de Melo, Weikum, 2011</marker>
+<rawString>Hoffart, J.; Suchanek, F. M.; Berberich, K.; LewisKelham, E.; de Melo, G.; and Weikum, G. 2011. Yago2: exploring and querying world knowledge in time, space, context, and many languages. In WWW (Companion Volume).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>A Kalyanpur</author>
+<author>J W Murdock</author>
+<author>J Fan</author>
+<author>C A Welty</author>
+</authors>
+<title>Leveraging community-built knowledge for type coercion in question answering.</title>
+<date>2011</date>
+<booktitle>In International Semantic Web Conference.</booktitle>
+<contexts>
+<context position="34861" citStr="Kalyanpur et al., 2011" startWordPosition="5767" endWordPosition="5770">son project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne Jerry Zaks type actor. Jerry Zaks wasBornIn Stuttgart Table 5: Top-4 results for the QALD question “Which actor</context>
+</contexts>
+<marker>Kalyanpur, Murdock, Fan, Welty, 2011</marker>
+<rawString>Kalyanpur, A.; Murdock, J. W.; Fan, J.; and Welty, C. A. 2011. Leveraging community-built knowledge for type coercion in question answering. In International Semantic Web Conference.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>B Katz</author>
+<author>S Felshin</author>
+<author>G Marton</author>
+<author>F Mora</author>
+<author>Y K Shen</author>
+<author>G Zaccak</author>
+<author>A Ammar</author>
+<author>E Eisner</author>
+<author>A Turgut</author>
+<author>L B Westrick</author>
+</authors>
+<title>CSAIL at TREC</title>
+<date>2007</date>
+<booktitle>In TREC.</booktitle>
+<contexts>
+<context position="33728" citStr="Katz et al., 2007" startWordPosition="5574" endWordPosition="5577">axed queries and determined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in W</context>
+</contexts>
+<marker>Katz, Felshin, Marton, Mora, Shen, Zaccak, Ammar, Eisner, Turgut, Westrick, 2007</marker>
+<rawString>Katz, B.; Felshin, S.; Marton, G.; Mora, F.; Shen, Y. K.; Zaccak, G.; Ammar, A.; Eisner, E.; Turgut, A.; and Westrick, L. B. 2007. CSAIL at TREC 2007 Question Answering. In TREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>S Kulkarni</author>
+<author>A Singh</author>
+<author>G Ramakrishnan</author>
+<author>S Chakrabarti</author>
+</authors>
+<title>Collective annotation of wikipedia entities in web text.</title>
+<date>2009</date>
+<booktitle>In KDD.</booktitle>
+<contexts>
+<context position="18249" citStr="Kulkarni et al., 2009" startWordPosition="2921" endWordPosition="2924"> phrases are mapped. As the result of disambiguating one phrase can influence the mapping of other phrases, we consider all phrases jointly in one big disambiguation task. In the following, we construct a disambiguation graph that encodes all possible mappings. We impose a variety of complex constraints (mutual exclusion among overlapping phrases, type constraints among the selected semantic items, etc.), and define an objective function that aims to maximize the joint quality of the mapping. The graph construction itself may resemble similar models used in NED (e.g., (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a)). Recall, however, that our task is more complex because we jointly consider entities, classes, and relations in the candidate space of possible mappings. Because of this complication and to capture our complex constraints, we do not employ graph algorithms, but model the general disambiguation problem as an ILP. 4.1 Disambiguation Graph Joint disambiguation takes place over a disambiguation graph DG = (V, E), where V = Vs U Vp U Vq and E = EsimU E h U Eq, where: • Vs is the set ofosemantic items, vs E Vs is an s-node. • Vp is the set of phrases, vp E Vp is called a pn</context>
+<context position="37361" citStr="Kulkarni et al., 2009" startWordPosition="6153" endWordPosition="6156">base. This performs reasonably well for the QALD-1 benchmark: out of 50 test questions, 34 could be mapped, and 19 were correctly answered. Efforts on user-friendly exploration of structured data include keyword search over relational databases (Bhalotia et al., 2002) and structured keyword search (Pound et al., 2010). The latter is a compromise between full natural language and structured queries, where the user provides the structure and the system takes care of the disambiguation of keyword phrases. Our joint disambiguation method was inspired by recent work on NED (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relations. Moreover, instead of graph algorithms or factor-graph learning, we use an ILP for solving the ambiguity problem. This way, we can accommodate expressive constraints, while being able to disambiguate all phrases in a few seconds. DEANNA uses dictionaries of names and phrases for entities, classes, and relations. Spitkovsky and Chang (2012) recently </context>
+</contexts>
+<marker>Kulkarni, Singh, Ramakrishnan, Chakrabarti, 2009</marker>
+<rawString>Kulkarni, S.; Singh, A.; Ramakrishnan, G.; and Chakrabarti, S. 2009. Collective annotation of wikipedia entities in web text. In KDD.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C C T Kwok</author>
+<author>O Etzioni</author>
+<author>D S Weld</author>
+</authors>
+<title>Scaling Question Answering to the Web. In WWW.</title>
+<date>2001</date>
+<contexts>
+<context position="33696" citStr="Kwok et al., 2001" startWordPosition="5568" endWordPosition="5571"> assessed the results of the relaxed queries and determined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kin</context>
+</contexts>
+<marker>Kwok, Etzioni, Weld, 2001</marker>
+<rawString>Kwok, C. C. T.; Etzioni, O.; and Weld, D. S. 2001. Scaling Question Answering to the Web. In WWW.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Y Li</author>
+<author>H Yang</author>
+<author>H V Jagadish</author>
+</authors>
+<title>NaLIX: A Generic Natural Language Search Environment for XML Data.</title>
+<date>2007</date>
+<journal>ACM Trans. Database Syst.</journal>
+<volume>32</volume>
+<issue>4</issue>
+<contexts>
+<context position="36242" citStr="Li, Yang, and Jagadish, 2007" startWordPosition="5977" endWordPosition="5981">includes the work by Frank et al. (2007) and Unger and Cimiano (2011). Frank et al. (2007) used lexical-conceptual templates for query generation. However, this work did not address the crucial issue of disambiguating the constituents of the question. In Pythia, Unger and Cimiano (2011) relied on an ontology-driven grammar for the question language so that questions could be directly mapped onto the vocabulary of the underlying ontology. Such grammars are obviously hard to craft for very large, complex, and evolving knowledge bases. Nalix is an attempt to bring question answering to XML data (Li, Yang, and Jagadish, 2007) by mapping questions to XQuery expressions, relying on human interaction to resolve possible ambiguity. Very recently, Unger et al. (2012) developed a template-based approach based on Pythia, where questions are automatically mapped to structured queries in a two step process. First, a set of query templates are generated for a question, independent of the knowledge base, determining the structure of the query. After that, each template is instantiated with semantic items from the knowledge base. This performs reasonably well for the QALD-1 benchmark: out of 50 test questions, 34 could be ma</context>
+</contexts>
+<marker>Li, Yang, Jagadish, 2007</marker>
+<rawString>Li, Y.; Yang, H.; and Jagadish, H. V. 2007. NaLIX: A Generic Natural Language Search Environment for XML Data. ACM Trans. Database Syst. 32(4).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>D N Milne</author>
+<author>I H Witten</author>
+</authors>
+<title>Learning to link with wikipedia.</title>
+<date>2008</date>
+<booktitle>In CIKM.</booktitle>
+<contexts>
+<context position="18226" citStr="Milne and Witten, 2008" startWordPosition="2917" endWordPosition="2920">that only nonoverlapping phrases are mapped. As the result of disambiguating one phrase can influence the mapping of other phrases, we consider all phrases jointly in one big disambiguation task. In the following, we construct a disambiguation graph that encodes all possible mappings. We impose a variety of complex constraints (mutual exclusion among overlapping phrases, type constraints among the selected semantic items, etc.), and define an objective function that aims to maximize the joint quality of the mapping. The graph construction itself may resemble similar models used in NED (e.g., (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a)). Recall, however, that our task is more complex because we jointly consider entities, classes, and relations in the candidate space of possible mappings. Because of this complication and to capture our complex constraints, we do not employ graph algorithms, but model the general disambiguation problem as an ILP. 4.1 Disambiguation Graph Joint disambiguation takes place over a disambiguation graph DG = (V, E), where V = Vs U Vp U Vq and E = EsimU E h U Eq, where: • Vs is the set ofosemantic items, vs E Vs is an s-node. • Vp is the set of phrases,</context>
+<context position="37338" citStr="Milne and Witten, 2008" startWordPosition="6149" endWordPosition="6152">tems from the knowledge base. This performs reasonably well for the QALD-1 benchmark: out of 50 test questions, 34 could be mapped, and 19 were correctly answered. Efforts on user-friendly exploration of structured data include keyword search over relational databases (Bhalotia et al., 2002) and structured keyword search (Pound et al., 2010). The latter is a compromise between full natural language and structured queries, where the user provides the structure and the system takes care of the disambiguation of keyword phrases. Our joint disambiguation method was inspired by recent work on NED (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relations. Moreover, instead of graph algorithms or factor-graph learning, we use an ILP for solving the ambiguity problem. This way, we can accommodate expressive constraints, while being able to disambiguate all phrases in a few seconds. DEANNA uses dictionaries of names and phrases for entities, classes, and relations. Spitkovsky and</context>
+</contexts>
+<marker>Milne, Witten, 2008</marker>
+<rawString>Milne, D. N., and Witten, I. H. 2008. Learning to link with wikipedia. In CIKM.</rawString>
+</citation>
+<citation valid="false">
+<authors>
+<author>Ndapandula Nakashole</author>
+</authors>
+<title>Gerhard Weikum and Fabian Suchanek 2012. PATTY: A Taxonomy of Relational Patterns with Semantic Types.</title>
+<booktitle>In EMNLP.</booktitle>
+<marker>Nakashole, </marker>
+<rawString>Ndapandula Nakashole, Gerhard Weikum and Fabian Suchanek 2012. PATTY: A Taxonomy of Relational Patterns with Semantic Types. In EMNLP.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>R Navigli</author>
+</authors>
+<title>Word sense disambiguation: A survey.</title>
+<date>2009</date>
+<journal>ACM Comput. Surv.</journal>
+<volume>41</volume>
+<issue>2</issue>
+<contexts>
+<context position="37409" citStr="Navigli, 2009" startWordPosition="6163" endWordPosition="6164">hmark: out of 50 test questions, 34 could be mapped, and 19 were correctly answered. Efforts on user-friendly exploration of structured data include keyword search over relational databases (Bhalotia et al., 2002) and structured keyword search (Pound et al., 2010). The latter is a compromise between full natural language and structured queries, where the user provides the structure and the system takes care of the disambiguation of keyword phrases. Our joint disambiguation method was inspired by recent work on NED (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relations. Moreover, instead of graph algorithms or factor-graph learning, we use an ILP for solving the ambiguity problem. This way, we can accommodate expressive constraints, while being able to disambiguate all phrases in a few seconds. DEANNA uses dictionaries of names and phrases for entities, classes, and relations. Spitkovsky and Chang (2012) recently released a huge dictionary of pairs of phrases a</context>
+</contexts>
+<marker>Navigli, 2009</marker>
+<rawString>Navigli, R. 2009. Word sense disambiguation: A survey. ACM Comput. Surv. 41(2).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>J Pound</author>
+<author>I F Ilyas</author>
+<author>G E Weddell</author>
+</authors>
+<title>Expressive and Flexible Access to Web-extracted Data: A Keyword-based Structured Query Language.</title>
+<date>2010</date>
+<booktitle>In SIGMOD.</booktitle>
+<contexts>
+<context position="4217" citStr="Pound et al. (2010)" startWordPosition="635" endWordPosition="638">guage Learning, pages 379–390, Jeju Island, Korea, 12–14 July 2012. c�2012 Association for Computational Linguistics up with the precise choices for relations, classes, and entities. This would require familiarity with the contents of the knowledge base, which no average user is expected to have. Our goal is to automatically create such structured queries by mapping the user’s question into this representation. Keyword search is usually not a viable alternative when the information need involves joining multiple triples to construct the final result, notwithstanding good attempts like that of Pound et al. (2010). In the example, the obvious keyword query “female actress Casablanca married writer born Rome” lacks a clear specification of the relations among the different entities. 1.2 Problem Given a natural language question qNL and a knowledge base KB, our goal is to translate qNL into a formal query qFL that captures the information need expressed by qNL. We focus on input questions that put the emphasis on entities, classes, and relations between them. We do not consider aggregations (counting, max/min, etc.) and negations. As a result, we generate structured queries of the form known as conjuncti</context>
+<context position="37059" citStr="Pound et al., 2010" startWordPosition="6103" endWordPosition="6106">e questions are automatically mapped to structured queries in a two step process. First, a set of query templates are generated for a question, independent of the knowledge base, determining the structure of the query. After that, each template is instantiated with semantic items from the knowledge base. This performs reasonably well for the QALD-1 benchmark: out of 50 test questions, 34 could be mapped, and 19 were correctly answered. Efforts on user-friendly exploration of structured data include keyword search over relational databases (Bhalotia et al., 2002) and structured keyword search (Pound et al., 2010). The latter is a compromise between full natural language and structured queries, where the user provides the structure and the system takes care of the disambiguation of keyword phrases. Our joint disambiguation method was inspired by recent work on NED (Milne and Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relations. Moreover, instead of graph algorithms or factor-</context>
+</contexts>
+<marker>Pound, Ilyas, Weddell, 2010</marker>
+<rawString>Pound, J.; Ilyas, I. F.; and Weddell, G. E. 2010. Expressive and Flexible Access to Web-extracted Data: A Keyword-based Structured Query Language. In SIGMOD.</rawString>
+</citation>
+<citation valid="true">
+<date>2011</date>
+<booktitle>1st Workshop on Question Answering over Linked Data (QALD-1).</booktitle>
+<pages>1</pages>
+<contexts>
+<context position="35683" citStr="(2011)" startWordPosition="5892" endWordPosition="5892">ming system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne Jerry Zaks type actor. Jerry Zaks wasBornIn Stuttgart Table 5: Top-4 results for the QALD question “Which actors were born in Germany?” after relaxation interaction with the user to interpret the question. Earlier work on mapping questions into structured queries includes the work by Frank et al. (2007) and Unger and Cimiano (2011). Frank et al. (2007) used lexical-conceptual templates for query generation. However, this work did not address the crucial issue of disambiguating the constituents of the question. In Pythia, Unger and Cimiano (2011) relied on an ontology-driven grammar for the question language so that questions could be directly mapped onto the vocabulary of the underlying ontology. Such grammars are obviously hard to craft for very large, complex, and evolving knowledge bases. Nalix is an attempt to bring question answering to XML data (Li, Yang, and Jagadish, 2007) by mapping questions to XQuery expressi</context>
+</contexts>
+<marker>2011</marker>
+<rawString>2011. 1st Workshop on Question Answering over Linked Data (QALD-1). http://www.sc.cit-ec.unibielefeld.de/qald-1.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>P Resnik</author>
+</authors>
+<title>Using Information Content to Evaluate Semantic Similarity in a Taxonomy. In IJCAI.</title>
+<date>1995</date>
+<contexts>
+<context position="20211" citStr="Resnik, 1995" startWordPosition="3281" endWordPosition="3282">ed earlier, can be seen as a qnode along with its outgoing q-edges. Figure 3 shows the disambiguation graph for our running example (excluding coherence edges between s-nodes). 4.2 Edge Weights We next describe how the weights on similarity edges and semantic coherence edges are defined. 383 Figure 3: Disambiguation graph for the running example. 4.2.1 Semantic Coherence Semantic coherence, Cohsem, captures to what extent two semantic items occur in the same context. This is different from semantic similarity (Simsem), which is usually evaluated using the distance between nodes in a taxonomy (Resnik, 1995). While we expect Simsem(George Bush, Woody Allen) to be higher than Simsem(Woody Allen, Terminator) we would like Cohsem(Woody Allen, Terminator), both of which are from the entertainment domain, to be higher than Cohsem(George Bush, Woody Allen). For Yago2, we characterize an entity e by its inlinks InLinks(e): the set of Yago2 entities whose corresponding Wikipedia pages link to the entity. To be able to compare semantic items of different semantic types (entities, relations, and classes), we need to extend this to classes and relations. For class c with entities e, its inlinks are defined </context>
+</contexts>
+<marker>Resnik, 1995</marker>
+<rawString>Resnik, P. 1995. Using Information Content to Evaluate Semantic Similarity in a Taxonomy. In IJCAI.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>V I Spitkovsky Spitkovsky</author>
+<author>A X Chang</author>
+</authors>
+<title>A Cross-Lingual Dictionary for English Wikipedia Concepts.</title>
+<date>2012</date>
+<booktitle>In LREC.</booktitle>
+<contexts>
+<context position="37951" citStr="Spitkovsky and Chang (2012)" startWordPosition="6245" endWordPosition="6248">d Witten, 2008; Kulkarni et al., 2009; Hoffart et al., 2011a) and WSD (Navigli, 2009). In contrast to this prior work on related problems, our graph construction and constraints are more complex, as we address the joint mapping of arbitrary phrases onto entities, classes, or relations. Moreover, instead of graph algorithms or factor-graph learning, we use an ILP for solving the ambiguity problem. This way, we can accommodate expressive constraints, while being able to disambiguate all phrases in a few seconds. DEANNA uses dictionaries of names and phrases for entities, classes, and relations. Spitkovsky and Chang (2012) recently released a huge dictionary of pairs of phrases and Wikipedia links, derived from Google’s Web index. For relations, Nakashole et al. (2012) released PATTY, a large taxonomy of patterns with semantic types. 7 Conclusions and Future Work We presented a method for translating naturallanguage questions into structured queries. The novelty of this method lies in modeling several mapping stages as a joint ILP problem. We harness type signatures and other information from large-scale knowledge bases. Although our model, in principle, leads to high combinatorial complexity, we observed that </context>
+</contexts>
+<marker>Spitkovsky, Chang, 2012</marker>
+<rawString>Spitkovsky, V. I. Spitkovsky; Chang, A. X. ; 2012. A Cross-Lingual Dictionary for English Wikipedia Concepts. In LREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>F M Suchanek</author>
+<author>G Kasneci</author>
+<author>G Weikum</author>
+</authors>
+<title>Yago: a core of semantic knowledge.</title>
+<date>2007</date>
+<booktitle>In WWW.</booktitle>
+<contexts>
+<context position="1466" citStr="Suchanek et al., 2007" startWordPosition="198" endWordPosition="201">m to solve several disambiguation tasks jointly: the segmentation of questions into phrases; the mapping of phrases to semantic entities, classes, and relations; and the construction of SPARQL triple patterns. Our solution harnesses the rich type system provided by knowledge bases in the web of linked data, to constrain our semantic-coherence objective function. We present experiments on both the question translation and the resulting query answering. 1 Introduction 1.1 Motivation Recently, very large, structured, and semantically rich knowledge bases have become available. Examples are Yago (Suchanek et al., 2007), DBpedia (Auer et al., 2007), and Freebase (Bollacker et al., 2008). DBpedia forms the nucleus of the Web of Linked Data (Heath and Bizer, 2011), which interconnects hundreds of RDF data sources with a total of 30 billion subject-property-object (SPO) triples. The diversity of linked-data sources and their high heterogeneity make it difficult for humans to search and discover relevant information. As linked data is in RDF format, the standard approach would be to run structured queries in triple-pattern-based languages like SPARQL, but only expert programmers are able to precisely specify the</context>
+<context position="34635" citStr="Suchanek et al., 2007" startWordPosition="5730" endWordPosition="5733">t keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose complex questions into several cues and sub-cues, with the aim of generating answers from matches for the various cues (tapping into the Web and Wikipedia). Knowledge bases like DBpedia (Auer et al., 2007), Freebase (Bollacker et al., 2008), and Yago (Suchanek et al., 2007)) are used for both answering parts of questions that can be translated to structured form (Chu-Carroll et al., 2012) and typechecking possible answer candidates and thus filtering out spurious results (Kalyanpur et al., 2011). The recent QALD-1 initiative (QAL, 2011) proposed a benchmark task to translate questions into SPARQL queries over linked-data sources like DBpedia and MusicBrainz. FREyA (Damljanovic et al., 2011), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke </context>
+</contexts>
+<marker>Suchanek, Kasneci, Weikum, 2007</marker>
+<rawString>Suchanek, F. M.; Kasneci, G.; and Weikum, G. 2007. Yago: a core of semantic knowledge. In WWW.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>G Tummarello</author>
+<author>R Cyganiak</author>
+<author>M Catasta</author>
+<author>S Danielczyk</author>
+<author>R Delbru</author>
+<author>S Decker</author>
+</authors>
+<title>Sig.ma: Live views on the web of data.</title>
+<date>2010</date>
+<journal>J. Web Sem.</journal>
+<volume>8</volume>
+<issue>4</issue>
+<contexts>
+<context position="2340" citStr="Tummarello et al., 2010" startWordPosition="339" endWordPosition="342">O) triples. The diversity of linked-data sources and their high heterogeneity make it difficult for humans to search and discover relevant information. As linked data is in RDF format, the standard approach would be to run structured queries in triple-pattern-based languages like SPARQL, but only expert programmers are able to precisely specify their information needs and cope with the high heterogeneity of the data (and absence or very high complexity of schema information). For less initiated users the only option to query this rich data is by keyword search (e.g., via services like sig.ma (Tummarello et al., 2010)). None of these approaches is satisfactory. Instead, the by far most convenient approach would be to search in knowledge bases and the Web of linked data by means of natural-language questions. As an example, consider a quiz question like “Which female actor played in Casablanca and is married to a writer who was born in Rome?”. The answer could be found by querying several linked data sources together, like the IMDBstyle LinkedMDB movie database and the DBpedia knowledge base, exploiting that there are entity-level sameAs links between these collections. One can think of different formulatio</context>
+</contexts>
+<marker>Tummarello, Cyganiak, Catasta, Danielczyk, Delbru, Decker, 2010</marker>
+<rawString>Tummarello, G.; Cyganiak, R.; Catasta, M.; Danielczyk, S.; Delbru, R.; and Decker, S. 2010. Sig.ma: Live views on the web of data. J. Web Sem. 8(4).</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Unger</author>
+<author>P Cimiano</author>
+</authors>
+<title>Pythia: Compositional Meaning Construction for Ontology-Based Question Answering on the Semantic Web. In NLDB.</title>
+<date>2011</date>
+<contexts>
+<context position="35683" citStr="Unger and Cimiano (2011)" startWordPosition="5889" endWordPosition="5892">), the best performing system, relies on 387 Q: ?x type actor.?x wasBornIn ?z[Germany] Martin Lawrence type actor. Martin Lawrence wasBornIn Frankfurt am Main Robert Schwentke type actor. Robert Schwentke wasBornIn Stuttgart Willy Millowitsch type actor. Willy Millowitsch wasBornIn Cologne Jerry Zaks type actor. Jerry Zaks wasBornIn Stuttgart Table 5: Top-4 results for the QALD question “Which actors were born in Germany?” after relaxation interaction with the user to interpret the question. Earlier work on mapping questions into structured queries includes the work by Frank et al. (2007) and Unger and Cimiano (2011). Frank et al. (2007) used lexical-conceptual templates for query generation. However, this work did not address the crucial issue of disambiguating the constituents of the question. In Pythia, Unger and Cimiano (2011) relied on an ontology-driven grammar for the question language so that questions could be directly mapped onto the vocabulary of the underlying ontology. Such grammars are obviously hard to craft for very large, complex, and evolving knowledge bases. Nalix is an attempt to bring question answering to XML data (Li, Yang, and Jagadish, 2007) by mapping questions to XQuery expressi</context>
+</contexts>
+<marker>Unger, Cimiano, 2011</marker>
+<rawString>Unger, C.; and Cimiano, P. 2011. Pythia: Compositional Meaning Construction for Ontology-Based Question Answering on the Semantic Web. In NLDB.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>C Unger</author>
+<author>L B¨uhmann</author>
+<author>J Lehmann</author>
+<author>Ngonga Ngomo</author>
+<author>A-C Gerber</author>
+<author>D</author>
+<author>P Cimiano</author>
+</authors>
+<title>Templatebased question answering over RDF data. In WWW.</title>
+<date>2012</date>
+<marker>Unger, B¨uhmann, Lehmann, Ngomo, Gerber, D, Cimiano, 2012</marker>
+<rawString>Unger, C.; B¨uhmann, L.; Lehmann, J.; Ngonga Ngomo, A.-C.; Gerber, D.; and Cimiano, P. 2012. Templatebased question answering over RDF data. In WWW.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>E M Voorhees</author>
+</authors>
+<title>Overview of the trec</title>
+<date>2003</date>
+<booktitle>In TREC.</booktitle>
+<contexts>
+<context position="33764" citStr="Voorhees, 2003" startWordPosition="5582" endWordPosition="5583">ey were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA. A key element in Watson’s approach is to decompose com</context>
+</contexts>
+<marker>Voorhees, 2003</marker>
+<rawString>Voorhees, E. M. 2003. Overview of the trec 2003 question answering track. In TREC.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>M Yahya</author>
+<author>K Berberich</author>
+<author>S Elbassuoni</author>
+<author>M Ramanath</author>
+<author>V Tresp</author>
+<author>G Weikum</author>
+</authors>
+<title>Deep answers for naturally asked questions on the web of data.</title>
+<date>2012</date>
+<booktitle>In WWW.</booktitle>
+<contexts>
+<context position="33386" citStr="Yahya et al., 2012" startWordPosition="5524" endWordPosition="5527">re then ranked based on how well they match the keyword conditions specified in the relaxed query using the ranking model in (Elbassuoni et al., 2009). Using this technique, the top ranked results for the relaxed query were all actors born in German cities as shown in Table 5. After relaxation, the judges again assessed the results of the relaxed queries and determined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passa</context>
+</contexts>
+<marker>Yahya, Berberich, Elbassuoni, Ramanath, Tresp, Weikum, 2012</marker>
+<rawString>Yahya, M.; Berberich, K.; Elbassuoni, S.; Ramanath, M.; Tresp, V.; and Weikum, G. 2012. Deep answers for naturally asked questions on the web of data. In WWW.</rawString>
+</citation>
+<citation valid="true">
+<authors>
+<author>Z Zheng</author>
+</authors>
+<title>AnswerBus Question Answering System. In HLT.</title>
+<date>2002</date>
+<contexts>
+<context position="33709" citStr="Zheng, 2002" startWordPosition="5572" endWordPosition="5573">ts of the relaxed queries and determined whether they were satisfactory or not. The number of additional queries that obtained satisfactory answers after relaxation are shown under #relaxed in Table 3. The evaluation data, in addition to a demonstration of our system (Yahya et al., 2012), can be found at http://mpi-inf.mpg.de/yago-naga/deanna/. 6 Related Work Question answering has a long history in NLP and IR research. The Web and Wikipedia have proved to be a valuable resource for answering fact-oriented questions. State-of-the-art methods (Hirschman and Gaizauskas, 2001; Kwok et al., 2001; Zheng, 2002; Katz et al., 2007; Dang et al., 2007; Voorhees, 2003) cast the user’s question into a keyword query to a Web search engine (perhaps with phrases for location and person names or other proper nouns). Key to finding good results is to retrieve and rank sentences or short passages that contain all or most keywords and are likely to yield good answers. Together with trained classifiers for the question type (and thus the desired answer type), this methodology performs fairly well for both factoid and list questions. IBM’s Watson project (Ferrucci et al., 2010) demonstrated a new kind of deep QA.</context>
+</contexts>
+<marker>Zheng, 2002</marker>
+<rawString>Zheng, Z. 2002. AnswerBus Question Answering System. In HLT.</rawString>
+</citation>
+</citationList>
+</algorithm>
+</algorithms>
