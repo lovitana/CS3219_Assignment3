@@ -1,10 +1,15 @@
 package sg.cs3219.app.extract;
 
-import java.io.*;
+import java.io.File;
+
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
 
-import org.w3c.dom.*;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 
 public class Loader {
 	public static void main(String[] args) {
@@ -13,17 +18,14 @@ public class Loader {
 			DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
 			DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
 			Document doc = dBuilder.parse(inputFile);
-			NodeList nList = doc.getElementsByTagName("algorithm");
-			 for (int temp = 0; temp < nList.getLength(); temp++) {
-		            Node nNode = nList.item(temp);
-		            System.out.println("\nCurrent Element :" + nNode.getNodeName());
-		            if (nNode.getNodeType() == Node.ELEMENT_NODE) {
-		                Element eElement = (Element) nNode;
-		                System.out.println("title : " 
-		                   + eElement.getElementsByTagName("author").item(0).getTextContent());
-		            }
-			 }
-			
+			doc.getDocumentElement().normalize();
+
+	        XPath xPath =  XPathFactory.newInstance().newXPath();
+	        String expression = "/algorithms/algorithm";
+	         NodeList nodeList = (NodeList) xPath.compile(expression).evaluate(
+	            doc, XPathConstants.NODESET);
+	        
+	        
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
