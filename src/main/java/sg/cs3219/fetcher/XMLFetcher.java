@@ -77,6 +77,9 @@ public class XMLFetcher implements Answerer{
 	        			 if(citations.item(i).getNodeType() == Node.ELEMENT_NODE){
 	        				 Map<String,String> attrRef = new HashMap<>();
 	        				 Element citation = (Element) citations.item(i);
+	        				 if(citation.getAttribute("valid").equals("false")){
+	        					 continue;
+	        				 }
 		        			 for(String s: RefPaper.ATT){
 		        				 NodeList att = citation.getElementsByTagName(s);
 			        			 if(att.getLength()>0){
