@@ -5,9 +5,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-public class RefPaper extends DataModel {
+public final class RefPaper extends DataModel {
 	
-	private static final List<String> ATT = Collections.unmodifiableList(Arrays.asList(
+	public static final List<String> ATT = Collections.unmodifiableList(Arrays.asList(
 			"booktitle","author","title","date","editor","affiliation","note","pages","publisher",
 			"volume","issue","number","marker","tech"
 			));

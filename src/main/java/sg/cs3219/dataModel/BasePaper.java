@@ -5,9 +5,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-public class BasePaper extends DataModel {
+public final class BasePaper extends DataModel {
 	
-	private static final List<String> ATT = Collections.unmodifiableList(Arrays.asList(
+	public static final List<String> ATT = Collections.unmodifiableList(Arrays.asList(
 			"title","author","affiliation","address","email"
 			));
 	

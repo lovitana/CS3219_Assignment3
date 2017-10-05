@@ -4,26 +4,37 @@ import java.util.List;
 
 import sg.cs3219.dataModel.DataModel;
 
-public class FunctionnalQuery<T> implements Query<T>{
+public final class FunctionnalQuery<T> implements Query<T>{
 	
+	private final T zero;
 	private final Criteria crit;
 	private final Combiner<T> comb;
 	private final Output<T> out;
 	
-	public FunctionnalQuery(Criteria crit,Combiner<T> comb,Output<T> out){
+	public FunctionnalQuery(T zero,Criteria crit,Combiner<T> comb,Output<T> out){
+		this.zero = zero;
 		this.crit = crit;
 		this.comb = comb;
 		this.out = out;
 	}
 
+
+	@Override
+	public T zero() {
+		return zero;
+	}
+	
+	@Override
 	public boolean criteria(List<DataModel> data) {
 		return crit.evaluate(data);
 	}
 
+	@Override
 	public T combine(List<DataModel> data, T oldResult) {
 		return comb.combine(data, oldResult);
 	}
 
+	@Override
 	public String output(T finalResult) {
 		return out.out(finalResult);
 	}
@@ -48,4 +59,5 @@ public class FunctionnalQuery<T> implements Query<T>{
 		public abstract String out(T result);
 		
 	}
+
 }
