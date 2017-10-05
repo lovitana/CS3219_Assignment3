@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -22,17 +23,19 @@ public class XMLFetcher implements Answerer{
 	private Loader<Document> loader;
 	private List<Document> docs;
 	
-	public XMLFetcher(Loader<Document> loader) {
+	public XMLFetcher(Loader<Document> loader,Collection<String> srcs) {
 		this.loader = loader;
+		setSources(srcs);
 	}
 	
 	public void setSources(Collection<String> srcs){
-		docs = loader.loadMultiple(srcs);
+		docs = Objects.requireNonNull(loader.loadMultiple(srcs));
 	}
 	
 	
 	@Override
 	public <T> String answer(Query<T> q) {
+		
 		T result = q.zero();
 		for(Document doc : docs){
 	         NodeList nList = doc.getElementsByTagName("algorithm");
@@ -56,6 +59,10 @@ public class XMLFetcher implements Answerer{
 	        	 
 	         }
 	         BasePaper base = new BasePaper(attr);
+	         List<DataModel> data1 = Arrays.asList(base);
+			 if(q.criteria(data1)){
+				 result = q.combine(data1, result);
+			 }
 	         
 	         /*
 	          * References Papers

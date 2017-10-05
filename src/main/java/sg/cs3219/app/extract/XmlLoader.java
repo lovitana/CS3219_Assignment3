@@ -1,6 +1,7 @@
 package sg.cs3219.app.extract;
 
 import java.io.File;
+import java.util.Objects;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -17,6 +18,7 @@ public final class XmlLoader implements Loader<Document> {
 	         DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
 	         Document doc = dBuilder.parse(inputFile);
 	         doc.getDocumentElement().normalize();
+	         Objects.requireNonNull(doc);
 	         return doc;
 		} catch (Exception e) {
 	         throw new IllegalArgumentException("Couldn't load the file "+ src);
