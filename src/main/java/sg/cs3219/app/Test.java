@@ -13,8 +13,8 @@ public class Test {
 
 	public static void main(String[] args) {
 		try{
-			File ressources = new File("src/main/ressources");
-			File[] paths = ressources.listFiles();
+			File resources = new File("src/main/resources");
+			File[] paths = resources.listFiles();
 			List<String> files = new ArrayList<>();
 			for(File path:paths){
 				File[] ps = path.listFiles();
