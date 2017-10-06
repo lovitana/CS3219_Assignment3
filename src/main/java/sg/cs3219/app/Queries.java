@@ -22,9 +22,13 @@ public class Queries {
 	private static Set<String> uniqueCitationSet = new HashSet<String>();
 	private static int[] rangeOfYears = new int[2];
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
+	private static int[] numberOfCitedDocumentsD12 = new int[16];
+	private static final int START_YEAR = 2000;
+	private static final int END_YEAR = 2015;
 
 	public static void main(String[] args) {
 		String path = "src/main/resources";
+		initializations();
 		findTotalDocuments(path);
 		System.out.println("Q1: Total documents: " + XMLpathList.size());
 		findTotalCitations();
@@ -34,6 +38,20 @@ public class Queries {
 		System.out.println("Q4: Total authors in citations: " + totalCitedAuthors);
 		findRangeOfYears();
 		System.out.println("Q5: Range of Years of cited documents: " + rangeOfYears[0] + " - " + rangeOfYears[1]);
+		System.out.println("Q6: Number of cited documents published in following years in D12: ");
+		int initialYear = 2000;
+		for(int i = 0; i < numberOfCitedDocumentsD12 .length; i++) {
+			System.out.print(initialYear + ": " + numberOfCitedDocumentsD12[i] + " , ");
+			initialYear++;
+		}
+	}
+
+	private static void initializations() {
+		rangeOfYears[0] = 3000;
+		rangeOfYears[1] = 0;
+		for (int i = 0; i < numberOfCitedDocumentsD12.length; i++) {
+			numberOfCitedDocumentsD12[i] = 0;
+		}
 	}
 
 	// QUERY 1
@@ -101,8 +119,6 @@ public class Queries {
 
 	// QUERY 5
 	private static void findRangeOfYears() {
-		rangeOfYears[0] = 3000;
-		rangeOfYears[1] = 0;
 		for (String filepath : XMLpathList) {
 			try {
 				DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
@@ -113,7 +129,10 @@ public class Queries {
 					if (!list.item(i).hasAttributes()) {
 						String date = list.item(i).getTextContent().toString();
 						if (date != "") {
-							Integer year = Integer.parseInt(date);
+							int year = Integer.parseInt(date);
+							if ((filepath.contains("D12")) && (year >= START_YEAR) && (year <= END_YEAR)) {
+								countYearOfCitedDocumentD12(year);
+							}
 							if (year < rangeOfYears[0]) {
 								rangeOfYears[0] = year;
 							} else if (year > rangeOfYears[1]) {
@@ -130,5 +149,11 @@ public class Queries {
 				sae.printStackTrace();
 			}
 		}
+	}
+
+	// QUERY 6
+	private static void countYearOfCitedDocumentD12(int year) {
+		int x = year % 2000;
+		numberOfCitedDocumentsD12[x]++;
 	}
 }
