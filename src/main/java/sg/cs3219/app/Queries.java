@@ -3,12 +3,8 @@ package sg.cs3219.app;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
-import java.util.SortedSet;
-import java.util.TreeSet;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -23,9 +19,10 @@ import org.xml.sax.SAXException;
 public class Queries {
 	private static int totalDocuments = 0;
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
-	private static int[][] numberOfCitedDocumentsPerYears = new int[4][16];
 	private static final int START_YEAR = 2000;
 	private static final int END_YEAR = 2015;
+	private static final String[] Q9_Conferences = { "J14", "W14", "Q14", "D14" };
+	private static final String[] Q10_Conferences = { "Q14", "D14" };
 	private static final String EMNLP_FULL_FORM = "EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING";
 	private static final String CONLL_FULL_FORM = "COMPUTATIONAL NATURAL LANGUAGE LEARNING";
 	private static final String AUTHOR_FULL_FORM = "YOSHUA BENGIO";
@@ -33,7 +30,6 @@ public class Queries {
 
 	public static void main(String[] args) {
 		String path = "src/main/resources";
-		initializations();
 
 		// QUERY 1
 		int totalDocs = findTotalDocuments(path);
@@ -85,23 +81,29 @@ public class Queries {
 		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsYoshuaBengio[15]);
 
 		// QUERY 9
-		findPerYear();
+		int[][] numberOfCitedDocumentsPerYears = findPerYear();
 		System.out.println("Q9: number of cited documents published in each of the years from 2010 to 2015: ");
 		for (int i = 0; i < numberOfCitedDocumentsPerYears.length; i++) {
 			for (int j = 0; j < numberOfCitedDocumentsPerYears[0].length; j++) {
-				System.out.print((j + 2000) + " " + numberOfCitedDocumentsPerYears[i][j] + " ");
+				System.out.print(Q9_Conferences[i] + " " + (j + 2000) + " " + numberOfCitedDocumentsPerYears[i][j]);
+				if (j != numberOfCitedDocumentsPerYears[0].length - 1
+						|| i != numberOfCitedDocumentsPerYears.length - 1) {
+					System.out.print(" , ");
+				}
 			}
 		}
 
-	}
-
-	// INITIALIZATIONS
-	private static void initializations() {
-		for (int i = 0; i < numberOfCitedDocumentsPerYears.length; i++) {
-			for (int j = 0; j < numberOfCitedDocumentsPerYears[0].length; j++) {
-				numberOfCitedDocumentsPerYears[i][j] = 0;
+		// QUERY 10
+		int[] resultQ10 = findPerConferencesWhereNAACL();
+		System.out.println("\nQ10: number of cited documents published in Q14,D14 from NAACL ");
+		for (int i = 0; i < resultQ10.length; i++) {
+			System.out.print(Q9_Conferences[i] + " " + resultQ10[i]);
+			if (i != resultQ10.length - 1) {
+				System.out.print(" , ");
 			}
+
 		}
+
 	}
 
 	// QUERY 1
@@ -405,7 +407,8 @@ public class Queries {
 	}
 
 	// QUERY 9
-	private static void findPerYear() {
+	private static int[][] findPerYear() {
+		int[][] numberOfCitedDocumentsPerYears = new int[4][16];
 		for (String filepath : XMLpathList) {
 			if (filepath.contains("J14") || filepath.contains("W14") || filepath.contains("Q14")
 					|| filepath.contains("D14"))
@@ -432,18 +435,10 @@ public class Queries {
 								if (y < 0 || y > 15) {
 									continue;
 								}
-								String confName = filepath.split("/")[4];
-								if (filepath.contains("J14"))
-									numberOfCitedDocumentsPerYears[0][y]++;
-
-								if (filepath.contains("J14"))
-									numberOfCitedDocumentsPerYears[1][y]++;
-
-								if (filepath.contains("J14"))
-									numberOfCitedDocumentsPerYears[2][y]++;
-
-								if (filepath.contains("J14"))
-									numberOfCitedDocumentsPerYears[3][y]++;
+								for (int f = 0; f < Q9_Conferences.length; f++) {
+									if (filepath.contains(Q9_Conferences[f]))
+										numberOfCitedDocumentsPerYears[f][y]++;
+								}
 
 							}
 
@@ -457,6 +452,74 @@ public class Queries {
 					sae.printStackTrace();
 				}
 		}
+		return numberOfCitedDocumentsPerYears;
+
+	}
+
+	// Query10
+	private static int[] findPerConferencesWhereNAACL() {
+		int[] numberOfCitedDocumentsPerYears = new int[2];
+		for (String filepath : XMLpathList) {
+			if (filepath.contains("Q14") || filepath.contains("D14"))
+				try {
+					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+					Document doc = docBuilder.parse(filepath);
+					NodeList citations = doc.getElementsByTagName("citation");
+					cit:for (int i = 0; i < citations.getLength(); i++) {
+						if (citations.item(i).getNodeType() == Node.ELEMENT_NODE) {
+							Element citation = (Element) citations.item(i);
+
+							if (!citation.getAttribute("valid").equals("true")) {
+								continue;
+							}
+
+							NodeList titles = citation.getElementsByTagName("title");
+							if (titles.getLength() > 0) {
+								String title = titles.item(0).getTextContent().toLowerCase();
+								if (title == "") {
+									continue;
+								}
+								if (title.contains("NAACL".toLowerCase()) || title.contains(
+										"North American Chapter of the Association for Computational Linguistics"
+												.toLowerCase())) {
+									for (int f = 0; f < Q10_Conferences.length; f++) {
+										if (filepath.contains(Q10_Conferences[f])){
+											numberOfCitedDocumentsPerYears[f]++;
+										continue cit;
+										}
+									}
+								}
+
+							}
+							NodeList btitles = citation.getElementsByTagName("booktitle");
+							if (btitles.getLength() > 0) {
+								String title = btitles.item(0).getTextContent().toLowerCase();
+								if (title == "") {
+									continue;
+								}
+								if (title.contains("NAACL".toLowerCase()) || title.contains(
+										"North American Chapter of the Association for Computational Linguistics"
+												.toLowerCase())) {
+									for (int f = 0; f < Q10_Conferences.length; f++) {
+										if (filepath.contains(Q10_Conferences[f]))
+											numberOfCitedDocumentsPerYears[f]++;
+									}
+								}
+
+							}
+
+						}
+					}
+				} catch (ParserConfigurationException pce) {
+					pce.printStackTrace();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+				} catch (SAXException sae) {
+					sae.printStackTrace();
+				}
+		}
+		return numberOfCitedDocumentsPerYears;
 
 	}
 }
