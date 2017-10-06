@@ -7,12 +7,14 @@ import sg.cs3219.dataModel.DataModel;
 public final class FunctionnalQuery<T> implements Query<T>{
 	
 	private final T zero;
+	private final boolean base;
 	private final Criteria crit;
 	private final Combiner<T> comb;
 	private final Output<T> out;
 	
-	public FunctionnalQuery(T zero,Criteria crit,Combiner<T> comb,Output<T> out){
+	public FunctionnalQuery(T zero,boolean base,Criteria crit,Combiner<T> comb,Output<T> out){
 		this.zero = zero;
+		this.base = base;
 		this.crit = crit;
 		this.comb = comb;
 		this.out = out;
@@ -22,6 +24,11 @@ public final class FunctionnalQuery<T> implements Query<T>{
 	@Override
 	public T zero() {
 		return zero;
+	}
+
+	@Override
+	public boolean onlybase() {
+		return base;
 	}
 	
 	@Override
@@ -59,5 +66,6 @@ public final class FunctionnalQuery<T> implements Query<T>{
 		public abstract String out(T result);
 		
 	}
+
 
 }
