@@ -16,6 +16,7 @@ import org.xml.sax.SAXException;
 
 public class Queries {
 	private static int totalCitations = 0;
+	private static int totalCitedAuthors = 0;
 	private static Set<String> uniqueCitationSet = new HashSet<String>();
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
 
@@ -26,8 +27,10 @@ public class Queries {
 		findTotalCitations();
 		System.out.println("Q2: Total citations: " + totalCitations);
 		System.out.println("Q3: Total unique citations: " + uniqueCitationSet.size());
+		findTotalAuthorsCited();
+		System.out.println("Q4: Total authors in citations: " + totalCitedAuthors);
 	}
-	
+
 	//QUERY 1
 	private static void findTotalDocuments(String path) {
 		File f = new File(path);
@@ -69,6 +72,25 @@ public class Queries {
 	private static void getUniqueCitations(NodeList list) {
 		for(int i = 0; i < list.getLength(); i++) {
 			uniqueCitationSet.add(list.item(i).getTextContent());
+		}
+	}
+	
+	//QUERY 4
+	private static void findTotalAuthorsCited() {
+		for (String filepath : XMLpathList) {
+			try {
+				DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+				DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+				Document doc = docBuilder.parse(filepath);
+				NodeList list = doc.getElementsByTagName("authors");
+				totalCitedAuthors += list.getLength();
+			} catch (ParserConfigurationException pce) {
+				pce.printStackTrace();
+			} catch (IOException ioe) {
+				ioe.printStackTrace();
+			} catch (SAXException sae) {
+				sae.printStackTrace();
+			}
 		}
 	}
 }
