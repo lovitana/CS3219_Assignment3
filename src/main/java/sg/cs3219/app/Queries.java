@@ -466,7 +466,7 @@ public class Queries {
 					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
 					Document doc = docBuilder.parse(filepath);
 					NodeList citations = doc.getElementsByTagName("citation");
-					cit:for (int i = 0; i < citations.getLength(); i++) {
+					cit: for (int i = 0; i < citations.getLength(); i++) {
 						if (citations.item(i).getNodeType() == Node.ELEMENT_NODE) {
 							Element citation = (Element) citations.item(i);
 
@@ -477,20 +477,19 @@ public class Queries {
 							NodeList titles = citation.getElementsByTagName("title");
 							if (titles.getLength() > 0) {
 								String title = titles.item(0).getTextContent().toLowerCase();
-								if (title == "") {
-									continue;
-								}
-								if (title.contains("NAACL".toLowerCase()) || title.contains(
-										"North American Chapter of the Association for Computational Linguistics"
-												.toLowerCase())) {
-									for (int f = 0; f < Q10_Conferences.length; f++) {
-										if (filepath.contains(Q10_Conferences[f])){
-											numberOfCitedDocumentsPerYears[f]++;
-										continue cit;
+								if (title != "") {
+									if (title.contains("NAACL".toLowerCase()) || title.contains(
+											"North American Chapter of the Association for Computational Linguistics"
+													.toLowerCase())) {
+										for (int f = 0; f < Q10_Conferences.length; f++) {
+											if (filepath.contains(Q10_Conferences[f])) {
+												numberOfCitedDocumentsPerYears[f]++;
+												continue cit;
+											}
 										}
 									}
-								}
 
+								}
 							}
 							NodeList btitles = citation.getElementsByTagName("booktitle");
 							if (btitles.getLength() > 0) {
