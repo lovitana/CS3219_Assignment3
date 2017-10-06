@@ -23,8 +23,11 @@ public class Queries {
 	private static int[] rangeOfYears = new int[2];
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
 	private static int[] numberOfCitedDocumentsD12 = new int[16];
+	private static int[] numberOfCitedDocumentsD13 = new int[2];
 	private static final int START_YEAR = 2000;
 	private static final int END_YEAR = 2015;
+	private static final String EMNLP_FULL_FORM = "EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING";
+	private static final String CONLL_FULL_FORM = "COMPUTATIONAL NATURAL LANGUAGE LEARNING";
 
 	public static void main(String[] args) {
 		String path = "src/main/resources";
@@ -41,17 +44,25 @@ public class Queries {
 		System.out.println("Q6: Number of cited documents published in following years in D12: ");
 		countYearOfCitedDocumentD12();
 		int initialYear = START_YEAR;
-		for (int i = 0; i < numberOfCitedDocumentsD12.length; i++) {
+		for (int i = 0; i < numberOfCitedDocumentsD12.length-1; i++) {
 			System.out.print(initialYear + ": " + numberOfCitedDocumentsD12[i] + " , ");
 			initialYear++;
 		}
+		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsD12[15]);
+		countNumberOfCitedDocumentsD13();
+		System.out.println("Q7: Number of cited documents published in EMNLP: " + numberOfCitedDocumentsD13[0]
+				+ " CoNLL: " + numberOfCitedDocumentsD13[1]);
 	}
 
+	// INITIALIZATIONS
 	private static void initializations() {
 		rangeOfYears[0] = 3000;
 		rangeOfYears[1] = 0;
 		for (int i = 0; i < numberOfCitedDocumentsD12.length; i++) {
 			numberOfCitedDocumentsD12[i] = 0;
+		}
+		for (int j = 0; j < numberOfCitedDocumentsD13.length; j++) {
+			numberOfCitedDocumentsD13[j] = 0;
 		}
 	}
 
@@ -168,6 +179,34 @@ public class Queries {
 									numberOfCitedDocumentsD12[x]++;
 								}
 							}
+						}
+					}
+				} catch (ParserConfigurationException pce) {
+					pce.printStackTrace();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+				} catch (SAXException sae) {
+					sae.printStackTrace();
+				}
+			}
+		}
+	}
+
+	// QUERY 7
+	private static void countNumberOfCitedDocumentsD13() {
+		for (String filepath : XMLpathList) {
+			if (filepath.contains("D13")) {
+				try {
+					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+					Document doc = docBuilder.parse(filepath);
+					NodeList list = doc.getElementsByTagName("booktitle");
+					for (int i = 0; i < list.getLength(); i++) {
+						String title = list.item(i).getTextContent().toString().toUpperCase();
+						if ((title.contains("EMNLP")) || (title.contains(EMNLP_FULL_FORM))) {
+							numberOfCitedDocumentsD13[0]++;
+						} else if ((title.contains("CONLL")) || (title.contains(CONLL_FULL_FORM))) {
+							numberOfCitedDocumentsD13[1]++;
 						}
 					}
 				} catch (ParserConfigurationException pce) {
