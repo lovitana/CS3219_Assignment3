@@ -3,7 +3,9 @@ package sg.cs3219.app;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -13,6 +15,8 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
@@ -25,6 +29,7 @@ public class Queries {
 	private static int[] numberOfCitedDocumentsD12 = new int[16];
 	private static int[] numberOfCitedDocumentsD13 = new int[2];
 	private static int[] numberOfCitedDocumentsYoshuaBengio = new int[16];
+	private static int[][] numberOfCitedDocumentsPerYears = new int[4][16];
 	private static final int START_YEAR = 2000;
 	private static final int END_YEAR = 2015;
 	private static final String EMNLP_FULL_FORM = "EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING";
@@ -63,7 +68,15 @@ public class Queries {
 			initialYear++;
 		}
 		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsYoshuaBengio[15]);
-
+		findPerYear();
+		System.out.println("Q9: number of cited documents published in each of the years from 2010 to 2015: ");
+		for(int i = 0; i <numberOfCitedDocumentsPerYears.length;i++){
+			for(int j=0;j<numberOfCitedDocumentsPerYears[0].length;j++){
+				System.out.print(
+						 (j+2000)+ " " + numberOfCitedDocumentsPerYears[i][j]+ " "
+						);
+			}
+		}
 	}
 
 	// INITIALIZATIONS
@@ -78,6 +91,11 @@ public class Queries {
 		}
 		for (int k = 0; k < numberOfCitedDocumentsYoshuaBengio.length; k++) {
 			numberOfCitedDocumentsYoshuaBengio[k] = 0;
+		}
+		for(int i = 0; i <numberOfCitedDocumentsPerYears.length;i++){
+			for(int j=0;j<numberOfCitedDocumentsPerYears[0].length;j++){
+				numberOfCitedDocumentsPerYears[i][j]=0;
+			}
 		}
 	}
 
@@ -268,6 +286,65 @@ public class Queries {
 			} catch (SAXException sae) {
 				sae.printStackTrace();
 			}
+		}
+
+	}
+
+	// QUERY 9
+	private static void findPerYear() {
+		for (String filepath : XMLpathList) {
+			if (filepath.contains("J14") || filepath.contains("W14") || filepath.contains("Q14")
+					|| filepath.contains("D14"))
+				try {
+					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+					Document doc = docBuilder.parse(filepath);
+					NodeList citations = doc.getElementsByTagName("citation");
+					for (int i = 0; i < citations.getLength(); i++) {
+						if (citations.item(i).getNodeType() == Node.ELEMENT_NODE) {
+							Element citation = (Element) citations.item(i);
+							
+							if (!citation.getAttribute("valid").equals("true")) {
+								continue;
+							}
+							
+							NodeList yearEl = citation.getElementsByTagName("date");
+							if(yearEl.getLength() > 0){
+								String year = yearEl.item(0).getTextContent();
+								if (year == "") {
+									continue;
+								}
+								int y = Integer.parseInt(year) - 2000;
+								if(y<0 || y>15){
+									continue;
+								}
+								String confName = filepath.split("/")[4];
+								if(filepath.contains("J14"))
+									numberOfCitedDocumentsPerYears[0][y] ++;
+								
+								if(filepath.contains("J14"))
+									numberOfCitedDocumentsPerYears[1][y] ++;
+									
+								if(filepath.contains("J14"))
+									numberOfCitedDocumentsPerYears[2][y] ++;
+									
+								if(filepath.contains("J14"))
+									numberOfCitedDocumentsPerYears[3][y] ++;
+									
+									
+								
+								
+							}
+
+						}
+					}
+				} catch (ParserConfigurationException pce) {
+					pce.printStackTrace();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+				} catch (SAXException sae) {
+					sae.printStackTrace();
+				}
 		}
 
 	}
