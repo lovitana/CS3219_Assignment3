@@ -24,10 +24,13 @@ public class Queries {
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
 	private static int[] numberOfCitedDocumentsD12 = new int[16];
 	private static int[] numberOfCitedDocumentsD13 = new int[2];
+	private static int[] numberOfCitedDocumentsYoshuaBengio = new int[16];
 	private static final int START_YEAR = 2000;
 	private static final int END_YEAR = 2015;
 	private static final String EMNLP_FULL_FORM = "EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING";
 	private static final String CONLL_FULL_FORM = "COMPUTATIONAL NATURAL LANGUAGE LEARNING";
+	private static final String AUTHOR_FULL_FORM = "YOSHUA BENGIO";
+	private static final String AUTHOR_SHORT_FORM = "Y. BENGIO";
 
 	public static void main(String[] args) {
 		String path = "src/main/resources";
@@ -44,7 +47,7 @@ public class Queries {
 		System.out.println("Q6: Number of cited documents published in following years in D12: ");
 		countYearOfCitedDocumentD12();
 		int initialYear = START_YEAR;
-		for (int i = 0; i < numberOfCitedDocumentsD12.length-1; i++) {
+		for (int i = 0; i < numberOfCitedDocumentsD12.length - 1; i++) {
 			System.out.print(initialYear + ": " + numberOfCitedDocumentsD12[i] + " , ");
 			initialYear++;
 		}
@@ -52,6 +55,15 @@ public class Queries {
 		countNumberOfCitedDocumentsD13();
 		System.out.println("Q7: Number of cited documents published in EMNLP: " + numberOfCitedDocumentsD13[0]
 				+ " CoNLL: " + numberOfCitedDocumentsD13[1]);
+		findTotalYoshuaBengio();
+		System.out.println("Q8: Number of cited documents published in following years by Yoshua Bengio: ");
+		initialYear = START_YEAR;
+		for (int i = 0; i < numberOfCitedDocumentsYoshuaBengio.length - 1; i++) {
+			System.out.print(initialYear + ": " + numberOfCitedDocumentsYoshuaBengio[i] + " , ");
+			initialYear++;
+		}
+		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsYoshuaBengio[15]);
+
 	}
 
 	// INITIALIZATIONS
@@ -63,6 +75,9 @@ public class Queries {
 		}
 		for (int j = 0; j < numberOfCitedDocumentsD13.length; j++) {
 			numberOfCitedDocumentsD13[j] = 0;
+		}
+		for (int k = 0; k < numberOfCitedDocumentsYoshuaBengio.length; k++) {
+			numberOfCitedDocumentsYoshuaBengio[k] = 0;
 		}
 	}
 
@@ -218,5 +233,42 @@ public class Queries {
 				}
 			}
 		}
+	}
+
+	// QUERY 8
+	private static void findTotalYoshuaBengio() {
+		for (String filepath : XMLpathList) {
+			try {
+				DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+				DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+				Document doc = docBuilder.parse(filepath);
+				NodeList list = doc.getElementsByTagName("citation");
+				for (int i = 0; i < list.getLength(); i++) {
+					String str = list.item(i).getTextContent().toUpperCase();
+					if ((str.contains(AUTHOR_FULL_FORM)) || (str.contains(AUTHOR_SHORT_FORM))) {
+						NodeList listChild = list.item(i).getChildNodes();
+						for (int j = 0; j < listChild.getLength(); j++) {
+							if (listChild.item(j).getNodeName() == "date") {
+								String date = listChild.item(j).getTextContent();
+								if (date != "") {
+									int year = Integer.parseInt(date);
+									if ((year >= START_YEAR) && (year <= END_YEAR)) {
+										int x = year % 2000;
+										numberOfCitedDocumentsYoshuaBengio[x]++;
+									}
+								}
+							}
+						}
+					}
+				}
+			} catch (ParserConfigurationException pce) {
+				pce.printStackTrace();
+			} catch (IOException ioe) {
+				ioe.printStackTrace();
+			} catch (SAXException sae) {
+				sae.printStackTrace();
+			}
+		}
+
 	}
 }
