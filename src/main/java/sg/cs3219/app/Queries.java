@@ -39,8 +39,9 @@ public class Queries {
 		findRangeOfYears();
 		System.out.println("Q5: Range of Years of cited documents: " + rangeOfYears[0] + " - " + rangeOfYears[1]);
 		System.out.println("Q6: Number of cited documents published in following years in D12: ");
-		int initialYear = 2000;
-		for(int i = 0; i < numberOfCitedDocumentsD12 .length; i++) {
+		countYearOfCitedDocumentD12();
+		int initialYear = START_YEAR;
+		for (int i = 0; i < numberOfCitedDocumentsD12.length; i++) {
 			System.out.print(initialYear + ": " + numberOfCitedDocumentsD12[i] + " , ");
 			initialYear++;
 		}
@@ -130,9 +131,6 @@ public class Queries {
 						String date = list.item(i).getTextContent().toString();
 						if (date != "") {
 							int year = Integer.parseInt(date);
-							if ((filepath.contains("D12")) && (year >= START_YEAR) && (year <= END_YEAR)) {
-								countYearOfCitedDocumentD12(year);
-							}
 							if (year < rangeOfYears[0]) {
 								rangeOfYears[0] = year;
 							} else if (year > rangeOfYears[1]) {
@@ -152,8 +150,34 @@ public class Queries {
 	}
 
 	// QUERY 6
-	private static void countYearOfCitedDocumentD12(int year) {
-		int x = year % 2000;
-		numberOfCitedDocumentsD12[x]++;
+	private static void countYearOfCitedDocumentD12() {
+		for (String filepath : XMLpathList) {
+			if (filepath.contains("D12")) {
+				try {
+					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+					Document doc = docBuilder.parse(filepath);
+					NodeList list = doc.getElementsByTagName("date");
+					for (int i = 0; i < list.getLength(); i++) {
+						if (!list.item(i).hasAttributes()) {
+							String date = list.item(i).getTextContent().toString();
+							if (date != "") {
+								int year = Integer.parseInt(date);
+								if ((year >= START_YEAR) && (year <= END_YEAR)) {
+									int x = year % 2000;
+									numberOfCitedDocumentsD12[x]++;
+								}
+							}
+						}
+					}
+				} catch (ParserConfigurationException pce) {
+					pce.printStackTrace();
+				} catch (IOException ioe) {
+					ioe.printStackTrace();
+				} catch (SAXException sae) {
+					sae.printStackTrace();
+				}
+			}
+		}
 	}
 }
