@@ -38,7 +38,7 @@ public class Test {
 				return r.toString();
 			};
 			
-			Query<Integer> query = new FunctionnalQuery<>(0, crit, comb, out);
+			Query<Integer> query = new FunctionnalQuery<>(0,true, crit, comb, out);
 			
 			XMLFetcher fetcher = new XMLFetcher(loader,files);
 			System.out.println("There is " + fetcher.answer(query)+ " Documents");
