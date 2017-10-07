@@ -21,7 +21,7 @@ public class Queries {
 	private static ArrayList<String> XMLpathList = new ArrayList<String>();
 	private static final int START_YEAR = 2000;
 	private static final int END_YEAR = 2015;
-	private static final String[] Q9_Conferences = { "J14", "W14", "Q14", "D14" };
+	private static final String[] Q9_Conferences = { "J14", "W14"};
 	private static final String[] Q10_Conferences = { "Q14", "D14" };
 	private static final String EMNLP_FULL_FORM = "EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING";
 	private static final String CONLL_FULL_FORM = "COMPUTATIONAL NATURAL LANGUAGE LEARNING";
@@ -35,23 +35,28 @@ public class Queries {
 		int totalDocs = findTotalDocuments(path);
 		System.out.println("Q1: Total documents: " + totalDocs);
 
+		System.out.println();
 		// QUERY 2
 		int totalCitations = findTotalCitations();
 		System.out.println("Q2: Total citations: " + totalCitations);
 
+		System.out.println();
 		// QUERY 3
 		int totalUniqueCitations = findUniqueCitations();
 		System.out.println("Q3: Total unique citations: " + totalUniqueCitations);
 
+		System.out.println();
 		// QUERY 4
 		int totalCitedAuthors = findTotalAuthorsCited();
 		System.out.println("Q4: Total authors in citations: " + totalCitedAuthors);
 
+		System.out.println();
 		// QUERY 5
 		int[] rangeOfYears = new int[2];
 		rangeOfYears = findRangeOfYears();
 		System.out.println("Q5: Range of Years of cited documents: " + rangeOfYears[0] + " - " + rangeOfYears[1]);
 
+		System.out.println();
 		// QUERY 6
 		int[] numberOfCitedDocumentsD12 = new int[16];
 		numberOfCitedDocumentsD12 = countYearOfCitedDocumentD12();
@@ -63,12 +68,14 @@ public class Queries {
 		}
 		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsD12[15]);
 
+		System.out.println();
 		// QUERY 7
 		int[] numberOfCitedDocumentsD13 = new int[16];
 		numberOfCitedDocumentsD13 = countNumberOfCitedDocumentsD13();
 		System.out.println("Q7: Number of cited documents published in EMNLP: " + numberOfCitedDocumentsD13[0]
 				+ " CoNLL: " + numberOfCitedDocumentsD13[1]);
 
+		System.out.println();
 		// QUERY 8
 		int[] numberOfCitedDocumentsYoshuaBengio = new int[16];
 		numberOfCitedDocumentsYoshuaBengio = findTotalYoshuaBengio();
@@ -80,12 +87,13 @@ public class Queries {
 		}
 		System.out.println(END_YEAR + ": " + numberOfCitedDocumentsYoshuaBengio[15]);
 
+		System.out.println();
 		// QUERY 9
 		int[][] numberOfCitedDocumentsPerYears = findPerYear();
 		System.out.println("Q9: number of cited documents published in each of the years from 2010 to 2015: ");
 		for (int i = 0; i < numberOfCitedDocumentsPerYears.length; i++) {
 			for (int j = 0; j < numberOfCitedDocumentsPerYears[0].length; j++) {
-				System.out.print(Q9_Conferences[i] + " " + (j + 2000) + " " + numberOfCitedDocumentsPerYears[i][j]);
+				System.out.print(Q9_Conferences[i] + " " + (j + 2010) + " " + numberOfCitedDocumentsPerYears[i][j]);
 				if (j != numberOfCitedDocumentsPerYears[0].length - 1
 						|| i != numberOfCitedDocumentsPerYears.length - 1) {
 					System.out.print(" , ");
@@ -93,6 +101,7 @@ public class Queries {
 			}
 		}
 
+		System.out.println();
 		// QUERY 10
 		int[] resultQ10 = findPerConferencesWhereNAACL();
 		System.out.println("\nQ10: number of cited documents published in Q14,D14 from NAACL ");
@@ -408,10 +417,9 @@ public class Queries {
 
 	// QUERY 9
 	private static int[][] findPerYear() {
-		int[][] numberOfCitedDocumentsPerYears = new int[4][16];
+		int[][] numberOfCitedDocumentsPerYears = new int[2][6];
 		for (String filepath : XMLpathList) {
-			if (filepath.contains("J14") || filepath.contains("W14") || filepath.contains("Q14")
-					|| filepath.contains("D14"))
+			if (filepath.contains("J14") || filepath.contains("W14")) {
 				try {
 					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
 					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
@@ -431,8 +439,8 @@ public class Queries {
 								if (year == "") {
 									continue;
 								}
-								int y = Integer.parseInt(year) - 2000;
-								if (y < 0 || y > 15) {
+								int y = Integer.parseInt(year) - 2010;
+								if (y < 0 || y > 5) {
 									continue;
 								}
 								for (int f = 0; f < Q9_Conferences.length; f++) {
@@ -451,6 +459,7 @@ public class Queries {
 				} catch (SAXException sae) {
 					sae.printStackTrace();
 				}
+			}
 		}
 		return numberOfCitedDocumentsPerYears;
 
@@ -460,7 +469,7 @@ public class Queries {
 	private static int[] findPerConferencesWhereNAACL() {
 		int[] numberOfCitedDocumentsPerYears = new int[2];
 		for (String filepath : XMLpathList) {
-			if (filepath.contains("Q14") || filepath.contains("D14"))
+			if (filepath.contains("Q14") || filepath.contains("D14")) {
 				try {
 					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
 					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
@@ -517,6 +526,7 @@ public class Queries {
 				} catch (SAXException sae) {
 					sae.printStackTrace();
 				}
+			}
 		}
 		return numberOfCitedDocumentsPerYears;
 
